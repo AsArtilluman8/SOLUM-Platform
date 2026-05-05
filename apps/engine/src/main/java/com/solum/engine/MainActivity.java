@@ -3,6 +3,7 @@ package com.solum.engine;
 import android.app.Activity;
 import android.os.Bundle;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.provider.OpenableColumns;
 import android.database.Cursor;
@@ -38,6 +39,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private File cachedReportDir = null;
     private File cachedModelDir = null;
     private String lastImportedModelPath = "none";
+    private String lastImportedModelName = "none";
 
     private static native long nativeCreate();
     private static native void nativeDestroy(long handle);
@@ -65,9 +67,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         statusView.setPadding(14, 10, 14, 10);
         statusView.setGravity(Gravity.START);
         statusView.setSingleLine(false);
-        statusView.setMaxLines(5);
+        statusView.setMaxLines(6);
         statusView.setBackgroundColor(Color.argb(150, 3, 10, 12));
-        statusView.setText("SOLUM Engine\nVulkan: loading\nStatus: starting\nFPS: waiting");
+        statusView.setText("SOLUM Engine\nVulkan: loading\nStatus: starting\nModel: none\nFPS: waiting");
         statusView.setOnLongClickListener(v -> { toggleDebugSheet(); return true; });
 
         FrameLayout root = new FrameLayout(this);
@@ -92,12 +94,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         root.addView(debugSheet, sheetParams);
 
         setContentView(root);
+        loadPersistedModelState();
 
         try {
             System.loadLibrary("solum_engine");
             nativeLoaded = true;
             nativeHandle = nativeCreate();
-            statusView.setText("SOLUM Engine\nVulkan: loading\nStatus: native ready\nFPS: waiting");
+            statusView.setText("SOLUM Engine\nVulkan: loading\nStatus: native ready\nModel: none\nFPS: waiting");
             writeRuntimeNote("native_load_ok", "libsolum_engine loaded and native object created");
         } catch (Throwable t) {
             nativeLoaded = false;
@@ -205,7 +208,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         debugText.setText(message
                 + "\nRuntime: " + getRuntimeReportDirPath()
                 + "\nAssets: " + getModelAssetDir().getAbsolutePath()
-                + "\nLast model: " + lastImportedModelPath);
+                + "\nLast model: " + lastImportedModelName
+                + "\nLast path: " + lastImportedModelPath);
     }
 
     private void openModelPicker() {
@@ -246,8 +250,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             File out = uniqueFile(outDir, displayName);
             long bytes = copyUriToFile(uri, out);
             lastImportedModelPath = out.getAbsolutePath();
+            lastImportedModelName = displayName;
+            persistModelState();
             writeModelImportState("imported", displayName, uri.toString(), out.getAbsolutePath(), bytes, "ready_for_probe_not_rendered_yet");
-            refreshDebugText("Model imported: " + displayName + " (" + bytes + " bytes)");
+            writeImportedModelDirListing("after_import");
+            refreshDebugText("Model imported: " + displayName + " (" + bytes + " bytes)\nSaved as asset: " + out.getAbsolutePath());
             updateStatus();
         } catch (Throwable t) {
             writeCrashReport("model_import_failed", t);
@@ -307,15 +314,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private void saveRuntimeStateFromUi() {
         writeRuntimeNote("debug_sheet_save_requested", "User tapped Save runtime state");
         writeDiagnosticsExportRequest("debug_sheet_button");
-        writeModelImportState("last_known", "none", "none", lastImportedModelPath, 0, "debug_sheet_save");
-        refreshDebugText("Runtime state saved. Export ZIP from Termux when needed.");
+        File modelFile = new File(lastImportedModelPath == null ? "none" : lastImportedModelPath);
+        long modelBytes = modelFile.exists() ? modelFile.length() : 0L;
+        writeModelImportState("last_known", lastImportedModelName, "persisted_or_last_import", lastImportedModelPath, modelBytes, "debug_sheet_save");
+        writeImportedModelDirListing("debug_sheet_save");
+        refreshDebugText("Runtime state saved. Model: " + lastImportedModelName + "\nExport ZIP from Termux when needed.");
     }
 
     private void updateStatus() {
         runOnUiThread(() -> {
             if (nativeLoaded && nativeHandle != 0L) {
                 try {
-                    statusView.setMaxLines(5);
+                    statusView.setMaxLines(6);
                     statusView.setText(compactStatus(nativeGetStatus(nativeHandle)));
                 } catch (Throwable t) {
                     writeCrashReport("native_status_failed", t);
@@ -340,7 +350,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (gpu.isEmpty()) gpu = "detecting";
         if (next.isEmpty()) next = "glTF Material Import";
         if (fps.isEmpty()) fps = "collecting";
-        return "SOLUM Engine" + "\nVulkan: " + gpu + "\nStatus: " + status + "\nFPS: " + shorten(fps, 34) + "\nNext: " + shorten(next, 34);
+        return "SOLUM Engine" + "\nVulkan: " + gpu + "\nStatus: " + status + "\nModel: " + shorten(lastImportedModelName, 34) + "\nFPS: " + shorten(fps, 34) + "\nNext: " + shorten(next, 34);
     }
 
     private String pickValue(String text, String prefix) {
@@ -412,7 +422,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 w.write("  \"message\": \"" + escape(message) + "\",\n");
                 w.write("  \"reportDir\": \"" + escape(dir.getAbsolutePath()) + "\",\n");
                 w.write("  \"assetModelDir\": \"" + escape(getModelAssetDir().getAbsolutePath()) + "\",\n");
-                w.write("  \"lastImportedModelPath\": \"" + escape(lastImportedModelPath) + "\"\n");
+                w.write("  \"lastImportedModelPath\": \"" + escape(lastImportedModelPath) + "\",\n");
+                w.write("  \"lastImportedModelName\": \"" + escape(lastImportedModelName) + "\"\n");
                 w.write("}\n");
             }
         } catch (Throwable ignored) { }
@@ -455,6 +466,56 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             w.write("  \"importedAt\": \"" + escape(now()) + "\"\n");
             w.write("}\n");
         }
+    }
+
+
+    private void loadPersistedModelState() {
+        try {
+            SharedPreferences sp = getSharedPreferences("solum_imports", MODE_PRIVATE);
+            lastImportedModelPath = sp.getString("lastImportedModelPath", "none");
+            lastImportedModelName = sp.getString("lastImportedModelName", "none");
+            writeImportedModelDirListing("startup");
+        } catch (Throwable ignored) { }
+    }
+
+    private void persistModelState() {
+        try {
+            getSharedPreferences("solum_imports", MODE_PRIVATE)
+                    .edit()
+                    .putString("lastImportedModelPath", lastImportedModelPath)
+                    .putString("lastImportedModelName", lastImportedModelName)
+                    .apply();
+        } catch (Throwable ignored) { }
+    }
+
+    private void writeImportedModelDirListing(String source) {
+        try {
+            File dir = getModelAssetDir();
+            File out = new File(getReportDir(), "runtime_model_files.json");
+            File[] files = dir.listFiles();
+            try (FileWriter w = new FileWriter(out)) {
+                w.write("{\n");
+                w.write("  \"schema\": \"solum.runtime_model_files\",\n");
+                w.write("  \"schemaVersion\": 1,\n");
+                w.write("  \"source\": \"" + escape(source) + "\",\n");
+                w.write("  \"modelDir\": \"" + escape(dir.getAbsolutePath()) + "\",\n");
+                w.write("  \"lastImportedModelName\": \"" + escape(lastImportedModelName) + "\",\n");
+                w.write("  \"lastImportedModelPath\": \"" + escape(lastImportedModelPath) + "\",\n");
+                w.write("  \"files\": [\n");
+                boolean first = true;
+                if (files != null) {
+                    for (File f : files) {
+                        String n = f.getName().toLowerCase(Locale.US);
+                        if (!(n.endsWith(".glb") || n.endsWith(".gltf"))) continue;
+                        if (!first) w.write(",\n");
+                        first = false;
+                        w.write("    { \"name\": \"" + escape(f.getName()) + "\", \"path\": \"" + escape(f.getAbsolutePath()) + "\", \"sizeBytes\": " + f.length() + " }");
+                    }
+                }
+                w.write("\n  ]\n");
+                w.write("}\n");
+            }
+        } catch (Throwable ignored) { }
     }
 
     private void writeCrashReport(String stage, Throwable throwable) {

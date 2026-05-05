@@ -35,7 +35,7 @@ copy_runtime_from_public_dirs() {
   local copied=0
   for srcdir in "$PUBLIC_ROOT_DIR" "$PUBLIC_DOWNLOAD_DIR"; do
     [ -d "$srcdir" ] || continue
-    for name in runtime_java_state.json runtime_vulkan_caps.json runtime_render_state.json runtime_model_state.json runtime_material_state.json runtime_texture_state.json imported_models_index.json runtime_model_import_state.json diagnostics_export_request.json runtime_latest_status.txt latest_status.txt; do
+    for name in runtime_java_state.json runtime_vulkan_caps.json runtime_render_state.json runtime_model_state.json runtime_material_state.json runtime_texture_state.json runtime_model_files.json imported_models_index.json runtime_model_import_state.json diagnostics_export_request.json runtime_latest_status.txt latest_status.txt; do
       if copy_if_exists "$srcdir/$name" "$name"; then copied=1; fi
     done
     for f in "$srcdir"/runtime_crash_*.txt; do

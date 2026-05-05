@@ -222,8 +222,28 @@ def audit_one(path: Path):
     return report
 
 
+
+def find_models_from_runtime_state():
+    candidates = []
+    for name in ["runtime_model_import_state.json", "runtime_model_files.json"]:
+        path = DIAG_DIR / name
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            asset = data.get("assetPath") or data.get("lastImportedModelPath")
+            if asset:
+                candidates.append(Path(asset))
+            for item in data.get("files", []) or []:
+                p = item.get("path")
+                if p:
+                    candidates.append(Path(p))
+        except Exception:
+            pass
+    return [p for p in candidates if p.exists() and p.suffix.lower() in [".glb", ".gltf"]]
+
 def find_models():
-    files = []
+    files = find_models_from_runtime_state()
     for root in [IMPORT_DIR, MODEL_ROOT]:
         if root.exists():
             files.extend([p for p in root.rglob("*") if p.suffix.lower() in [".glb", ".gltf"]])

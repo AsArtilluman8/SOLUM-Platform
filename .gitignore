@@ -2,3 +2,13 @@ tools/vulkan_caps/vulkan_caps
 
 __pycache__/
 *.pyc
+
+.gradle/
+build/
+**/build/
+*.apk
+*.ap_
+*.aab
+*.dex
+local.properties
+apps/engine/src/main/jniLibs/arm64-v8a/libsolum_engine.so

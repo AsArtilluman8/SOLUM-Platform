@@ -83,6 +83,34 @@ Diagnostics ZIP = правда о запуске на телефоне.
 Build log = правда о сборке.
 ```
 
+## GitHub write workflow
+
+Для больших изменений запрещено создавать/обновлять много файлов по одному через отдельные `create_file` / `update_file` операции.
+
+Правильный workflow для крупных docs/code патчей:
+
+```text
+create branch
+↓
+prepare all changes as one batch
+↓
+create one commit
+↓
+open one PR
+↓
+user reviews diff
+↓
+merge after approval
+```
+
+Правила:
+
+- Крупный patch/docs/code change → branch + single batch commit + PR.
+- Маленькая точечная правка → допустим прямой GitHub file update.
+- Termux patch-файл → использовать только если GitHub недоступен, нужна локальная проверка или пользователь явно просит.
+- Не создавать 10+ отдельных commits для одной логической задачи.
+- PR body обязан содержать scope, changed files, checks, known issues и next step.
+
 ## Патчи
 
 Предпочтительно:

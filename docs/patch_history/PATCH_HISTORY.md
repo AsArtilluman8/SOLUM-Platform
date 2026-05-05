@@ -205,3 +205,73 @@ Asset format must exist before UI tools. Transaction save prevents corrupted fil
 ### Next
 
 Patch P04 — Vulkan Foundation v1 or Patch P03A fix if validation fails on device.
+
+---
+
+## Patch P04 — Vulkan Foundation v1
+
+### Goal
+
+Create the first Android APK runtime path for SOLUM Engine and verify Android Native Vulkan separately from Termux llvmpipe.
+
+### Scope
+
+- Root Gradle settings and Android application module.
+- `apps/engine` Android Activity and SurfaceView.
+- Manual prebuilt `.so` route for Termux.
+- Native C++ Vulkan foundation.
+- VkInstance.
+- Android surface.
+- physical device selection.
+- VkDevice.
+- swapchain creation.
+- runtime Vulkan capability report.
+- APK output script.
+
+### Build result
+
+NOT TESTED in GitHub environment — must be built in Termux.
+
+### Runtime result
+
+NOT TESTED in GitHub environment — must run APK on target Android phone.
+
+### Diagnostics
+
+Expected build outputs:
+
+```text
+/storage/emulated/0/SOLUMCreative/releases/latest/SOLUM_LATEST.apk
+/storage/emulated/0/SOLUMCreative/reports/latest/P04_native_build.log
+/storage/emulated/0/SOLUMCreative/reports/latest/P04_gradle_build.log
+```
+
+Expected runtime output after launching APK:
+
+```text
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/runtime_vulkan_caps.json
+```
+
+### User-visible result
+
+APK opens `SOLUM Engine` and shows runtime status overlay:
+
+```text
+Renderer path: Android Native Vulkan
+GPU: ...
+Swapchain: created
+```
+
+### Known issues
+
+- P04 may only create swapchain/runtime report. Clear/triangle draw pass can move to P04A after build/runtime foundation is verified.
+- Manual prebuilt `.so` route is chosen for Termux reliability.
+- Real Mali-G57 appears only through Android APK runtime path, not Termux shell Vulkan.
+
+### Lessons
+
+Do not start PBR/materials/shadows before Android Vulkan runtime path is proven.
+
+### Next
+
+Run `bash tools/build_engine_apk.sh`, install/open APK manually, then send diagnostics ZIP/logs if build or runtime fails.

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SOLUM Runtime Model Import State",
+  "type": "object",
+  "required": ["schema", "schemaVersion", "status", "assetPath"],
+  "properties": {
+    "schema": { "const": "solum.model_import_state" },
+    "schemaVersion": { "type": "integer" },
+    "status": { "type": "string" },
+    "displayName": { "type": "string" },
+    "sourceUri": { "type": "string" },
+    "assetPath": { "type": "string" },
+    "sizeBytes": { "type": "integer" },
+    "note": { "type": "string" },
+    "importedAt": { "type": "string" }
+  }
+}

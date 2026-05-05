@@ -67,6 +67,65 @@ VFX и звук показывают удар
 
 Только после этого можно предлагать патч или план.
 
+## Pre-Patch Check
+
+Перед каждым патчем агент обязан показать короткий PRE-PATCH CHECK.
+
+Минимальный формат:
+
+```text
+PRE-PATCH CHECK
+
+Stage / Patch:
+- PXX — название
+
+Docs read:
+- PROJECT_MEMORY_INDEX.md
+- CURRENT_STAGE.md
+- AGENT_RULES.md
+- ARCHITECTURE_RULES.md
+- PATCH_ROADMAP.md
+- relevant specs for this task
+
+Scope:
+- что входит
+
+Out of scope:
+- что НЕ входит
+
+Evidence plan:
+- build log / diagnostics ZIP / report / screenshot / PR diff
+
+Risk:
+- что может сломаться
+```
+
+Если патч касается сложной системы, PRE-PATCH CHECK обязан включать Research Gate.
+
+Сложные системы:
+
+- Vulkan;
+- render;
+- shadows / CSM;
+- lighting;
+- materials;
+- water;
+- terrain / vegetation;
+- VFX;
+- animation;
+- assets/import/export;
+- diagnostics/profiling;
+- ECS/mechanics;
+- editor/input/UX.
+
+Для таких задач агент обязан прочитать:
+
+- `docs/research/REPOSITORY_REFERENCE_CATALOG.md`
+- `docs/research/RESEARCH_GATE_RULES.md`
+- `docs/research/PATCH_RESEARCH_TEMPLATE.md`
+
+Patch proposal без PRE-PATCH CHECK считается incomplete.
+
 ## GitHub и diagnostics
 
 - Если GitHub repo подключён и актуален — читать код из GitHub.
@@ -82,6 +141,40 @@ GitHub = источник кода.
 Diagnostics ZIP = правда о запуске на телефоне.
 Build log = правда о сборке.
 ```
+
+## Agent Mode GitHub rule
+
+В Agent Mode для GitHub задач агент не должен использовать visual browser как основной способ редактирования repo.
+
+Правильный приоритет:
+
+```text
+GitHub connector/tool
+↓
+branch
+↓
+batch commit
+↓
+single PR
+↓
+user review
+```
+
+Visual browser допустим только если GitHub tool/connector недоступен или пользователь явно просит работать через браузер.
+
+Если Agent Mode открыл пустой Chromium и не может нормально работать с repo, агент должен остановиться и честно сообщить:
+
+```text
+Agent browser route не сработал.
+Нужен GitHub tool или Termux script workflow.
+```
+
+Запрещено:
+
+- пытаться кликать GitHub UI в браузере, если доступен GitHub connector/tool;
+- создавать много отдельных write-actions для одной логической задачи;
+- отправлять пользователю скриншоты пустого браузера как будто работа идёт нормально;
+- завершать задачу ручным планом, если обещал выполнить GitHub update.
 
 ## GitHub write workflow
 

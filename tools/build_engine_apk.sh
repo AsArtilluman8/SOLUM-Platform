@@ -7,13 +7,13 @@ if [ ! -d "$(dirname "$SOLUM_ROOT")" ]; then
   SOLUM_ROOT="/storage/emulated/0/Download/SOLUMCreative"
 fi
 LATEST_DIR="$SOLUM_ROOT/releases/latest"
-ARCHIVE_DIR="$SOLUM_ROOT/releases/archive/$(date +%Y%m%d_%H%M%S)_P06_engine"
+ARCHIVE_DIR="$SOLUM_ROOT/releases/archive/$(date +%Y%m%d_%H%M%S)_P07_engine"
 REPORT_DIR="$SOLUM_ROOT/reports/latest"
 mkdir -p "$LATEST_DIR" "$ARCHIVE_DIR" "$REPORT_DIR"
 
 cd "$ROOT"
 
-PATCH_LABEL="P06 Graphics Pipeline + First Validation Triangle"
+PATCH_LABEL="P07 Vertex Buffer + Simple Mesh Upload Path"
 
 print_header() {
   echo "============================================================"
@@ -29,7 +29,7 @@ print_success() {
   echo "SOLUM BUILD RESULT: OK"
   echo "Patch: $PATCH_LABEL"
   echo "APK latest:  $LATEST_DIR/SOLUM_LATEST.apk"
-  echo "APK archive: $ARCHIVE_DIR/SOLUM_Engine_P06_debug.apk"
+  echo "APK archive: $ARCHIVE_DIR/SOLUM_Engine_P07_debug.apk"
   echo "Native log:  $REPORT_DIR/P04_native_build.log"
   echo "Gradle log:  $REPORT_DIR/P04_gradle_build.log"
   echo
@@ -38,10 +38,10 @@ print_success() {
   echo "2) Expected screen text:"
   echo "   - Renderer path: Android Native Vulkan"
   echo "   - GPU: Mali-G57 MC2"
-  echo "   - Render pass: clear color OK"
+  echo "   - Vertex buffer: OK"
   echo "   - Triangle draw: OK"
   echo "   - Frames rendered: 1"
-  echo "3) Expected visual result: orange triangle over dark teal Vulkan clear color."
+  echo "3) Expected visual result: orange triangle still visible, now fed from a GPU vertex buffer."
   echo
   echo "IF ERROR: send these logs:"
   echo "   $REPORT_DIR/P04_native_build.log"
@@ -85,6 +85,6 @@ if [ ! -f "$APK" ]; then
 fi
 
 cp "$APK" "$LATEST_DIR/SOLUM_LATEST.apk"
-cp "$APK" "$ARCHIVE_DIR/SOLUM_Engine_P06_debug.apk"
+cp "$APK" "$ARCHIVE_DIR/SOLUM_Engine_P07_debug.apk"
 
 print_success

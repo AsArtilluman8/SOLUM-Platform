@@ -9,6 +9,10 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import android.widget.Toast;
+import android.widget.PopupWindow;
+import android.widget.Button;
+import android.widget.LinearLayout;
 import android.graphics.Color;
 
 import java.io.File;
@@ -62,6 +66,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ch
         statusView.setMaxLines(5);
         statusView.setBackgroundColor(Color.argb(150, 3, 10, 12));
         statusView.setText("SOLUM Engine\nVulkan: loading\nStatus: starting");
+        statusView.setOnLongClickListener(v -> {
+            showDebugSheet();
+            return true;
+        });
 
         FrameLayout root = new FrameLayout(this);
         root.addView(surfaceView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -273,6 +281,83 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ch
 
     private String shorten(String text, int max) { if (text == null) return ""; if (text.length() <= max) return text; return text.substring(0, Math.max(0, max - 1)) + "…"; }
     private String fmt(double v) { return String.format(Locale.US, "%.3f", v); }
+
+    private void showDebugSheet() {
+        final File dir = getReportDir();
+        writeRuntimeNote("debug_sheet_opened", "Debug Sheet opened by long press on HUD");
+        writeDiagnosticsExportRequest(dir, "debug_sheet_opened");
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(24, 20, 24, 20);
+        panel.setBackgroundColor(Color.rgb(4, 14, 18));
+
+        TextView title = new TextView(this);
+        title.setTextColor(Color.rgb(140, 235, 255));
+        title.setTextSize(16f);
+        title.setText("SOLUM Debug Sheet");
+        panel.addView(title);
+
+        TextView info = new TextView(this);
+        info.setTextColor(Color.rgb(220, 245, 250));
+        info.setTextSize(12f);
+        info.setPadding(0, 12, 0, 12);
+        String current = "";
+        try {
+            if (nativeLoaded && nativeHandle != 0L) {
+                current = compactStatus(nativeGetStatus(nativeHandle));
+            }
+        } catch (Throwable ignored) {
+            current = "status unavailable";
+        }
+        info.setText(current
+                + "\nDiagnostics path:\n" + dir.getAbsolutePath()
+                + "\n\nTermux ZIP exporter:\nbash tools/export_app_runtime_reports.sh");
+        panel.addView(info);
+
+        Button save = new Button(this);
+        save.setText("Save runtime state");
+        panel.addView(save);
+
+        Button close = new Button(this);
+        close.setText("Close");
+        panel.addView(close);
+
+        PopupWindow popup = new PopupWindow(
+                panel,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                true
+        );
+        popup.setOutsideTouchable(true);
+        popup.setFocusable(true);
+
+        save.setOnClickListener(v -> {
+            writeRuntimeNote("manual_runtime_saved", "Runtime state saved from Debug Sheet");
+            writeDiagnosticsExportRequest(dir, "manual_runtime_saved");
+            Toast.makeText(this, "Runtime diagnostics saved", Toast.LENGTH_SHORT).show();
+        });
+
+        close.setOnClickListener(v -> popup.dismiss());
+        popup.showAtLocation(statusView, Gravity.BOTTOM, 0, 0);
+    }
+
+    private void writeDiagnosticsExportRequest(File dir, String reason) {
+        try {
+            File out = new File(dir, "diagnostics_export_request.json");
+            try (FileWriter w = new FileWriter(out)) {
+                w.write("{\n");
+                w.write("  \"schema\": \"solum.diagnostics_export_request\",\n");
+                w.write("  \"schemaVersion\": 1,\n");
+                w.write("  \"reason\": \"" + escape(reason) + "\",\n");
+                w.write("  \"nextTermuxAction\": \"bash tools/export_app_runtime_reports.sh\",\n");
+                w.write("  \"reportDir\": \"" + escape(dir.getAbsolutePath()) + "\"\n");
+                w.write("}\n");
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     private String getRuntimeReportDirPath() { return getReportDir().getAbsolutePath(); }
 
     private File getReportDir() {

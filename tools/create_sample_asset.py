@@ -48,6 +48,9 @@ def main() -> int:
         "schemaVersion": 1,
         "assetId": str(uuid.uuid4()),
         "assetType": "material",
+        "assetSubType": "material_definition",
+        "sourceFormat": "solum_material_json",
+        "runtimeFormat": "solum_material_runtime",
         "displayName": "Sample Material",
         "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "createdBy": "solum.patch03.sample",
@@ -59,7 +62,10 @@ def main() -> int:
         },
         "schemaCompatibleWith": ">=1.0 <2.0",
         "validationState": "pending",
-        "dependencies": []
+        "dependencies": [],
+        "metadata": {
+            "purpose": "Patch 03 sample asset"
+        }
     }
 
     atomic_write_json(asset_dir / "asset_manifest.json", manifest)

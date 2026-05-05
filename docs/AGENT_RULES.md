@@ -71,6 +71,20 @@ VFX и звук показывают удар
 
 Перед каждым патчем агент обязан показать короткий PRE-PATCH CHECK.
 
+Если пользователь пишет `го патч`, `делай`, `можно дальше`, `начинай`, агент всё равно обязан остановиться и сначала выполнить PRE-PATCH CHECK. Нельзя переходить к коду или PR без этого блока.
+
+Правильное поведение агента:
+
+```text
+Стоп: по правилам перед патчем сначала PRE-PATCH CHECK.
+↓
+показываем Stage/Patch, Docs read, Scope, Out of scope, Evidence plan, Risk
+↓
+если задача сложная — добавляем Research Gate
+↓
+только потом делаем patch/PR
+```
+
 Минимальный формат:
 
 ```text
@@ -203,6 +217,32 @@ merge after approval
 - Termux patch-файл → использовать только если GitHub недоступен, нужна локальная проверка или пользователь явно просит.
 - Не создавать 10+ отдельных commits для одной логической задачи.
 - PR body обязан содержать scope, changed files, checks, known issues и next step.
+
+## Post-merge local sync rule
+
+После каждого merge агент обязан давать безопасную команду синхронизации, которая сначала убирает локальные изменения только в известных generated/build files, а потом переключается на `main`.
+
+Нельзя после merge давать простую команду вида:
+
+```bash
+git checkout main && git pull origin main
+```
+
+Потому что после Termux build часто остаются локально изменённые скрипты, generated shader headers или `jniLibs`, и `git checkout` падает.
+
+Правильный post-merge шаблон:
+
+```bash
+cd "$HOME/SOLUM-Platform" && \
+git fetch origin && \
+git restore tools/build_engine_apk.sh tools/build_native_engine.sh tools/build_shaders.sh tools/export_app_runtime_reports.sh 2>/dev/null || true && \
+rm -rf apps/engine/src/main/jniLibs engine-core/solum-vulkan-core/src/generated && \
+git checkout main && \
+git pull --ff-only origin main && \
+git status --short
+```
+
+Если `git status --short` после этого не пустой, агент должен остановиться и разобрать конкретные файлы. Нельзя продолжать следующий патч на грязном дереве.
 
 ## Патчи
 

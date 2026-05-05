@@ -1,0 +1,16 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.solum.engine'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.solum.engine'
+        minSdk 26
+        targetSdk 34
+        versionCode 4
+        versionName '0.4.0'
+    }
+}

@@ -194,6 +194,55 @@ AI сделал технический UI вместо mobile editor UX.
 
 ---
 
+## ERR-0006: Build succeeded but user cannot tell what changed
+
+### Symptoms
+
+Termux command ends with vague output like:
+
+```text
+APK OK: .../SOLUM_LATEST.apk
+Gradle log: ...
+```
+
+User cannot tell:
+
+- which patch was built;
+- whether the latest APK contains the new patch;
+- what to install/open;
+- what exact text/visual result should be checked;
+- what logs to send if something fails.
+
+### Context
+
+Found during Patch P05 after user correctly saw that the screen already showed `Render pass: clear color OK`, but the command output did not explain that this meant the patch was applied successfully.
+
+### Cause
+
+Build script printed technical success but not a user-facing validation summary.
+
+### Fix
+
+Build scripts must print a final clear block:
+
+```text
+SOLUM BUILD RESULT: OK/FAILED
+Patch: PXX — name
+APK latest: ...
+APK archive: ...
+Expected screen text: ...
+Expected visual result: ...
+If error, send: ...
+```
+
+### Prevention
+
+Every build/apply command for SOLUM must end with a human-readable `NEXT USER ACTION` and `EXPECTED RESULT` section.
+
+Do not rely on the user to infer success from Gradle/native technical logs.
+
+---
+
 ## Future errors to add
 
 Следующие категории должны пополняться по мере разработки:

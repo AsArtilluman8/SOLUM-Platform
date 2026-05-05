@@ -133,10 +133,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private String getRuntimeReportDirPath() {
-        return new File(getFilesDir(), "solum_diagnostics").getAbsolutePath();
+        return getReportDir().getAbsolutePath();
     }
 
     private File getReportDir() {
+        File externalBase = getExternalFilesDir(null);
+        if (externalBase != null) {
+            File externalDir = new File(externalBase, "solum_diagnostics");
+            if (externalDir.mkdirs() || externalDir.exists()) {
+                return externalDir;
+            }
+        }
         File appDir = new File(getFilesDir(), "solum_diagnostics");
         appDir.mkdirs();
         return appDir;

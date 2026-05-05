@@ -12,7 +12,6 @@ import android.graphics.Color;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -46,7 +45,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         statusView.setTextSize(12f);
         statusView.setPadding(18, 18, 18, 18);
         statusView.setBackgroundColor(Color.argb(180, 3, 10, 12));
-        statusView.setText("SOLUM Engine\nLoading native Vulkan module...");
+        statusView.setText("SOLUM Engine\nLoading native Vulkan module...\nReport path: " + getRuntimeReportDirPath());
 
         FrameLayout root = new FrameLayout(this);
         root.addView(surfaceView, new FrameLayout.LayoutParams(
@@ -63,12 +62,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             System.loadLibrary("solum_engine");
             nativeLoaded = true;
             nativeHandle = nativeCreate();
-            statusView.setText("SOLUM Engine\nNative module loaded. Waiting for Vulkan surface...");
+            statusView.setText("SOLUM Engine\nNative module loaded. Waiting for Vulkan surface...\nReport path: " + getRuntimeReportDirPath());
             writeRuntimeNote("native_load_ok", "libsolum_engine loaded and native object created");
         } catch (Throwable t) {
             nativeLoaded = false;
             writeCrashReport("native_load_failed", t);
-            statusView.setText("SOLUM Engine\nNative load failed. Crash report written.\n" + shortThrowable(t));
+            statusView.setText("SOLUM Engine\nNative load failed. Crash report written.\n" + shortThrowable(t) + "\nReport path: " + getRuntimeReportDirPath());
         }
     }
 
@@ -89,11 +88,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     public void surfaceCreated(SurfaceHolder holder) {
         if (!nativeLoaded || nativeHandle == 0L) return;
         try {
-            nativeSurfaceCreated(nativeHandle, holder.getSurface(), getSolumRoot());
+            nativeSurfaceCreated(nativeHandle, holder.getSurface(), getRuntimeReportDirPath());
             updateStatus();
         } catch (Throwable t) {
             writeCrashReport("surface_created_failed", t);
-            statusView.setText("SOLUM Engine\nSurface init failed. Report written.\n" + shortThrowable(t));
+            statusView.setText("SOLUM Engine\nSurface init failed. Report written.\n" + shortThrowable(t) + "\nReport path: " + getRuntimeReportDirPath());
         }
     }
 
@@ -105,7 +104,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             updateStatus();
         } catch (Throwable t) {
             writeCrashReport("surface_changed_failed", t);
-            statusView.setText("SOLUM Engine\nSurface resize failed. Report written.\n" + shortThrowable(t));
+            statusView.setText("SOLUM Engine\nSurface resize failed. Report written.\n" + shortThrowable(t) + "\nReport path: " + getRuntimeReportDirPath());
         }
     }
 
@@ -124,24 +123,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         runOnUiThread(() -> {
             if (nativeLoaded && nativeHandle != 0L) {
                 try {
-                    statusView.setText(nativeGetStatus(nativeHandle));
+                    statusView.setText(nativeGetStatus(nativeHandle) + "\nReport path: " + getRuntimeReportDirPath());
                 } catch (Throwable t) {
                     writeCrashReport("native_status_failed", t);
-                    statusView.setText("SOLUM Engine\nStatus call failed. Report written.\n" + shortThrowable(t));
+                    statusView.setText("SOLUM Engine\nStatus call failed. Report written.\n" + shortThrowable(t) + "\nReport path: " + getRuntimeReportDirPath());
                 }
             }
         });
     }
 
-    private String getSolumRoot() {
-        return "/storage/emulated/0/SOLUMCreative";
+    private String getRuntimeReportDirPath() {
+        return new File(getFilesDir(), "solum_diagnostics").getAbsolutePath();
     }
 
     private File getReportDir() {
-        File external = new File(getSolumRoot() + "/diagnostics/latest");
-        if (external.mkdirs() || external.exists()) {
-            return external;
-        }
         File appDir = new File(getFilesDir(), "solum_diagnostics");
         appDir.mkdirs();
         return appDir;

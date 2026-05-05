@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SOLUM Runtime Texture State",
+  "type": "object",
+  "required": ["schema", "schemaVersion", "status"],
+  "properties": {
+    "schema": { "const": "solum.runtime_texture_state" },
+    "schemaVersion": { "type": "integer", "minimum": 1 },
+    "status": { "type": "string" },
+    "source": { "type": "string" },
+    "imageCount": { "type": "integer", "minimum": 0 },
+    "textureCount": { "type": "integer", "minimum": 0 },
+    "samplerCount": { "type": "integer", "minimum": 0 },
+    "slotSummary": { "type": "object" },
+    "images": { "type": "array" }
+  }
+}

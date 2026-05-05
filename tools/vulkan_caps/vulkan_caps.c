@@ -62,7 +62,6 @@ int main(int argc, char** argv) {
 
     uint32_t device_count = 0;
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &device_count, NULL));
-    VkPhysicalDevice* devices = NULL;
     if (device_count == 0) {
         fprintf(f, "{\n");
         fprintf(f, "  \"schema\": \"solum.vulkan_caps\",\n");

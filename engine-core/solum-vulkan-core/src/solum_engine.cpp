@@ -1,3 +1,5 @@
+#define VK_USE_PLATFORM_ANDROID_KHR 1
+
 #include <jni.h>
 #include <android/native_window_jni.h>
 #include <android/native_window.h>

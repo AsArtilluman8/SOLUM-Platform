@@ -343,3 +343,80 @@ First renderer layer must prove command submission and present before adding sha
 ### Next
 
 If P05 build/runtime succeeds: P06/P05A — graphics pipeline + first validation triangle draw.
+
+---
+
+## Patch P06 — Graphics Pipeline + First Validation Triangle
+
+### Goal
+
+Create the first permanent graphics pipeline layer and prove a real Vulkan draw call.
+
+This is not a throwaway triangle demo. The triangle validates shader modules, pipeline layout, graphics pipeline and `vkCmdDraw` inside the final Vulkan render path.
+
+### Scope
+
+- GLSL shader sources for validation triangle.
+- `tools/build_shaders.sh` for GLSL → SPIR-V header generation.
+- Generated shader headers ignored by Git.
+- Shader module creation.
+- Pipeline layout.
+- Graphics pipeline.
+- Pipeline binding inside render pass.
+- `vkCmdDraw(3)` validation draw.
+- Runtime status: `Triangle draw: OK`.
+- Build summary updated for P06.
+- Research note `NOTE_0005_p06_graphics_pipeline_triangle.md`.
+
+### Build result
+
+NOT TESTED in GitHub environment — must be built in Termux.
+
+### Runtime result
+
+NOT TESTED in GitHub environment — must run APK on target Android phone.
+
+### Diagnostics
+
+Expected build outputs:
+
+```text
+/storage/emulated/0/SOLUMCreative/releases/latest/SOLUM_LATEST.apk
+/storage/emulated/0/SOLUMCreative/reports/latest/P04_native_build.log
+/storage/emulated/0/SOLUMCreative/reports/latest/P04_gradle_build.log
+```
+
+Expected build text:
+
+```text
+SOLUM SHADER BUILD: OK
+SOLUM BUILD RESULT: OK
+Patch: P06 Graphics Pipeline + First Validation Triangle
+```
+
+Expected runtime overlay after launch:
+
+```text
+Render pass: clear color OK
+Triangle draw: OK
+Frames rendered: 1
+```
+
+### User-visible result
+
+APK should show an orange validation triangle over the dark teal Vulkan clear color.
+
+### Known issues
+
+- Requires `glslc` or `glslangValidator` available in Termux.
+- Runtime report export remains tracked separately by `docs/diagnostics/KNOWN_ISSUE_P04_RUNTIME_REPORT_EXPORT.md`.
+- No vertex buffer or mesh upload yet.
+- No materials, textures, PBR, lighting or shadows yet.
+
+### Lessons
+
+Shader/pipeline proof should be separated from vertex buffer and mesh upload. This keeps failure causes diagnosable.
+
+### Next
+
+If P06 build/runtime succeeds: P07 — vertex buffer + simple mesh upload path.

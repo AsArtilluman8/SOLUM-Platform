@@ -151,3 +151,57 @@ Diagnostics must be useful but low-overhead. Patch P02 establishes facts before 
 ### Next
 
 After user provides diagnostics ZIP: fix P02 if needed, then Patch P03 — Asset Schema v1 + Transaction Save.
+
+---
+
+## Patch P03 — Asset Schema v1 + Transaction Save
+
+### Goal
+
+Create the first real SOLUM asset format foundation and safe file write path.
+
+### Scope
+
+- `schemas/asset_manifest.schema.json`.
+- `schemas/project_manifest.schema.json`.
+- `tools/transaction_save.py`.
+- `tools/asset_validator.py`.
+- `tools/create_sample_asset.py`.
+- `docs/research/NOTE_0002_p03_asset_schema_transaction_save.md`.
+
+### Build result
+
+NOT TESTED in GitHub environment — Python/Termux tool patch.
+
+### Runtime result
+
+NOT TESTED in GitHub environment — no Android runtime.
+
+### Diagnostics
+
+Verified locally by user in Termux:
+
+```text
+Sample asset created: /storage/emulated/0/SOLUMCreative/assets/materials/sample_material
+Status: valid
+Report: /storage/emulated/0/SOLUMCreative/assets/materials/sample_material/validation_report.json
+```
+
+### User-visible result
+
+User can create a sample material asset folder and validate it.
+
+### Known issues
+
+- No Asset Hub UI yet.
+- No material preview yet.
+- No glTF import yet.
+- No zip/bundle format yet.
+
+### Lessons
+
+Asset format must exist before UI tools. Transaction save prevents corrupted files and gives future editors safe write behavior.
+
+### Next
+
+Patch P04 — Vulkan Foundation v1 or Patch P03A fix if validation fails on device.

@@ -6,7 +6,6 @@
 #include <vulkan/vulkan.h>
 
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -16,6 +15,8 @@
 
 #include "generated/solum_triangle_vert_spv.h"
 #include "generated/solum_triangle_frag_spv.h"
+
+struct Vertex2D { float x; float y; };
 
 struct SolumEngine {
     std::string outputRoot;
@@ -42,12 +43,16 @@ struct SolumEngine {
     std::vector<VkCommandBuffer> commandBuffers;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+    VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory vertexMemory = VK_NULL_HANDLE;
+    uint32_t vertexCount = 0;
     VkSemaphore imageAvailable = VK_NULL_HANDLE;
     VkSemaphore renderFinished = VK_NULL_HANDLE;
     VkFence inFlight = VK_NULL_HANDLE;
     uint64_t framesRendered = 0;
     bool firstFrameRendered = false;
     bool triangleDrawn = false;
+    bool vertexBufferReady = false;
 };
 
 static std::string vkResultName(VkResult r) {
@@ -73,11 +78,7 @@ static std::string vkResultName(VkResult r) {
         case VK_ERROR_NATIVE_WINDOW_IN_USE_KHR: return "VK_ERROR_NATIVE_WINDOW_IN_USE_KHR";
         case VK_SUBOPTIMAL_KHR: return "VK_SUBOPTIMAL_KHR";
         case VK_ERROR_OUT_OF_DATE_KHR: return "VK_ERROR_OUT_OF_DATE_KHR";
-        default: {
-            char b[64];
-            std::snprintf(b, sizeof(b), "VkResult(%d)", (int)r);
-            return b;
-        }
+        default: { char b[64]; std::snprintf(b, sizeof(b), "VkResult(%d)", (int)r); return b; }
     }
 }
 
@@ -130,8 +131,7 @@ static void writeRuntimeReport(SolumEngine* e, const std::string& status, const 
     if (!e) return;
     std::string dir = reportDirFor(e);
     ensureDir(dir + "/");
-    std::string path = dir + "/runtime_vulkan_caps.json";
-    std::ofstream f(path);
+    std::ofstream f(dir + "/runtime_vulkan_caps.json");
     f << "{\n";
     f << "  \"schema\": \"solum.runtime_vulkan_caps\",\n";
     f << "  \"schemaVersion\": 1,\n";
@@ -143,10 +143,11 @@ static void writeRuntimeReport(SolumEngine* e, const std::string& status, const 
     f << "  \"apiVersion\": \"" << escapeJson(e->apiVersion) << "\",\n";
     f << "  \"swapchainFormat\": " << (int)e->swapchainFormat << ",\n";
     f << "  \"extent\": { \"width\": " << e->extent.width << ", \"height\": " << e->extent.height << " },\n";
+    f << "  \"vertexBufferReady\": " << (e->vertexBufferReady ? "true" : "false") << ",\n";
+    f << "  \"vertexCount\": " << e->vertexCount << ",\n";
     f << "  \"framesRendered\": " << e->framesRendered << ",\n";
     f << "  \"firstFrameRendered\": " << (e->firstFrameRendered ? "true" : "false") << ",\n";
-    f << "  \"triangleDrawn\": " << (e->triangleDrawn ? "true" : "false") << ",\n";
-    f << "  \"note\": \"Termux Vulkan may show llvmpipe CPU. This runtime report is the Android APK path.\"\n";
+    f << "  \"triangleDrawn\": " << (e->triangleDrawn ? "true" : "false") << "\n";
     f << "}\n";
 }
 
@@ -163,25 +164,80 @@ static VkShaderModule createShaderModule(SolumEngine* e, const uint32_t* words, 
     return module;
 }
 
+static bool findMemoryType(SolumEngine* e, uint32_t typeBits, VkMemoryPropertyFlags required, uint32_t* outIndex) {
+    VkPhysicalDeviceMemoryProperties mem{};
+    vkGetPhysicalDeviceMemoryProperties(e->physicalDevice, &mem);
+    for (uint32_t i = 0; i < mem.memoryTypeCount; ++i) {
+        if ((typeBits & (1u << i)) && ((mem.memoryTypes[i].propertyFlags & required) == required)) {
+            *outIndex = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool createVertexBuffer(SolumEngine* e) {
+    const Vertex2D verts[] = {
+        { 0.0f, -0.55f },
+        { 0.55f, 0.45f },
+        { -0.55f, 0.45f },
+    };
+    e->vertexCount = 3;
+    const VkDeviceSize size = sizeof(verts);
+
+    VkBufferCreateInfo bci{ VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    bci.size = size;
+    bci.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    bci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    VkResult r = vkCreateBuffer(e->device, &bci, nullptr, &e->vertexBuffer);
+    if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nVertex buffer create failed: " + vkResultName(r); return false; }
+
+    VkMemoryRequirements req{};
+    vkGetBufferMemoryRequirements(e->device, e->vertexBuffer, &req);
+    uint32_t memoryType = 0;
+    if (!findMemoryType(e, req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &memoryType)) {
+        e->status = "SOLUM Engine\nVertex buffer memory type not found.";
+        return false;
+    }
+
+    VkMemoryAllocateInfo ai{ VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+    ai.allocationSize = req.size;
+    ai.memoryTypeIndex = memoryType;
+    r = vkAllocateMemory(e->device, &ai, nullptr, &e->vertexMemory);
+    if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nVertex memory allocate failed: " + vkResultName(r); return false; }
+
+    void* mapped = nullptr;
+    r = vkMapMemory(e->device, e->vertexMemory, 0, size, 0, &mapped);
+    if (r != VK_SUCCESS || !mapped) { e->status = "SOLUM Engine\nVertex memory map failed: " + vkResultName(r); return false; }
+    std::memcpy(mapped, verts, (size_t)size);
+    vkUnmapMemory(e->device, e->vertexMemory);
+
+    r = vkBindBufferMemory(e->device, e->vertexBuffer, e->vertexMemory, 0);
+    if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nVertex buffer bind failed: " + vkResultName(r); return false; }
+
+    e->vertexBufferReady = true;
+    return true;
+}
+
 static void cleanupFrameResources(SolumEngine* e) {
     if (!e || e->device == VK_NULL_HANDLE) return;
     vkDeviceWaitIdle(e->device);
 
+    if (e->vertexBuffer != VK_NULL_HANDLE) { vkDestroyBuffer(e->device, e->vertexBuffer, nullptr); e->vertexBuffer = VK_NULL_HANDLE; }
+    if (e->vertexMemory != VK_NULL_HANDLE) { vkFreeMemory(e->device, e->vertexMemory, nullptr); e->vertexMemory = VK_NULL_HANDLE; }
+    e->vertexBufferReady = false;
+    e->vertexCount = 0;
+
     if (e->graphicsPipeline != VK_NULL_HANDLE) { vkDestroyPipeline(e->device, e->graphicsPipeline, nullptr); e->graphicsPipeline = VK_NULL_HANDLE; }
     if (e->pipelineLayout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(e->device, e->pipelineLayout, nullptr); e->pipelineLayout = VK_NULL_HANDLE; }
-
     if (e->inFlight != VK_NULL_HANDLE) { vkDestroyFence(e->device, e->inFlight, nullptr); e->inFlight = VK_NULL_HANDLE; }
     if (e->renderFinished != VK_NULL_HANDLE) { vkDestroySemaphore(e->device, e->renderFinished, nullptr); e->renderFinished = VK_NULL_HANDLE; }
     if (e->imageAvailable != VK_NULL_HANDLE) { vkDestroySemaphore(e->device, e->imageAvailable, nullptr); e->imageAvailable = VK_NULL_HANDLE; }
-
     for (VkFramebuffer fb : e->framebuffers) vkDestroyFramebuffer(e->device, fb, nullptr);
     e->framebuffers.clear();
-
     if (e->commandPool != VK_NULL_HANDLE) { vkDestroyCommandPool(e->device, e->commandPool, nullptr); e->commandPool = VK_NULL_HANDLE; }
     e->commandBuffers.clear();
-
     if (e->renderPass != VK_NULL_HANDLE) { vkDestroyRenderPass(e->device, e->renderPass, nullptr); e->renderPass = VK_NULL_HANDLE; }
-
     for (VkImageView view : e->swapchainImageViews) vkDestroyImageView(e->device, view, nullptr);
     e->swapchainImageViews.clear();
     e->swapchainImages.clear();
@@ -208,33 +264,20 @@ static void cleanupVulkan(SolumEngine* e) {
 static bool createImageViews(SolumEngine* e) {
     uint32_t count = 0;
     VkResult r = vkGetSwapchainImagesKHR(e->device, e->swapchain, &count, nullptr);
-    if (r != VK_SUCCESS || count == 0) {
-        e->status = "SOLUM Engine\nSwapchain image query failed: " + vkResultName(r);
-        return false;
-    }
+    if (r != VK_SUCCESS || count == 0) { e->status = "SOLUM Engine\nSwapchain image query failed: " + vkResultName(r); return false; }
     e->swapchainImages.resize(count);
     vkGetSwapchainImagesKHR(e->device, e->swapchain, &count, e->swapchainImages.data());
     e->swapchainImageViews.resize(count, VK_NULL_HANDLE);
-
     for (uint32_t i = 0; i < count; ++i) {
         VkImageViewCreateInfo ci{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
         ci.image = e->swapchainImages[i];
         ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
         ci.format = e->swapchainFormat;
-        ci.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        ci.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        ci.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        ci.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
         ci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        ci.subresourceRange.baseMipLevel = 0;
         ci.subresourceRange.levelCount = 1;
-        ci.subresourceRange.baseArrayLayer = 0;
         ci.subresourceRange.layerCount = 1;
         r = vkCreateImageView(e->device, &ci, nullptr, &e->swapchainImageViews[i]);
-        if (r != VK_SUCCESS) {
-            e->status = "SOLUM Engine\nImageView failed: " + vkResultName(r);
-            return false;
-        }
+        if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nImageView failed: " + vkResultName(r); return false; }
     }
     return true;
 }
@@ -249,24 +292,19 @@ static bool createRenderPass(SolumEngine* e) {
     color.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     color.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
     VkAttachmentReference colorRef{};
     colorRef.attachment = 0;
     colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorRef;
-
     VkSubpassDependency dep{};
     dep.srcSubpass = VK_SUBPASS_EXTERNAL;
     dep.dstSubpass = 0;
     dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dep.srcAccessMask = 0;
     dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
     VkRenderPassCreateInfo ci{ VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
     ci.attachmentCount = 1;
     ci.pAttachments = &color;
@@ -274,12 +312,8 @@ static bool createRenderPass(SolumEngine* e) {
     ci.pSubpasses = &subpass;
     ci.dependencyCount = 1;
     ci.pDependencies = &dep;
-
     VkResult r = vkCreateRenderPass(e->device, &ci, nullptr, &e->renderPass);
-    if (r != VK_SUCCESS) {
-        e->status = "SOLUM Engine\nRenderPass failed: " + vkResultName(r);
-        return false;
-    }
+    if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nRenderPass failed: " + vkResultName(r); return false; }
     return true;
 }
 
@@ -295,10 +329,7 @@ static bool createFramebuffers(SolumEngine* e) {
         ci.height = e->extent.height;
         ci.layers = 1;
         VkResult r = vkCreateFramebuffer(e->device, &ci, nullptr, &e->framebuffers[i]);
-        if (r != VK_SUCCESS) {
-            e->status = "SOLUM Engine\nFramebuffer failed: " + vkResultName(r);
-            return false;
-        }
+        if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nFramebuffer failed: " + vkResultName(r); return false; }
     }
     return true;
 }
@@ -307,10 +338,7 @@ static bool createGraphicsPipeline(SolumEngine* e) {
     VkShaderModule vert = createShaderModule(e, SOL_TRIANGLE_VERT_SPV, SOL_TRIANGLE_VERT_SPV_WORD_COUNT, "triangle.vert");
     if (vert == VK_NULL_HANDLE) return false;
     VkShaderModule frag = createShaderModule(e, SOL_TRIANGLE_FRAG_SPV, SOL_TRIANGLE_FRAG_SPV_WORD_COUNT, "triangle.frag");
-    if (frag == VK_NULL_HANDLE) {
-        vkDestroyShaderModule(e->device, vert, nullptr);
-        return false;
-    }
+    if (frag == VK_NULL_HANDLE) { vkDestroyShaderModule(e->device, vert, nullptr); return false; }
 
     VkPipelineShaderStageCreateInfo stages[2]{};
     stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -322,60 +350,50 @@ static bool createGraphicsPipeline(SolumEngine* e) {
     stages[1].module = frag;
     stages[1].pName = "main";
 
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = sizeof(Vertex2D);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    VkVertexInputAttributeDescription attr{};
+    attr.location = 0;
+    attr.binding = 0;
+    attr.format = VK_FORMAT_R32G32_SFLOAT;
+    attr.offset = 0;
     VkPipelineVertexInputStateCreateInfo vertexInput{ VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+    vertexInput.vertexBindingDescriptionCount = 1;
+    vertexInput.pVertexBindingDescriptions = &binding;
+    vertexInput.vertexAttributeDescriptionCount = 1;
+    vertexInput.pVertexAttributeDescriptions = &attr;
+
     VkPipelineInputAssemblyStateCreateInfo assembly{ VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
     assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    assembly.primitiveRestartEnable = VK_FALSE;
-
     VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
     viewport.width = (float)e->extent.width;
     viewport.height = (float)e->extent.height;
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
-
     VkRect2D scissor{};
-    scissor.offset = {0, 0};
     scissor.extent = e->extent;
-
     VkPipelineViewportStateCreateInfo viewportState{ VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
     viewportState.viewportCount = 1;
     viewportState.pViewports = &viewport;
     viewportState.scissorCount = 1;
     viewportState.pScissors = &scissor;
-
     VkPipelineRasterizationStateCreateInfo raster{ VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
-    raster.depthClampEnable = VK_FALSE;
-    raster.rasterizerDiscardEnable = VK_FALSE;
     raster.polygonMode = VK_POLYGON_MODE_FILL;
     raster.cullMode = VK_CULL_MODE_NONE;
     raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    raster.depthBiasEnable = VK_FALSE;
     raster.lineWidth = 1.0f;
-
     VkPipelineMultisampleStateCreateInfo msaa{ VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
     msaa.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-    msaa.sampleShadingEnable = VK_FALSE;
-
     VkPipelineColorBlendAttachmentState blendAttachment{};
-    blendAttachment.blendEnable = VK_FALSE;
     blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-
     VkPipelineColorBlendStateCreateInfo blend{ VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
-    blend.logicOpEnable = VK_FALSE;
     blend.attachmentCount = 1;
     blend.pAttachments = &blendAttachment;
-
     VkPipelineLayoutCreateInfo layoutInfo{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
     VkResult r = vkCreatePipelineLayout(e->device, &layoutInfo, nullptr, &e->pipelineLayout);
-    if (r != VK_SUCCESS) {
-        e->status = "SOLUM Engine\nPipelineLayout failed: " + vkResultName(r);
-        vkDestroyShaderModule(e->device, frag, nullptr);
-        vkDestroyShaderModule(e->device, vert, nullptr);
-        return false;
-    }
-
+    if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nPipelineLayout failed: " + vkResultName(r); vkDestroyShaderModule(e->device, frag, nullptr); vkDestroyShaderModule(e->device, vert, nullptr); return false; }
     VkGraphicsPipelineCreateInfo pipe{ VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
     pipe.stageCount = 2;
     pipe.pStages = stages;
@@ -384,19 +402,14 @@ static bool createGraphicsPipeline(SolumEngine* e) {
     pipe.pViewportState = &viewportState;
     pipe.pRasterizationState = &raster;
     pipe.pMultisampleState = &msaa;
-    pipe.pDepthStencilState = nullptr;
     pipe.pColorBlendState = &blend;
     pipe.layout = e->pipelineLayout;
     pipe.renderPass = e->renderPass;
     pipe.subpass = 0;
-
     r = vkCreateGraphicsPipelines(e->device, VK_NULL_HANDLE, 1, &pipe, nullptr, &e->graphicsPipeline);
     vkDestroyShaderModule(e->device, frag, nullptr);
     vkDestroyShaderModule(e->device, vert, nullptr);
-    if (r != VK_SUCCESS) {
-        e->status = "SOLUM Engine\nGraphicsPipeline failed: " + vkResultName(r);
-        return false;
-    }
+    if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nGraphicsPipeline failed: " + vkResultName(r); return false; }
     return true;
 }
 
@@ -405,38 +418,20 @@ static bool createCommandsAndSync(SolumEngine* e) {
     pool.queueFamilyIndex = e->graphicsQueueFamily;
     pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     VkResult r = vkCreateCommandPool(e->device, &pool, nullptr, &e->commandPool);
-    if (r != VK_SUCCESS) {
-        e->status = "SOLUM Engine\nCommandPool failed: " + vkResultName(r);
-        return false;
-    }
-
+    if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nCommandPool failed: " + vkResultName(r); return false; }
     e->commandBuffers.resize(e->framebuffers.size(), VK_NULL_HANDLE);
     VkCommandBufferAllocateInfo ai{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
     ai.commandPool = e->commandPool;
     ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     ai.commandBufferCount = (uint32_t)e->commandBuffers.size();
     r = vkAllocateCommandBuffers(e->device, &ai, e->commandBuffers.data());
-    if (r != VK_SUCCESS) {
-        e->status = "SOLUM Engine\nCommandBuffers failed: " + vkResultName(r);
-        return false;
-    }
-
+    if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nCommandBuffers failed: " + vkResultName(r); return false; }
     VkSemaphoreCreateInfo si{ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
-    if ((r = vkCreateSemaphore(e->device, &si, nullptr, &e->imageAvailable)) != VK_SUCCESS) {
-        e->status = "SOLUM Engine\nImageAvailable semaphore failed: " + vkResultName(r);
-        return false;
-    }
-    if ((r = vkCreateSemaphore(e->device, &si, nullptr, &e->renderFinished)) != VK_SUCCESS) {
-        e->status = "SOLUM Engine\nRenderFinished semaphore failed: " + vkResultName(r);
-        return false;
-    }
-
+    if ((r = vkCreateSemaphore(e->device, &si, nullptr, &e->imageAvailable)) != VK_SUCCESS) { e->status = "SOLUM Engine\nImageAvailable semaphore failed: " + vkResultName(r); return false; }
+    if ((r = vkCreateSemaphore(e->device, &si, nullptr, &e->renderFinished)) != VK_SUCCESS) { e->status = "SOLUM Engine\nRenderFinished semaphore failed: " + vkResultName(r); return false; }
     VkFenceCreateInfo fi{ VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
     fi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    if ((r = vkCreateFence(e->device, &fi, nullptr, &e->inFlight)) != VK_SUCCESS) {
-        e->status = "SOLUM Engine\nFence failed: " + vkResultName(r);
-        return false;
-    }
+    if ((r = vkCreateFence(e->device, &fi, nullptr, &e->inFlight)) != VK_SUCCESS) { e->status = "SOLUM Engine\nFence failed: " + vkResultName(r); return false; }
     return true;
 }
 
@@ -445,58 +440,39 @@ static bool recordTriangleCommand(SolumEngine* e, uint32_t imageIndex) {
     VkCommandBufferBeginInfo bi{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     VkResult r = vkBeginCommandBuffer(cmd, &bi);
-    if (r != VK_SUCCESS) {
-        e->status = "SOLUM Engine\nBegin command buffer failed: " + vkResultName(r);
-        return false;
-    }
-
+    if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nBegin command buffer failed: " + vkResultName(r); return false; }
     VkClearValue clear{};
     clear.color.float32[0] = 0.02f;
     clear.color.float32[1] = 0.07f;
     clear.color.float32[2] = 0.09f;
     clear.color.float32[3] = 1.0f;
-
     VkRenderPassBeginInfo rp{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
     rp.renderPass = e->renderPass;
     rp.framebuffer = e->framebuffers[imageIndex];
-    rp.renderArea.offset = {0, 0};
     rp.renderArea.extent = e->extent;
     rp.clearValueCount = 1;
     rp.pClearValues = &clear;
-
     vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
+    VkDeviceSize offsets[] = { 0 };
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, e->graphicsPipeline);
-    vkCmdDraw(cmd, 3, 1, 0, 0);
+    vkCmdBindVertexBuffers(cmd, 0, 1, &e->vertexBuffer, offsets);
+    vkCmdDraw(cmd, e->vertexCount, 1, 0, 0);
     vkCmdEndRenderPass(cmd);
-
     r = vkEndCommandBuffer(cmd);
-    if (r != VK_SUCCESS) {
-        e->status = "SOLUM Engine\nEnd command buffer failed: " + vkResultName(r);
-        return false;
-    }
+    if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nEnd command buffer failed: " + vkResultName(r); return false; }
     return true;
 }
 
 static bool renderOneFrame(SolumEngine* e) {
-    if (!e || e->device == VK_NULL_HANDLE || e->swapchain == VK_NULL_HANDLE || e->commandBuffers.empty()) return false;
-
+    if (!e || e->device == VK_NULL_HANDLE || e->swapchain == VK_NULL_HANDLE || e->commandBuffers.empty() || !e->vertexBufferReady) return false;
     vkWaitForFences(e->device, 1, &e->inFlight, VK_TRUE, UINT64_MAX);
     vkResetFences(e->device, 1, &e->inFlight);
-
     uint32_t imageIndex = 0;
     VkResult r = vkAcquireNextImageKHR(e->device, e->swapchain, UINT64_MAX, e->imageAvailable, VK_NULL_HANDLE, &imageIndex);
-    if (r == VK_ERROR_OUT_OF_DATE_KHR) {
-        e->status = "SOLUM Engine\nSwapchain out of date before frame.";
-        return false;
-    }
-    if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
-        e->status = "SOLUM Engine\nAcquire image failed: " + vkResultName(r);
-        return false;
-    }
-
+    if (r == VK_ERROR_OUT_OF_DATE_KHR) { e->status = "SOLUM Engine\nSwapchain out of date before frame."; return false; }
+    if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) { e->status = "SOLUM Engine\nAcquire image failed: " + vkResultName(r); return false; }
     vkResetCommandBuffer(e->commandBuffers[imageIndex], 0);
     if (!recordTriangleCommand(e, imageIndex)) return false;
-
     VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
     VkSubmitInfo submit{ VK_STRUCTURE_TYPE_SUBMIT_INFO };
     submit.waitSemaphoreCount = 1;
@@ -506,26 +482,16 @@ static bool renderOneFrame(SolumEngine* e) {
     submit.pCommandBuffers = &e->commandBuffers[imageIndex];
     submit.signalSemaphoreCount = 1;
     submit.pSignalSemaphores = &e->renderFinished;
-
     r = vkQueueSubmit(e->graphicsQueue, 1, &submit, e->inFlight);
-    if (r != VK_SUCCESS) {
-        e->status = "SOLUM Engine\nQueue submit failed: " + vkResultName(r);
-        return false;
-    }
-
+    if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nQueue submit failed: " + vkResultName(r); return false; }
     VkPresentInfoKHR present{ VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
     present.waitSemaphoreCount = 1;
     present.pWaitSemaphores = &e->renderFinished;
     present.swapchainCount = 1;
     present.pSwapchains = &e->swapchain;
     present.pImageIndices = &imageIndex;
-
     r = vkQueuePresentKHR(e->graphicsQueue, &present);
-    if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR && r != VK_ERROR_OUT_OF_DATE_KHR) {
-        e->status = "SOLUM Engine\nPresent failed: " + vkResultName(r);
-        return false;
-    }
-
+    if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR && r != VK_ERROR_OUT_OF_DATE_KHR) { e->status = "SOLUM Engine\nPresent failed: " + vkResultName(r); return false; }
     e->framesRendered += 1;
     e->firstFrameRendered = true;
     e->triangleDrawn = true;
@@ -536,6 +502,7 @@ static bool createFrameLoopResources(SolumEngine* e) {
     if (!createImageViews(e)) return false;
     if (!createRenderPass(e)) return false;
     if (!createFramebuffers(e)) return false;
+    if (!createVertexBuffer(e)) return false;
     if (!createGraphicsPipeline(e)) return false;
     if (!createCommandsAndSync(e)) return false;
     return true;
@@ -544,46 +511,29 @@ static bool createFrameLoopResources(SolumEngine* e) {
 static bool initVulkan(SolumEngine* e, ANativeWindow* window, int width, int height) {
     cleanupVulkan(e);
     e->status = "SOLUM Engine\nInitializing Android Native Vulkan...";
-
     const char* instanceExts[] = { "VK_KHR_surface", "VK_KHR_android_surface" };
     VkApplicationInfo app{ VK_STRUCTURE_TYPE_APPLICATION_INFO };
     app.pApplicationName = "SOLUM Engine";
-    app.applicationVersion = VK_MAKE_VERSION(0, 6, 0);
+    app.applicationVersion = VK_MAKE_VERSION(0, 7, 0);
     app.pEngineName = "SOLUM";
-    app.engineVersion = VK_MAKE_VERSION(0, 6, 0);
+    app.engineVersion = VK_MAKE_VERSION(0, 7, 0);
     app.apiVersion = VK_API_VERSION_1_0;
-
     VkInstanceCreateInfo ici{ VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
     ici.pApplicationInfo = &app;
     ici.enabledExtensionCount = 2;
     ici.ppEnabledExtensionNames = instanceExts;
-
     VkResult r = vkCreateInstance(&ici, nullptr, &e->instance);
-    if (r != VK_SUCCESS) {
-        e->status = "SOLUM Engine\nVulkan instance failed: " + vkResultName(r);
-        writeRuntimeReport(e, "failed", e->status);
-        return false;
-    }
-
+    if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nVulkan instance failed: " + vkResultName(r); writeRuntimeReport(e, "failed", e->status); return false; }
     VkAndroidSurfaceCreateInfoKHR sci{ VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR };
     sci.window = window;
     r = vkCreateAndroidSurfaceKHR(e->instance, &sci, nullptr, &e->surface);
-    if (r != VK_SUCCESS) {
-        e->status = "SOLUM Engine\nAndroid surface failed: " + vkResultName(r);
-        writeRuntimeReport(e, "failed", e->status);
-        return false;
-    }
+    if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nAndroid surface failed: " + vkResultName(r); writeRuntimeReport(e, "failed", e->status); return false; }
 
     uint32_t deviceCount = 0;
     r = vkEnumeratePhysicalDevices(e->instance, &deviceCount, nullptr);
-    if (r != VK_SUCCESS || deviceCount == 0) {
-        e->status = "SOLUM Engine\nNo Vulkan physical device: " + vkResultName(r);
-        writeRuntimeReport(e, "failed", e->status);
-        return false;
-    }
+    if (r != VK_SUCCESS || deviceCount == 0) { e->status = "SOLUM Engine\nNo Vulkan physical device: " + vkResultName(r); writeRuntimeReport(e, "failed", e->status); return false; }
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(e->instance, &deviceCount, devices.data());
-
     for (auto pd : devices) {
         uint32_t qCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(pd, &qCount, nullptr);
@@ -592,21 +542,11 @@ static bool initVulkan(SolumEngine* e, ANativeWindow* window, int width, int hei
         for (uint32_t i = 0; i < qCount; ++i) {
             VkBool32 present = VK_FALSE;
             vkGetPhysicalDeviceSurfaceSupportKHR(pd, i, e->surface, &present);
-            if ((qProps[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && present) {
-                e->physicalDevice = pd;
-                e->graphicsQueueFamily = i;
-                break;
-            }
+            if ((qProps[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && present) { e->physicalDevice = pd; e->graphicsQueueFamily = i; break; }
         }
         if (e->physicalDevice != VK_NULL_HANDLE) break;
     }
-
-    if (e->physicalDevice == VK_NULL_HANDLE) {
-        e->status = "SOLUM Engine\nNo graphics+present queue.";
-        writeRuntimeReport(e, "failed", e->status);
-        return false;
-    }
-
+    if (e->physicalDevice == VK_NULL_HANDLE) { e->status = "SOLUM Engine\nNo graphics+present queue."; writeRuntimeReport(e, "failed", e->status); return false; }
     VkPhysicalDeviceProperties props{};
     vkGetPhysicalDeviceProperties(e->physicalDevice, &props);
     e->gpuName = props.deviceName;
@@ -627,11 +567,7 @@ static bool initVulkan(SolumEngine* e, ANativeWindow* window, int width, int hei
     dci.enabledExtensionCount = 1;
     dci.ppEnabledExtensionNames = deviceExts;
     r = vkCreateDevice(e->physicalDevice, &dci, nullptr, &e->device);
-    if (r != VK_SUCCESS) {
-        e->status = "SOLUM Engine\nDevice create failed: " + vkResultName(r);
-        writeRuntimeReport(e, "failed", e->status);
-        return false;
-    }
+    if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nDevice create failed: " + vkResultName(r); writeRuntimeReport(e, "failed", e->status); return false; }
     vkGetDeviceQueue(e->device, e->graphicsQueueFamily, 0, &e->graphicsQueue);
 
     VkSurfaceCapabilitiesKHR caps{};
@@ -641,20 +577,13 @@ static bool initVulkan(SolumEngine* e, ANativeWindow* window, int width, int hei
     std::vector<VkSurfaceFormatKHR> formats(fmtCount);
     vkGetPhysicalDeviceSurfaceFormatsKHR(e->physicalDevice, e->surface, &fmtCount, formats.data());
     VkSurfaceFormatKHR chosen = formats.empty() ? VkSurfaceFormatKHR{VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR} : formats[0];
-    for (const auto& f : formats) {
-        if (f.format == VK_FORMAT_R8G8B8A8_UNORM || f.format == VK_FORMAT_B8G8R8A8_UNORM) { chosen = f; break; }
-    }
+    for (const auto& f : formats) { if (f.format == VK_FORMAT_R8G8B8A8_UNORM || f.format == VK_FORMAT_B8G8R8A8_UNORM) { chosen = f; break; } }
     e->swapchainFormat = chosen.format;
     e->extent.width = caps.currentExtent.width == 0xFFFFFFFF ? (uint32_t)width : caps.currentExtent.width;
     e->extent.height = caps.currentExtent.height == 0xFFFFFFFF ? (uint32_t)height : caps.currentExtent.height;
-    if (e->extent.width == 0 || e->extent.height == 0) {
-        e->status = "SOLUM Engine\nInvalid surface extent.";
-        writeRuntimeReport(e, "failed", e->status);
-        return false;
-    }
+    if (e->extent.width == 0 || e->extent.height == 0) { e->status = "SOLUM Engine\nInvalid surface extent."; writeRuntimeReport(e, "failed", e->status); return false; }
     uint32_t imageCount = caps.minImageCount + 1;
     if (caps.maxImageCount > 0 && imageCount > caps.maxImageCount) imageCount = caps.maxImageCount;
-
     VkSwapchainCreateInfoKHR sw{ VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
     sw.surface = e->surface;
     sw.minImageCount = imageCount;
@@ -669,70 +598,38 @@ static bool initVulkan(SolumEngine* e, ANativeWindow* window, int width, int hei
     sw.presentMode = VK_PRESENT_MODE_FIFO_KHR;
     sw.clipped = VK_TRUE;
     r = vkCreateSwapchainKHR(e->device, &sw, nullptr, &e->swapchain);
-    if (r != VK_SUCCESS) {
-        e->status = "SOLUM Engine\nSwapchain failed: " + vkResultName(r);
-        writeRuntimeReport(e, "failed", e->status);
-        return false;
-    }
-
-    if (!createFrameLoopResources(e)) {
-        writeRuntimeReport(e, "failed", e->status);
-        return false;
-    }
-
-    bool frameOk = renderOneFrame(e);
-    if (!frameOk) {
-        writeRuntimeReport(e, "failed", e->status);
-        return false;
-    }
-
-    e->status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + e->gpuName + "\nType: " + e->gpuType + "\nAPI: " + e->apiVersion + "\nSwapchain: created\nRender pass: clear color OK\nTriangle draw: OK\nFrames rendered: " + std::to_string(e->framesRendered) + "\nNext: vertex buffer + mesh upload path";
-    writeRuntimeReport(e, "valid", "Android native Vulkan initialized; graphics pipeline and validation triangle draw succeeded.");
+    if (r != VK_SUCCESS) { e->status = "SOLUM Engine\nSwapchain failed: " + vkResultName(r); writeRuntimeReport(e, "failed", e->status); return false; }
+    if (!createFrameLoopResources(e)) { writeRuntimeReport(e, "failed", e->status); return false; }
+    if (!renderOneFrame(e)) { writeRuntimeReport(e, "failed", e->status); return false; }
+    e->status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + e->gpuName + "\nType: " + e->gpuType + "\nAPI: " + e->apiVersion + "\nSwapchain: created\nRender pass: clear color OK\nVertex buffer: OK\nTriangle draw: OK\nFrames rendered: " + std::to_string(e->framesRendered) + "\nNext: mesh resource foundation";
+    writeRuntimeReport(e, "valid", "Android native Vulkan initialized; vertex buffer upload and triangle draw succeeded.");
     return true;
 }
 
-extern "C" JNIEXPORT jlong JNICALL Java_com_solum_engine_MainActivity_nativeCreate(JNIEnv*, jclass) {
-    return reinterpret_cast<jlong>(new SolumEngine());
-}
-
-extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeDestroy(JNIEnv*, jclass, jlong handle) {
-    auto* e = reinterpret_cast<SolumEngine*>(handle);
-    cleanupVulkan(e);
-    delete e;
-}
-
+extern "C" JNIEXPORT jlong JNICALL Java_com_solum_engine_MainActivity_nativeCreate(JNIEnv*, jclass) { return reinterpret_cast<jlong>(new SolumEngine()); }
+extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeDestroy(JNIEnv*, jclass, jlong handle) { auto* e = reinterpret_cast<SolumEngine*>(handle); cleanupVulkan(e); delete e; }
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSurfaceCreated(JNIEnv* env, jclass, jlong handle, jobject surface, jstring outputRoot) {
     auto* e = reinterpret_cast<SolumEngine*>(handle);
     const char* root = env->GetStringUTFChars(outputRoot, nullptr);
     e->outputRoot = root ? root : "/storage/emulated/0/SOLUMCreative";
     env->ReleaseStringUTFChars(outputRoot, root);
     ANativeWindow* win = ANativeWindow_fromSurface(env, surface);
-    if (!win) {
-        e->status = "SOLUM Engine\nANativeWindow_fromSurface failed.";
-        writeRuntimeReport(e, "failed", e->status);
-        return;
-    }
+    if (!win) { e->status = "SOLUM Engine\nANativeWindow_fromSurface failed."; writeRuntimeReport(e, "failed", e->status); return; }
     int w = ANativeWindow_getWidth(win);
     int h = ANativeWindow_getHeight(win);
     initVulkan(e, win, w, h);
     ANativeWindow_release(win);
 }
-
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSurfaceChanged(JNIEnv* env, jclass, jlong handle, jobject surface, jint width, jint height) {
     auto* e = reinterpret_cast<SolumEngine*>(handle);
     ANativeWindow* win = ANativeWindow_fromSurface(env, surface);
-    if (win) {
-        initVulkan(e, win, width, height);
-        ANativeWindow_release(win);
-    }
+    if (win) { initVulkan(e, win, width, height); ANativeWindow_release(win); }
 }
-
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSurfaceDestroyed(JNIEnv*, jclass, jlong handle) {
     auto* e = reinterpret_cast<SolumEngine*>(handle);
     cleanupVulkan(e);
     e->status = "SOLUM Engine\nSurface destroyed. Vulkan cleaned.";
 }
-
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetStatus(JNIEnv* env, jclass, jlong handle) {
     auto* e = reinterpret_cast<SolumEngine*>(handle);
     return env->NewStringUTF(e ? e->status.c_str() : "SOLUM Engine\nNo native handle");

@@ -1,1 +1,4 @@
 tools/vulkan_caps/vulkan_caps
+
+__pycache__/
+*.pyc

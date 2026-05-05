@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solum.asset_manifest.v1",
+  "title": "SOLUM Asset Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "assetId",
+    "assetType",
+    "displayName",
+    "createdAt",
+    "createdBy",
+    "fileList",
+    "contentHashes",
+    "schemaCompatibleWith",
+    "validationState"
+  ],
+  "properties": {
+    "schema": {
+      "const": "solum.asset"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "assetId": {
+      "type": "string",
+      "minLength": 8
+    },
+    "assetType": {
+      "type": "string",
+      "enum": [
+        "material",
+        "character",
+        "animation",
+        "vfx",
+        "scene",
+        "sound",
+        "world",
+        "mechanic",
+        "diagnostic"
+      ]
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "createdAt": {
+      "type": "string",
+      "minLength": 10
+    },
+    "createdBy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fileList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "contentHashes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^sha256:[a-fA-F0-9]{64}$"
+      }
+    },
+    "schemaCompatibleWith": {
+      "type": "string",
+      "minLength": 1
+    },
+    "validationState": {
+      "type": "string",
+      "enum": [
+        "valid",
+        "invalid",
+        "pending",
+        "incompatible",
+        "missing_file"
+      ]
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "default": []
+    }
+  }
+}

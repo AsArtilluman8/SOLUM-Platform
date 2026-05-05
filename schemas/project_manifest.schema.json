@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solum.project_manifest.v1",
+  "title": "SOLUM Project Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "projectId",
+    "displayName",
+    "createdAt",
+    "createdBy",
+    "assetRoots",
+    "validationState"
+  ],
+  "properties": {
+    "schema": {
+      "const": "solum.project"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 8
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "createdAt": {
+      "type": "string",
+      "minLength": 10
+    },
+    "createdBy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "assetRoots": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "validationState": {
+      "type": "string",
+      "enum": [
+        "valid",
+        "invalid",
+        "pending",
+        "incompatible"
+      ]
+    }
+  }
+}

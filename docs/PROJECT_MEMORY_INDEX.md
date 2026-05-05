@@ -16,15 +16,23 @@
 8. `docs/BUILD_ENV_SPEC.md`
 9. `docs/PERFORMANCE_BUDGETS.md`
 
-Для UI задач дополнительно:
+Для UI/editor/input задач дополнительно:
 
 - `docs/DESIGN_TOKENS.md`
+- `docs/INPUT_AND_GESTURE_ARCHITECTURE.md`
+- `docs/EDITOR_CORE_COMPONENTS.md`
 
-Для Vulkan/render задач дополнительно:
+Для Vulkan/render/resource задач дополнительно:
 
 - `docs/RENDERING_TARGET_SPEC.md`
+- `docs/RENDER_RESOURCE_LIFETIME_RULES.md`
+- `docs/VISUAL_QA_SPEC.md`
 - `docs/errors/ERROR_KNOWLEDGE_BASE.md`
 - `docs/research/REPOSITORY_REFERENCE_CATALOG.md`
+
+Для Studio app задач дополнительно:
+
+- `docs/STUDIO_APP_MODEL.md`
 
 Для задач с внешними repo/dependencies:
 
@@ -97,6 +105,36 @@ Mobile-first editor UX, панели, кнопки, gizmo, bottom sheet, цве�
 - `docs/DESIGN_TOKENS.md`
 
 Цвета, spacing, typography, panel states, button types, safe zones.
+
+### Input and gestures
+
+- `docs/INPUT_AND_GESTURE_ARCHITECTURE.md`
+
+Single-owner input rule, InputRouter, viewport/gizmo/panel/nav zones, Android picker gesture isolation.
+
+### Editor core components
+
+- `docs/EDITOR_CORE_COMPONENTS.md`
+
+SceneHierarchy, Inspector, AssetBrowser, ViewportSelection, Gizmo, Undo/Redo, SaveValidation, no fake tabs.
+
+### Visual QA
+
+- `docs/VISUAL_QA_SPEC.md`
+
+Benchmark screenshots, before/after comparison, known visual bug list, visual regression checklist.
+
+### Render resource lifetime
+
+- `docs/RENDER_RESOURCE_LIFETIME_RULES.md`
+
+Render thread owns GPU resources, command queue upload flow, no random resource mutation from UI thread.
+
+### Studio app model
+
+- `docs/STUDIO_APP_MODEL.md`
+
+Standalone/project/export modes, mixed 3D/2D/2.5D/sprite/VFX/audio scene model, AI/OpenCV as assist layer.
 
 ### Patch roadmap
 

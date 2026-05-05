@@ -1,5 +1,6 @@
 #pragma once
 #include "pipeline_bundle.hpp"
+#include "math3d.hpp"
 #include "runtime_diagnostics.hpp"
 
 namespace solum {
@@ -8,6 +9,7 @@ struct RendererCore {
     std::string outputRoot;
     std::string status = "SOLUM Engine\nNative object created";
     RuntimeDiagnostics diagnostics;
+    CameraState camera;
 
     VkInstance instance = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
@@ -409,7 +411,7 @@ struct RendererCore {
         vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, objectPipeline.pipeline);
         validationMesh.bind(cmd);
-        Mat4 mvp = makeValidationObjectMvp(extent.width, extent.height);
+        Mat4 mvp = makeCameraMvp(extent.width, extent.height, camera);
         vkCmdPushConstants(cmd, objectPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &mvp);
         vkCmdDraw(cmd, validationMesh.vertexCount, 1, 0, 0);
         vkCmdEndRenderPass(cmd);

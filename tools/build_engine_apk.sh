@@ -7,12 +7,12 @@ if [ ! -d "$(dirname "$SOLUM_ROOT")" ]; then
   SOLUM_ROOT="/storage/emulated/0/Download/SOLUMCreative"
 fi
 LATEST_DIR="$SOLUM_ROOT/releases/latest"
-ARCHIVE_DIR="$SOLUM_ROOT/releases/archive/$(date +%Y%m%d_%H%M%S)_P10B_engine"
+ARCHIVE_DIR="$SOLUM_ROOT/releases/archive/$(date +%Y%m%d_%H%M%S)_P11B_engine"
 REPORT_DIR="$SOLUM_ROOT/reports/latest"
 mkdir -p "$LATEST_DIR" "$ARCHIVE_DIR" "$REPORT_DIR"
 cd "$ROOT"
 
-PATCH_LABEL="P10B Runtime FPS + Render Diagnostics Pack"
+PATCH_LABEL="P11B Runtime FPS + Render Diagnostics Pack"
 
 print_header() {
   echo "============================================================"
@@ -28,7 +28,7 @@ print_success() {
   echo "SOLUM BUILD RESULT: OK"
   echo "Patch: $PATCH_LABEL"
   echo "APK latest:  $LATEST_DIR/SOLUM_LATEST.apk"
-  echo "APK archive: $ARCHIVE_DIR/SOLUM_Engine_P10B_debug.apk"
+  echo "APK archive: $ARCHIVE_DIR/SOLUM_Engine_P11B_debug.apk"
   echo "Native log:  $REPORT_DIR/P04_native_build.log"
   echo "Gradle log:  $REPORT_DIR/P04_gradle_build.log"
   echo
@@ -37,8 +37,8 @@ print_success() {
   echo "2) Expected compact screen text:"
   echo "   - SOLUM Engine"
   echo "   - Vulkan: Mali-G57 MC2"
-  echo "   - Status: 3D Object OK"
-  echo "   - Next: Material Foundation"
+  echo "   - Status: Camera Depth OK"
+  echo "   - Next: glTF Material Gate"
   echo "3) Expected visual result: first colored 3D cube/object with depth, not a flat triangle."
   echo "4) Then run: bash tools/export_app_runtime_reports.sh"
   echo
@@ -83,5 +83,5 @@ if [ ! -f "$APK" ]; then
 fi
 
 cp "$APK" "$LATEST_DIR/SOLUM_LATEST.apk"
-cp "$APK" "$ARCHIVE_DIR/SOLUM_Engine_P10B_debug.apk"
+cp "$APK" "$ARCHIVE_DIR/SOLUM_Engine_P11B_debug.apk"
 print_success

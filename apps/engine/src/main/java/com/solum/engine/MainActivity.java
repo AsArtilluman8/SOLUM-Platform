@@ -201,6 +201,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ch
         String status = "running";
         String next = pickValue(full, "Next: ");
         if (full.contains("3D object: OK")) status = "3D Object OK";
+        else if (full.contains("Camera Depth OK")) status = "Camera Depth OK";
         else if (full.contains("Renderer core: OK")) status = "Renderer Core OK";
         else if (full.contains("Vertex buffer: OK")) status = "Vertex Buffer OK";
         else if (full.contains("Triangle draw: OK")) status = "Triangle OK";

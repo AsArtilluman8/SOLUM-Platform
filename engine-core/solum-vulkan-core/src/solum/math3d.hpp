@@ -9,10 +9,7 @@ struct Mat4 {
 
     static Mat4 identity() {
         Mat4 r{};
-        r.m[0] = 1.0f;
-        r.m[5] = 1.0f;
-        r.m[10] = 1.0f;
-        r.m[15] = 1.0f;
+        r.m[0] = 1.0f; r.m[5] = 1.0f; r.m[10] = 1.0f; r.m[15] = 1.0f;
         return r;
     }
 
@@ -20,7 +17,7 @@ struct Mat4 {
         Mat4 r{};
         const float f = 1.0f / std::tan(fovyRadians * 0.5f);
         r.m[0] = f / aspect;
-        r.m[5] = -f;
+        r.m[5] = -f; // Vulkan clip Y correction.
         r.m[10] = zFar / (zNear - zFar);
         r.m[11] = -1.0f;
         r.m[14] = (zNear * zFar) / (zNear - zFar);
@@ -29,20 +26,7 @@ struct Mat4 {
 
     static Mat4 translation(float x, float y, float z) {
         Mat4 r = identity();
-        r.m[12] = x;
-        r.m[13] = y;
-        r.m[14] = z;
-        return r;
-    }
-
-    static Mat4 rotationX(float radians) {
-        Mat4 r = identity();
-        const float c = std::cos(radians);
-        const float s = std::sin(radians);
-        r.m[5] = c;
-        r.m[6] = s;
-        r.m[9] = -s;
-        r.m[10] = c;
+        r.m[12] = x; r.m[13] = y; r.m[14] = z;
         return r;
     }
 
@@ -50,10 +34,17 @@ struct Mat4 {
         Mat4 r = identity();
         const float c = std::cos(radians);
         const float s = std::sin(radians);
-        r.m[0] = c;
-        r.m[2] = -s;
-        r.m[8] = s;
-        r.m[10] = c;
+        r.m[0] = c; r.m[2] = -s;
+        r.m[8] = s; r.m[10] = c;
+        return r;
+    }
+
+    static Mat4 rotationX(float radians) {
+        Mat4 r = identity();
+        const float c = std::cos(radians);
+        const float s = std::sin(radians);
+        r.m[5] = c; r.m[6] = s;
+        r.m[9] = -s; r.m[10] = c;
         return r;
     }
 };
@@ -72,12 +63,25 @@ inline Mat4 multiply(const Mat4& a, const Mat4& b) {
     return r;
 }
 
-inline Mat4 makeValidationObjectMvp(uint32_t width, uint32_t height) {
+struct CameraState {
+    float fovDegrees = 52.0f;
+    float nearPlane = 0.10f;
+    float farPlane = 64.0f;
+    float distance = 5.8f;
+    float yawRadians = 0.58f;
+    float pitchRadians = -0.28f;
+};
+
+inline Mat4 makeCameraMvp(uint32_t width, uint32_t height, const CameraState& camera) {
     const float aspect = height == 0 ? 1.0f : (float)width / (float)height;
-    Mat4 proj = Mat4::perspective(60.0f * 3.1415926535f / 180.0f, aspect, 0.1f, 32.0f);
-    Mat4 view = Mat4::translation(0.0f, 0.0f, -4.0f);
-    Mat4 rot = multiply(Mat4::rotationY(0.65f), Mat4::rotationX(-0.35f));
+    Mat4 proj = Mat4::perspective(camera.fovDegrees * 3.1415926535f / 180.0f, aspect, camera.nearPlane, camera.farPlane);
+    Mat4 view = Mat4::translation(0.0f, 0.0f, -camera.distance);
+    Mat4 rot = multiply(Mat4::rotationY(camera.yawRadians), Mat4::rotationX(camera.pitchRadians));
     return multiply(proj, multiply(view, rot));
+}
+
+inline float depthPrecisionRatio(const CameraState& camera) {
+    return camera.nearPlane <= 0.0f ? 999999.0f : camera.farPlane / camera.nearPlane;
 }
 
 } // namespace solum

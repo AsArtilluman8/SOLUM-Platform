@@ -115,7 +115,7 @@ if [ -z "$ANDROID_STUB_LIB_DIR" ]; then
 fi
 
 {
-  echo "SOLUM P04 native build"
+  echo "SOLUM P06 native build"
   echo "ROOT=$ROOT"
   echo "SRC=$SRC"
   echo "OUT=$OUT"
@@ -124,10 +124,13 @@ fi
   echo "UNAME=$(uname -a 2>/dev/null || true)"
   "$CXX" --version || true
   echo
+  echo "Shader build:"
+  bash "$ROOT/tools/build_shaders.sh"
+  echo
   set -x
-  if ! "$CXX" -std=c++17 -O2 -fPIC -shared "$SRC" -o "$OUT" -L"$ANDROID_STUB_LIB_DIR" -landroid -lvulkan -llog -static-libstdc++; then
+  if ! "$CXX" -std=c++17 -O2 -fPIC -shared "$SRC" -o "$OUT" -I"$ROOT/engine-core/solum-vulkan-core/src" -L"$ANDROID_STUB_LIB_DIR" -landroid -lvulkan -llog -static-libstdc++; then
     echo "static-libstdc++ build failed; retrying without it"
-    "$CXX" -std=c++17 -O2 -fPIC -shared "$SRC" -o "$OUT" -L"$ANDROID_STUB_LIB_DIR" -landroid -lvulkan -llog
+    "$CXX" -std=c++17 -O2 -fPIC -shared "$SRC" -o "$OUT" -I"$ROOT/engine-core/solum-vulkan-core/src" -L"$ANDROID_STUB_LIB_DIR" -landroid -lvulkan -llog
   fi
   set +x
   echo

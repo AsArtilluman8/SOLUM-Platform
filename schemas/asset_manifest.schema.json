@@ -31,16 +31,38 @@
     "assetType": {
       "type": "string",
       "enum": [
+        "texture",
+        "mesh",
         "material",
         "character",
         "animation",
         "vfx",
         "scene",
         "sound",
+        "video",
         "world",
         "mechanic",
-        "diagnostic"
+        "diagnostic",
+        "shader",
+        "font",
+        "ui",
+        "prefab"
       ]
+    },
+    "assetSubType": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Precise type inside assetType, e.g. image_2d, static_mesh, skeletal_mesh, material_instance, music, cutscene_video."
+    },
+    "sourceFormat": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Original/source format, e.g. png, jpg, glb, wav, mp3, mp4, solum_material."
+    },
+    "runtimeFormat": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Runtime/processed format, e.g. ktx2_astc, solum_static_mesh, decoded_audio_runtime."
     },
     "displayName": {
       "type": "string",
@@ -89,6 +111,11 @@
         "type": "object"
       },
       "default": []
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Small extensible metadata block for tool-specific non-critical info. Core fields must stay outside metadata."
     }
   }
 }

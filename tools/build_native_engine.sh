@@ -25,8 +25,6 @@ is_executable_on_device() {
 }
 
 find_android_clang() {
-  # On-device Termux cannot execute Android SDK NDK linux-x86_64 clang wrappers.
-  # Prefer Termux clang++ first. It targets Android/aarch64 on the phone.
   if is_android_termux && command -v clang++ >/dev/null 2>&1; then
     command -v clang++
     return
@@ -41,7 +39,6 @@ find_android_clang() {
     fi
   fi
 
-  # Desktop/CI fallback: SDK NDK host toolchain can be used only when executable.
   for ndk_root in "${ANDROID_NDK_HOME:-}" "${ANDROID_NDK_ROOT:-}"; do
     if [ -n "$ndk_root" ]; then
       local ndk_cxx="$ndk_root/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang++"
@@ -65,6 +62,20 @@ find_android_clang() {
     return
   fi
 
+  return 1
+}
+
+find_android_stub_lib_dir() {
+  local sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/android-sdk}}"
+  local api
+  for api in 26 25 24 23 22 21; do
+    local found
+    found="$(find "$sdk/ndk" -path "*/toolchains/llvm/prebuilt/*/sysroot/usr/lib/aarch64-linux-android/$api/libvulkan.so" 2>/dev/null | sort | tail -n 1 || true)"
+    if [ -n "$found" ]; then
+      dirname "$found"
+      return
+    fi
+  done
   return 1
 }
 
@@ -97,6 +108,11 @@ CXX="$(find_android_clang)" || {
   echo "No executable Android/Termux clang++ found" | tee "$LOG"
   exit 1
 }
+ANDROID_STUB_LIB_DIR="$(find_android_stub_lib_dir || true)"
+if [ -z "$ANDROID_STUB_LIB_DIR" ]; then
+  echo "No Android NDK Vulkan stub lib dir found. Refusing to link against Termux libvulkan.so.1." | tee "$LOG"
+  exit 1
+fi
 
 {
   echo "SOLUM P04 native build"
@@ -104,13 +120,14 @@ CXX="$(find_android_clang)" || {
   echo "SRC=$SRC"
   echo "OUT=$OUT"
   echo "CXX=$CXX"
+  echo "ANDROID_STUB_LIB_DIR=$ANDROID_STUB_LIB_DIR"
   echo "UNAME=$(uname -a 2>/dev/null || true)"
   "$CXX" --version || true
   echo
   set -x
-  if ! "$CXX" -std=c++17 -O2 -fPIC -shared "$SRC" -o "$OUT" -landroid -lvulkan -llog -static-libstdc++; then
+  if ! "$CXX" -std=c++17 -O2 -fPIC -shared "$SRC" -o "$OUT" -L"$ANDROID_STUB_LIB_DIR" -landroid -lvulkan -llog -static-libstdc++; then
     echo "static-libstdc++ build failed; retrying without it"
-    "$CXX" -std=c++17 -O2 -fPIC -shared "$SRC" -o "$OUT" -landroid -lvulkan -llog
+    "$CXX" -std=c++17 -O2 -fPIC -shared "$SRC" -o "$OUT" -L"$ANDROID_STUB_LIB_DIR" -landroid -lvulkan -llog
   fi
   set +x
   echo
@@ -123,6 +140,10 @@ CXX="$(find_android_clang)" || {
     llvm-readelf -d "$OUT" | grep NEEDED || true
   else
     echo "readelf not available"
+  fi
+  if command -v readelf >/dev/null 2>&1 && readelf -d "$OUT" | grep -q 'libvulkan.so.1'; then
+    echo "ERROR: libsolum_engine.so still depends on libvulkan.so.1. Android needs libvulkan.so."
+    exit 1
   fi
   echo
   echo "Packaged jniLibs:"

@@ -83,7 +83,20 @@ CXX="$(find_android_clang)" || {
   "$CXX" --version || true
   echo
   set -x
-  "$CXX" -std=c++17 -O2 -fPIC -shared "$SRC" -o "$OUT" -landroid -lvulkan -llog
+  if ! "$CXX" -std=c++17 -O2 -fPIC -shared "$SRC" -o "$OUT" -landroid -lvulkan -llog -static-libstdc++; then
+    echo "static-libstdc++ build failed; retrying without it"
+    "$CXX" -std=c++17 -O2 -fPIC -shared "$SRC" -o "$OUT" -landroid -lvulkan -llog
+  fi
+  set +x
+  echo
+  echo "Runtime dynamic dependencies:"
+  if command -v readelf >/dev/null 2>&1; then
+    readelf -d "$OUT" | grep NEEDED || true
+  elif command -v llvm-readelf >/dev/null 2>&1; then
+    llvm-readelf -d "$OUT" | grep NEEDED || true
+  else
+    echo "readelf not available"
+  fi
 } > "$LOG" 2>&1
 
 echo "Native build OK: $OUT"

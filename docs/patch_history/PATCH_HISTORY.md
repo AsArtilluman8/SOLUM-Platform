@@ -275,3 +275,71 @@ Do not start PBR/materials/shadows before Android Vulkan runtime path is proven.
 ### Next
 
 Run `bash tools/build_engine_apk.sh`, install/open APK manually, then send diagnostics ZIP/logs if build or runtime fails.
+
+---
+
+## Patch P05 — Vulkan Frame Loop + First Render Pass
+
+### Goal
+
+Add the first permanent Vulkan frame-loop layer after P04 swapchain proof.
+
+This is not a throwaway triangle demo. P05 creates the renderer foundation that future mesh/material/shadow passes will extend.
+
+### Scope
+
+- Swapchain image views.
+- Render pass.
+- Framebuffers.
+- Command pool.
+- Command buffers.
+- Image-available semaphore.
+- Render-finished semaphore.
+- In-flight fence.
+- Acquire → record → submit → present path.
+- First clear-color frame.
+- `framesRendered` and `firstFrameRendered` runtime state.
+- Research note `NOTE_0004_p05_vulkan_frame_loop_render_pass.md`.
+
+### Build result
+
+NOT TESTED in GitHub environment — must be built in Termux.
+
+### Runtime result
+
+NOT TESTED in GitHub environment — must run APK on target Android phone.
+
+### Diagnostics
+
+Expected build outputs:
+
+```text
+/storage/emulated/0/SOLUMCreative/releases/latest/SOLUM_LATEST.apk
+/storage/emulated/0/SOLUMCreative/reports/latest/P04_native_build.log
+/storage/emulated/0/SOLUMCreative/reports/latest/P04_gradle_build.log
+```
+
+Expected runtime overlay after launch:
+
+```text
+Render pass: clear color OK
+Frames rendered: 1
+```
+
+### User-visible result
+
+APK should show a dark teal Vulkan clear color and status text confirming first render pass/present succeeded.
+
+### Known issues
+
+- Runtime report export is still tracked separately by `docs/diagnostics/KNOWN_ISSUE_P04_RUNTIME_REPORT_EXPORT.md`.
+- No graphics pipeline or triangle draw yet.
+- No shaders, PBR, materials, meshes or shadows yet.
+
+### Lessons
+
+First renderer layer must prove command submission and present before adding shader pipeline/material complexity.
+
+### Next
+
+If P05 build/runtime succeeds: P06/P05A — graphics pipeline + first validation triangle draw.

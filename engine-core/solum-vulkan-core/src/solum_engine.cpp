@@ -52,6 +52,13 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSurfa
     renderer->status = "SOLUM Engine\nSurface destroyed. Vulkan cleaned.";
 }
 
+
+extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeRenderFrame(JNIEnv*, jclass, jlong handle) {
+    auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
+    if (!renderer) return JNI_FALSE;
+    return renderer->renderOneFrame() ? JNI_TRUE : JNI_FALSE;
+}
+
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetStatus(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     return env->NewStringUTF(renderer ? renderer->status.c_str() : "SOLUM Engine\nNo native handle");

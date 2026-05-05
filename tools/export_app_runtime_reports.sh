@@ -12,6 +12,8 @@ REPORT_DIR="$SOLUM_ROOT/reports/latest"
 ARCHIVE_DIR="$SOLUM_ROOT/diagnostics/archive/$(date +%Y%m%d_%H%M%S)_runtime"
 ZIP_LATEST="$OUT_DIR/SOLUM_RUNTIME_DIAGNOSTICS.zip"
 EXT_DIR="/storage/emulated/0/Android/data/$PKG/files/solum_diagnostics"
+PUBLIC_ROOT_DIR="$SOLUM_ROOT/diagnostics/latest"
+PUBLIC_DOWNLOAD_DIR="/storage/emulated/0/Download/SOLUMCreative/diagnostics/latest"
 PRIVATE_DIR="/data/user/0/$PKG/files/solum_diagnostics"
 mkdir -p "$OUT_DIR" "$ARCHIVE_DIR"
 
@@ -29,10 +31,26 @@ copy_if_exists() {
   return 1
 }
 
+copy_runtime_from_public_dirs() {
+  local copied=0
+  for srcdir in "$PUBLIC_ROOT_DIR" "$PUBLIC_DOWNLOAD_DIR"; do
+    [ -d "$srcdir" ] || continue
+    for name in runtime_java_state.json runtime_vulkan_caps.json runtime_render_state.json runtime_model_state.json runtime_material_state.json runtime_latest_status.txt latest_status.txt; do
+      if copy_if_exists "$srcdir/$name" "$name"; then copied=1; fi
+    done
+    for f in "$srcdir"/runtime_crash_*.txt; do
+      [ -f "$f" ] || continue
+      cp "$f" "$TMP_DIR/$(basename "$f")"
+      copied=1
+    done
+  done
+  [ "$copied" -eq 1 ]
+}
+
 copy_runtime_from_external_dir() {
   [ -d "$EXT_DIR" ] || return 1
   local copied=0
-  for name in runtime_java_state.json runtime_vulkan_caps.json runtime_latest_status.txt latest_status.txt; do
+  for name in runtime_java_state.json runtime_vulkan_caps.json runtime_render_state.json runtime_model_state.json runtime_material_state.json runtime_latest_status.txt latest_status.txt; do
     if copy_if_exists "$EXT_DIR/$name" "$name"; then copied=1; fi
   done
   for f in "$EXT_DIR"/runtime_crash_*.txt; do
@@ -58,7 +76,7 @@ copy_runtime_from_run_as() {
   "$run_as" "$PKG" sh -c 'pwd >/dev/null' >/dev/null 2>&1 || return 1
 
   local copied=0
-  for name in runtime_java_state.json runtime_vulkan_caps.json runtime_latest_status.txt latest_status.txt; do
+  for name in runtime_java_state.json runtime_vulkan_caps.json runtime_render_state.json runtime_model_state.json runtime_material_state.json runtime_latest_status.txt latest_status.txt; do
     if "$run_as" "$PKG" sh -c "test -f files/solum_diagnostics/$name" >/dev/null 2>&1; then
       "$run_as" "$PKG" cat "files/solum_diagnostics/$name" > "$TMP_DIR/$name"
       copied=1
@@ -108,7 +126,9 @@ write_termux_state() {
 }
 
 runtime_status="missing"
-if copy_runtime_from_external_dir; then
+if copy_runtime_from_public_dirs; then
+  runtime_status="copied_from_public_diagnostics"
+elif copy_runtime_from_external_dir; then
   runtime_status="copied_from_external_app_storage"
 elif copy_runtime_from_run_as; then
   runtime_status="copied_from_run_as"
@@ -143,6 +163,9 @@ Inside ZIP:
 - P04_gradle_build.log if available
 - runtime_java_state.json if Android allowed export
 - runtime_vulkan_caps.json if Android allowed export
+- runtime_render_state.json if available
+- runtime_model_state.json if available
+- runtime_material_state.json if available
 - runtime_crash_*.txt if present and accessible
 ============================================================
 EOF

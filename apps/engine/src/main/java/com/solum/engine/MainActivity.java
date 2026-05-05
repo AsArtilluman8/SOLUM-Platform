@@ -2,6 +2,7 @@ package com.solum.engine;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.view.Choreographer;
 import android.view.Gravity;
 import android.view.Surface;
 import android.view.SurfaceHolder;
@@ -17,17 +18,28 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-public class MainActivity extends Activity implements SurfaceHolder.Callback {
+public class MainActivity extends Activity implements SurfaceHolder.Callback, Choreographer.FrameCallback {
     private long nativeHandle = 0L;
     private TextView statusView;
     private boolean nativeLoaded = false;
+    private boolean surfaceReady = false;
+    private boolean frameLoopRunning = false;
     private File cachedReportDir = null;
+
+    private long lastFrameNanos = 0L;
+    private long frameCount = 0L;
+    private double fpsAvg = 0.0;
+    private double frameMsAvg = 0.0;
+    private double frameMsMin = 999999.0;
+    private double frameMsMax = 0.0;
+    private long lastReportNanos = 0L;
 
     private static native long nativeCreate();
     private static native void nativeDestroy(long handle);
     private static native void nativeSurfaceCreated(long handle, Surface surface, String outputRoot);
     private static native void nativeSurfaceChanged(long handle, Surface surface, int width, int height);
     private static native void nativeSurfaceDestroyed(long handle);
+    private static native boolean nativeRenderFrame(long handle);
     private static native String nativeGetStatus(long handle);
 
     @Override
@@ -37,23 +49,27 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             System.exit(10);
         });
         super.onCreate(savedInstanceState);
+
         SurfaceView surfaceView = new SurfaceView(this);
         surfaceView.getHolder().addCallback(this);
+
         statusView = new TextView(this);
         statusView.setTextColor(Color.rgb(210, 245, 255));
         statusView.setTextSize(12f);
         statusView.setPadding(14, 10, 14, 10);
         statusView.setGravity(Gravity.START);
         statusView.setSingleLine(false);
-        statusView.setMaxLines(4);
+        statusView.setMaxLines(5);
         statusView.setBackgroundColor(Color.argb(150, 3, 10, 12));
         statusView.setText("SOLUM Engine\nVulkan: loading\nStatus: starting");
+
         FrameLayout root = new FrameLayout(this);
         root.addView(surfaceView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
         statusParams.gravity = Gravity.TOP;
         root.addView(statusView, statusParams);
         setContentView(root);
+
         try {
             System.loadLibrary("solum_engine");
             nativeLoaded = true;
@@ -69,31 +85,112 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     @Override protected void onDestroy() {
+        stopFrameLoop();
         try { if (nativeLoaded && nativeHandle != 0L) { nativeDestroy(nativeHandle); nativeHandle = 0L; } } catch (Throwable t) { writeCrashReport("native_destroy_failed", t); }
         super.onDestroy();
     }
 
     @Override public void surfaceCreated(SurfaceHolder holder) {
         if (!nativeLoaded || nativeHandle == 0L) return;
-        try { nativeSurfaceCreated(nativeHandle, holder.getSurface(), getRuntimeReportDirPath()); updateStatus(); }
-        catch (Throwable t) { writeCrashReport("surface_created_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: surface init failed\n" + shortThrowable(t)); }
+        try {
+            nativeSurfaceCreated(nativeHandle, holder.getSurface(), getRuntimeReportDirPath());
+            surfaceReady = true;
+            resetFrameStats();
+            updateStatus();
+            writeStaticModelAndMaterialState();
+            startFrameLoop();
+        } catch (Throwable t) {
+            writeCrashReport("surface_created_failed", t);
+            statusView.setMaxLines(8);
+            statusView.setText("SOLUM Engine\nStatus: surface init failed\n" + shortThrowable(t));
+        }
     }
 
     @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         if (!nativeLoaded || nativeHandle == 0L) return;
-        try { nativeSurfaceChanged(nativeHandle, holder.getSurface(), width, height); updateStatus(); }
-        catch (Throwable t) { writeCrashReport("surface_changed_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: surface resize failed\n" + shortThrowable(t)); }
+        try {
+            nativeSurfaceChanged(nativeHandle, holder.getSurface(), width, height);
+            surfaceReady = true;
+            resetFrameStats();
+            updateStatus();
+            writeStaticModelAndMaterialState();
+            startFrameLoop();
+        } catch (Throwable t) {
+            writeCrashReport("surface_changed_failed", t);
+            statusView.setMaxLines(8);
+            statusView.setText("SOLUM Engine\nStatus: surface resize failed\n" + shortThrowable(t));
+        }
     }
 
     @Override public void surfaceDestroyed(SurfaceHolder holder) {
+        surfaceReady = false;
+        stopFrameLoop();
         if (!nativeLoaded || nativeHandle == 0L) return;
         try { nativeSurfaceDestroyed(nativeHandle); updateStatus(); } catch (Throwable t) { writeCrashReport("surface_destroyed_failed", t); }
+    }
+
+    private void startFrameLoop() {
+        if (frameLoopRunning) return;
+        frameLoopRunning = true;
+        Choreographer.getInstance().postFrameCallback(this);
+    }
+
+    private void stopFrameLoop() {
+        if (!frameLoopRunning) return;
+        frameLoopRunning = false;
+        try { Choreographer.getInstance().removeFrameCallback(this); } catch (Throwable ignored) { }
+    }
+
+    @Override public void doFrame(long frameTimeNanos) {
+        if (!frameLoopRunning || !surfaceReady || !nativeLoaded || nativeHandle == 0L) return;
+        try {
+            boolean rendered = nativeRenderFrame(nativeHandle);
+            updateFrameStats(frameTimeNanos, rendered);
+            if (frameCount % 30 == 0 || frameTimeNanos - lastReportNanos > 1_000_000_000L) {
+                writeRenderState(rendered);
+                updateStatus();
+                lastReportNanos = frameTimeNanos;
+            }
+        } catch (Throwable t) {
+            writeCrashReport("native_render_frame_failed", t);
+            statusView.setMaxLines(8);
+            statusView.setText("SOLUM Engine\nStatus: frame loop failed\n" + shortThrowable(t));
+            stopFrameLoop();
+            return;
+        }
+        Choreographer.getInstance().postFrameCallback(this);
+    }
+
+    private void resetFrameStats() {
+        lastFrameNanos = 0L;
+        frameCount = 0L;
+        fpsAvg = 0.0;
+        frameMsAvg = 0.0;
+        frameMsMin = 999999.0;
+        frameMsMax = 0.0;
+        lastReportNanos = 0L;
+    }
+
+    private void updateFrameStats(long frameTimeNanos, boolean rendered) {
+        if (!rendered) return;
+        if (lastFrameNanos != 0L) {
+            double frameMs = (frameTimeNanos - lastFrameNanos) / 1_000_000.0;
+            if (frameMs > 0.001 && frameMs < 1000.0) {
+                double fps = 1000.0 / frameMs;
+                if (frameCount == 0) { fpsAvg = fps; frameMsAvg = frameMs; }
+                else { fpsAvg = fpsAvg * 0.92 + fps * 0.08; frameMsAvg = frameMsAvg * 0.92 + frameMs * 0.08; }
+                frameMsMin = Math.min(frameMsMin, frameMs);
+                frameMsMax = Math.max(frameMsMax, frameMs);
+                frameCount += 1;
+            }
+        }
+        lastFrameNanos = frameTimeNanos;
     }
 
     private void updateStatus() {
         runOnUiThread(() -> {
             if (nativeLoaded && nativeHandle != 0L) {
-                try { statusView.setMaxLines(4); statusView.setText(compactStatus(nativeGetStatus(nativeHandle))); }
+                try { statusView.setMaxLines(5); statusView.setText(compactStatus(nativeGetStatus(nativeHandle))); }
                 catch (Throwable t) { writeCrashReport("native_status_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: status call failed\n" + shortThrowable(t)); }
             }
         });
@@ -112,7 +209,56 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         else if (full.toLowerCase(Locale.US).contains("failed")) status = "Error";
         if (gpu.isEmpty()) gpu = "detecting";
         if (next.isEmpty()) next = "Material Foundation";
-        return "SOLUM Engine" + "\nVulkan: " + gpu + "\nStatus: " + status + "\nNext: " + shorten(next, 34);
+        String fpsLine = frameCount > 2 ? String.format(Locale.US, "\nFPS: %.1f / %.2f ms", fpsAvg, frameMsAvg) : "";
+        return "SOLUM Engine" + "\nVulkan: " + gpu + "\nStatus: " + status + fpsLine + "\nNext: " + shorten(next, 34);
+    }
+
+    private void writeRenderState(boolean rendered) {
+        String json = "{\n"
+                + "  \"schema\": \"solum.runtime_render_state\",\n"
+                + "  \"schemaVersion\": 1,\n"
+                + "  \"status\": \"" + (rendered ? "valid" : "render_failed") + "\",\n"
+                + "  \"frameLoop\": true,\n"
+                + "  \"frameCount\": " + frameCount + ",\n"
+                + "  \"fpsAvg\": " + fmt(fpsAvg) + ",\n"
+                + "  \"frameMsAvg\": " + fmt(frameMsAvg) + ",\n"
+                + "  \"frameMsMin\": " + fmt(frameMsMin == 999999.0 ? 0.0 : frameMsMin) + ",\n"
+                + "  \"frameMsMax\": " + fmt(frameMsMax) + ",\n"
+                + "  \"visualSmokeTest\": \"3d_colored_cube_visible\",\n"
+                + "  \"knownLimits\": [\"Java Choreographer FPS, not GPU timestamp\", \"No per-pass GPU timings yet\"]\n"
+                + "}\n";
+        writeFileToReportDir("runtime_render_state.json", json);
+    }
+
+    private void writeStaticModelAndMaterialState() {
+        String model = "{\n"
+                + "  \"schema\": \"solum.runtime_model_state\",\n"
+                + "  \"schemaVersion\": 1,\n"
+                + "  \"status\": \"validation_only\",\n"
+                + "  \"mesh\": \"validation_cube\",\n"
+                + "  \"vertexLayout\": \"position3_color3\",\n"
+                + "  \"depthTest\": true,\n"
+                + "  \"camera\": \"fixed_perspective_validation_camera\",\n"
+                + "  \"nextRequired\": \"camera_depth_correctness_then_gltf_import_gate\"\n"
+                + "}\n";
+        String material = "{\n"
+                + "  \"schema\": \"solum.runtime_material_state\",\n"
+                + "  \"schemaVersion\": 1,\n"
+                + "  \"status\": \"not_ready_for_gltf_pbr_yet\",\n"
+                + "  \"currentPath\": \"vertex_color_validation_only\",\n"
+                + "  \"requiredBeforePBR\": [\"gltf2_material_mapping\", \"srgb_linear_rules\", \"normal_tangent_space\", \"texture_slots\", \"alpha_mode\"],\n"
+                + "  \"notAFinalMaterialSystem\": true\n"
+                + "}\n";
+        writeFileToReportDir("runtime_model_state.json", model);
+        writeFileToReportDir("runtime_material_state.json", material);
+    }
+
+    private void writeFileToReportDir(String name, String content) {
+        try {
+            File dir = getReportDir();
+            File out = new File(dir, name);
+            try (FileWriter w = new FileWriter(out, false)) { w.write(content); }
+        } catch (Throwable ignored) { }
     }
 
     private String pickValue(String text, String prefix) {
@@ -125,12 +271,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private String shorten(String text, int max) { if (text == null) return ""; if (text.length() <= max) return text; return text.substring(0, Math.max(0, max - 1)) + "…"; }
+    private String fmt(double v) { return String.format(Locale.US, "%.3f", v); }
     private String getRuntimeReportDirPath() { return getReportDir().getAbsolutePath(); }
 
     private File getReportDir() {
         if (cachedReportDir != null && cachedReportDir.exists()) return cachedReportDir;
         File solumCreative = new File("/storage/emulated/0/SOLUMCreative/diagnostics/latest");
         if (canWriteDirectory(solumCreative)) { cachedReportDir = solumCreative; return cachedReportDir; }
+        File downloadCreative = new File("/storage/emulated/0/Download/SOLUMCreative/diagnostics/latest");
+        if (canWriteDirectory(downloadCreative)) { cachedReportDir = downloadCreative; return cachedReportDir; }
         File externalBase = getExternalFilesDir(null);
         if (externalBase != null) {
             File externalDir = new File(externalBase, "solum_diagnostics");
@@ -153,19 +302,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void writeRuntimeNote(String status, String message) {
-        try {
-            File dir = getReportDir();
-            File out = new File(dir, "runtime_java_state.json");
-            try (FileWriter w = new FileWriter(out)) {
-                w.write("{\n");
-                w.write("  \"schema\": \"solum.runtime_java_state\",\n");
-                w.write("  \"schemaVersion\": 1,\n");
-                w.write("  \"status\": \"" + escape(status) + "\",\n");
-                w.write("  \"message\": \"" + escape(message) + "\",\n");
-                w.write("  \"reportDir\": \"" + escape(dir.getAbsolutePath()) + "\"\n");
-                w.write("}\n");
-            }
-        } catch (Throwable ignored) { }
+        String json = "{\n"
+                + "  \"schema\": \"solum.runtime_java_state\",\n"
+                + "  \"schemaVersion\": 1,\n"
+                + "  \"status\": \"" + escape(status) + "\",\n"
+                + "  \"message\": \"" + escape(message) + "\",\n"
+                + "  \"reportDir\": \"" + escape(getReportDir().getAbsolutePath()) + "\"\n"
+                + "}\n";
+        writeFileToReportDir("runtime_java_state.json", json);
     }
 
     private void writeCrashReport(String stage, Throwable throwable) {

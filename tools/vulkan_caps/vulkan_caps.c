@@ -42,6 +42,7 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    VkPhysicalDevice* devices = NULL;
     VkResult result = VK_SUCCESS;
     VkInstance instance = VK_NULL_HANDLE;
     VkApplicationInfo app = {0};
@@ -62,6 +63,18 @@ int main(int argc, char** argv) {
     uint32_t device_count = 0;
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &device_count, NULL));
     VkPhysicalDevice* devices = NULL;
+    if (device_count == 0) {
+        fprintf(f, "{\n");
+        fprintf(f, "  \"schema\": \"solum.vulkan_caps\",\n");
+        fprintf(f, "  \"schemaVersion\": 1,\n");
+        fprintf(f, "  \"status\": \"failed\",\n");
+        fprintf(f, "  \"reason\": \"No Vulkan physical devices found\",\n");
+        fprintf(f, "  \"devices\": []\n");
+        fprintf(f, "}\n");
+        if (instance) vkDestroyInstance(instance, NULL);
+        fclose(f);
+        return 1;
+    }
     if (device_count > 0) {
         devices = (VkPhysicalDevice*)calloc(device_count, sizeof(VkPhysicalDevice));
         if (!devices) { result = VK_ERROR_OUT_OF_HOST_MEMORY; goto fail; }

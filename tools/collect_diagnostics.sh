@@ -218,6 +218,8 @@ cat > "$WORK_DIR/known_issues.txt" <<EOF
 - No renderer, swapchain or triangle in Patch 02 by design.
 EOF
 
+rm -f "$PROJECT_ROOT/tools/vulkan_caps/vulkan_caps" 2>/dev/null || true
+
 # Changed files snapshot
 (
   cd "$PROJECT_ROOT" || exit 0

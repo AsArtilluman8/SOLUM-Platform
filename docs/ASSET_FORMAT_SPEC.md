@@ -41,12 +41,15 @@ Structure:
 SOLUMCreative/
   projects/
   assets/
+    textures/
+    meshes/
     materials/
     characters/
     animations/
     vfx/
     scenes/
     sounds/
+    videos/
     worlds/
     mechanics/
   exports/
@@ -73,6 +76,9 @@ SOLUMCreative/
   "schemaVersion": 1,
   "assetId": "uuid-v4",
   "assetType": "material",
+  "assetSubType": "material_definition",
+  "sourceFormat": "solum_material_json",
+  "runtimeFormat": "solum_material_runtime",
   "displayName": "Metal Panels",
   "createdAt": "2026-05-05T12:00:00Z",
   "createdBy": "solum.material-studio",
@@ -86,7 +92,8 @@ SOLUMCreative/
   },
   "schemaCompatibleWith": ">=1.0 <2.0",
   "validationState": "pending",
-  "dependencies": []
+  "dependencies": [],
+  "metadata": {}
 }
 ```
 
@@ -103,22 +110,94 @@ SOLUMCreative/
 - `contentHashes`
 - `validationState`
 
+Recommended v1 fields:
+
+- `assetSubType`
+- `sourceFormat`
+- `runtimeFormat`
+- `metadata`
+
 `dependencies` можно иметь пустым массивом в v1, но полноценный dependency graph строится позже.
+
+## Asset type levels
+
+SOLUM разделяет тип ассета на уровни:
+
+```text
+assetType     = крупная семья ассета
+assetSubType  = точный тип внутри семьи
+sourceFormat  = исходный формат файла
+runtimeFormat = формат после обработки движком/tool pipeline
+```
+
+Примеры:
+
+```json
+{
+  "assetType": "texture",
+  "assetSubType": "image_2d",
+  "sourceFormat": "png",
+  "runtimeFormat": "ktx2_astc_later"
+}
+```
+
+```json
+{
+  "assetType": "mesh",
+  "assetSubType": "static_mesh",
+  "sourceFormat": "glb",
+  "runtimeFormat": "solum_static_mesh"
+}
+```
+
+```json
+{
+  "assetType": "material",
+  "assetSubType": "material_instance",
+  "sourceFormat": "solum_material_instance_json",
+  "runtimeFormat": "solum_material_runtime"
+}
+```
+
+```json
+{
+  "assetType": "sound",
+  "assetSubType": "music",
+  "sourceFormat": "mp3",
+  "runtimeFormat": "decoded_audio_runtime"
+}
+```
+
+```json
+{
+  "assetType": "video",
+  "assetSubType": "cutscene_render",
+  "sourceFormat": "mp4",
+  "runtimeFormat": "android_media_runtime"
+}
+```
 
 ## Asset types
 
-Initial/future types:
+Initial/future families:
 
 ```text
+texture
+mesh
 material
 character
 animation
 vfx
 scene
 sound
+video
 world
 mechanic
 diagnostic
+shader
+font
+ui
+prefab
 ```
 
 ## Validation states
@@ -249,3 +328,5 @@ schema v1 · status
 - Asset write должен быть transaction-safe.
 - Import идёт через sandbox.
 - Zip/bundle не использовать как primary editing format на старте.
+- Не кодировать `png/wav/mp3/mp4/static mesh/material instance` только через `assetType`.
+- Для точного типа использовать `assetSubType`, `sourceFormat`, `runtimeFormat`.

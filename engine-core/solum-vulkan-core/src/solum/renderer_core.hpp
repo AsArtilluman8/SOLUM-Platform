@@ -497,7 +497,7 @@ struct RendererCore {
             "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName +
             "\nType: " + diagnostics.gpuType +
             "\nAPI: " + diagnostics.apiVersion +
-            "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\n3D object: OK\nFrames rendered: " + std::to_string(framesRendered) +
+            "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\n3D object: OK\nGLB mesh: OK\nFrames rendered: " + std::to_string(framesRendered) +
             "\nNext: Material Foundation";
 
         return true;

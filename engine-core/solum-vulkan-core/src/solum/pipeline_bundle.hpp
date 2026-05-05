@@ -1,5 +1,6 @@
 #pragma once
 #include "mesh_resource.hpp"
+#include "math3d.hpp"
 #include "generated/solum_triangle_vert_spv.h"
 #include "generated/solum_triangle_frag_spv.h"
 
@@ -33,12 +34,13 @@ struct PipelineBundle {
         return module;
     }
 
-    bool createTrianglePipeline(VkDevice inDevice, VkRenderPass renderPass, VkExtent2D extent, std::string& error) {
+    bool createObjectPipeline(VkDevice inDevice, VkRenderPass renderPass, VkExtent2D extent, std::string& error) {
         destroy();
         device = inDevice;
-        VkShaderModule vert = createShaderModule(device, SOL_TRIANGLE_VERT_SPV, SOL_TRIANGLE_VERT_SPV_WORD_COUNT, "triangle.vert", error);
+
+        VkShaderModule vert = createShaderModule(device, SOL_TRIANGLE_VERT_SPV, SOL_TRIANGLE_VERT_SPV_WORD_COUNT, "object.vert", error);
         if (vert == VK_NULL_HANDLE) return false;
-        VkShaderModule frag = createShaderModule(device, SOL_TRIANGLE_FRAG_SPV, SOL_TRIANGLE_FRAG_SPV_WORD_COUNT, "triangle.frag", error);
+        VkShaderModule frag = createShaderModule(device, SOL_TRIANGLE_FRAG_SPV, SOL_TRIANGLE_FRAG_SPV_WORD_COUNT, "object.frag", error);
         if (frag == VK_NULL_HANDLE) { vkDestroyShaderModule(device, vert, nullptr); return false; }
 
         VkPipelineShaderStageCreateInfo stages[2]{};
@@ -53,49 +55,80 @@ struct PipelineBundle {
 
         VkVertexInputBindingDescription binding{};
         binding.binding = 0;
-        binding.stride = sizeof(Vertex2D);
+        binding.stride = sizeof(Vertex3D);
         binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        VkVertexInputAttributeDescription attr{};
-        attr.location = 0;
-        attr.binding = 0;
-        attr.format = VK_FORMAT_R32G32_SFLOAT;
-        attr.offset = 0;
+
+        VkVertexInputAttributeDescription attrs[2]{};
+        attrs[0].location = 0;
+        attrs[0].binding = 0;
+        attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attrs[0].offset = 0;
+        attrs[1].location = 1;
+        attrs[1].binding = 0;
+        attrs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attrs[1].offset = sizeof(float) * 3;
+
         VkPipelineVertexInputStateCreateInfo vertexInput{ VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
         vertexInput.vertexBindingDescriptionCount = 1;
         vertexInput.pVertexBindingDescriptions = &binding;
-        vertexInput.vertexAttributeDescriptionCount = 1;
-        vertexInput.pVertexAttributeDescriptions = &attr;
+        vertexInput.vertexAttributeDescriptionCount = 2;
+        vertexInput.pVertexAttributeDescriptions = attrs;
 
         VkPipelineInputAssemblyStateCreateInfo assembly{ VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
         assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
         VkViewport viewport{};
         viewport.width = (float)extent.width;
         viewport.height = (float)extent.height;
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
+
         VkRect2D scissor{};
         scissor.extent = extent;
+
         VkPipelineViewportStateCreateInfo viewportState{ VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
         viewportState.viewportCount = 1;
         viewportState.pViewports = &viewport;
         viewportState.scissorCount = 1;
         viewportState.pScissors = &scissor;
+
         VkPipelineRasterizationStateCreateInfo raster{ VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
         raster.polygonMode = VK_POLYGON_MODE_FILL;
         raster.cullMode = VK_CULL_MODE_NONE;
         raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         raster.lineWidth = 1.0f;
+
         VkPipelineMultisampleStateCreateInfo msaa{ VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
         msaa.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        VkPipelineDepthStencilStateCreateInfo depth{ VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
+        depth.depthTestEnable = VK_TRUE;
+        depth.depthWriteEnable = VK_TRUE;
+        depth.depthCompareOp = VK_COMPARE_OP_LESS;
+
         VkPipelineColorBlendAttachmentState blendAttachment{};
         blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
         VkPipelineColorBlendStateCreateInfo blend{ VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
         blend.attachmentCount = 1;
         blend.pAttachments = &blendAttachment;
 
+        VkPushConstantRange push{};
+        push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        push.offset = 0;
+        push.size = sizeof(Mat4);
+
         VkPipelineLayoutCreateInfo layoutInfo{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+        layoutInfo.pushConstantRangeCount = 1;
+        layoutInfo.pPushConstantRanges = &push;
+
         VkResult r = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &layout);
-        if (r != VK_SUCCESS) { error = "PipelineLayout failed: " + vkResultName(r); vkDestroyShaderModule(device, frag, nullptr); vkDestroyShaderModule(device, vert, nullptr); return false; }
+        if (r != VK_SUCCESS) {
+            error = "PipelineLayout failed: " + vkResultName(r);
+            vkDestroyShaderModule(device, frag, nullptr);
+            vkDestroyShaderModule(device, vert, nullptr);
+            return false;
+        }
 
         VkGraphicsPipelineCreateInfo pipe{ VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
         pipe.stageCount = 2;
@@ -105,14 +138,20 @@ struct PipelineBundle {
         pipe.pViewportState = &viewportState;
         pipe.pRasterizationState = &raster;
         pipe.pMultisampleState = &msaa;
+        pipe.pDepthStencilState = &depth;
         pipe.pColorBlendState = &blend;
         pipe.layout = layout;
         pipe.renderPass = renderPass;
         pipe.subpass = 0;
+
         r = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipe, nullptr, &pipeline);
         vkDestroyShaderModule(device, frag, nullptr);
         vkDestroyShaderModule(device, vert, nullptr);
-        if (r != VK_SUCCESS) { error = "GraphicsPipeline failed: " + vkResultName(r); return false; }
+
+        if (r != VK_SUCCESS) {
+            error = "GraphicsPipeline failed: " + vkResultName(r);
+            return false;
+        }
         return true;
     }
 };

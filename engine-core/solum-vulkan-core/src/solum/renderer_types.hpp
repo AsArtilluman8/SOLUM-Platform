@@ -12,7 +12,10 @@
 
 namespace solum {
 
-struct Vertex2D { float x; float y; };
+struct Vertex3D {
+    float px, py, pz;
+    float r, g, b;
+};
 
 inline std::string vkResultName(VkResult r) {
     switch (r) {
@@ -54,7 +57,10 @@ inline const char* deviceTypeName(VkPhysicalDeviceType t) {
 
 inline void ensureDir(const std::string& path) {
     std::string cur;
-    for (char c : path) { cur.push_back(c); if (c == '/') mkdir(cur.c_str(), 0775); }
+    for (char c : path) {
+        cur.push_back(c);
+        if (c == '/') mkdir(cur.c_str(), 0775);
+    }
     mkdir(path.c_str(), 0775);
 }
 

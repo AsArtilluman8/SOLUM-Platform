@@ -12,11 +12,29 @@
 4. `docs/UX_AND_WORKFLOW_RULES.md`
 5. `docs/PATCH_ROADMAP.md`
 6. `docs/ASSET_FORMAT_SPEC.md`
-7. Для Vulkan/render задач:
-   - `docs/RENDERING_TARGET_SPEC.md`
-   - `docs/errors/ERROR_KNOWLEDGE_BASE.md`
+7. `docs/DIAGNOSTICS_SPEC.md`
+8. `docs/BUILD_ENV_SPEC.md`
+9. `docs/PERFORMANCE_BUDGETS.md`
 
-После чтения этих файлов агент может предлагать план или патч.
+Для UI задач дополнительно:
+
+- `docs/DESIGN_TOKENS.md`
+
+Для Vulkan/render задач дополнительно:
+
+- `docs/RENDERING_TARGET_SPEC.md`
+- `docs/errors/ERROR_KNOWLEDGE_BASE.md`
+- `docs/research/REPOSITORY_REFERENCE_CATALOG.md`
+
+Для задач с внешними repo/dependencies:
+
+- `docs/DEPENDENCY_AND_LICENSE_POLICY.md`
+
+Для GitHub/PR workflow:
+
+- `docs/GITHUB_WORKFLOW.md`
+
+После чтения релевантных файлов агент может предлагать план или патч.
 
 ## Главная цель
 
@@ -74,11 +92,35 @@ Non-throwaway архитектура, финальный target, module boundari
 
 Mobile-first editor UX, панели, кнопки, gizmo, bottom sheet, цвета, debug, workflow.
 
+### Design tokens
+
+- `docs/DESIGN_TOKENS.md`
+
+Цвета, spacing, typography, panel states, button types, safe zones.
+
 ### Patch roadmap
 
 - `docs/PATCH_ROADMAP.md`
 
 Порядок первых патчей и критерии завершения.
+
+### Diagnostics
+
+- `docs/DIAGNOSTICS_SPEC.md`
+
+Структура latest diagnostics ZIP, HTML report, device/env/git/vulkan/performance state.
+
+### Build environment
+
+- `docs/BUILD_ENV_SPEC.md`
+
+Termux/Android SDK/NDK/Gradle/aapt2/logs/module build rules.
+
+### Performance budgets
+
+- `docs/PERFORMANCE_BUDGETS.md`
+
+FPS tiers, frame budget, diagnostics overhead limits, regression snapshots.
 
 ### Rendering target
 
@@ -92,6 +134,24 @@ Vulkan target, Android/Mali constraints, forbidden fallbacks, external repo refe
 
 Folder-based asset layout, manifest v1, schema versioning, validator, sandbox import.
 
+### Dependency/license policy
+
+- `docs/DEPENDENCY_AND_LICENSE_POLICY.md`
+
+Reference vs dependency, license checks, external code rules.
+
+### GitHub workflow
+
+- `docs/GITHUB_WORKFLOW.md`
+
+Branch naming, PR body, direct update rules, patch complete checklist.
+
+### Repository references
+
+- `docs/research/REPOSITORY_REFERENCE_CATALOG.md`
+
+Проверенные repo/docs для Vulkan, The Forge, Filament, materials, animation, ECS, diagnostics, UI references.
+
 ### Decisions / ADR
 
 - `docs/decisions/ADR_0001_final_target_vulkan.md`
@@ -99,6 +159,7 @@ Folder-based asset layout, manifest v1, schema versioning, validator, sandbox im
 - `docs/decisions/ADR_0003_launcher_managed_multi_apk_future.md`
 - `docs/decisions/ADR_0004_android_keystore_strategy.md`
 - `docs/decisions/ADR_0005_use_proven_repositories_as_references.md`
+- `docs/decisions/ADR_0006_android_storage_and_inter_app_communication.md`
 
 ADR = Architecture Decision Record. Это записи, почему принято решение и что запрещено.
 

@@ -14,10 +14,33 @@ TMP_DIR="$(mktemp -d)"
 cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT
 
+find_run_as() {
+  if command -v run-as >/dev/null 2>&1; then
+    command -v run-as
+    return 0
+  fi
+  for p in /system/bin/run-as /apex/com.android.runtime/bin/run-as; do
+    if [ -x "$p" ]; then
+      echo "$p"
+      return 0
+    fi
+  done
+  return 1
+}
+
+RUN_AS="$(find_run_as || true)"
+if [ -z "$RUN_AS" ]; then
+  echo "run-as not found. Runtime reports stay in app-private storage."
+  echo "Checked: PATH, /system/bin/run-as, /apex/com.android.runtime/bin/run-as"
+  exit 1
+fi
+
+echo "Using run-as: $RUN_AS"
+
 copy_one() {
   local name="$1"
-  if run-as "$PKG" sh -c "test -f files/solum_diagnostics/$name" >/dev/null 2>&1; then
-    run-as "$PKG" cat "files/solum_diagnostics/$name" > "$TMP_DIR/$name"
+  if "$RUN_AS" "$PKG" sh -c "test -f files/solum_diagnostics/$name" >/dev/null 2>&1; then
+    "$RUN_AS" "$PKG" cat "files/solum_diagnostics/$name" > "$TMP_DIR/$name"
     cp "$TMP_DIR/$name" "$OUT_DIR/$name"
     cp "$TMP_DIR/$name" "$ARCHIVE_DIR/$name"
     echo "exported: $name"
@@ -26,7 +49,7 @@ copy_one() {
 
 copy_glob_runtime_crashes() {
   local list
-  list="$(run-as "$PKG" sh -c 'ls files/solum_diagnostics/runtime_crash_*.txt 2>/dev/null' 2>/dev/null || true)"
+  list="$($RUN_AS "$PKG" sh -c 'ls files/solum_diagnostics/runtime_crash_*.txt 2>/dev/null' 2>/dev/null || true)"
   if [ -z "$list" ]; then
     return
   fi
@@ -34,20 +57,17 @@ copy_glob_runtime_crashes() {
     [ -z "$path" ] && continue
     local name
     name="$(basename "$path")"
-    run-as "$PKG" cat "$path" > "$TMP_DIR/$name"
+    "$RUN_AS" "$PKG" cat "$path" > "$TMP_DIR/$name"
     cp "$TMP_DIR/$name" "$OUT_DIR/$name"
     cp "$TMP_DIR/$name" "$ARCHIVE_DIR/$name"
     echo "exported: $name"
   done
 }
 
-if ! command -v run-as >/dev/null 2>&1; then
-  echo "run-as not found on this device. Runtime reports stay in app-private storage."
-  exit 1
-fi
-
-if ! run-as "$PKG" sh -c 'pwd >/dev/null' >/dev/null 2>&1; then
-  echo "run-as failed for $PKG. Install debug APK built by this repo and launch it once."
+if ! "$RUN_AS" "$PKG" sh -c 'pwd >/dev/null' >/dev/null 2>&1; then
+  echo "run-as failed for $PKG."
+  echo "Possible reasons: APK is not debuggable, package is not installed, or app was not launched after install."
+  echo "Install the debug APK built by this repo and launch it once, then run this script again."
   exit 1
 fi
 

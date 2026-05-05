@@ -36,12 +36,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             writeCrashReport("uncaught_exception", throwable);
             System.exit(10);
         });
-
         super.onCreate(savedInstanceState);
-
         SurfaceView surfaceView = new SurfaceView(this);
         surfaceView.getHolder().addCallback(this);
-
         statusView = new TextView(this);
         statusView.setTextColor(Color.rgb(210, 245, 255));
         statusView.setTextSize(12f);
@@ -51,20 +48,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         statusView.setMaxLines(4);
         statusView.setBackgroundColor(Color.argb(150, 3, 10, 12));
         statusView.setText("SOLUM Engine\nVulkan: loading\nStatus: starting");
-
         FrameLayout root = new FrameLayout(this);
-        root.addView(surfaceView, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-        ));
-        FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-        );
+        root.addView(surfaceView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
         statusParams.gravity = Gravity.TOP;
         root.addView(statusView, statusParams);
         setContentView(root);
-
         try {
             System.loadLibrary("solum_engine");
             nativeLoaded = true;
@@ -79,67 +68,33 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
     }
 
-    @Override
-    protected void onDestroy() {
-        try {
-            if (nativeLoaded && nativeHandle != 0L) {
-                nativeDestroy(nativeHandle);
-                nativeHandle = 0L;
-            }
-        } catch (Throwable t) {
-            writeCrashReport("native_destroy_failed", t);
-        }
+    @Override protected void onDestroy() {
+        try { if (nativeLoaded && nativeHandle != 0L) { nativeDestroy(nativeHandle); nativeHandle = 0L; } } catch (Throwable t) { writeCrashReport("native_destroy_failed", t); }
         super.onDestroy();
     }
 
-    @Override
-    public void surfaceCreated(SurfaceHolder holder) {
+    @Override public void surfaceCreated(SurfaceHolder holder) {
         if (!nativeLoaded || nativeHandle == 0L) return;
-        try {
-            nativeSurfaceCreated(nativeHandle, holder.getSurface(), getRuntimeReportDirPath());
-            updateStatus();
-        } catch (Throwable t) {
-            writeCrashReport("surface_created_failed", t);
-            statusView.setMaxLines(8);
-            statusView.setText("SOLUM Engine\nStatus: surface init failed\n" + shortThrowable(t));
-        }
+        try { nativeSurfaceCreated(nativeHandle, holder.getSurface(), getRuntimeReportDirPath()); updateStatus(); }
+        catch (Throwable t) { writeCrashReport("surface_created_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: surface init failed\n" + shortThrowable(t)); }
     }
 
-    @Override
-    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+    @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         if (!nativeLoaded || nativeHandle == 0L) return;
-        try {
-            nativeSurfaceChanged(nativeHandle, holder.getSurface(), width, height);
-            updateStatus();
-        } catch (Throwable t) {
-            writeCrashReport("surface_changed_failed", t);
-            statusView.setMaxLines(8);
-            statusView.setText("SOLUM Engine\nStatus: surface resize failed\n" + shortThrowable(t));
-        }
+        try { nativeSurfaceChanged(nativeHandle, holder.getSurface(), width, height); updateStatus(); }
+        catch (Throwable t) { writeCrashReport("surface_changed_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: surface resize failed\n" + shortThrowable(t)); }
     }
 
-    @Override
-    public void surfaceDestroyed(SurfaceHolder holder) {
+    @Override public void surfaceDestroyed(SurfaceHolder holder) {
         if (!nativeLoaded || nativeHandle == 0L) return;
-        try {
-            nativeSurfaceDestroyed(nativeHandle);
-            updateStatus();
-        } catch (Throwable t) {
-            writeCrashReport("surface_destroyed_failed", t);
-        }
+        try { nativeSurfaceDestroyed(nativeHandle); updateStatus(); } catch (Throwable t) { writeCrashReport("surface_destroyed_failed", t); }
     }
 
     private void updateStatus() {
         runOnUiThread(() -> {
             if (nativeLoaded && nativeHandle != 0L) {
-                try {
-                    statusView.setMaxLines(4);
-                    statusView.setText(compactStatus(nativeGetStatus(nativeHandle)));
-                } catch (Throwable t) {
-                    writeCrashReport("native_status_failed", t);
-                    statusView.setMaxLines(8);
-                    statusView.setText("SOLUM Engine\nStatus: status call failed\n" + shortThrowable(t));
-                }
+                try { statusView.setMaxLines(4); statusView.setText(compactStatus(nativeGetStatus(nativeHandle))); }
+                catch (Throwable t) { writeCrashReport("native_status_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: status call failed\n" + shortThrowable(t)); }
             }
         });
     }
@@ -148,26 +103,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String gpu = pickValue(full, "GPU: ");
         String status = "running";
         String next = pickValue(full, "Next: ");
-
-        if (full.contains("Vertex buffer: OK")) {
-            status = "Vertex Buffer OK";
-        } else if (full.contains("Triangle draw: OK")) {
-            status = "Triangle OK";
-        } else if (full.contains("Render pass: clear color OK")) {
-            status = "Render Pass OK";
-        } else if (full.contains("Swapchain: created")) {
-            status = "Swapchain OK";
-        } else if (full.toLowerCase(Locale.US).contains("failed")) {
-            status = "Error";
-        }
-
+        if (full.contains("Renderer core: OK")) status = "Renderer Core OK";
+        else if (full.contains("Vertex buffer: OK")) status = "Vertex Buffer OK";
+        else if (full.contains("Triangle draw: OK")) status = "Triangle OK";
+        else if (full.contains("Render pass: clear color OK")) status = "Render Pass OK";
+        else if (full.contains("Swapchain: created")) status = "Swapchain OK";
+        else if (full.toLowerCase(Locale.US).contains("failed")) status = "Error";
         if (gpu.isEmpty()) gpu = "detecting";
-        if (next.isEmpty()) next = "Diagnostics / Mesh Foundation";
-
-        return "SOLUM Engine"
-                + "\nVulkan: " + gpu
-                + "\nStatus: " + status
-                + "\nNext: " + shorten(next, 34);
+        if (next.isEmpty()) next = "Asset Mesh Upload";
+        return "SOLUM Engine" + "\nVulkan: " + gpu + "\nStatus: " + status + "\nNext: " + shorten(next, 34);
     }
 
     private String pickValue(String text, String prefix) {
@@ -179,36 +123,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         return text.substring(start, end).trim();
     }
 
-    private String shorten(String text, int max) {
-        if (text == null) return "";
-        if (text.length() <= max) return text;
-        return text.substring(0, Math.max(0, max - 1)) + "…";
-    }
-
-    private String getRuntimeReportDirPath() {
-        return getReportDir().getAbsolutePath();
-    }
+    private String shorten(String text, int max) { if (text == null) return ""; if (text.length() <= max) return text; return text.substring(0, Math.max(0, max - 1)) + "…"; }
+    private String getRuntimeReportDirPath() { return getReportDir().getAbsolutePath(); }
 
     private File getReportDir() {
-        if (cachedReportDir != null && cachedReportDir.exists()) {
-            return cachedReportDir;
-        }
-
+        if (cachedReportDir != null && cachedReportDir.exists()) return cachedReportDir;
         File solumCreative = new File("/storage/emulated/0/SOLUMCreative/diagnostics/latest");
-        if (canWriteDirectory(solumCreative)) {
-            cachedReportDir = solumCreative;
-            return cachedReportDir;
-        }
-
+        if (canWriteDirectory(solumCreative)) { cachedReportDir = solumCreative; return cachedReportDir; }
         File externalBase = getExternalFilesDir(null);
         if (externalBase != null) {
             File externalDir = new File(externalBase, "solum_diagnostics");
-            if (canWriteDirectory(externalDir)) {
-                cachedReportDir = externalDir;
-                return cachedReportDir;
-            }
+            if (canWriteDirectory(externalDir)) { cachedReportDir = externalDir; return cachedReportDir; }
         }
-
         File appDir = new File(getFilesDir(), "solum_diagnostics");
         appDir.mkdirs();
         cachedReportDir = appDir;
@@ -219,14 +145,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         try {
             if (!(dir.mkdirs() || dir.exists())) return false;
             File probe = new File(dir, ".solum_write_probe");
-            try (FileWriter w = new FileWriter(probe, false)) {
-                w.write("ok");
-            }
+            try (FileWriter w = new FileWriter(probe, false)) { w.write("ok"); }
             probe.delete();
             return true;
-        } catch (Throwable ignored) {
-            return false;
-        }
+        } catch (Throwable ignored) { return false; }
     }
 
     private void writeRuntimeNote(String status, String message) {
@@ -242,8 +164,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 w.write("  \"reportDir\": \"" + escape(dir.getAbsolutePath()) + "\"\n");
                 w.write("}\n");
             }
-        } catch (Throwable ignored) {
-        }
+        } catch (Throwable ignored) { }
     }
 
     private void writeCrashReport(String stage, Throwable throwable) {
@@ -261,18 +182,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 pw.println();
                 throwable.printStackTrace(pw);
             }
-        } catch (Throwable ignored) {
-        }
+        } catch (Throwable ignored) { }
     }
 
-    private String shortThrowable(Throwable t) {
-        String msg = t.getMessage();
-        if (msg == null) msg = "no message";
-        return t.getClass().getSimpleName() + ": " + msg;
-    }
-
-    private String escape(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
-    }
+    private String shortThrowable(Throwable t) { String msg = t.getMessage(); if (msg == null) msg = "no message"; return t.getClass().getSimpleName() + ": " + msg; }
+    private String escape(String s) { if (s == null) return ""; return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n"); }
 }

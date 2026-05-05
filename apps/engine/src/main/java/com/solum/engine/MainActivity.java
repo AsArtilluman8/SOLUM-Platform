@@ -20,6 +20,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private long nativeHandle = 0L;
     private TextView statusView;
     private boolean nativeLoaded = false;
+    private File cachedReportDir = null;
 
     private static native long nativeCreate();
     private static native void nativeDestroy(long handle);
@@ -137,16 +138,43 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private File getReportDir() {
+        if (cachedReportDir != null && cachedReportDir.exists()) {
+            return cachedReportDir;
+        }
+
+        File solumCreative = new File("/storage/emulated/0/SOLUMCreative/diagnostics/latest");
+        if (canWriteDirectory(solumCreative)) {
+            cachedReportDir = solumCreative;
+            return cachedReportDir;
+        }
+
         File externalBase = getExternalFilesDir(null);
         if (externalBase != null) {
             File externalDir = new File(externalBase, "solum_diagnostics");
-            if (externalDir.mkdirs() || externalDir.exists()) {
-                return externalDir;
+            if (canWriteDirectory(externalDir)) {
+                cachedReportDir = externalDir;
+                return cachedReportDir;
             }
         }
+
         File appDir = new File(getFilesDir(), "solum_diagnostics");
         appDir.mkdirs();
-        return appDir;
+        cachedReportDir = appDir;
+        return cachedReportDir;
+    }
+
+    private boolean canWriteDirectory(File dir) {
+        try {
+            if (!(dir.mkdirs() || dir.exists())) return false;
+            File probe = new File(dir, ".solum_write_probe");
+            try (FileWriter w = new FileWriter(probe, false)) {
+                w.write("ok");
+            }
+            probe.delete();
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private void writeRuntimeNote(String status, String message) {

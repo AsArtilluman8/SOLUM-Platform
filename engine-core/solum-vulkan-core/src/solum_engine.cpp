@@ -14,6 +14,9 @@
 #include <vector>
 #include <sys/stat.h>
 
+#include "generated/solum_triangle_vert_spv.h"
+#include "generated/solum_triangle_frag_spv.h"
+
 struct SolumEngine {
     std::string outputRoot;
     std::string status = "SOLUM Engine\nNative object created";
@@ -37,11 +40,14 @@ struct SolumEngine {
     std::vector<VkFramebuffer> framebuffers;
     VkCommandPool commandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> commandBuffers;
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    VkPipeline graphicsPipeline = VK_NULL_HANDLE;
     VkSemaphore imageAvailable = VK_NULL_HANDLE;
     VkSemaphore renderFinished = VK_NULL_HANDLE;
     VkFence inFlight = VK_NULL_HANDLE;
     uint64_t framesRendered = 0;
     bool firstFrameRendered = false;
+    bool triangleDrawn = false;
 };
 
 static std::string vkResultName(VkResult r) {
@@ -139,13 +145,30 @@ static void writeRuntimeReport(SolumEngine* e, const std::string& status, const 
     f << "  \"extent\": { \"width\": " << e->extent.width << ", \"height\": " << e->extent.height << " },\n";
     f << "  \"framesRendered\": " << e->framesRendered << ",\n";
     f << "  \"firstFrameRendered\": " << (e->firstFrameRendered ? "true" : "false") << ",\n";
+    f << "  \"triangleDrawn\": " << (e->triangleDrawn ? "true" : "false") << ",\n";
     f << "  \"note\": \"Termux Vulkan may show llvmpipe CPU. This runtime report is the Android APK path.\"\n";
     f << "}\n";
+}
+
+static VkShaderModule createShaderModule(SolumEngine* e, const uint32_t* words, size_t wordCount, const char* label) {
+    VkShaderModuleCreateInfo ci{ VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
+    ci.codeSize = wordCount * sizeof(uint32_t);
+    ci.pCode = words;
+    VkShaderModule module = VK_NULL_HANDLE;
+    VkResult r = vkCreateShaderModule(e->device, &ci, nullptr, &module);
+    if (r != VK_SUCCESS) {
+        e->status = std::string("SOLUM Engine\nShaderModule failed: ") + label + " " + vkResultName(r);
+        return VK_NULL_HANDLE;
+    }
+    return module;
 }
 
 static void cleanupFrameResources(SolumEngine* e) {
     if (!e || e->device == VK_NULL_HANDLE) return;
     vkDeviceWaitIdle(e->device);
+
+    if (e->graphicsPipeline != VK_NULL_HANDLE) { vkDestroyPipeline(e->device, e->graphicsPipeline, nullptr); e->graphicsPipeline = VK_NULL_HANDLE; }
+    if (e->pipelineLayout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(e->device, e->pipelineLayout, nullptr); e->pipelineLayout = VK_NULL_HANDLE; }
 
     if (e->inFlight != VK_NULL_HANDLE) { vkDestroyFence(e->device, e->inFlight, nullptr); e->inFlight = VK_NULL_HANDLE; }
     if (e->renderFinished != VK_NULL_HANDLE) { vkDestroySemaphore(e->device, e->renderFinished, nullptr); e->renderFinished = VK_NULL_HANDLE; }
@@ -178,6 +201,7 @@ static void cleanupVulkan(SolumEngine* e) {
     e->swapchainFormat = VK_FORMAT_UNDEFINED;
     e->extent = {};
     e->firstFrameRendered = false;
+    e->triangleDrawn = false;
     e->framesRendered = 0;
 }
 
@@ -279,6 +303,103 @@ static bool createFramebuffers(SolumEngine* e) {
     return true;
 }
 
+static bool createGraphicsPipeline(SolumEngine* e) {
+    VkShaderModule vert = createShaderModule(e, SOL_TRIANGLE_VERT_SPV, SOL_TRIANGLE_VERT_SPV_WORD_COUNT, "triangle.vert");
+    if (vert == VK_NULL_HANDLE) return false;
+    VkShaderModule frag = createShaderModule(e, SOL_TRIANGLE_FRAG_SPV, SOL_TRIANGLE_FRAG_SPV_WORD_COUNT, "triangle.frag");
+    if (frag == VK_NULL_HANDLE) {
+        vkDestroyShaderModule(e->device, vert, nullptr);
+        return false;
+    }
+
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = vert;
+    stages[0].pName = "main";
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = frag;
+    stages[1].pName = "main";
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{ VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+    VkPipelineInputAssemblyStateCreateInfo assembly{ VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
+    assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    assembly.primitiveRestartEnable = VK_FALSE;
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float)e->extent.width;
+    viewport.height = (float)e->extent.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = e->extent;
+
+    VkPipelineViewportStateCreateInfo viewportState{ VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo raster{ VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
+    raster.depthClampEnable = VK_FALSE;
+    raster.rasterizerDiscardEnable = VK_FALSE;
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    raster.cullMode = VK_CULL_MODE_NONE;
+    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    raster.depthBiasEnable = VK_FALSE;
+    raster.lineWidth = 1.0f;
+
+    VkPipelineMultisampleStateCreateInfo msaa{ VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
+    msaa.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    msaa.sampleShadingEnable = VK_FALSE;
+
+    VkPipelineColorBlendAttachmentState blendAttachment{};
+    blendAttachment.blendEnable = VK_FALSE;
+    blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+    VkPipelineColorBlendStateCreateInfo blend{ VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
+    blend.logicOpEnable = VK_FALSE;
+    blend.attachmentCount = 1;
+    blend.pAttachments = &blendAttachment;
+
+    VkPipelineLayoutCreateInfo layoutInfo{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+    VkResult r = vkCreatePipelineLayout(e->device, &layoutInfo, nullptr, &e->pipelineLayout);
+    if (r != VK_SUCCESS) {
+        e->status = "SOLUM Engine\nPipelineLayout failed: " + vkResultName(r);
+        vkDestroyShaderModule(e->device, frag, nullptr);
+        vkDestroyShaderModule(e->device, vert, nullptr);
+        return false;
+    }
+
+    VkGraphicsPipelineCreateInfo pipe{ VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+    pipe.stageCount = 2;
+    pipe.pStages = stages;
+    pipe.pVertexInputState = &vertexInput;
+    pipe.pInputAssemblyState = &assembly;
+    pipe.pViewportState = &viewportState;
+    pipe.pRasterizationState = &raster;
+    pipe.pMultisampleState = &msaa;
+    pipe.pDepthStencilState = nullptr;
+    pipe.pColorBlendState = &blend;
+    pipe.layout = e->pipelineLayout;
+    pipe.renderPass = e->renderPass;
+    pipe.subpass = 0;
+
+    r = vkCreateGraphicsPipelines(e->device, VK_NULL_HANDLE, 1, &pipe, nullptr, &e->graphicsPipeline);
+    vkDestroyShaderModule(e->device, frag, nullptr);
+    vkDestroyShaderModule(e->device, vert, nullptr);
+    if (r != VK_SUCCESS) {
+        e->status = "SOLUM Engine\nGraphicsPipeline failed: " + vkResultName(r);
+        return false;
+    }
+    return true;
+}
+
 static bool createCommandsAndSync(SolumEngine* e) {
     VkCommandPoolCreateInfo pool{ VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
     pool.queueFamilyIndex = e->graphicsQueueFamily;
@@ -319,7 +440,7 @@ static bool createCommandsAndSync(SolumEngine* e) {
     return true;
 }
 
-static bool recordClearCommand(SolumEngine* e, uint32_t imageIndex) {
+static bool recordTriangleCommand(SolumEngine* e, uint32_t imageIndex) {
     VkCommandBuffer cmd = e->commandBuffers[imageIndex];
     VkCommandBufferBeginInfo bi{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -344,6 +465,8 @@ static bool recordClearCommand(SolumEngine* e, uint32_t imageIndex) {
     rp.pClearValues = &clear;
 
     vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, e->graphicsPipeline);
+    vkCmdDraw(cmd, 3, 1, 0, 0);
     vkCmdEndRenderPass(cmd);
 
     r = vkEndCommandBuffer(cmd);
@@ -372,7 +495,7 @@ static bool renderOneFrame(SolumEngine* e) {
     }
 
     vkResetCommandBuffer(e->commandBuffers[imageIndex], 0);
-    if (!recordClearCommand(e, imageIndex)) return false;
+    if (!recordTriangleCommand(e, imageIndex)) return false;
 
     VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
     VkSubmitInfo submit{ VK_STRUCTURE_TYPE_SUBMIT_INFO };
@@ -405,6 +528,7 @@ static bool renderOneFrame(SolumEngine* e) {
 
     e->framesRendered += 1;
     e->firstFrameRendered = true;
+    e->triangleDrawn = true;
     return true;
 }
 
@@ -412,6 +536,7 @@ static bool createFrameLoopResources(SolumEngine* e) {
     if (!createImageViews(e)) return false;
     if (!createRenderPass(e)) return false;
     if (!createFramebuffers(e)) return false;
+    if (!createGraphicsPipeline(e)) return false;
     if (!createCommandsAndSync(e)) return false;
     return true;
 }
@@ -423,9 +548,9 @@ static bool initVulkan(SolumEngine* e, ANativeWindow* window, int width, int hei
     const char* instanceExts[] = { "VK_KHR_surface", "VK_KHR_android_surface" };
     VkApplicationInfo app{ VK_STRUCTURE_TYPE_APPLICATION_INFO };
     app.pApplicationName = "SOLUM Engine";
-    app.applicationVersion = VK_MAKE_VERSION(0, 5, 0);
+    app.applicationVersion = VK_MAKE_VERSION(0, 6, 0);
     app.pEngineName = "SOLUM";
-    app.engineVersion = VK_MAKE_VERSION(0, 5, 0);
+    app.engineVersion = VK_MAKE_VERSION(0, 6, 0);
     app.apiVersion = VK_API_VERSION_1_0;
 
     VkInstanceCreateInfo ici{ VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
@@ -561,8 +686,8 @@ static bool initVulkan(SolumEngine* e, ANativeWindow* window, int width, int hei
         return false;
     }
 
-    e->status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + e->gpuName + "\nType: " + e->gpuType + "\nAPI: " + e->apiVersion + "\nSwapchain: created\nRender pass: clear color OK\nFrames rendered: " + std::to_string(e->framesRendered) + "\nNext: pipeline + first triangle draw";
-    writeRuntimeReport(e, "valid", "Android native Vulkan initialized; swapchain/render pass/frame clear/present succeeded.");
+    e->status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + e->gpuName + "\nType: " + e->gpuType + "\nAPI: " + e->apiVersion + "\nSwapchain: created\nRender pass: clear color OK\nTriangle draw: OK\nFrames rendered: " + std::to_string(e->framesRendered) + "\nNext: vertex buffer + mesh upload path";
+    writeRuntimeReport(e, "valid", "Android native Vulkan initialized; graphics pipeline and validation triangle draw succeeded.");
     return true;
 }
 

@@ -11,15 +11,22 @@ from transaction_save import atomic_write_json
 
 
 VALID_TYPES = {
+    "texture",
+    "mesh",
     "material",
     "character",
     "animation",
     "vfx",
     "scene",
     "sound",
+    "video",
     "world",
     "mechanic",
     "diagnostic",
+    "shader",
+    "font",
+    "ui",
+    "prefab",
 }
 
 VALID_STATES = {
@@ -28,6 +35,12 @@ VALID_STATES = {
     "pending",
     "incompatible",
     "missing_file",
+}
+
+RECOMMENDED_OPTIONAL_FIELDS = {
+    "assetSubType",
+    "sourceFormat",
+    "runtimeFormat",
 }
 
 
@@ -86,6 +99,12 @@ def validate_asset(asset_dir: Path) -> dict[str, Any]:
     for key in required:
         if key not in manifest:
             report["errors"].append(f"missing required field: {key}")
+
+    for key in RECOMMENDED_OPTIONAL_FIELDS:
+        if key not in manifest:
+            report["warnings"].append(f"recommended optional field missing: {key}")
+        elif not isinstance(manifest.get(key), str) or not manifest.get(key):
+            report["errors"].append(f"{key} must be a non-empty string when present")
 
     if manifest.get("schema") != "solum.asset":
         report["errors"].append("schema must be solum.asset")
@@ -181,6 +200,10 @@ def main() -> int:
         print("Errors:")
         for e in report["errors"]:
             print(f"- {e}")
+    if report["warnings"]:
+        print("Warnings:")
+        for w in report["warnings"]:
+            print(f"- {w}")
     return 0 if report["status"] == "valid" else 1
 
 

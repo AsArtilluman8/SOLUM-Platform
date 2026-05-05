@@ -34,6 +34,13 @@
 
 - `docs/STUDIO_APP_MODEL.md`
 
+Для сложных систем обязательно:
+
+- `docs/research/RESEARCH_GATE_RULES.md`
+- `docs/research/PATCH_RESEARCH_TEMPLATE.md`
+
+Сложные системы: Vulkan/render/shadows/materials/water/terrain/vegetation/VFX/animation/assets/ECS/mechanics/diagnostics/profiling.
+
 Для задач с внешними repo/dependencies:
 
 - `docs/DEPENDENCY_AND_LICENSE_POLICY.md`
@@ -136,6 +143,31 @@ Render thread owns GPU resources, command queue upload flow, no random resource 
 
 Standalone/project/export modes, mixed 3D/2D/2.5D/sprite/VFX/audio scene model, AI/OpenCV as assist layer.
 
+### Research gate
+
+- `docs/research/RESEARCH_GATE_RULES.md`
+- `docs/research/PATCH_RESEARCH_TEMPLATE.md`
+
+Обязательная сверка с проверенными repo/docs перед сложными системами.
+
+### Device and stack
+
+- `docs/DEVICE_AND_STACK_PROFILE.md`
+
+Target device, stack, storage and Termux constraints.
+
+### Editor tooling reference
+
+- `docs/EDITOR_TOOLING_ROADMAP_REFERENCE.md`
+
+Scene hierarchy, inspector, gizmo, asset browser, build panel, save/load, profiler as future credibility components.
+
+### Gameplay mechanics reference
+
+- `docs/GAMEPLAY_MECHANICS_LIBRARY_REFERENCE.md`
+
+Future Action RPG mechanics knowledge base. Документировать сейчас, реализовывать позже.
+
 ### Patch roadmap
 
 - `docs/PATCH_ROADMAP.md`
@@ -188,7 +220,7 @@ Branch naming, PR body, direct update rules, patch complete checklist.
 
 - `docs/research/REPOSITORY_REFERENCE_CATALOG.md`
 
-Проверенные repo/docs для Vulkan, The Forge, Filament, materials, animation, ECS, diagnostics, UI references.
+Проверенные repo/docs для Vulkan, The Forge, Filament, SaschaWillems, ARM Mali, materials, shadows, water, terrain, animation, VFX, ECS, diagnostics, UI references.
 
 ### Decisions / ADR
 

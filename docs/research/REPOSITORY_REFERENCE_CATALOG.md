@@ -2,28 +2,30 @@
 
 Цель файла: не изобретать сложные системы из фантазии GPT/Claude, а перед каждым крупным патчем смотреть проверенные реализации, архитектуру и правила.
 
-Важно: этот файл не означает “слепо импортировать всё”.
+Перед сложным патчем читать также:
 
-Правильный процесс:
+- `docs/research/RESEARCH_GATE_RULES.md`
+- `docs/research/PATCH_RESEARCH_TEMPLATE.md`
+- `docs/DEPENDENCY_AND_LICENSE_POLICY.md`
+
+## Процесс
 
 ```text
-есть сложная задача
+сложная задача
 ↓
-открыть этот catalog
+найти 2–5 repo/docs
 ↓
-найти релевантные repo/docs
+изучить подход
 ↓
-изучить нужный модуль/пример
+решить: REFERENCE_ONLY / SMALL_SLICE / ADAPTER / DEPENDENCY / REJECT
 ↓
-выписать принцип
+Research Summary
 ↓
-решить: reference / slice / adapter / dependency / reject
+выбор пользователя
 ↓
-записать решение в ADR или research note
+SOLUM-compatible patch
 ↓
-реализовать SOLUM-compatible версию
-↓
-добавить diagnostics/test
+diagnostics/test
 ```
 
 Запрещено:
@@ -40,32 +42,27 @@ GPT сам придумывает CSM/material/water/VFX систему без �
 
 **Use for:** Android Vulkan app skeleton, native activity patterns, swapchain basics, Android build/reference.
 
-**Когда смотреть:**
-
-- Patch 02 Vulkan capability check;
-- Patch 04 Vulkan Foundation;
-- Android surface/swapchain problems;
-- NDK/CMake Android examples.
-
-**Как использовать:**
-
-- reference only / small slice;
-- не копировать весь sample как architecture;
-- проверить Android-specific lifecycle.
+**Когда смотреть:** Patch 02 Vulkan capability check, Patch 04 Vulkan Foundation, Android surface/swapchain, lifecycle.
 
 ### KhronosGroup/Vulkan-Samples
 
 **Use for:** Vulkan best practices, swapchain, render pass, descriptors, synchronization, pipeline setup.
 
-**Когда смотреть:**
+**Когда смотреть:** Vulkan Foundation, descriptor/pipeline layout, render pass/synchronization, texture/shader loading.
 
-- Vulkan Foundation;
-- descriptor/pipeline layout;
-- render pass/synchronization;
-- texture/shader loading;
-- future shadow/material systems.
+### SaschaWillems/Vulkan
 
-**Риск:** desktop/general Vulkan patterns могут быть тяжелее, чем нужно для Mali. Адаптировать под mobile.
+**Use for:** practical Vulkan examples: PBR/IBL, CSM, glTF skinning, deferred rendering, SSAO, bloom, compute particles.
+
+**Когда смотреть:** any Vulkan feature patch where an example exists.
+
+### ARM-software/vulkan_best_practice_for_mobile_developers
+
+**Use for:** official ARM/Mali Vulkan performance guidance.
+
+**Когда смотреть:** before Vulkan renderer, shadows, post-process, terrain, water, particles, any optimization.
+
+**Critical Mali topics:** tile-based rendering, load/store ops, bandwidth, render pass design, subpasses, FP16/mediump.
 
 ---
 
@@ -75,359 +72,476 @@ GPT сам придумывает CSM/material/water/VFX систему без �
 
 **Use for:** renderer abstraction, resource lifetime, descriptor management, barriers, frame graph/render graph ideas.
 
-**Когда смотреть:**
+**Когда смотреть:** render-core design, descriptor strategy, resource lifetime, barriers, CSM architecture, multi-pass renderer.
 
-- render-core design;
-- descriptor set strategy;
-- resource lifetime;
-- barrier/sync problems;
-- CSM/render pass architecture;
-- multi-platform renderer design decisions.
-
-**Правило:** The Forge не заменяет SOLUM. Использовать как architecture reference, slice/adapter only if justified.
+**Rule:** The Forge does not replace SOLUM. Use architecture/slices/adapters only if justified.
 
 ### google/filament
 
-**Use for:** mobile PBR/material model, material system concepts, physically-based rendering, mobile renderer ideas.
+**Use for:** mobile PBR/material model, material system concepts, tone mapping, IBL, renderer architecture.
 
-**Когда смотреть:**
-
-- Material Studio;
-- PBR/toon material design;
-- lighting model;
-- tone mapping/exposure;
-- reflections/IBL later.
-
-**Правило:** изучать material model and architecture, не тащить весь Filament.
+**Когда смотреть:** Material Studio, PBR/toon, lighting model, exposure, reflections/IBL, material preview.
 
 ### bgfx/bgfx
 
-**Use for:** renderer abstraction, cross-platform graphics API design, resource handles.
+**Use for:** renderer abstraction, handles, cross-platform graphics API design.
 
-**Когда смотреть:**
+### skaarj1989/FrameGraph
 
-- renderer abstraction discussion;
-- handle/resource API design;
-- future multi-backend thinking.
+**Use for:** Vulkan frame graph ideas, resource transitions, transient resources.
 
-**Правило:** reference only. SOLUM target remains Android Vulkan.
+### zeux/niagara
 
-### GPUOpen-LibrariesAndSDKs / Cauldron-style references
-
-**Use for:** render graph/frame graph/resource transition ideas, sample framework patterns.
-
-**Когда смотреть:**
-
-- render graph planning;
-- post-process chain;
-- multi-pass systems.
+**Use for:** Vulkan renderer with GPU culling/occlusion ideas.
 
 ---
 
-## 3. Shadows / CSM / lighting
+## 3. PBR / Material system / IBL
 
-### Khronos Vulkan Samples — shadow mapping / cascaded shadows samples if available
+### SaschaWillems/Vulkan-glTF-PBR
 
-**Use for:** Vulkan shadow map setup, depth pass, descriptors, sampler comparison references.
+**Use for:** focused Vulkan glTF 2.0 PBR example, Cook-Torrance BRDF, IBL, metallic/roughness workflow.
 
-**Когда смотреть:**
-
-- first ShadowSystem;
-- CSM v1;
-- depth image layout/sampling issues.
-
-### The Forge examples / renderer code
-
-**Use for:** pass ordering, shadow atlas/resource lifetime, descriptor/bindless patterns if applicable.
-
-**Когда смотреть:**
-
-- CSM architecture;
-- shadow atlas;
-- render graph integration.
-
-### Filament docs/code
-
-**Use for:** mobile lighting/material response, shadow quality/performance tradeoffs.
-
-**Когда смотреть:**
-
-- directional light;
-- cascaded shadow stability ideas;
-- mobile-friendly lighting choices.
-
-### Arm Mali docs / performance guides
-
-**Use for:** mobile tile-based GPU rules, bandwidth, render pass load/store, overdraw, shader cost.
-
-**Когда смотреть:**
-
-- before CSM;
-- before expensive post-process;
-- before volumetrics;
-- before terrain/material-heavy scenes.
-
-**Особое правило:** если shadow/material FPS просел, сначала смотреть Mali constraints + diagnostics, а не гадать.
-
----
-
-## 4. Materials / PBR / toon / textures
+**Когда смотреть:** Material Studio v1+, PBR material renderer, glTF material compatibility.
 
 ### google/filament
 
-**Use for:** PBR model, material definitions, mobile lighting/material response.
-
-**Когда смотреть:**
-
-- Material Studio v1;
-- MaterialDocument fields;
-- material preview lighting;
-- future IBL/reflection/tone mapping.
+**Use for:** production-grade mobile PBR model, tone mapping, IBL lookups, material system concepts.
 
 ### Khronos glTF material specs
 
-**Use for:** compatible material properties, metallic-roughness workflow, texture slots, normal/ORM maps.
+**Use for:** metallic-roughness workflow, texture slots, normal/ORM maps, alpha modes.
 
-**Когда смотреть:**
+### KhronosGroup/glTF-IBL-Sampler
 
-- Asset Schema material fields;
-- glTF import/export;
-- Material Studio schema.
+**Use for:** HDR panorama → KTX2 cubemap with prefiltered mips + BRDF LUT.
 
-### KTX-Software / BasisU
+### derkreature/IBLBaker
 
-**Use for:** KTX2, Basis Universal, compressed texture pipeline.
-
-**Когда смотреть:**
-
-- texture import;
-- mobile memory optimization;
-- material asset pipeline.
-
-### zeux/meshoptimizer
-
-**Use for:** mesh simplification/optimization, vertex/index cache optimization.
-
-**Когда смотреть:**
-
-- glTF import;
-- asset optimization;
-- world/character geometry pipeline.
+**Use for:** baking diffuse irradiance and specular prefiltered cubemaps.
 
 ---
 
-## 5. Asset pipeline / import/export
+## 4. Shadows / CSM / lighting
+
+### SaschaWillems/Vulkan/examples/shadowmappingcascade
+
+**Use for:** Cascaded Shadow Maps on Vulkan: layered depth texture, frustum splits, PCF.
+
+**Когда смотреть:** any ShadowSystem/CSM patch.
+
+### diharaw/cascaded-shadow-maps
+
+**Use for:** clean CSM/PSSM implementation, stable cascades, PCF concepts.
+
+### Filament docs/code
+
+**Use for:** mobile lighting and shadow quality/performance tradeoffs.
+
+### ARM Mali docs / best practice
+
+**Use for:** bandwidth, tile-based render pass design, mobile shadow pass constraints.
+
+**Research Gate requirement:** Shadow patch must check at least one CSM implementation + one Mali/ARM performance reference.
+
+---
+
+## 5. Sky / atmosphere / sun
+
+### andrewwillmott/sun-sky
+
+**Use for:** Preetham and Hosek-Wilkie sky models, sun disc, skybox shader.
+
+### wwwtyro/glsl-atmosphere
+
+**Use for:** simple Rayleigh + Mie GLSL atmosphere.
+
+### ebruneton/precomputed_atmospheric_scattering
+
+**Use for:** physically accurate precomputed atmosphere. Likely reference only early.
+
+### diharaw/sky-models
+
+**Use for:** compare Bruneton, Preetham, Hosek-Wilkie.
+
+---
+
+## 6. Post-processing / anti-aliasing
+
+### SaschaWillems Vulkan bloom/HDR examples
+
+**Use for:** bloom/HDR post pipeline examples.
+
+### iryoku/smaa
+
+**Use for:** SMAA shader reference.
+
+### FrameGraph references
+
+**Use for:** organizing post passes and barriers.
+
+---
+
+## 7. Asset pipeline / import/export / textures
 
 ### syoyo/tinygltf
 
-**Use for:** glTF import/export parser, lightweight C++ asset import.
-
-**Когда смотреть:**
-
-- character/object import;
-- material import;
-- mesh import;
-- GLB export compatibility.
+**Use for:** lightweight glTF 2.0 import/export, meshes, materials, animations, skins.
 
 ### KhronosGroup/glTF-Sample-Models
 
-**Use for:** test assets for importer/materials.
+**Use for:** test assets for importer/materials/renderer smoke tests.
 
-**Когда смотреть:**
+### zeux/meshoptimizer
 
-- asset schema tests;
-- material preview validation;
-- renderer smoke tests.
+**Use for:** mesh simplification, vertex/index cache optimization, overdraw reduction, LOD generation.
+
+### KhronosGroup/KTX-Software
+
+**Use for:** KTX2 texture format and streaming.
+
+### BinomialLLC/basis_universal
+
+**Use for:** Basis Universal / KTX2 compression and transcoding to ASTC/ETC2.
+
+### ARM-software/astc-encoder
+
+**Use for:** ASTC texture compression for Mali.
 
 ### assimp/assimp
 
-**Use for:** broad model import reference.
-
-**Риск:** heavy dependency, may be too big for Termux/mobile start.
-
-**Use mode:** reference / optional later, not early core dependency.
+**Use for:** broad model import reference. Heavy; avoid early core dependency unless justified.
 
 ---
 
-## 6. Animation / skeleton / motion
+## 8. Vulkan utilities / shader tools
+
+### GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
+
+**Use for:** Vulkan memory allocation. Header-only, MIT.
+
+### zeux/volk
+
+**Use for:** Vulkan function loader, dynamic loading.
+
+### KhronosGroup/glslang
+
+**Use for:** GLSL → SPIR-V compilation.
+
+### KhronosGroup/SPIRV-Tools
+
+**Use for:** spirv-opt, spirv-val, spirv-dis.
+
+### KhronosGroup/SPIRV-Cross
+
+**Use for:** SPIR-V reflection/cross-compile analysis.
+
+---
+
+## 9. Math / base utilities
+
+### g-truc/glm
+
+**Use for:** vec/mat/quat/frustum math.
+
+### Auburn/FastNoiseLite
+
+**Use for:** terrain heightmaps, clouds, texture variation.
+
+### nothings/stb
+
+**Use for:** image/font loading.
+
+### nlohmann/json
+
+**Use for:** JSON configs/manifests in C++.
+
+### taskflow/taskflow
+
+**Use for:** future task graph/background loading.
+
+---
+
+## 10. Terrain / world generation / architecture
+
+### Jaysmito101/TerraForge3D
+
+**Use for:** node-based procedural terrain, erosion, GLSL export ideas.
+
+### AntonHakansson/procedural-terrain
+
+**Use for:** terrain with PBR, CSM, SSR, normal maps.
+
+### fegennari/3DWorld
+
+**Use for:** open-world systems: terrain, cities, buildings, vegetation, rain, day/night.
+
+### pvallet/CGA_interpreter
+
+**Use for:** CGA grammar procedural buildings.
+
+---
+
+## 11. Water / ocean
+
+### kentril0/WaterSurfaceRendering
+
+**Use for:** Vulkan FFT water, Tessendorf, displacement+normal map via compute, PBR water shading.
+
+### deiss/fftocean
+
+**Use for:** Tessendorf/Phillips spectrum concepts.
+
+### Themaister/GLFFT
+
+**Use for:** GPU FFT, FP16 support relevant to Mali.
+
+### ARM Ocean FFT sample
+
+**Use for:** official ARM/Mali ocean FFT optimization ideas.
+
+---
+
+## 12. Vegetation / foliage / grass / hair
+
+### nickmcd/VulkanGrassRendering
+
+**Use for:** responsive real-time grass, Bezier grass, compute culling, wind.
+
+### Twinklebear/Vulkan-Forest-Rendering-Engine
+
+**Use for:** Vulkan forest rendering, GPU instancing, billboard LOD, wind.
+
+### GPUOpen-Effects/TressFX
+
+**Use for:** GPU hair/fur simulation reference.
+
+---
+
+## 13. VFX / particles / volumetrics
+
+### SaschaWillems/Vulkan/examples/computeparticles
+
+**Use for:** GPU particles through compute shaders, SSBO data.
+
+### turanszkij/WickedEngine
+
+**Use for:** AAA-like GPU particle system principles.
+
+### effekseer/Effekseer
+
+**Use for:** VFX editor/runtime architecture.
+
+### AmanSachan1/Meteoros
+
+**Use for:** Vulkan volumetric clouds/god rays references.
+
+### Erkaman/glsl-godrays
+
+**Use for:** god rays radial blur technique.
+
+### diharaw/volumetric-clouds
+
+**Use for:** volumetric clouds/ray marching/compute ideas.
+
+---
+
+## 14. Animation / skeleton / character runtime
 
 ### guillaumeblanc/ozz-animation
 
-**Use for:** skeletal animation runtime, animation clips, sampling, blending.
+**Use for:** skeletal animation runtime, blending, sampling, IK, GPU skinning pipeline.
 
-**Когда смотреть:**
+### SaschaWillems/Vulkan/examples/gltfskinning
 
-- Motion Studio;
-- Character animation runtime;
-- animation asset schema;
-- clip blending.
+**Use for:** glTF skinning through Vulkan.
 
 ### glTF skinning/animation spec
 
 **Use for:** animation import/export compatibility.
 
-**Когда смотреть:**
+### sebastianstarke/AI4Animation
 
-- Character Studio;
-- Motion Studio;
-- GLB import/export.
+**Use for:** future ML/advanced locomotion concepts.
 
 ---
 
-## 7. ECS / gameplay mechanics / runtime architecture
+## 15. Character generation / authoring
+
+### makehumancommunity/makehuman
+
+**Use for:** human generator concepts, morph targets, character parameter model.
+
+### makehumancommunity/mpfb2
+
+**Use for:** MakeHuman/Blender pipeline, rigging, glTF export concepts.
+
+### ReadyPlayerMe SDK concepts
+
+**Use for:** avatar customization, glTF avatar pipeline, blend shapes.
+
+---
+
+## 16. ECS / mechanics / gameplay architecture
 
 ### skypjack/entt
 
-**Use for:** lightweight C++ ECS patterns.
+**Use for:** lightweight C++ ECS.
 
-**Когда смотреть:**
+### SanderMertens/flecs
 
-- gameplay entity/component design;
-- mechanics system;
-- scene runtime;
-- asset/entity binding.
+**Use for:** richer ECS with queries/prefabs/hierarchies.
 
 ### Unreal Gameplay Ability System concepts/docs
 
-**Use for:** abilities, cooldowns, effects, tags, prediction concepts.
-
-**Когда смотреть:**
-
-- Mechanics Studio design;
-- ARPG skills;
-- dash/attack/loot systems.
-
-**Rule:** use concepts, do not copy Unreal architecture blindly.
+**Use for:** abilities, cooldowns, tags, effects, status states, ARPG skills.
 
 ---
 
-## 8. VFX / particles / graph concepts
+## 17. Physics / navigation
 
-### The Forge / Vulkan samples particle examples if relevant
+### jrouwe/JoltPhysics
 
-**Use for:** GPU/CPU particle architecture references.
+**Use for:** modern physics, Android/ARM potential, character controllers later.
 
-### Niagara / Unity VFX Graph concepts
+### bulletphysics/bullet3
 
-**Use for:** node graph concepts, emitter/lifetime/curve systems.
+**Use for:** older stable physics reference.
 
-**Когда смотреть:**
+### recastnavigation/recastnavigation
 
-- VFX Studio;
-- VfxClip schema;
-- SpriteEmitter v1;
-- future GPU particles.
-
-**Rule:** first SOLUM VFX v1 must be minimal final system: VfxClip + SpriteEmitter, not GIF overlay.
+**Use for:** Recast/Detour navmesh and pathfinding.
 
 ---
 
-## 9. World / terrain / procedural generation
+## 18. Sound
 
-### Godot terrain/editor concepts
+### mackron/miniaudio
 
-**Use for:** editor UX, scene/resources, open-source patterns.
+**Use for:** single-file C audio, WAV/MP3/OGG, 3D positional audio, Android.
 
-### Unity terrain tool concepts / procedural generation references
+### jarikomppa/soloud
 
-**Use for:** brush tools, splat maps, terrain layers, road/biome workflow.
-
-### meshoptimizer + glTF + KTX2
-
-**Use for:** generated world asset optimization.
-
-**Когда смотреть:**
-
-- World Studio;
-- terrain chunks;
-- roads/biomes;
-- LOD/streaming later.
+**Use for:** fuller audio engine, 3D audio, reverb, filters.
 
 ---
 
-## 10. UI / mobile editor UX references
+## 19. UI / HUD / node graph / reports
 
-### Shapr3D
+### ocornut/imgui
 
-**Use for:** mobile/tablet 3D editor gestures, viewport-first UX, precise manipulation.
+**Use for:** debug/editor UI concepts, Vulkan backend, sliders, panels.
 
-### Procreate
+**Risk:** Android touch UX must be adapted; do not make desktop ImGui UI as final mobile UX.
 
-**Use for:** viewport is sacred, compact tool model, gesture-driven professional UI.
+### Nelarius/imnodes
 
-### DaVinci Resolve iPad
+**Use for:** node editor concepts.
 
-**Use for:** timeline + preview balance on small screens.
+### epezent/implot
 
-### GarageBand mobile
+**Use for:** profiling graphs.
 
-**Use for:** professional audio tool on touch device.
+### Shapr3D / Procreate / DaVinci Resolve iPad / GarageBand
 
-**Rule:** study UX patterns, not visual copying.
-
----
-
-## 11. Diagnostics / profiling / reports
-
-### Arm Mobile Studio docs
-
-**Use for:** Mali profiling, GPU bottlenecks, frame analysis.
-
-### Android perf docs / Perfetto docs
-
-**Use for:** tracing, CPU/frame timing, system performance.
-
-### AGI — Android GPU Inspector docs
-
-**Use for:** GPU frame analysis reference.
-
-**Когда смотреть:**
-
-- Diagnostics v1+;
-- FPS regression database;
-- GPU/frame timing reports;
-- Vulkan profiling.
+**Use for:** mobile-first professional editor UX patterns.
 
 ---
 
-## Required research note format
+## 20. Diagnostics / profiling / performance
 
-When a repo influences a patch, create a note:
+### wolfpld/tracy
+
+**Use for:** CPU/GPU frame profiler concepts.
+
+### google/perfetto
+
+**Use for:** Android system profiling.
+
+### Android GPU Inspector
+
+**Use for:** GPU frame analysis.
+
+### ARM Mali Offline Compiler
+
+**Use for:** SPIR-V shader cycle estimates on Mali.
+
+### KhronosGroup/Vulkan-ValidationLayers
+
+**Use for:** Vulkan API validation in debug builds.
+
+---
+
+## 21. Mega reference lists
+
+### vinjn/awesome-vulkan
+
+**Use for:** navigation through Vulkan ecosystem.
+
+### Gforcex/OpenGraphic
+
+**Use for:** graphics techniques index.
+
+### Caerind/AwesomeCppGameDev
+
+**Use for:** C++ gamedev library discovery.
+
+---
+
+## Mali-G57 MC2 rules
+
+Required considerations:
+
+- correct render pass load/store ops;
+- prefer DONT_CARE when contents are not needed;
+- avoid unnecessary full-screen passes;
+- use ASTC/KTX2 compressed textures later;
+- consider FP16/mediump where precision allows;
+- avoid branch-heavy monolithic shaders;
+- validation/debug layers only in debug;
+- profile shader cost before complex effects;
+- diagnostics must not sample expensive metrics every frame.
+
+## Stage-to-reference map
 
 ```text
-docs/research/NOTE_XXXX_topic.md
-```
+P02 Diagnostics + Vulkan Caps:
+  android/ndk-samples, ARM Vulkan Best Practice, Perfetto docs
 
-Format:
+P04 Vulkan Foundation:
+  android/ndk-samples, Khronos Vulkan Samples, SaschaWillems/Vulkan, VMA, volk
 
-```markdown
-# NOTE-XXXX: Topic
+Material Studio / PBR:
+  SaschaWillems/Vulkan-glTF-PBR, Filament, glTF spec, glTF-IBL-Sampler
 
-## Problem
-What SOLUM problem we are solving.
+Shadows / CSM:
+  SaschaWillems shadowmappingcascade, diharaw/cascaded-shadow-maps, ARM Mali guide
 
-## References studied
-- repo/path/file or docs link
+Sky / atmosphere:
+  sun-sky, glsl-atmosphere, sky-models
 
-## Adopted principles
-What we take.
+Terrain / World:
+  TerraForge3D, procedural-terrain, 3DWorld, FastNoiseLite, CGA_interpreter
 
-## Rejected parts
-What we do not take.
+Water:
+  WaterSurfaceRendering, GLFFT, ARM Ocean FFT, fftocean
 
-## SOLUM adaptation
-How it fits our architecture.
+VFX:
+  Sascha compute particles, WickedEngine, Effekseer
 
-## Patch impact
-Which patch uses this.
+Animation:
+  ozz-animation, Sascha gltfskinning, glTF animation spec
 
-## Diagnostics/tests
-How we prove it works.
+ECS / Mechanics:
+  EnTT, Flecs, GAS concepts
+
+Diagnostics / Profiling:
+  Tracy, Perfetto, AGI, Mali Offline Compiler
 ```
 
 ## Agent rule
 
-Before any major patch in these areas, agent must check this catalog:
+Before any major patch in these areas, agent must check this catalog and produce Research Summary:
 
 - Vulkan renderer;
 - shadows/CSM;

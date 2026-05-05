@@ -4,12 +4,12 @@ plugins {
 
 android {
     namespace 'com.solum.engine'
-    compileSdk 35
+    compileSdk 34
 
     defaultConfig {
         applicationId 'com.solum.engine'
         minSdk 26
-        targetSdk 35
+        targetSdk 34
         versionCode 4
         versionName '0.4.0'
     }

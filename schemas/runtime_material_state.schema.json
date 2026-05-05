@@ -1,22 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "solum.runtime_material_state.schema.json",
-  "title": "SOLUM Runtime Material State",
+  "title": "SOLUM runtime material state",
   "type": "object",
-  "required": ["schema", "schemaVersion", "status", "materialSystemReady", "gltfPbrReady"],
+  "required": ["schema", "schemaVersion", "status", "standard", "textureSlots"],
   "properties": {
     "schema": { "const": "solum.runtime_material_state" },
-    "schemaVersion": { "type": "integer" },
+    "schemaVersion": { "type": "integer", "minimum": 1 },
     "status": { "type": "string" },
-    "materialSystemReady": { "type": "boolean" },
-    "gltfPbrReady": { "type": "boolean" },
-    "materialMode": { "type": "string" },
-    "baseColor": { "type": "string" },
-    "normal": { "type": "string" },
-    "metallicRoughness": { "type": "string" },
-    "occlusion": { "type": "string" },
-    "emissive": { "type": "string" },
-    "alphaMode": { "type": "string" },
-    "notes": { "type": "string" }
+    "standard": { "type": "string" },
+    "importerDecision": { "type": "string" },
+    "textureSlots": { "type": "object" },
+    "forbiddenShortcuts": { "type": "array", "items": { "type": "string" } }
   }
 }

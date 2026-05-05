@@ -2,6 +2,7 @@ package com.solum.engine;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.view.Gravity;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -44,31 +45,37 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         statusView = new TextView(this);
         statusView.setTextColor(Color.rgb(210, 245, 255));
         statusView.setTextSize(12f);
-        statusView.setPadding(18, 18, 18, 18);
-        statusView.setBackgroundColor(Color.argb(180, 3, 10, 12));
-        statusView.setText("SOLUM Engine\nLoading native Vulkan module...\nReport path: " + getRuntimeReportDirPath());
+        statusView.setPadding(14, 10, 14, 10);
+        statusView.setGravity(Gravity.START);
+        statusView.setSingleLine(false);
+        statusView.setMaxLines(4);
+        statusView.setBackgroundColor(Color.argb(150, 3, 10, 12));
+        statusView.setText("SOLUM Engine\nVulkan: loading\nStatus: starting");
 
         FrameLayout root = new FrameLayout(this);
         root.addView(surfaceView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
         ));
-        root.addView(statusView, new FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
-        ));
+        );
+        statusParams.gravity = Gravity.TOP;
+        root.addView(statusView, statusParams);
         setContentView(root);
 
         try {
             System.loadLibrary("solum_engine");
             nativeLoaded = true;
             nativeHandle = nativeCreate();
-            statusView.setText("SOLUM Engine\nNative module loaded. Waiting for Vulkan surface...\nReport path: " + getRuntimeReportDirPath());
+            statusView.setText("SOLUM Engine\nVulkan: loading\nStatus: native ready");
             writeRuntimeNote("native_load_ok", "libsolum_engine loaded and native object created");
         } catch (Throwable t) {
             nativeLoaded = false;
             writeCrashReport("native_load_failed", t);
-            statusView.setText("SOLUM Engine\nNative load failed. Crash report written.\n" + shortThrowable(t) + "\nReport path: " + getRuntimeReportDirPath());
+            statusView.setMaxLines(8);
+            statusView.setText("SOLUM Engine\nStatus: native load failed\n" + shortThrowable(t));
         }
     }
 
@@ -93,7 +100,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             updateStatus();
         } catch (Throwable t) {
             writeCrashReport("surface_created_failed", t);
-            statusView.setText("SOLUM Engine\nSurface init failed. Report written.\n" + shortThrowable(t) + "\nReport path: " + getRuntimeReportDirPath());
+            statusView.setMaxLines(8);
+            statusView.setText("SOLUM Engine\nStatus: surface init failed\n" + shortThrowable(t));
         }
     }
 
@@ -105,7 +113,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             updateStatus();
         } catch (Throwable t) {
             writeCrashReport("surface_changed_failed", t);
-            statusView.setText("SOLUM Engine\nSurface resize failed. Report written.\n" + shortThrowable(t) + "\nReport path: " + getRuntimeReportDirPath());
+            statusView.setMaxLines(8);
+            statusView.setText("SOLUM Engine\nStatus: surface resize failed\n" + shortThrowable(t));
         }
     }
 
@@ -124,13 +133,56 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         runOnUiThread(() -> {
             if (nativeLoaded && nativeHandle != 0L) {
                 try {
-                    statusView.setText(nativeGetStatus(nativeHandle) + "\nReport path: " + getRuntimeReportDirPath());
+                    statusView.setMaxLines(4);
+                    statusView.setText(compactStatus(nativeGetStatus(nativeHandle)));
                 } catch (Throwable t) {
                     writeCrashReport("native_status_failed", t);
-                    statusView.setText("SOLUM Engine\nStatus call failed. Report written.\n" + shortThrowable(t) + "\nReport path: " + getRuntimeReportDirPath());
+                    statusView.setMaxLines(8);
+                    statusView.setText("SOLUM Engine\nStatus: status call failed\n" + shortThrowable(t));
                 }
             }
         });
+    }
+
+    private String compactStatus(String full) {
+        String gpu = pickValue(full, "GPU: ");
+        String status = "running";
+        String next = pickValue(full, "Next: ");
+
+        if (full.contains("Vertex buffer: OK")) {
+            status = "Vertex Buffer OK";
+        } else if (full.contains("Triangle draw: OK")) {
+            status = "Triangle OK";
+        } else if (full.contains("Render pass: clear color OK")) {
+            status = "Render Pass OK";
+        } else if (full.contains("Swapchain: created")) {
+            status = "Swapchain OK";
+        } else if (full.toLowerCase(Locale.US).contains("failed")) {
+            status = "Error";
+        }
+
+        if (gpu.isEmpty()) gpu = "detecting";
+        if (next.isEmpty()) next = "Diagnostics / Mesh Foundation";
+
+        return "SOLUM Engine"
+                + "\nVulkan: " + gpu
+                + "\nStatus: " + status
+                + "\nNext: " + shorten(next, 34);
+    }
+
+    private String pickValue(String text, String prefix) {
+        int start = text.indexOf(prefix);
+        if (start < 0) return "";
+        start += prefix.length();
+        int end = text.indexOf('\n', start);
+        if (end < 0) end = text.length();
+        return text.substring(start, end).trim();
+    }
+
+    private String shorten(String text, int max) {
+        if (text == null) return "";
+        if (text.length() <= max) return text;
+        return text.substring(0, Math.max(0, max - 1)) + "…";
     }
 
     private String getRuntimeReportDirPath() {

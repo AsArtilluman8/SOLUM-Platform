@@ -243,6 +243,58 @@ Do not rely on the user to infer success from Gradle/native technical logs.
 
 ---
 
+## ERR-0007: Runtime debug overlay becomes production UI clutter
+
+### Symptoms
+
+Runtime screen shows too much debug text over the viewport:
+
+```text
+Renderer path
+GPU
+Type
+API
+Swapchain
+Render pass
+Vertex buffer
+Triangle draw
+Frames rendered
+Report path
+```
+
+User has to send screenshots because file export is not solved, and the viewport becomes visually polluted.
+
+### Context
+
+Found after P04–P07 Vulkan foundation patches. The text overlay was useful for proving each low-level Vulkan step, but it started to violate mobile-first UX rules after vertex buffer proof.
+
+### Cause
+
+Debug state was displayed directly in the normal runtime UI instead of being treated as Debug mode / report data.
+
+### Fix
+
+Normal runtime overlay must be compact:
+
+```text
+SOLUM Engine
+Vulkan: Mali-G57 MC2
+Status: Vertex Buffer OK
+Next: Mesh Foundation
+```
+
+Detailed Vulkan state must move to diagnostics/report/export flow.
+
+### Prevention
+
+- Debug is a mode, not the normal UI.
+- Viewport is sacred.
+- Status bar is compact by default.
+- Do not keep temporary proof text as final UI.
+- If proof requires many fields, write report/log instead of screen clutter.
+
+---
+
 ## Future errors to add
 
 Следующие категории должны пополняться по мере разработки:

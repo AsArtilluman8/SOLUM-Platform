@@ -89,3 +89,65 @@ Start narrow. Do not build multi-APK suite before core/diagnostics/asset/Vulkan 
 ### Next
 
 Patch P02 — Diagnostics v1 + Vulkan Capability Check.
+
+---
+
+## Patch P02 — Diagnostics v1 + Vulkan Capability Check
+
+### Goal
+
+Create the first real diagnostics layer and collect device/env/git/storage/Vulkan capability facts before renderer work.
+
+### Scope
+
+- `tools/collect_diagnostics.sh`.
+- `tools/report_builder.py`.
+- `tools/vulkan_caps/vulkan_caps.c`.
+- `tools/vulkan_caps/build_and_run_vulkan_caps.sh`.
+- `tools/vulkan_caps/README.md`.
+- Latest/archive diagnostics layout.
+- `SOLUM_LATEST_DIAGNOSTICS.zip` output.
+- `SOLUM_LATEST_REPORT.html` output.
+- `vulkan_caps.json` schema.
+- `performance_history.json` v1 placeholder.
+
+### Build result
+
+NOT TESTED in GitHub environment — must be run on Termux/Android target device.
+
+### Runtime result
+
+NOT TESTED in GitHub environment — no Android app/runtime in Patch P02.
+
+### Diagnostics
+
+Expected after user runs:
+
+```text
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/SOLUM_LATEST_DIAGNOSTICS.zip
+/storage/emulated/0/SOLUMCreative/reports/latest/SOLUM_LATEST_REPORT.html
+```
+
+Fallback root:
+
+```text
+/storage/emulated/0/Download/SOLUMCreative/
+```
+
+### User-visible result
+
+User runs one command and gets one diagnostics ZIP + one HTML report.
+
+### Known issues
+
+- Vulkan caps may fail from Termux shell on some devices.
+- If Vulkan caps fails, report must show honest `status=failed` and include build log.
+- No Vulkan swapchain, renderer, triangle, material or shadow system in this patch by design.
+
+### Lessons
+
+Diagnostics must be useful but low-overhead. Patch P02 establishes facts before graphics systems.
+
+### Next
+
+After user provides diagnostics ZIP: fix P02 if needed, then Patch P03 — Asset Schema v1 + Transaction Save.

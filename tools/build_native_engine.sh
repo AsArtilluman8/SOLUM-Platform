@@ -68,6 +68,31 @@ find_android_clang() {
   return 1
 }
 
+copy_libcxx_shared_if_needed() {
+  local candidate=""
+  for p in \
+    "/data/data/com.termux/files/usr/lib/libc++_shared.so" \
+    "/data/data/com.termux/files/usr/lib/aarch64-linux-android/libc++_shared.so" \
+    "${ANDROID_NDK_HOME:-}/sources/cxx-stl/llvm-libc++/libs/arm64-v8a/libc++_shared.so" \
+    "${ANDROID_NDK_ROOT:-}/sources/cxx-stl/llvm-libc++/libs/arm64-v8a/libc++_shared.so"; do
+    if [ -f "$p" ]; then
+      candidate="$p"
+      break
+    fi
+  done
+
+  if [ -z "$candidate" ]; then
+    candidate="$(find "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/android-sdk}}/ndk" -path '*/sources/cxx-stl/llvm-libc++/libs/arm64-v8a/libc++_shared.so' 2>/dev/null | sort | tail -n 1 || true)"
+  fi
+
+  if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+    cp "$candidate" "$OUT_DIR/libc++_shared.so"
+    echo "Packaged libc++_shared.so from: $candidate"
+  else
+    echo "WARNING: libc++_shared.so not found. APK may crash on native load if libsolum_engine.so needs it."
+  fi
+}
+
 CXX="$(find_android_clang)" || {
   echo "No executable Android/Termux clang++ found" | tee "$LOG"
   exit 1
@@ -89,6 +114,8 @@ CXX="$(find_android_clang)" || {
   fi
   set +x
   echo
+  copy_libcxx_shared_if_needed
+  echo
   echo "Runtime dynamic dependencies:"
   if command -v readelf >/dev/null 2>&1; then
     readelf -d "$OUT" | grep NEEDED || true
@@ -97,6 +124,9 @@ CXX="$(find_android_clang)" || {
   else
     echo "readelf not available"
   fi
+  echo
+  echo "Packaged jniLibs:"
+  ls -la "$OUT_DIR"
 } > "$LOG" 2>&1
 
 echo "Native build OK: $OUT"

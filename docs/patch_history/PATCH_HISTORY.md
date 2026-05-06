@@ -40,6 +40,72 @@ SUCCESS / FAILED / NOT TESTED
 
 ---
 
+## Patch P01G — Accessibility Companion Skeleton
+
+### Goal
+
+Добавить skeleton будущего Android Accessibility companion без real device action.
+
+### Scope
+
+- `apps/solum-companion` skeleton.
+- AccessibilityService stub.
+- SOLUM-only allowlist.
+- Accessibility service XML с screenshot/window content capability flags.
+- Companion/visual diagnostics/MCP docs.
+
+### Changed files/modules
+
+- `apps/solum-companion/README.md`
+- `apps/solum-companion/AndroidManifest.xml`
+- `apps/solum-companion/src/main/java/com/solum/companion/SolumAccessibilityService.kt`
+- `apps/solum-companion/src/main/java/com/solum/companion/SolumCompanionCommand.kt`
+- `apps/solum-companion/src/main/res/xml/solum_accessibility_service.xml`
+- `docs/ACCESSIBILITY_COMPANION_PLAN.md`
+- `docs/VISUAL_DIAGNOSTICS_PACK.md`
+- `docs/MCP_SERVER_SETUP.md`
+- `docs/patch_history/PATCH_HISTORY.md`
+
+### Build result
+
+NOT TESTED — P01G intentionally does not touch Gradle/build system.
+
+### Runtime result
+
+NOT TESTED — stubs only, no real Android device actions.
+
+### Diagnostics
+
+Planned P01H output paths:
+
+```text
+/storage/emulated/0/SOLUMCreative/device_agent/latest/action_log.json
+/storage/emulated/0/SOLUMCreative/device_agent/latest/ui_tree.json
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/final.png
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/visual_diagnostics_manifest.json
+```
+
+### User-visible result
+
+Repo now contains the companion skeleton and docs for the future MCP/device evidence route.
+
+### Known issues
+
+- Companion is not connected to Gradle.
+- No real screenshot capture.
+- No real UI tree dump.
+- No real launch/force-stop implementation.
+
+### Lessons
+
+Accessibility automation must start from a strict SOLUM-only allowlist and stubs before real device control.
+
+### Next
+
+P01H — implement controlled real screenshot/UI tree/action-log path for allowlisted SOLUM apps.
+
+---
+
 ## Patch P01F — Real MCP Server Wrapper
 
 ### Goal

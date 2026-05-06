@@ -18,6 +18,35 @@
 
 Wrapper не является runtime/Vulkan частью проекта и не меняет Android build system.
 
+## P01G companion MCP placeholders
+
+P01G документирует future Accessibility companion route только как skeleton/stub. Эти MCP tools ещё не выполняют real device action и не добавлены в runtime bridge:
+
+```text
+solum_companion_status
+solum_companion_screenshot
+solum_companion_ui_tree
+solum_companion_visual_pack
+```
+
+Planned behavior for P01H:
+
+- `solum_companion_status` — проверить доступность companion service и активный allowlisted SOLUM package.
+- `solum_companion_screenshot` — запросить screenshot только для SOLUM allowlist.
+- `solum_companion_ui_tree` — запросить UI tree только для SOLUM allowlist.
+- `solum_companion_visual_pack` — собрать visual diagnostics pack paths.
+
+P01G не делает real screenshot, UI tree dump, launch, force-stop или tap automation.
+
+Planned output paths:
+
+```text
+/storage/emulated/0/SOLUMCreative/device_agent/latest/action_log.json
+/storage/emulated/0/SOLUMCreative/device_agent/latest/ui_tree.json
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/final.png
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/visual_diagnostics_manifest.json
+```
+
 ## Главный safety принцип
 
 MCP wrapper не принимает arbitrary shell command.

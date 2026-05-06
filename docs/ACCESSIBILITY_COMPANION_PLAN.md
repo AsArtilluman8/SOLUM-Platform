@@ -1,6 +1,8 @@
 # ACCESSIBILITY_COMPANION_PLAN — future SOLUM companion app
 
-Этот документ фиксирует будущий Android Accessibility companion для SOLUM. В P01E приложение не создаётся.
+Этот документ фиксирует будущий Android Accessibility companion для SOLUM.
+
+P01G status: создан skeleton в `apps/solum-companion`. Реальные device actions не реализованы и входят в P01H.
 
 ## Что даст companion app
 
@@ -34,6 +36,7 @@ Expected output:
 
 ```text
 /storage/emulated/0/SOLUMCreative/diagnostics/latest/final.png
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/visual_diagnostics_manifest.json
 ```
 
 ## UI tree route
@@ -55,7 +58,7 @@ redacts text if needed
 Expected output:
 
 ```text
-/storage/emulated/0/SOLUMCreative/diagnostics/latest/ui_tree.json
+/storage/emulated/0/SOLUMCreative/device_agent/latest/ui_tree.json
 ```
 
 UI tree нужен для SOLUM editor controls, panels, errors и status overlay. Он не должен использоваться для чужих приложений.
@@ -81,6 +84,7 @@ com.solum.engine
 com.solum.launcher
 com.solum.assethub
 com.solum.materialstudio
+com.asart.solum
 ```
 
 Любой другой package должен возвращать отказ:
@@ -141,3 +145,36 @@ Companion должен:
 - не читать secrets;
 - не менять Vulkan/render state;
 - не делать destructive app/device actions.
+
+## P01G skeleton
+
+Добавленные файлы:
+
+```text
+apps/solum-companion/README.md
+apps/solum-companion/AndroidManifest.xml
+apps/solum-companion/src/main/java/com/solum/companion/SolumAccessibilityService.kt
+apps/solum-companion/src/main/java/com/solum/companion/SolumCompanionCommand.kt
+apps/solum-companion/src/main/res/xml/solum_accessibility_service.xml
+```
+
+AccessibilityService содержит только stubs:
+
+```text
+captureScreenshotStub()
+dumpUiTreeStub()
+writeActionLogStub()
+launchSolumStub()
+forceStopSolumStub()
+```
+
+Planned outputs:
+
+```text
+/storage/emulated/0/SOLUMCreative/device_agent/latest/action_log.json
+/storage/emulated/0/SOLUMCreative/device_agent/latest/ui_tree.json
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/final.png
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/visual_diagnostics_manifest.json
+```
+
+P01G не реализует taps outside allowlist и не выполняет real screenshot/UI tree capture.

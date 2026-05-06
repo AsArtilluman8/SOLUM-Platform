@@ -1,13 +1,14 @@
 # TELEGRAM_REPORTING — real Telegram send foundation
 
-Этот документ фиксирует P01C: локальный агент может отправить короткий SOLUM report в Telegram через Telegram Bot API.
+Этот документ фиксирует Telegram send foundation: локальный агент может отправить короткий SOLUM report в Telegram через Telegram Bot API.
 
 ## Цель
 
-Добавить реальную отправку уже подготовленного отчёта:
+Добавить реальную отправку уже подготовленных отчётов:
 
 ```text
 _work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt
+_work/agent_reports/latest/SOLUM_AGENT_REPORT.html
 ```
 
 Генератор отчёта остаётся отдельным tool:
@@ -59,11 +60,13 @@ export TELEGRAM_CHAT_ID=...
 
 ```bash
 python3 tools/agent_telegram_report.py \
-  --stage-patch "P01C — real Telegram send foundation" \
-  --changed "tools/send_telegram_report.py;docs/TELEGRAM_REPORTING.md;docs/AGENT_LOCAL_TOOLS.md;docs/patch_history/PATCH_HISTORY.md" \
-  --checks "python3 -m py_compile tools/send_telegram_report.py;python3 tools/send_telegram_report.py --dry-run;python3 tools/send_telegram_report.py --send" \
-  --output "_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt" \
-  --known-issues "No Android/runtime/Vulkan checks in this patch" \
+  --stage-patch "P01D — понятные отчёты + HTML" \
+  --changed "Добавил русский понятный отчёт;Добавил HTML-отчёт;Добавил отправку HTML файлом в Telegram" \
+  --checks "Python syntax — OK;Dry run — OK" \
+  --not-touched "Android runtime;Vulkan;Gradle/build system" \
+  --problems "Точные токены недоступны, используется примерная оценка" \
+  --files "_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt;_work/agent_reports/latest/SOLUM_AGENT_REPORT.html" \
+  --context-load MEDIUM \
   --next-step "Review PR"
 ```
 
@@ -87,7 +90,8 @@ Dry run:
 dry_run=ok
 telegram_bot_token=present_redacted
 telegram_chat_id=present
-report_file=_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt
+html_report=present path=_work/agent_reports/latest/SOLUM_AGENT_REPORT.html
+txt_report=present path=_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt
 ```
 
 Send:
@@ -95,8 +99,12 @@ Send:
 ```text
 send=success
 message_id=...
+document=success path=_work/agent_reports/latest/SOLUM_AGENT_REPORT.html
+document=success path=_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt
 ```
 
 ## Failure policy
 
 Если Telegram API, сеть или секреты недоступны, скрипт завершает работу с кодом `1` и печатает только безопасную ошибку без token value.
+
+Если HTML/TXT report-файлов нет, скрипт не падает только из-за этого: он отправляет summary с `!!` проблемой о недостающих файлах.

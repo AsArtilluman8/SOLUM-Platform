@@ -8,7 +8,13 @@
 tools/agent_tools/solum_tool_bridge.py
 ```
 
-Это CLI bridge, не полноценный MCP server.
+Это CLI bridge. P01F MCP-style server layer находится отдельно:
+
+```text
+tools/mcp_server/solum_mcp_server.py
+```
+
+Он вызывает только этот bridge с `--json`.
 
 ## Commands
 
@@ -45,6 +51,62 @@ errors
 ```
 
 `send-telegram-report --dry-run --json` не читает Telegram token и выводит только `token=not_read`.
+
+## MCP-style wrapper
+
+Команды:
+
+```bash
+python3 tools/mcp_server/solum_mcp_server.py --help
+python3 tools/mcp_server/solum_mcp_server.py list-tools
+python3 tools/mcp_server/solum_mcp_server.py print-config
+python3 tools/mcp_server/solum_mcp_server.py smoke-test
+python3 tools/mcp_server/solum_mcp_server.py call solum_print_status --dry-run
+python3 tools/mcp_server/solum_mcp_server.py call solum_latest_paths --dry-run
+python3 tools/mcp_server/solum_mcp_server.py call solum_generate_report --dry-run
+python3 tools/mcp_server/solum_mcp_server.py call solum_send_telegram_report --dry-run
+python3 tools/mcp_server/solum_mcp_server.py call solum_foundation_readiness --dry-run
+```
+
+Wrapper tools:
+
+```text
+solum_print_status
+solum_latest_paths
+solum_generate_report
+solum_send_telegram_report
+solum_foundation_readiness
+```
+
+Wrapper JSON contract:
+
+```text
+ok
+tool
+dry_run
+result
+errors
+```
+
+MCP-compatible stdio methods:
+
+```text
+initialize
+tools/list
+tools/call
+```
+
+Stdio test:
+
+```bash
+printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}\n{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"solum_print_status","arguments":{"dry_run":true}}}\n' | python3 tools/mcp_server/solum_mcp_server.py serve-stdio
+```
+
+Real Telegram send через wrapper требует:
+
+```bash
+python3 tools/mcp_server/solum_mcp_server.py call solum_send_telegram_report --send --no-dry-run
+```
 
 ## Real side effects
 

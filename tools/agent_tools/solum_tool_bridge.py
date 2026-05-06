@@ -45,6 +45,29 @@ def run_allowed(command: list[str], dry_run: bool) -> int:
     return int(result.returncode)
 
 
+def run_allowed_json(command: list[str], args: argparse.Namespace, extra: dict[str, object] | None = None) -> int:
+    result = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    payload = base_payload(args, ok=result.returncode == 0)
+    payload["result"] = {
+        "command": planned_command(command),
+        "exit_code": result.returncode,
+        "stdout": result.stdout.strip(),
+        "stderr": result.stderr.strip(),
+    }
+    if extra:
+        payload.update(extra)
+    if result.returncode != 0:
+        payload["errors"].append(f"exit_code={result.returncode}")
+    return emit_json(payload)
+
+
 def git_value(args: list[str], fallback: str = "unknown") -> str:
     result = subprocess.run(
         ["git", *args],
@@ -153,6 +176,17 @@ def command_generate_report(args: argparse.Namespace) -> int:
         print("dry_run=ok")
         print("would_write=" + rel(TEXT_REPORT))
         print("would_write=" + rel(HTML_REPORT))
+    if args.json:
+        return run_allowed_json(
+            command,
+            args,
+            {
+                "paths": {
+                    "text_report": path_status(TEXT_REPORT),
+                    "html_report": path_status(HTML_REPORT),
+                }
+            },
+        )
     return run_allowed(command, args.dry_run)
 
 
@@ -185,7 +219,23 @@ def command_send_telegram_report(args: argparse.Namespace) -> int:
         print(path_state(TEXT_REPORT))
         print(path_state(HTML_REPORT))
         return 0
-    return run_allowed([sys.executable, "tools/send_telegram_report.py", sender_mode], dry_run=False)
+    command = [sys.executable, "tools/send_telegram_report.py", sender_mode]
+    if args.json:
+        return run_allowed_json(
+            command,
+            args,
+            {
+                "paths": {
+                    "text_report": path_status(TEXT_REPORT),
+                    "html_report": path_status(HTML_REPORT),
+                    "secret_file": {
+                        "path": "~/.solum/secrets/telegram.env",
+                        "status": "read_by_sender_only" if args.send else "not_read",
+                    },
+                }
+            },
+        )
+    return run_allowed(command, dry_run=False)
 
 
 def command_foundation_readiness(args: argparse.Namespace) -> int:
@@ -211,6 +261,16 @@ def command_foundation_readiness(args: argparse.Namespace) -> int:
         print("dry_run=ok")
         print("runner_requested=" + ("yes" if args.run_runner else "no"))
         print("would_write=" + rel(FOUNDATION_REPORT))
+    if args.json:
+        return run_allowed_json(
+            command,
+            args,
+            {
+                "paths": {
+                    "foundation_report": path_status(FOUNDATION_REPORT),
+                }
+            },
+        )
     return run_allowed(command, args.dry_run)
 
 
@@ -288,15 +348,15 @@ def parse_args() -> argparse.Namespace:
 
     generate = subparsers.add_parser("generate-report", help="Create local TXT/HTML agent report.")
     add_common(generate)
-    generate.add_argument("--stage-patch", default="P01E — MCP/local tools bridge foundation")
+    generate.add_argument("--stage-patch", default="P01F — Real MCP server wrapper")
     generate.add_argument("--status", default="готово к review")
     generate.add_argument(
         "--changed",
-        default="Добавлен CLI bridge foundation;Добавлена MCP/local tools документация;Добавлен Accessibility companion plan",
+        default="Добавлен MCP-style server wrapper;Добавлена explicit tool schema;Обновлена MCP документация",
     )
     generate.add_argument(
         "--checks",
-        default="Bridge dry-run checks запланированы;Runtime/Vulkan/Gradle вне scope",
+        default="MCP wrapper dry-run checks запланированы;Bridge JSON check запланирован;Runtime/Vulkan/Gradle вне scope",
     )
     generate.add_argument(
         "--not-touched",
@@ -304,11 +364,11 @@ def parse_args() -> argparse.Namespace:
     )
     generate.add_argument(
         "--problems",
-        default="Настоящий MCP server ещё не создан;Accessibility companion пока только план",
+        default="MCP wrapper foundation без внешнего MCP SDK;Accessibility companion пока только план",
     )
     generate.add_argument(
         "--files",
-        default="docs/MCP_LOCAL_TOOLS_BRIDGE.md;docs/ACCESSIBILITY_COMPANION_PLAN.md;tools/agent_tools/README.md;tools/agent_tools/solum_tool_bridge.py",
+        default="tools/mcp_server/solum_mcp_server.py;docs/MCP_SERVER_SETUP.md;docs/MCP_LOCAL_TOOLS_BRIDGE.md;tools/agent_tools/README.md;docs/patch_history/PATCH_HISTORY.md",
     )
     generate.add_argument("--context-load", choices=["AUTO", "LOW", "MEDIUM", "HIGH"], default="MEDIUM")
     generate.add_argument("--next-step", default="Review PR")

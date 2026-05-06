@@ -262,6 +262,83 @@ Review PR, then use Telegram send only for explicitly approved agent reports.
 
 ---
 
+## Patch P01D — Human-Friendly Telegram + HTML Report Pack
+
+### Goal
+
+Сделать отчёты агента понятными обычному человеку: короткий русский Telegram summary + HTML-файл.
+
+### Scope
+
+- `tools/agent_telegram_report.py` создаёт TXT и HTML отчёты.
+- `tools/send_telegram_report.py` отправляет summary через `sendMessage` и прикрепляет HTML/TXT через `sendDocument`.
+- `docs/HUMAN_REPORTS_SPEC.md`.
+- `docs/AGENT_DASHBOARD_REPORTS.md`.
+- `docs/CODEX_LAUNCH_MODES.md`.
+- `docs/AGENT_LOCAL_TOOLS.md` update.
+- Тестовые отчёты в `_work/agent_reports/latest/`.
+
+### Changed files/modules
+
+- `tools/agent_telegram_report.py`
+- `tools/send_telegram_report.py`
+- `docs/HUMAN_REPORTS_SPEC.md`
+- `docs/AGENT_DASHBOARD_REPORTS.md`
+- `docs/CODEX_LAUNCH_MODES.md`
+- `docs/AGENT_LOCAL_TOOLS.md`
+- `docs/patch_history/PATCH_HISTORY.md`
+- `_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt`
+- `_work/agent_reports/latest/SOLUM_AGENT_REPORT.html`
+- `_work/agent_reports/latest/SOLUM_AGENT_METRICS.json`
+
+### Build result
+
+NOT TESTED — no Android/Gradle/build-system changes.
+
+Local checks:
+
+```text
+python3 -m py_compile tools/agent_telegram_report.py
+python3 -m py_compile tools/send_telegram_report.py
+python3 tools/agent_telegram_report.py --help
+python3 tools/send_telegram_report.py --dry-run
+python3 tools/send_telegram_report.py --send
+```
+
+### Runtime result
+
+NOT TESTED — no Android runtime, Vulkan, Gradle or build-system changes.
+
+### Diagnostics
+
+Human reports:
+
+```text
+_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt
+_work/agent_reports/latest/SOLUM_AGENT_REPORT.html
+_work/agent_reports/latest/SOLUM_AGENT_METRICS.json
+```
+
+### User-visible result
+
+Пользователь получает короткий Telegram summary на русском и HTML dashboard attachment. TXT attachment остаётся optional.
+
+### Known issues
+
+- Telegram send зависит от `~/.solum/secrets/telegram.env`, сети и Telegram API.
+- Точные токены недоступны, используется только LOW/MEDIUM/HIGH оценка.
+- Runtime/FPS/visual metrics могут быть `not_available`, если diagnostics не запускались.
+
+### Lessons
+
+Отчёты агента должны быть человекочитаемыми, но secrets и network остаются строго отделены от генерации отчёта.
+
+### Next
+
+Review PR.
+
+---
+
 ## Patch P02 — Diagnostics v1 + Vulkan Capability Check
 
 ### Goal

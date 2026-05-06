@@ -12,10 +12,11 @@ Local agent tools нужны, чтобы агент мог быстро оста
 tools/agent_telegram_report.py
 ```
 
-Он создаёт локальный Telegram-ready текстовый отчёт:
+Он создаёт локальный human-friendly отчёт:
 
 ```text
 _work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt
+_work/agent_reports/latest/SOLUM_AGENT_REPORT.html
 ```
 
 Второй tool:
@@ -24,22 +25,31 @@ _work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt
 tools/send_telegram_report.py
 ```
 
-Он отправляет уже созданный report в Telegram через Telegram Bot API.
+Он отправляет короткий русский summary в Telegram через Telegram Bot API и прикрепляет отчёты файлами.
 
 Подробные правила:
 
 ```text
 docs/TELEGRAM_REPORTING.md
+docs/HUMAN_REPORTS_SPEC.md
+docs/AGENT_DASHBOARD_REPORTS.md
 ```
 
 ## Разрешено
 
-- писать только локальный текстовый report;
+- писать локальный текстовый report и локальный HTML report;
 - использовать `_work/agent_reports/latest/`;
-- включать `Stage / Patch`, `Changed`, `Checks`, `Output`, `Known issues`, `Next step`;
+- включать `Что сделал`, `Что проверил`, `Что не трогал`, `Проблемы`, `Следующий шаг`, `Файлы`;
+- использовать маркеры `++`, `--`, `!!`, `->`;
+- показывать только примерный Context Load / Token Load Estimate: `🟢 LOW`, `🟡 MEDIUM`, `🔴 HIGH`;
 - запускать через `python3` как локальный project tool;
 - для `tools/send_telegram_report.py` читать только `~/.solum/secrets/telegram.env`;
-- отправлять содержимое `_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt` в Telegram, если пользователь явно разрешил real send.
+- отправлять summary через `sendMessage`, если пользователь явно разрешил real send;
+- прикреплять `_work/agent_reports/latest/SOLUM_AGENT_REPORT.html` через `sendDocument`;
+- прикреплять `_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt` через `sendDocument`, если файл есть;
+- не падать только из-за отсутствия HTML/TXT report-файлов, а писать это в summary.
+- использовать optional metrics JSON `_work/agent_reports/latest/SOLUM_AGENT_METRICS.json`;
+- при отсутствии runtime/visual metrics честно писать `not_available`.
 
 ## Запрещено
 
@@ -56,39 +66,50 @@ docs/TELEGRAM_REPORTING.md
 
 ```bash
 python3 tools/agent_telegram_report.py \
-  --stage-patch "P01B — Telegram report + local agent tools foundation" \
-  --changed "tools/agent_telegram_report.py;docs/AGENT_LOCAL_TOOLS.md" \
-  --checks "python3 tools/agent_telegram_report.py --help" \
-  --output "_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt" \
-  --known-issues "No Telegram send by design" \
+  --stage-patch "P01D — понятные отчёты + HTML" \
+  --changed "Добавил русский понятный отчёт;Добавил HTML-отчёт" \
+  --checks "Python syntax — OK;Dry run — OK" \
+  --not-touched "Android runtime;Vulkan;Gradle/build system" \
+  --problems "Точные токены недоступны, используется примерная оценка" \
+  --files "_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt;_work/agent_reports/latest/SOLUM_AGENT_REPORT.html" \
+  --metrics "_work/agent_reports/latest/SOLUM_AGENT_METRICS.json" \
+  --context-load MEDIUM \
   --next-step "Review PR"
 ```
 
 ## Формат отчёта
 
 ```text
-SOLUM AGENT REPORT
-Timestamp: ...
-Stage / Patch: ...
+✅ SOLUM Agent Report
 
-Changed:
-- ...
+Патч: ...
+Статус: ...
 
-Checks:
-- ...
+Что сделал:
+++ ...
 
-Output:
-- ...
+Что проверил:
+++ ...
 
-Known issues:
-- ...
+Что не трогал:
+-- ...
 
-Next step:
-- ...
+Проблемы:
+!! ...
+
+Нагрузка:
+🟡 MEDIUM
+
+Следующий шаг:
+-> ...
 ```
 
 ## Правило
 
-`tools/agent_telegram_report.py` подготавливает текст для человека или отправителя. Он не читает secrets и не делает network calls.
+`tools/agent_telegram_report.py` подготавливает TXT/HTML для человека или отправителя. Он не читает secrets и не делает network calls.
 
 `tools/send_telegram_report.py` является отдельной real Telegram send integration. Его можно запускать только когда пользователь явно разрешил Telegram send и доступ к `~/.solum/secrets/telegram.env`.
+
+Подробный формат human-friendly отчёта описан в `docs/HUMAN_REPORTS_SPEC.md`.
+
+Dashboard HTML описан в `docs/AGENT_DASHBOARD_REPORTS.md`.

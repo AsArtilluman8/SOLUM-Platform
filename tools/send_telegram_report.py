@@ -70,6 +70,15 @@ def existing_regular_files(paths: list[Path]) -> list[Path]:
     return [path for path in paths if path.exists() and path.is_file()]
 
 
+def find_line(text: str | None, prefix: str, fallback: str) -> str:
+    if not text:
+        return fallback
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            return line.split(":", 1)[1].strip()
+    return fallback
+
+
 def build_summary(text_report: str | None, html_path: Path, txt_path: Path) -> str:
     missing: list[str] = []
     if not html_path.is_file():
@@ -77,22 +86,27 @@ def build_summary(text_report: str | None, html_path: Path, txt_path: Path) -> s
     if not txt_path.is_file():
         missing.append(f"!! TXT-отчёт не найден: {txt_path}")
 
-    if text_report:
-        summary = text_report
-    else:
-        summary = "\n".join(
-            [
-                "✅ SOLUM Agent Report",
-                "",
-                "Патч: unknown",
-                "Статус: отчётные файлы не найдены",
-                "",
-                "Проблемы:",
-            ]
-        )
+    patch = find_line(text_report, "Патч:", "unknown")
+    status = find_line(text_report, "Статус:", "отчётные файлы не найдены")
+    lines = [
+        "✅ SOLUM Agent Report",
+        "",
+        f"Патч: {patch}",
+        f"Статус: {status}",
+        "",
+        "Что отправлено:",
+    ]
+    if html_path.is_file():
+        lines.append("++ HTML dashboard attached")
+    if txt_path.is_file():
+        lines.append("++ TXT report attached")
 
     if missing:
-        summary = f"{summary.rstrip()}\n\nПроблемы:\n" + "\n".join(missing)
+        lines.append("")
+        lines.append("Проблемы:")
+        lines.extend(missing)
+    lines.extend(["", "Следующий шаг:", "-> Review PR"])
+    summary = "\n".join(lines)
 
     if len(summary) > MAX_TELEGRAM_MESSAGE_CHARS:
         return summary[: MAX_TELEGRAM_MESSAGE_CHARS - 40].rstrip() + "\n\n!! Summary сокращён для Telegram"

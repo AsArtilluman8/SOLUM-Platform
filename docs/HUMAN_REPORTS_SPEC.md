@@ -45,16 +45,28 @@ _work/agent_reports/latest/SOLUM_AGENT_REPORT.html
 ++ ...
 ```
 
-## HTML report
+## HTML dashboard
 
-HTML-отчёт содержит те же блоки, но в читаемом виде:
+HTML-отчёт должен быть dashboard, а не копия TXT.
 
-- заголовок с patch/status;
+- крупный статус patch;
+- блок `Простыми словами`;
 - блоки действий, проверок, out of scope, проблем, next step и файлов;
+- таблицу изменённых файлов;
+- timeline `docs read -> patch -> checks -> PR -> Telegram`;
+- visual cards: Build, Runtime, Vulkan, Telegram, Context Load;
+- progress bar готовности;
+- Debug / Metrics section;
 - Context Load / Token Load Estimate;
-- встроенную текстовую версию для сверки.
+- встроенную текстовую версию как secondary debug view.
 
 HTML должен быть самодостаточным файлом без внешних CSS/JS и без secrets.
+
+Подробный dashboard format:
+
+```text
+docs/AGENT_DASHBOARD_REPORTS.md
+```
 
 ## Обозначения
 
@@ -78,6 +90,24 @@ HTML должен быть самодостаточным файлом без в
 ```
 
 Запрещено писать точное число токенов. Точная метрика недоступна локальному project tool и не должна имитироваться.
+
+## Optional metrics JSON
+
+Если есть файл:
+
+```text
+_work/agent_reports/latest/SOLUM_AGENT_METRICS.json
+```
+
+HTML показывает supported runtime/visual/check metrics.
+
+Если файла нет, HTML честно пишет:
+
+```text
+Метрики недоступны: runtime/visual diagnostics не запускались
+```
+
+Если поле равно `null`, HTML показывает `not_available`.
 
 ## Safety
 

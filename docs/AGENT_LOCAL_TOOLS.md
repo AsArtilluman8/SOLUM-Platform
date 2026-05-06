@@ -32,6 +32,7 @@ tools/send_telegram_report.py
 ```text
 docs/TELEGRAM_REPORTING.md
 docs/HUMAN_REPORTS_SPEC.md
+docs/AGENT_DASHBOARD_REPORTS.md
 ```
 
 ## Разрешено
@@ -47,6 +48,8 @@ docs/HUMAN_REPORTS_SPEC.md
 - прикреплять `_work/agent_reports/latest/SOLUM_AGENT_REPORT.html` через `sendDocument`;
 - прикреплять `_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt` через `sendDocument`, если файл есть;
 - не падать только из-за отсутствия HTML/TXT report-файлов, а писать это в summary.
+- использовать optional metrics JSON `_work/agent_reports/latest/SOLUM_AGENT_METRICS.json`;
+- при отсутствии runtime/visual metrics честно писать `not_available`.
 
 ## Запрещено
 
@@ -69,6 +72,7 @@ python3 tools/agent_telegram_report.py \
   --not-touched "Android runtime;Vulkan;Gradle/build system" \
   --problems "Точные токены недоступны, используется примерная оценка" \
   --files "_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt;_work/agent_reports/latest/SOLUM_AGENT_REPORT.html" \
+  --metrics "_work/agent_reports/latest/SOLUM_AGENT_METRICS.json" \
   --context-load MEDIUM \
   --next-step "Review PR"
 ```
@@ -107,3 +111,5 @@ python3 tools/agent_telegram_report.py \
 `tools/send_telegram_report.py` является отдельной real Telegram send integration. Его можно запускать только когда пользователь явно разрешил Telegram send и доступ к `~/.solum/secrets/telegram.env`.
 
 Подробный формат human-friendly отчёта описан в `docs/HUMAN_REPORTS_SPEC.md`.
+
+Dashboard HTML описан в `docs/AGENT_DASHBOARD_REPORTS.md`.

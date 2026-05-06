@@ -273,6 +273,7 @@ Review PR, then use Telegram send only for explicitly approved agent reports.
 - `tools/agent_telegram_report.py` создаёт TXT и HTML отчёты.
 - `tools/send_telegram_report.py` отправляет summary через `sendMessage` и прикрепляет HTML/TXT через `sendDocument`.
 - `docs/HUMAN_REPORTS_SPEC.md`.
+- `docs/AGENT_DASHBOARD_REPORTS.md`.
 - `docs/CODEX_LAUNCH_MODES.md`.
 - `docs/AGENT_LOCAL_TOOLS.md` update.
 - Тестовые отчёты в `_work/agent_reports/latest/`.
@@ -282,11 +283,13 @@ Review PR, then use Telegram send only for explicitly approved agent reports.
 - `tools/agent_telegram_report.py`
 - `tools/send_telegram_report.py`
 - `docs/HUMAN_REPORTS_SPEC.md`
+- `docs/AGENT_DASHBOARD_REPORTS.md`
 - `docs/CODEX_LAUNCH_MODES.md`
 - `docs/AGENT_LOCAL_TOOLS.md`
 - `docs/patch_history/PATCH_HISTORY.md`
 - `_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt`
 - `_work/agent_reports/latest/SOLUM_AGENT_REPORT.html`
+- `_work/agent_reports/latest/SOLUM_AGENT_METRICS.json`
 
 ### Build result
 
@@ -313,16 +316,18 @@ Human reports:
 ```text
 _work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt
 _work/agent_reports/latest/SOLUM_AGENT_REPORT.html
+_work/agent_reports/latest/SOLUM_AGENT_METRICS.json
 ```
 
 ### User-visible result
 
-Пользователь получает Telegram summary на русском и два прикреплённых файла отчёта: HTML и TXT.
+Пользователь получает короткий Telegram summary на русском и HTML dashboard attachment. TXT attachment остаётся optional.
 
 ### Known issues
 
 - Telegram send зависит от `~/.solum/secrets/telegram.env`, сети и Telegram API.
 - Точные токены недоступны, используется только LOW/MEDIUM/HIGH оценка.
+- Runtime/FPS/visual metrics могут быть `not_available`, если diagnostics не запускались.
 
 ### Lessons
 

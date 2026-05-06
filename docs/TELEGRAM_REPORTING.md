@@ -11,6 +11,8 @@ _work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt
 _work/agent_reports/latest/SOLUM_AGENT_REPORT.html
 ```
 
+HTML-файл является dashboard: cards, timeline, progress bars и Debug / Metrics.
+
 Генератор отчёта остаётся отдельным tool:
 
 ```text
@@ -61,10 +63,10 @@ export TELEGRAM_CHAT_ID=...
 ```bash
 python3 tools/agent_telegram_report.py \
   --stage-patch "P01D — понятные отчёты + HTML" \
-  --changed "Добавил русский понятный отчёт;Добавил HTML-отчёт;Добавил отправку HTML файлом в Telegram" \
+  --changed "Переделал HTML в dashboard;Добавил metrics JSON support;Добавил отправку HTML dashboard файлом в Telegram" \
   --checks "Python syntax — OK;Dry run — OK" \
   --not-touched "Android runtime;Vulkan;Gradle/build system" \
-  --problems "Точные токены недоступны, используется примерная оценка" \
+  --problems "FPS/visual данные not_available, потому что runtime/visual diagnostics не запускались;Точные токены недоступны, используется примерная оценка" \
   --files "_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt;_work/agent_reports/latest/SOLUM_AGENT_REPORT.html" \
   --context-load MEDIUM \
   --next-step "Review PR"
@@ -101,6 +103,12 @@ send=success
 message_id=...
 document=success path=_work/agent_reports/latest/SOLUM_AGENT_REPORT.html
 document=success path=_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt
+```
+
+Telegram summary должен быть коротким. Если HTML есть, summary пишет:
+
+```text
+++ HTML dashboard attached
 ```
 
 ## Failure policy

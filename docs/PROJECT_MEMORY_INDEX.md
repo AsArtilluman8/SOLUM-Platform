@@ -174,6 +174,12 @@ Future Action RPG mechanics knowledge base. Документировать се�
 
 Порядок первых патчей и критерии завершения.
 
+### Foundation readiness
+
+- `docs/FOUNDATION_READINESS.md`
+
+Patch 01 continuation: проверка repo/build/tools foundation без runtime/Vulkan изменений.
+
 ### Diagnostics
 
 - `docs/DIAGNOSTICS_SPEC.md`

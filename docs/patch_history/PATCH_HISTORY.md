@@ -339,6 +339,93 @@ Review PR.
 
 ---
 
+## Patch P01E — MCP/local tools bridge foundation
+
+### Goal
+
+Add a local CLI bridge foundation for future MCP tools without creating a real MCP server or touching runtime/Vulkan/Gradle.
+
+### Scope
+
+- `docs/MCP_LOCAL_TOOLS_BRIDGE.md`.
+- `docs/ACCESSIBILITY_COMPANION_PLAN.md`.
+- `tools/agent_tools/README.md`.
+- `tools/agent_tools/solum_tool_bridge.py`.
+- `docs/AGENT_LOCAL_TOOLS.md` update.
+- Bridge commands:
+  - `generate-report`;
+  - `send-telegram-report`;
+  - `foundation-readiness`;
+  - `latest-paths`;
+  - `print-status`.
+
+### Changed files/modules
+
+- `docs/MCP_LOCAL_TOOLS_BRIDGE.md`
+- `docs/ACCESSIBILITY_COMPANION_PLAN.md`
+- `docs/AGENT_LOCAL_TOOLS.md`
+- `docs/patch_history/PATCH_HISTORY.md`
+- `tools/agent_telegram_report.py`
+- `tools/agent_tools/README.md`
+- `tools/agent_tools/solum_tool_bridge.py`
+
+### Build result
+
+NOT TESTED — no Android/Gradle/build-system changes.
+
+Local checks planned:
+
+```text
+python3 -m py_compile tools/agent_tools/solum_tool_bridge.py
+python3 tools/agent_tools/solum_tool_bridge.py --help
+python3 tools/agent_tools/solum_tool_bridge.py print-status --dry-run
+python3 tools/agent_tools/solum_tool_bridge.py generate-report --dry-run
+python3 tools/agent_tools/solum_tool_bridge.py send-telegram-report --dry-run
+```
+
+P01E follow-up adds structured JSON output for future MCP wrapping:
+
+```text
+python3 tools/agent_tools/solum_tool_bridge.py print-status --dry-run --json
+python3 tools/agent_tools/solum_tool_bridge.py latest-paths --dry-run --json
+python3 tools/agent_tools/solum_tool_bridge.py foundation-readiness --dry-run --json
+python3 tools/agent_tools/solum_tool_bridge.py generate-report --dry-run --json
+python3 tools/agent_tools/solum_tool_bridge.py send-telegram-report --dry-run --json
+```
+
+### Runtime result
+
+NOT TESTED — no Android runtime, Vulkan, Gradle or build-system changes.
+
+### Diagnostics
+
+Expected local report outputs:
+
+```text
+_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt
+_work/agent_reports/latest/SOLUM_AGENT_REPORT.html
+```
+
+### User-visible result
+
+Agents get one local bridge entry point that can generate reports, send explicitly approved Telegram reports, print latest paths and run foundation readiness.
+
+### Known issues
+
+- Not a real MCP server yet.
+- Accessibility companion is a plan only.
+- Telegram send depends on `~/.solum/secrets/telegram.env`, network and Telegram API.
+
+### Lessons
+
+MCP integration should start as an allowlisted local bridge before exposing a server. Do not expose arbitrary shell as MCP.
+
+### Next
+
+Wrap the CLI bridge in a real MCP server with structured JSON outputs and add a separate SOLUM-only Accessibility companion when runtime/UI diagnostics need device-side evidence.
+
+---
+
 ## Patch P02 — Diagnostics v1 + Vulkan Capability Check
 
 ### Goal

@@ -104,3 +104,33 @@ In supervised-autopilot Codex may not:
 - delete large folders;
 - read secrets;
 - change roadmap silently.
+
+## supervised-autopilot-pr
+
+Режим активен только когда пользователь явно пишет:
+
+```text
+Режим: supervised-autopilot-pr
+```
+
+Только в этом режиме или после равнозначной прямой команды пользователя Codex может автоматически:
+
+- создать scoped branch;
+- сделать один logical commit;
+- push branch;
+- создать PR в main.
+
+Правила merge:
+
+- merge main запрещён без отдельной явной команды пользователя;
+- auto-merge запрещён без отдельной явной команды пользователя;
+- force push запрещён.
+
+Правило длинной задачи:
+
+- если задача рассчитана на 2-3 часа или пользователь просит autopilot PR, Codex должен подготовить report и PR-ready результат, а не останавливаться после мелкой правки;
+- если PR mode явно разрешён, Codex должен создать branch, commit, push и PR, если не сработал stop condition.
+
+Детали workflow:
+
+- docs/AGENT_AUTOPILOT_WORKFLOW.md

@@ -1,6 +1,7 @@
 ---
 name: solum-code-reviewer
 description: Use after code/docs changes to review SOLUM diffs for architecture drift, fake implementation, unsafe operations, and project rule violations.
+skillPackVersion: v1
 ---
 
 # SOLUM Code Reviewer

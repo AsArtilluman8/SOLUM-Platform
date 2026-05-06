@@ -1,6 +1,7 @@
 ---
 name: solum-mobile-ux-designer
 description: Use for SOLUM mobile UI, editor UX, panels, viewport, controls, design polish, layout, and interaction review.
+skillPackVersion: v1
 ---
 
 # SOLUM Mobile UX Designer

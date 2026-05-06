@@ -1,6 +1,7 @@
 ---
 name: solum-github-pr-worker
 description: Use when preparing a GitHub branch, commit, push, or pull request for SOLUM. Does not allow merge unless explicitly authorized.
+skillPackVersion: v1
 ---
 
 # SOLUM GitHub PR Worker

@@ -1,6 +1,7 @@
 ---
 name: solum-build-fixer
 description: Use for Termux, Ubuntu proot, Android Gradle, APK build, SDK/NDK/aapt2, and SOLUM build runner issues.
+skillPackVersion: v1
 ---
 
 # SOLUM Build Fixer

@@ -1,6 +1,7 @@
 ---
 name: solum-vulkan-architecture-guard
 description: Use for Vulkan, rendering, materials, shadows, diagnostics, engine architecture, and runtime direction checks.
+skillPackVersion: v1
 ---
 
 # SOLUM Vulkan Architecture Guard

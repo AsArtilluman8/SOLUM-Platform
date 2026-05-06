@@ -1,6 +1,7 @@
 ---
 name: solum-verification-before-completion
 description: Use before claiming a task is done in SOLUM. Requires evidence, logs, diff, and known issues.
+skillPackVersion: v1
 ---
 
 # SOLUM Verification Before Completion

@@ -1,6 +1,7 @@
 ---
 name: solum-systematic-debugging
 description: Use when diagnosing build, runtime, logic, Vulkan, Android, Termux, Gradle, or tool failures in SOLUM.
+skillPackVersion: v1
 ---
 
 # SOLUM Systematic Debugging

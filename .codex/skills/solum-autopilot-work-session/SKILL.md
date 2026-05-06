@@ -1,6 +1,7 @@
 ---
 name: solum-autopilot-work-session
 description: Use for longer autonomous SOLUM work sessions while the user is away. Keeps scope bounded and produces report/PR-ready output.
+skillPackVersion: v1
 ---
 
 # SOLUM Autopilot Work Session

@@ -10,9 +10,11 @@
 
 - explicit tool schema;
 - JSON output;
-- минимальный stdio JSON-RPC loop для будущего подключения как MCP server;
+- MCP-compatible JSON-RPC 2.0 stdio foundation;
 - строгий allowlist;
 - безопасный dry-run default.
+
+Это не packaged MCP SDK server. Внешний MCP SDK не используется, но stdio JSON-RPC contract совместим с базовым MCP handshake/tools flow.
 
 Wrapper не является runtime/Vulkan частью проекта и не меняет Android build system.
 
@@ -50,6 +52,18 @@ python3 tools/mcp_server/solum_mcp_server.py --help
 python3 tools/mcp_server/solum_mcp_server.py list-tools
 ```
 
+Пример MCP config:
+
+```bash
+python3 tools/mcp_server/solum_mcp_server.py print-config
+```
+
+Smoke-test JSON-RPC handler:
+
+```bash
+python3 tools/mcp_server/solum_mcp_server.py smoke-test
+```
+
 Вызов tool:
 
 ```bash
@@ -72,6 +86,132 @@ python3 tools/mcp_server/solum_mcp_server.py serve-stdio
 initialize
 tools/list
 tools/call
+```
+
+## JSON-RPC stdio contract
+
+Все stdio responses сохраняют `id` из request.
+
+Успешный ответ:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {}
+}
+```
+
+Ошибка JSON-RPC method/protocol:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32601,
+    "message": "method_not_found",
+    "data": {
+      "method": "missing/method"
+    }
+  }
+}
+```
+
+### initialize
+
+Request:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+```
+
+Response result:
+
+```json
+{
+  "protocolVersion": "2024-11-05",
+  "serverInfo": {
+    "name": "solum-local-mcp-wrapper",
+    "version": "0.1.0"
+  },
+  "capabilities": {
+    "tools": {}
+  }
+}
+```
+
+### tools/list
+
+Request:
+
+```json
+{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+```
+
+Response result:
+
+```json
+{
+  "tools": [
+    {
+      "name": "solum_print_status",
+      "description": "Print repo/tool status through the SOLUM local bridge.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dry_run": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  ]
+}
+```
+
+### tools/call
+
+Request:
+
+```json
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"solum_print_status","arguments":{"dry_run":true}}}
+```
+
+Response result:
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"ok\": true, \"tool\": \"solum_print_status\"}"
+    }
+  ],
+  "isError": false
+}
+```
+
+Tool-level error возвращается как MCP-style result, а не как JSON-RPC transport error:
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"ok\": false, \"error\": \"unknown_tool\"}"
+    }
+  ],
+  "isError": true
+}
+```
+
+Проверка через stdin:
+
+```bash
+printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}\n{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"solum_print_status","arguments":{"dry_run":true}}}\n' | python3 tools/mcp_server/solum_mcp_server.py serve-stdio
 ```
 
 ## Tools
@@ -170,6 +310,12 @@ MCP config позже должен указывать команду:
 }
 ```
 
+Этот JSON можно вывести локально:
+
+```bash
+python3 tools/mcp_server/solum_mcp_server.py print-config
+```
+
 Для другого checkout нужно заменить абсолютный repo path.
 
 ## Termux/proot ограничения
@@ -177,6 +323,7 @@ MCP config позже должен указывать команду:
 - Запуск должен идти из repo root или с абсолютным path к server script.
 - Python используется системный/local `python3`.
 - Внешние Python packages не нужны.
+- Нет external SDK packaging: это совместимый stdio JSON-RPC foundation.
 - Network нужен только для real Telegram send.
 - Android storage paths могут отсутствовать в proot; это должно возвращаться как `missing`, а не как ошибка server.
 - Установка пакетов не входит в scope.

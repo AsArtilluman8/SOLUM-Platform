@@ -22,9 +22,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BRIDGE = REPO_ROOT / "tools" / "agent_tools" / "solum_tool_bridge.py"
 SERVER_NAME = "solum-local-mcp-wrapper"
 SERVER_VERSION = "0.1.0"
+PROTOCOL_VERSION = "2024-11-05"
 
 
 class McpWrapperError(RuntimeError):
+    pass
+
+
+class SmokeTestError(RuntimeError):
     pass
 
 
@@ -155,6 +160,20 @@ def tool_list_payload() -> dict[str, Any]:
     }
 
 
+def mcp_config_payload() -> dict[str, Any]:
+    return {
+        "mcpServers": {
+            "solum": {
+                "command": "python3",
+                "args": [
+                    str(REPO_ROOT / "tools" / "mcp_server" / "solum_mcp_server.py"),
+                    "serve-stdio",
+                ],
+            }
+        }
+    }
+
+
 def parse_bool(value: str) -> bool:
     normalized = value.strip().lower()
     if normalized in {"1", "true", "yes", "y", "on"}:
@@ -282,13 +301,43 @@ def parse_key_value_args(values: list[str]) -> dict[str, Any]:
     return parsed
 
 
+def json_rpc_success(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": request_id, "result": result}
+
+
+def json_rpc_error(request_id: Any, code: int, message: str, data: Any = None) -> dict[str, Any]:
+    error: dict[str, Any] = {"code": code, "message": message}
+    if data is not None:
+        error["data"] = data
+    return {"jsonrpc": "2.0", "id": request_id, "error": error}
+
+
+def safe_error_text(message: str, data: Any = None) -> str:
+    payload = {"ok": False, "error": message}
+    if data is not None:
+        payload["data"] = data
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
+def mcp_tool_result(payload: dict[str, Any]) -> dict[str, Any]:
+    is_error = not bool(payload.get("ok"))
+    if is_error:
+        errors = payload.get("errors") or ["tool_error"]
+        text = safe_error_text(str(errors[0]), {"tool": payload.get("tool"), "errors": errors})
+    else:
+        text = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    return {"content": [{"type": "text", "text": text}], "isError": is_error}
+
+
 def handle_json_rpc(request_obj: dict[str, Any]) -> dict[str, Any]:
+    if request_obj.get("jsonrpc") != "2.0":
+        return json_rpc_error(request_obj.get("id"), -32600, "invalid_request", {"expected_jsonrpc": "2.0"})
     request_id = request_obj.get("id")
     method = request_obj.get("method")
     params = request_obj.get("params") or {}
     if method == "initialize":
         result = {
-            "protocolVersion": "2024-11-05",
+            "protocolVersion": PROTOCOL_VERSION,
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
             "capabilities": {"tools": {}},
         }
@@ -298,15 +347,21 @@ def handle_json_rpc(request_obj: dict[str, Any]) -> dict[str, Any]:
         name = params.get("name") if isinstance(params, dict) else None
         arguments = params.get("arguments", {}) if isinstance(params, dict) else {}
         if not isinstance(name, str) or not isinstance(arguments, dict):
-            return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "invalid_params"}}
+            result = mcp_tool_result(
+                {
+                    "ok": False,
+                    "tool": name if isinstance(name, str) else "unknown",
+                    "dry_run": True,
+                    "result": None,
+                    "errors": ["invalid_params"],
+                }
+            )
+            return json_rpc_success(request_id, result)
         payload = call_tool(name, arguments)
-        result = {
-            "content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}],
-            "isError": not payload["ok"],
-        }
+        result = mcp_tool_result(payload)
     else:
-        return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "method_not_found"}}
-    return {"jsonrpc": "2.0", "id": request_id, "result": result}
+        return json_rpc_error(request_id, -32601, "method_not_found", {"method": method})
+    return json_rpc_success(request_id, result)
 
 
 def serve_stdio() -> int:
@@ -320,9 +375,79 @@ def serve_stdio() -> int:
                 raise ValueError("request must be object")
             response = handle_json_rpc(request_obj)
         except (json.JSONDecodeError, ValueError) as exc:
-            response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": str(exc)}}
+            response = json_rpc_error(None, -32700, "parse_error", {"detail": str(exc)})
         print(json.dumps(response, ensure_ascii=False), flush=True)
     return 0
+
+
+def assert_condition(condition: bool, message: str, details: Any = None) -> None:
+    if not condition:
+        if details is None:
+            raise SmokeTestError(message)
+        raise SmokeTestError(f"{message}: {json.dumps(details, ensure_ascii=False, sort_keys=True)}")
+
+
+def run_smoke_test() -> int:
+    checks = [
+        (
+            "initialize",
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        ),
+        (
+            "tools/list",
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        ),
+        (
+            "tools/call solum_print_status dry_run",
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "solum_print_status", "arguments": {"dry_run": True}},
+            },
+        ),
+        (
+            "invalid tool error",
+            {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {"name": "solum_missing_tool", "arguments": {"dry_run": True}},
+            },
+        ),
+        (
+            "invalid JSON-RPC method error",
+            {"jsonrpc": "2.0", "id": 5, "method": "missing/method", "params": {}},
+        ),
+    ]
+    results: list[dict[str, Any]] = []
+    for name, request_obj in checks:
+        response = handle_json_rpc(request_obj)
+        assert_condition(response.get("jsonrpc") == "2.0", f"{name} missing jsonrpc", response)
+        assert_condition(response.get("id") == request_obj["id"], f"{name} id mismatch", response)
+        if name == "initialize":
+            result = response.get("result", {})
+            assert_condition(result.get("protocolVersion") == PROTOCOL_VERSION, f"{name} protocolVersion", response)
+            assert_condition(result.get("capabilities", {}).get("tools") == {}, f"{name} capabilities", response)
+        elif name == "tools/list":
+            tools = response.get("result", {}).get("tools", [])
+            assert_condition(isinstance(tools, list) and len(tools) >= 5, f"{name} tools missing", response)
+            assert_condition(any(tool.get("name") == "solum_print_status" for tool in tools), f"{name} status tool missing", response)
+        elif name == "tools/call solum_print_status dry_run":
+            result = response.get("result", {})
+            assert_condition(result.get("isError") is False, f"{name} isError", response)
+            content = result.get("content", [])
+            assert_condition(content and content[0].get("type") == "text", f"{name} content", response)
+            payload = json.loads(content[0]["text"])
+            assert_condition(payload.get("ok") is True and payload.get("tool") == "solum_print_status", f"{name} payload", payload)
+        elif name == "invalid tool error":
+            result = response.get("result", {})
+            assert_condition(result.get("isError") is True, f"{name} should be MCP tool error", response)
+            assert_condition("error" in json.loads(result["content"][0]["text"]), f"{name} text", response)
+        elif name == "invalid JSON-RPC method error":
+            assert_condition(response.get("error", {}).get("code") == -32601, f"{name} code", response)
+        results.append({"name": name, "ok": True})
+    return emit_json({"ok": True, "checks": results, "errors": []})
 
 
 def parse_args() -> argparse.Namespace:
@@ -330,6 +455,8 @@ def parse_args() -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("list-tools", help="Print explicit MCP tool schema.")
+    subparsers.add_parser("print-config", help="Print example MCP client config JSON.")
+    subparsers.add_parser("smoke-test", help="Run local JSON-RPC handler smoke tests.")
     subparsers.add_parser("serve-stdio", help="Run a minimal MCP-style JSON-RPC stdio loop.")
 
     call = subparsers.add_parser("call", help="Call one explicit SOLUM MCP tool.")
@@ -351,6 +478,10 @@ def main() -> int:
     args = parse_args()
     if args.command == "list-tools":
         return emit_json(tool_list_payload())
+    if args.command == "print-config":
+        return emit_json(mcp_config_payload())
+    if args.command == "smoke-test":
+        return run_smoke_test()
     if args.command == "serve-stdio":
         return serve_stdio()
     if args.command == "call":

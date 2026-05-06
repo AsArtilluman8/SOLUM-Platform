@@ -59,6 +59,8 @@ errors
 ```bash
 python3 tools/mcp_server/solum_mcp_server.py --help
 python3 tools/mcp_server/solum_mcp_server.py list-tools
+python3 tools/mcp_server/solum_mcp_server.py print-config
+python3 tools/mcp_server/solum_mcp_server.py smoke-test
 python3 tools/mcp_server/solum_mcp_server.py call solum_print_status --dry-run
 python3 tools/mcp_server/solum_mcp_server.py call solum_latest_paths --dry-run
 python3 tools/mcp_server/solum_mcp_server.py call solum_generate_report --dry-run
@@ -84,6 +86,20 @@ tool
 dry_run
 result
 errors
+```
+
+MCP-compatible stdio methods:
+
+```text
+initialize
+tools/list
+tools/call
+```
+
+Stdio test:
+
+```bash
+printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}\n{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"solum_print_status","arguments":{"dry_run":true}}}\n' | python3 tools/mcp_server/solum_mcp_server.py serve-stdio
 ```
 
 Real Telegram send через wrapper требует:

@@ -50,6 +50,14 @@ SUCCESS / FAILED / NOT TESTED
 
 - `tools/mcp_server/solum_mcp_server.py`.
 - Explicit tool schema.
+- MCP-compatible JSON-RPC 2.0 stdio foundation.
+- JSON-RPC methods:
+  - `initialize`
+  - `tools/list`
+  - `tools/call`
+- CLI support:
+  - `smoke-test`
+  - `print-config`
 - Tools:
   - `solum_print_status`
   - `solum_latest_paths`
@@ -75,7 +83,7 @@ SUCCESS / FAILED / NOT TESTED
 
 ### Build result
 
-SUCCESS — Python compile/help/tool dry-runs passed locally.
+SUCCESS — Python compile/help/tool dry-runs, smoke-test and stdin stdio checks passed locally.
 
 ### Runtime result
 
@@ -98,13 +106,22 @@ HTML dashboard attached
 TXT report attached
 ```
 
+P01F follow-up result:
+
+```text
+smoke-test passed
+serve-stdio stdin test passed
+print-config passed
+no Telegram send in follow-up
+```
+
 ### User-visible result
 
 Agent can call safe local SOLUM tools through a stable MCP-style wrapper without arbitrary shell access.
 
 ### Known issues
 
-- Wrapper is a foundation with minimal stdio JSON-RPC methods, not a packaged MCP SDK server.
+- Wrapper is a MCP-compatible stdio JSON-RPC foundation, not a packaged MCP SDK server.
 - Accessibility companion remains planned separately.
 
 ### Lessons

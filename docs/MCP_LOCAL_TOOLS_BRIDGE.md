@@ -167,7 +167,7 @@ structured diagnostics → latest reports → HTML dashboard → optional Telegr
 
 ## MCP server wrapper
 
-P01F превращает CLI commands в MCP-style tools:
+P01F превращает CLI commands в MCP-compatible JSON-RPC stdio tools:
 
 ```text
 solum_print_status
@@ -182,6 +182,14 @@ Wrapper:
 - имеет explicit allowlist commands;
 - не принимает arbitrary shell;
 - redacting secrets by default;
+- поддерживает JSON-RPC 2.0 methods:
+
+```text
+initialize
+tools/list
+tools/call
+```
+
 - возвращает structured JSON:
 
 ```text
@@ -200,12 +208,22 @@ errors
 ```bash
 python3 tools/mcp_server/solum_mcp_server.py --help
 python3 tools/mcp_server/solum_mcp_server.py list-tools
+python3 tools/mcp_server/solum_mcp_server.py print-config
+python3 tools/mcp_server/solum_mcp_server.py smoke-test
 python3 tools/mcp_server/solum_mcp_server.py call solum_print_status --dry-run
 python3 tools/mcp_server/solum_mcp_server.py call solum_latest_paths --dry-run
 python3 tools/mcp_server/solum_mcp_server.py call solum_generate_report --dry-run
 python3 tools/mcp_server/solum_mcp_server.py call solum_send_telegram_report --dry-run
 python3 tools/mcp_server/solum_mcp_server.py call solum_foundation_readiness --dry-run
 ```
+
+Stdio smoke route:
+
+```bash
+printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}\n{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"solum_print_status","arguments":{"dry_run":true}}}\n' | python3 tools/mcp_server/solum_mcp_server.py serve-stdio
+```
+
+Ограничение: это foundation без external MCP SDK packaging, но с совместимым stdio JSON-RPC handshake/tools flow.
 
 Полный setup:
 

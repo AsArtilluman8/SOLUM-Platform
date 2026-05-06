@@ -298,7 +298,7 @@ def build_html_report(text_report: str, args: argparse.Namespace) -> str:
   </header>
   <section class="plain">
     <h2>Простыми словами</h2>
-    <p>Этот dashboard показывает, что сделал агент по P01D, какие проверки прошли, что специально не трогалось и какие runtime/visual метрики доступны.</p>
+    <p>Этот dashboard показывает, что сделал агент по текущему патчу, какие проверки прошли, что специально не трогалось и какие runtime/visual метрики доступны.</p>
     <p>{escape(metrics_issue or "Metrics JSON найден и прочитан.")}</p>
   </section>
   <section>

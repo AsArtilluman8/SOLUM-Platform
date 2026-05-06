@@ -27,6 +27,30 @@ tools/send_telegram_report.py
 
 Он отправляет короткий русский summary в Telegram через Telegram Bot API и прикрепляет отчёты файлами.
 
+P01E добавляет bridge foundation:
+
+```text
+tools/agent_tools/solum_tool_bridge.py
+```
+
+Это локальный CLI bridge, пока не полноценный MCP server. Он даёт стабильные команды для будущего MCP слоя:
+
+```text
+generate-report
+send-telegram-report
+foundation-readiness
+latest-paths
+print-status
+```
+
+Подробный контракт:
+
+```text
+docs/MCP_LOCAL_TOOLS_BRIDGE.md
+docs/ACCESSIBILITY_COMPANION_PLAN.md
+tools/agent_tools/README.md
+```
+
 Подробные правила:
 
 ```text
@@ -50,6 +74,10 @@ docs/AGENT_DASHBOARD_REPORTS.md
 - не падать только из-за отсутствия HTML/TXT report-файлов, а писать это в summary.
 - использовать optional metrics JSON `_work/agent_reports/latest/SOLUM_AGENT_METRICS.json`;
 - при отсутствии runtime/visual metrics честно писать `not_available`.
+- запускать `tools/agent_tools/solum_tool_bridge.py` как allowlisted CLI wrapper;
+- использовать bridge `--dry-run` без network calls и без записи отчётов;
+- запускать `tools/check_foundation_readiness.sh` через bridge;
+- запускать `tools/agent_build_runner.sh` через bridge только если явно передан `--run-runner`.
 
 ## Запрещено
 
@@ -61,6 +89,9 @@ docs/AGENT_DASHBOARD_REPORTS.md
 - изменение `tools/agent_build_runner.sh` без отдельного scope;
 - изменение Gradle/Vulkan/runtime/build system;
 - запись в Download.
+- arbitrary shell через bridge;
+- запуск `tools/agent_build_runner.sh` через bridge без `--run-runner`;
+- Telegram UI automation.
 
 ## Usage: local report
 
@@ -75,6 +106,26 @@ python3 tools/agent_telegram_report.py \
   --metrics "_work/agent_reports/latest/SOLUM_AGENT_METRICS.json" \
   --context-load MEDIUM \
   --next-step "Review PR"
+```
+
+## Usage: bridge
+
+```bash
+python3 tools/agent_tools/solum_tool_bridge.py --help
+python3 tools/agent_tools/solum_tool_bridge.py print-status --dry-run
+python3 tools/agent_tools/solum_tool_bridge.py latest-paths
+python3 tools/agent_tools/solum_tool_bridge.py generate-report --dry-run
+python3 tools/agent_tools/solum_tool_bridge.py generate-report
+python3 tools/agent_tools/solum_tool_bridge.py send-telegram-report --dry-run
+python3 tools/agent_tools/solum_tool_bridge.py send-telegram-report --send
+python3 tools/agent_tools/solum_tool_bridge.py foundation-readiness
+python3 tools/agent_tools/solum_tool_bridge.py foundation-readiness --run-runner
+```
+
+`send-telegram-report --dry-run` на уровне bridge не читает token. Real send должен идти только после явного разрешения пользователя:
+
+```bash
+python3 tools/agent_tools/solum_tool_bridge.py send-telegram-report --send
 ```
 
 ## Формат отчёта
@@ -113,3 +164,7 @@ python3 tools/agent_telegram_report.py \
 Подробный формат human-friendly отчёта описан в `docs/HUMAN_REPORTS_SPEC.md`.
 
 Dashboard HTML описан в `docs/AGENT_DASHBOARD_REPORTS.md`.
+
+MCP/local bridge foundation описан в `docs/MCP_LOCAL_TOOLS_BRIDGE.md`.
+
+Accessibility companion plan описан в `docs/ACCESSIBILITY_COMPANION_PLAN.md`.

@@ -149,6 +149,55 @@ Fix Gradle environment/root recognition as a scoped build-foundation patch, or c
 
 ---
 
+## Patch P01B — Telegram Report + Local Agent Tools Foundation
+
+### Goal
+
+Add a small local report tool so agents can produce a concise Telegram-ready status report without network access or secrets.
+
+### Scope
+
+- `tools/agent_telegram_report.py`.
+- `docs/AGENT_LOCAL_TOOLS.md`.
+- `docs/PROJECT_MEMORY_INDEX.md` link.
+- Local sample output in `_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt`.
+
+### Build result
+
+NOT TESTED — local docs/Python tool patch only.
+
+### Runtime result
+
+NOT TESTED — no Android runtime, Vulkan, Gradle or build-system changes.
+
+### Diagnostics
+
+Local report output:
+
+```text
+_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt
+```
+
+### User-visible result
+
+Agent can generate one short copyable report with changed files, checks, output paths, known issues and next step.
+
+### Known issues
+
+- No Telegram Bot API by design.
+- No message sending by design.
+- No token or chat configuration by design.
+
+### Lessons
+
+Agent communication helpers must stay local and secret-free unless the user explicitly approves a real integration.
+
+### Next
+
+Review PR, then keep future Telegram/API integration as a separate explicit patch if needed.
+
+---
+
 ## Patch P02 — Diagnostics v1 + Vulkan Capability Check
 
 ### Goal

@@ -180,6 +180,12 @@ Future Action RPG mechanics knowledge base. Документировать се�
 
 Patch 01 continuation: проверка repo/build/tools foundation без runtime/Vulkan изменений.
 
+### Local agent tools
+
+- `docs/AGENT_LOCAL_TOOLS.md`
+
+Локальные agent tools и Telegram-ready report foundation без Telegram API, токенов, отправки сообщений или runtime/build изменений.
+
 ### Diagnostics
 
 - `docs/DIAGNOSTICS_SPEC.md`

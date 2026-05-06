@@ -103,6 +103,22 @@ log "root=$ROOT"
 log "outroot=$OUTROOT"
 
 log ""
+log "== Foundation readiness =="
+if [ -x "tools/check_foundation_readiness.sh" ]; then
+  set +e
+  bash tools/check_foundation_readiness.sh 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL"
+  FOUNDATION_CODE=${PIPESTATUS[0]}
+  if [ "$FOUNDATION_CODE" -eq 0 ]; then
+    short "FOUNDATION_READINESS=FOUNDATION_READY"
+  else
+    short "FOUNDATION_READINESS=FOUNDATION_NOT_READY"
+    short "Foundation report=_work/agent_reports/latest/SOLUM_FOUNDATION_READINESS.txt"
+  fi
+else
+  short "FOUNDATION_READINESS=not_available"
+fi
+
+log ""
 log "== Git state =="
 git branch --show-current 2>/dev/null | tee -a "$FULL_LOG" "$LOCAL_FULL" || true
 git rev-parse --short HEAD 2>/dev/null | tee -a "$FULL_LOG" "$LOCAL_FULL" || true
@@ -157,7 +173,7 @@ if [ -f "./gradlew" ]; then
 elif [ "$HAS_GRADLE_MARKERS" -eq 1 ] && command -v gradle >/dev/null 2>&1; then
   log "gradle_project_validation=gradle -q projects"
   set +e
-  bash -lc "gradle -q projects" 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL"
+  gradle -q projects 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL"
   GRADLE_VALIDATION_CODE=${PIPESTATUS[0]}
   set -e
 
@@ -209,7 +225,7 @@ else
   fi
 
   set +e
-  bash -lc "$BUILD_CMD" 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL"
+  bash -c "$BUILD_CMD" 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL"
   CODE=${PIPESTATUS[0]}
   set -e
 

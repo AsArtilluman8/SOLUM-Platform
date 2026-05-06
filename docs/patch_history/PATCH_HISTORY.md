@@ -92,6 +92,63 @@ Patch P02 — Diagnostics v1 + Vulkan Capability Check.
 
 ---
 
+## Patch P01A — Foundation Readiness Check
+
+### Goal
+
+Add a small repo/build/tools readiness layer after agent foundation so future agents can verify Patch 01 state before touching runtime work.
+
+### Scope
+
+- `tools/check_foundation_readiness.sh`.
+- Foundation readiness block in `tools/agent_build_runner.sh`.
+- `docs/FOUNDATION_READINESS.md`.
+- `docs/PROJECT_MEMORY_INDEX.md` link.
+- GitHub PR template.
+
+### Build result
+
+NO_VALID_GRADLE_BUILD in current Ubuntu/proot environment.
+
+Foundation preflight result:
+
+```text
+FOUNDATION_READINESS=FOUNDATION_READY
+```
+
+### Runtime result
+
+NOT TESTED — no runtime/Vulkan changes in this patch.
+
+### Diagnostics
+
+Runner output:
+
+```text
+_work/agent_reports/latest/SOLUM_FOUNDATION_READINESS.txt
+_work/agent_reports/latest/SOLUM_AGENT_BUILD_LOG_SHORT.txt
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/SOLUM_LATEST_DIAGNOSTICS.zip
+```
+
+### User-visible result
+
+Agents get a single runner path that reports whether repo/docs/tools foundation is present before attempting heavier build/runtime work.
+
+### Known issues
+
+- Global Gradle in the current proot/Termux environment still reports that `/root/SOLUM-Platform` is not a valid Gradle build even though Gradle markers exist.
+- This patch records the state but does not redesign Gradle or create a new Android app.
+
+### Lessons
+
+Patch 01 readiness should be explicit and cheap. Build environment problems must be reported separately from runtime failures.
+
+### Next
+
+Fix Gradle environment/root recognition as a scoped build-foundation patch, or continue only with tasks that do not require Android Gradle execution.
+
+---
+
 ## Patch P02 — Diagnostics v1 + Vulkan Capability Check
 
 ### Goal

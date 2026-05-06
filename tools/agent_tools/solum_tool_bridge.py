@@ -8,6 +8,7 @@ through an explicit allowlist and does not expose arbitrary shell execution.
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -79,6 +80,38 @@ def path_state(path: Path) -> str:
     return f"{rel(path)}=missing"
 
 
+def path_status(path: Path) -> dict[str, object]:
+    exists = path.exists()
+    kind = "missing"
+    if exists:
+        kind = "dir" if path.is_dir() else "file"
+    return {
+        "path": rel(path),
+        "exists": exists,
+        "kind": kind,
+        "status": kind if exists else "missing",
+    }
+
+
+def emit_json(payload: dict[str, object]) -> int:
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def base_payload(args: argparse.Namespace, *, ok: bool = True) -> dict[str, object]:
+    return {
+        "ok": ok,
+        "command": args.command,
+        "dry_run": bool(args.dry_run),
+        "repo_root": str(REPO_ROOT),
+        "errors": [],
+    }
+
+
+def planned_command(command: list[str]) -> str:
+    return " ".join(command)
+
+
 def command_generate_report(args: argparse.Namespace) -> int:
     command = [
         sys.executable,
@@ -102,6 +135,20 @@ def command_generate_report(args: argparse.Namespace) -> int:
         "--next-step",
         args.next_step,
     ]
+    if args.json and args.dry_run:
+        payload = base_payload(args)
+        payload["paths"] = {
+            "text_report": path_status(TEXT_REPORT),
+            "html_report": path_status(HTML_REPORT),
+        }
+        payload["planned_actions"] = [
+            {
+                "type": "write_reports",
+                "command": planned_command(command),
+                "writes": [rel(TEXT_REPORT), rel(HTML_REPORT)],
+            }
+        ]
+        return emit_json(payload)
     if args.dry_run:
         print("dry_run=ok")
         print("would_write=" + rel(TEXT_REPORT))
@@ -110,7 +157,27 @@ def command_generate_report(args: argparse.Namespace) -> int:
 
 
 def command_send_telegram_report(args: argparse.Namespace) -> int:
+    sender_mode = "--send" if args.send else "--dry-run"
     if args.dry_run:
+        if args.json:
+            payload = base_payload(args)
+            payload["paths"] = {
+                "text_report": path_status(TEXT_REPORT),
+                "html_report": path_status(HTML_REPORT),
+                "secret_file": {
+                    "path": "~/.solum/secrets/telegram.env",
+                    "status": "not_read",
+                },
+            }
+            payload["planned_actions"] = [
+                {
+                    "type": "telegram_sender",
+                    "command": f"tools/send_telegram_report.py {sender_mode}",
+                    "network": args.send,
+                    "token": "not_read",
+                }
+            ]
+            return emit_json(payload)
         print("dry_run=ok")
         print("would_call=tools/send_telegram_report.py --send" if args.send else "would_call=tools/send_telegram_report.py --dry-run")
         print("secret_file=~/.solum/secrets/telegram.env")
@@ -118,8 +185,7 @@ def command_send_telegram_report(args: argparse.Namespace) -> int:
         print(path_state(TEXT_REPORT))
         print(path_state(HTML_REPORT))
         return 0
-    mode = "--send" if args.send else "--dry-run"
-    return run_allowed([sys.executable, "tools/send_telegram_report.py", mode], dry_run=False)
+    return run_allowed([sys.executable, "tools/send_telegram_report.py", sender_mode], dry_run=False)
 
 
 def command_foundation_readiness(args: argparse.Namespace) -> int:
@@ -128,6 +194,20 @@ def command_foundation_readiness(args: argparse.Namespace) -> int:
     else:
         command = ["bash", "tools/check_foundation_readiness.sh"]
     if args.dry_run:
+        if args.json:
+            payload = base_payload(args)
+            payload["paths"] = {
+                "foundation_report": path_status(FOUNDATION_REPORT),
+            }
+            payload["planned_actions"] = [
+                {
+                    "type": "run_runner" if args.run_runner else "foundation_readiness",
+                    "command": planned_command(command),
+                    "runner_requested": bool(args.run_runner),
+                    "writes": [rel(FOUNDATION_REPORT)],
+                }
+            ]
+            return emit_json(payload)
         print("dry_run=ok")
         print("runner_requested=" + ("yes" if args.run_runner else "no"))
         print("would_write=" + rel(FOUNDATION_REPORT))
@@ -144,6 +224,17 @@ def command_latest_paths(args: argparse.Namespace) -> int:
         DIAGNOSTICS_ZIP,
         LATEST_REPORT_HTML,
     ]
+    if args.json:
+        payload = base_payload(args)
+        payload["paths"] = [path_status(path) for path in paths]
+        if args.dry_run:
+            payload["planned_actions"] = [
+                {
+                    "type": "inspect_paths",
+                    "paths": [rel(path) for path in paths],
+                }
+            ]
+        return emit_json(payload)
     if args.dry_run:
         print("dry_run=ok")
     for path in paths:
@@ -152,18 +243,33 @@ def command_latest_paths(args: argparse.Namespace) -> int:
 
 
 def command_print_status(args: argparse.Namespace) -> int:
+    tool_paths = [
+        REPO_ROOT / "tools" / "agent_telegram_report.py",
+        REPO_ROOT / "tools" / "send_telegram_report.py",
+        REPO_ROOT / "tools" / "check_foundation_readiness.sh",
+        REPO_ROOT / "tools" / "agent_build_runner.sh",
+    ]
+    if args.json:
+        payload = base_payload(args)
+        payload["branch"] = git_value(["branch", "--show-current"])
+        payload["head"] = git_value(["rev-parse", "--short", "HEAD"])
+        payload["tools"] = [path_status(path) for path in tool_paths]
+        payload["git_status"] = git_status_lines()
+        if args.dry_run:
+            payload["planned_actions"] = [
+                {
+                    "type": "print_status",
+                    "reads": ["git branch", "git rev-parse", "git status --short"],
+                }
+            ]
+        return emit_json(payload)
     if args.dry_run:
         print("dry_run=ok")
     print(f"repo_root={REPO_ROOT}")
     print(f"branch={git_value(['branch', '--show-current'])}")
     print(f"head={git_value(['rev-parse', '--short', 'HEAD'])}")
     print("tools:")
-    for path in [
-        REPO_ROOT / "tools" / "agent_telegram_report.py",
-        REPO_ROOT / "tools" / "send_telegram_report.py",
-        REPO_ROOT / "tools" / "check_foundation_readiness.sh",
-        REPO_ROOT / "tools" / "agent_build_runner.sh",
-    ]:
+    for path in tool_paths:
         print("- " + path_state(path))
     print("git_status:")
     for line in git_status_lines():
@@ -173,6 +279,7 @@ def command_print_status(args: argparse.Namespace) -> int:
 
 def add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dry-run", action="store_true", help="Print planned action without side effects.")
+    parser.add_argument("--json", action="store_true", help="Print structured JSON for future MCP wrappers.")
 
 
 def parse_args() -> argparse.Namespace:

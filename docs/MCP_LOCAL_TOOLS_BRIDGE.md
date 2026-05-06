@@ -55,9 +55,62 @@ print-status
 
 ```text
 --dry-run
+--json
 ```
 
 Dry run показывает план и не делает network calls, не пишет отчёт и не запускает runner.
+
+## Structured JSON contract
+
+Для будущего MCP wrapper bridge поддерживает structured JSON output:
+
+```bash
+python3 tools/agent_tools/solum_tool_bridge.py print-status --dry-run --json
+python3 tools/agent_tools/solum_tool_bridge.py latest-paths --dry-run --json
+python3 tools/agent_tools/solum_tool_bridge.py foundation-readiness --dry-run --json
+python3 tools/agent_tools/solum_tool_bridge.py generate-report --dry-run --json
+python3 tools/agent_tools/solum_tool_bridge.py send-telegram-report --dry-run --json
+```
+
+Базовая форма:
+
+```json
+{
+  "ok": true,
+  "command": "print-status",
+  "dry_run": true,
+  "repo_root": "/root/SOLUM-Platform",
+  "branch": "patch/P01E-mcp-local-tools-bridge",
+  "head": "2ed7317",
+  "paths": [],
+  "planned_actions": [],
+  "errors": []
+}
+```
+
+Правила JSON output:
+
+- `ok` всегда показывает итог команды;
+- `command` совпадает с bridge subcommand;
+- `dry_run` показывает, были ли side effects отключены;
+- `repo_root` всегда присутствует;
+- `branch` / `head` присутствуют там, где они применимы;
+- `paths` / `tools` содержат structured status для файлов;
+- `planned_actions` заполняется для dry-run;
+- `errors` всегда массив;
+- secrets не выводятся;
+- Telegram token не читается в `send-telegram-report --dry-run --json`.
+
+Пример path status:
+
+```json
+{
+  "path": "_work/agent_reports/latest/SOLUM_AGENT_REPORT.html",
+  "exists": true,
+  "kind": "file",
+  "status": "file"
+}
+```
 
 ## Разрешённые действия
 
@@ -124,7 +177,7 @@ MCP server должен:
 - иметь explicit allowlist commands;
 - не принимать arbitrary shell;
 - redacting secrets by default;
-- возвращать structured JSON;
+- возвращать structured JSON по контракту bridge;
 - хранить evidence paths;
 - отделять dry-run от real side effects.
 

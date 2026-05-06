@@ -383,6 +383,16 @@ python3 tools/agent_tools/solum_tool_bridge.py generate-report --dry-run
 python3 tools/agent_tools/solum_tool_bridge.py send-telegram-report --dry-run
 ```
 
+P01E follow-up adds structured JSON output for future MCP wrapping:
+
+```text
+python3 tools/agent_tools/solum_tool_bridge.py print-status --dry-run --json
+python3 tools/agent_tools/solum_tool_bridge.py latest-paths --dry-run --json
+python3 tools/agent_tools/solum_tool_bridge.py foundation-readiness --dry-run --json
+python3 tools/agent_tools/solum_tool_bridge.py generate-report --dry-run --json
+python3 tools/agent_tools/solum_tool_bridge.py send-telegram-report --dry-run --json
+```
+
 ### Runtime result
 
 NOT TESTED — no Android runtime, Vulkan, Gradle or build-system changes.

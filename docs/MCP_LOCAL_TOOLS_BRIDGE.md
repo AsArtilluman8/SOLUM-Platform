@@ -1,6 +1,6 @@
 # MCP_LOCAL_TOOLS_BRIDGE — local tools bridge foundation
 
-Этот документ фиксирует P01E: подготовку SOLUM к MCP/local tools bridge без запуска полноценного MCP server.
+Этот документ фиксирует P01E/P01F: CLI bridge и локальный MCP-style wrapper layer.
 
 ## Зачем MCP нужен SOLUM
 
@@ -14,13 +14,19 @@ SOLUM строится как mobile-first Vulkan platform, где агенту 
 
 MCP нужен как стабильный контракт между агентом и локальными инструментами. Агент должен вызывать понятные commands, а не угадывать shell-пути каждый раз.
 
-В P01E создаётся только CLI bridge:
+В P01E создан CLI bridge:
 
 ```text
 tools/agent_tools/solum_tool_bridge.py
 ```
 
-Это не MCP server. Это foundation, который позже можно завернуть в MCP tool schema.
+В P01F добавлен MCP-style wrapper:
+
+```text
+tools/mcp_server/solum_mcp_server.py
+```
+
+Он имеет explicit tool schema и вызывает только bridge с `--json`.
 
 ## Какие локальные tools будут обёрнуты
 
@@ -159,27 +165,53 @@ structured diagnostics → latest reports → HTML dashboard → optional Telegr
 
 `logcat` остаётся fallback для runtime-debug задач, а не foundation API.
 
-## Будущий MCP server
+## MCP server wrapper
 
-Следующий слой может превратить CLI commands в MCP tools:
+P01F превращает CLI commands в MCP-style tools:
 
 ```text
-solum.generate_report
-solum.send_telegram_report
-solum.foundation_readiness
-solum.latest_paths
-solum.print_status
-solum.collect_visual_diagnostics
+solum_print_status
+solum_latest_paths
+solum_generate_report
+solum_send_telegram_report
+solum_foundation_readiness
 ```
 
-MCP server должен:
+Wrapper:
 
-- иметь explicit allowlist commands;
-- не принимать arbitrary shell;
+- имеет explicit allowlist commands;
+- не принимает arbitrary shell;
 - redacting secrets by default;
-- возвращать structured JSON по контракту bridge;
-- хранить evidence paths;
-- отделять dry-run от real side effects.
+- возвращает structured JSON:
+
+```text
+ok
+tool
+dry_run
+result
+errors
+```
+
+- хранит evidence paths через bridge output;
+- отделяет dry-run от real side effects.
+
+Проверки:
+
+```bash
+python3 tools/mcp_server/solum_mcp_server.py --help
+python3 tools/mcp_server/solum_mcp_server.py list-tools
+python3 tools/mcp_server/solum_mcp_server.py call solum_print_status --dry-run
+python3 tools/mcp_server/solum_mcp_server.py call solum_latest_paths --dry-run
+python3 tools/mcp_server/solum_mcp_server.py call solum_generate_report --dry-run
+python3 tools/mcp_server/solum_mcp_server.py call solum_send_telegram_report --dry-run
+python3 tools/mcp_server/solum_mcp_server.py call solum_foundation_readiness --dry-run
+```
+
+Полный setup:
+
+```text
+docs/MCP_SERVER_SETUP.md
+```
 
 ## Как позже подключить Accessibility companion
 

@@ -40,6 +40,83 @@ SUCCESS / FAILED / NOT TESTED
 
 ---
 
+## Patch P01F — Real MCP Server Wrapper
+
+### Goal
+
+Добавить локальный MCP-style wrapper foundation поверх существующего SOLUM tool bridge.
+
+### Scope
+
+- `tools/mcp_server/solum_mcp_server.py`.
+- Explicit tool schema.
+- Tools:
+  - `solum_print_status`
+  - `solum_latest_paths`
+  - `solum_generate_report`
+  - `solum_send_telegram_report`
+  - `solum_foundation_readiness`
+- Structured JSON contract:
+  - `ok`
+  - `tool`
+  - `dry_run`
+  - `result`
+  - `errors`
+- Docs for setup, bridge, tools README.
+- Human report + Telegram report flow.
+
+### Changed files/modules
+
+- `tools/mcp_server/solum_mcp_server.py`
+- `docs/MCP_SERVER_SETUP.md`
+- `docs/MCP_LOCAL_TOOLS_BRIDGE.md`
+- `tools/agent_tools/README.md`
+- `docs/patch_history/PATCH_HISTORY.md`
+
+### Build result
+
+SUCCESS — Python compile/help/tool dry-runs passed locally.
+
+### Runtime result
+
+NOT TESTED — no Android runtime/Vulkan/Gradle changes.
+
+### Diagnostics
+
+Expected report outputs:
+
+```text
+_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt
+_work/agent_reports/latest/SOLUM_AGENT_REPORT.html
+```
+
+Telegram send result:
+
+```text
+summary sent
+HTML dashboard attached
+TXT report attached
+```
+
+### User-visible result
+
+Agent can call safe local SOLUM tools through a stable MCP-style wrapper without arbitrary shell access.
+
+### Known issues
+
+- Wrapper is a foundation with minimal stdio JSON-RPC methods, not a packaged MCP SDK server.
+- Accessibility companion remains planned separately.
+
+### Lessons
+
+MCP integration must wrap existing allowlisted tools instead of exposing shell.
+
+### Next
+
+Connect the wrapper from Codex/another agent config after review.
+
+---
+
 ## Patch P01 — Repository / Documentation Foundation
 
 ### Goal

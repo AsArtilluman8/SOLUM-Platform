@@ -1,6 +1,6 @@
 # AGENT_LOCAL_TOOLS — local agent tools foundation
 
-Этот документ фиксирует маленький слой локальных agent tools. Он не меняет runtime, Vulkan, Gradle или roadmap.
+Этот документ фиксирует маленький слой local agent tools. Он не меняет runtime, Vulkan, Gradle или roadmap.
 
 ## Назначение
 
@@ -18,25 +18,41 @@ tools/agent_telegram_report.py
 _work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt
 ```
 
+Второй tool:
+
+```text
+tools/send_telegram_report.py
+```
+
+Он отправляет уже созданный report в Telegram через Telegram Bot API.
+
+Подробные правила:
+
+```text
+docs/TELEGRAM_REPORTING.md
+```
+
 ## Разрешено
 
 - писать только локальный текстовый report;
 - использовать `_work/agent_reports/latest/`;
 - включать `Stage / Patch`, `Changed`, `Checks`, `Output`, `Known issues`, `Next step`;
-- запускать через `python3` как локальный project tool.
+- запускать через `python3` как локальный project tool;
+- для `tools/send_telegram_report.py` читать только `~/.solum/secrets/telegram.env`;
+- отправлять содержимое `_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt` в Telegram, если пользователь явно разрешил real send.
 
 ## Запрещено
 
-- Telegram Bot API;
-- отправка сообщений;
-- чтение, создание или хранение токенов;
+- выводить `TELEGRAM_BOT_TOKEN`;
+- читать любые secrets кроме явно разрешённого `~/.solum/secrets/telegram.env` для Telegram send;
+- создавать или хранить токены внутри repo;
 - чтение `~/.ssh`, `~/.config`, паролей, ключей;
-- network calls;
+- network calls без явного разрешения пользователя;
 - изменение `tools/agent_build_runner.sh` без отдельного scope;
 - изменение Gradle/Vulkan/runtime/build system;
 - запись в Download.
 
-## Usage
+## Usage: local report
 
 ```bash
 python3 tools/agent_telegram_report.py \
@@ -73,4 +89,6 @@ Next step:
 
 ## Правило
 
-Этот tool подготавливает текст для человека. Он не является интеграцией с Telegram.
+`tools/agent_telegram_report.py` подготавливает текст для человека или отправителя. Он не читает secrets и не делает network calls.
+
+`tools/send_telegram_report.py` является отдельной real Telegram send integration. Его можно запускать только когда пользователь явно разрешил Telegram send и доступ к `~/.solum/secrets/telegram.env`.

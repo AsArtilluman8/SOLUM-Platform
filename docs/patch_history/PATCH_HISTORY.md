@@ -198,6 +198,70 @@ Review PR, then keep future Telegram/API integration as a separate explicit patc
 
 ---
 
+## Patch P01C — Real Telegram Send Foundation
+
+### Goal
+
+Add a real Telegram send layer for the existing local SOLUM Telegram report.
+
+### Scope
+
+- `tools/send_telegram_report.py`.
+- `docs/TELEGRAM_REPORTING.md`.
+- `docs/AGENT_LOCAL_TOOLS.md` update.
+- `tools/agent_telegram_report.py` test report generation.
+
+### Changed files/modules
+
+- `tools/send_telegram_report.py`
+- `docs/TELEGRAM_REPORTING.md`
+- `docs/AGENT_LOCAL_TOOLS.md`
+- `docs/patch_history/PATCH_HISTORY.md`
+- `_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt`
+
+### Build result
+
+NOT TESTED — no Android/Gradle/build-system changes.
+
+Local checks:
+
+```text
+python3 -m py_compile tools/send_telegram_report.py
+python3 tools/send_telegram_report.py --dry-run
+python3 tools/send_telegram_report.py --send
+```
+
+### Runtime result
+
+NOT TESTED — no Android runtime, Vulkan, Gradle or build-system changes.
+
+### Diagnostics
+
+Telegram report:
+
+```text
+_work/agent_reports/latest/SOLUM_TELEGRAM_REPORT.txt
+```
+
+### User-visible result
+
+Agent can generate a local report and send it to the configured Telegram chat without printing the bot token.
+
+### Known issues
+
+- Telegram send depends on `~/.solum/secrets/telegram.env` and network/API availability.
+- Telegram token must stay outside the repo.
+
+### Lessons
+
+Real external integrations must stay explicit, secret-scoped, and separated from report generation.
+
+### Next
+
+Review PR, then use Telegram send only for explicitly approved agent reports.
+
+---
+
 ## Patch P02 — Diagnostics v1 + Vulkan Capability Check
 
 ### Goal

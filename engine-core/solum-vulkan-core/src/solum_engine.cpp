@@ -57,6 +57,12 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
     return env->NewStringUTF(renderer ? renderer->status.c_str() : "SOLUM Engine\nNo native handle");
 }
 
+extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetCamera(JNIEnv*, jclass, jlong handle, jfloat yawDeg, jfloat pitchDeg, jfloat distance) {
+    auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
+    if (!renderer) return;
+    renderer->setCamera(yawDeg, pitchDeg, distance, true);
+}
+
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) {
@@ -68,8 +74,23 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"cubeStatus\":\"" + (renderer->diagnostics.cubeReady ? "ok" : "failed") + "\""
         + ",\"depthStatus\":\"" + (renderer->diagnostics.depthReady ? "ok" : "failed") + "\""
         + ",\"cameraStatus\":\"" + (renderer->diagnostics.cameraReady ? "ok" : "failed") + "\""
+        + ",\"cameraMvpStatus\":\"" + (renderer->diagnostics.cameraMvpReady ? "ok" : "failed") + "\""
+        + ",\"cameraControlsStatus\":\"" + (renderer->diagnostics.cameraControlsReady ? "ok" : "not_implemented") + "\""
+        + ",\"cameraYawDeg\":" + std::to_string(renderer->diagnostics.camera.yawDeg)
+        + ",\"cameraPitchDeg\":" + std::to_string(renderer->diagnostics.camera.pitchDeg)
+        + ",\"cameraDistance\":" + std::to_string(renderer->diagnostics.camera.distance)
         + ",\"indexBufferReady\":" + (renderer->diagnostics.indexBufferReady ? "true" : "false")
         + ",\"uniformOrPushConstantsReady\":" + (renderer->diagnostics.uniformOrPushConstantsReady ? "true" : "false")
+        + ",\"materialConstantsReady\":" + (renderer->diagnostics.materialConstantsReady ? "true" : "false")
+        + ",\"meshAttributeLayoutReady\":" + (renderer->diagnostics.meshAttributeLayoutReady ? "true" : "false")
+        + ",\"vertexLayout\":\"POSITION,NORMAL,TEXCOORD_0,COLOR_0\""
+        + ",\"vertexStrideBytes\":" + std::to_string(renderer->diagnostics.vertexStrideBytes)
+        + ",\"material\":{\"materialId\":" + std::to_string(renderer->diagnostics.material.materialId)
+        + ",\"baseColorFactor\":[" + std::to_string(renderer->diagnostics.material.baseColorFactor[0]) + "," + std::to_string(renderer->diagnostics.material.baseColorFactor[1]) + "," + std::to_string(renderer->diagnostics.material.baseColorFactor[2]) + "," + std::to_string(renderer->diagnostics.material.baseColorFactor[3]) + "]"
+        + ",\"metallicFactor\":" + std::to_string(renderer->diagnostics.material.metallicFactor)
+        + ",\"roughnessFactor\":" + std::to_string(renderer->diagnostics.material.roughnessFactor)
+        + ",\"emissiveFactor\":[" + std::to_string(renderer->diagnostics.material.emissiveFactor[0]) + "," + std::to_string(renderer->diagnostics.material.emissiveFactor[1]) + "," + std::to_string(renderer->diagnostics.material.emissiveFactor[2]) + "]"
+        + ",\"alphaMode\":\"OPAQUE\"}"
         + ",\"vertexCount\":" + std::to_string(renderer->diagnostics.vertexCount)
         + ",\"indexCount\":" + std::to_string(renderer->diagnostics.indexCount)
         + ",\"framesRendered\":" + std::to_string(renderer->diagnostics.framesRendered)

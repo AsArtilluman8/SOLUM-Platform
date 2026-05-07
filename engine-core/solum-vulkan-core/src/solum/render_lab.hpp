@@ -17,12 +17,22 @@ struct RenderLabState {
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
+    bool cameraMvpReady = false;
+    bool cameraControlsReady = false;
+    bool materialConstantsReady = false;
+    bool meshAttributeLayoutReady = false;
     bool indexBufferReady = false;
     bool uniformOrPushConstantsReady = false;
     bool triangleFallbackAvailable = true;
     bool triangleFallbackEnabled = false;
     uint32_t vertexCount = 0;
     uint32_t indexCount = 0;
+    uint32_t vertexStrideBytes = 0;
+    float cameraYawDeg = 0.0f;
+    float cameraPitchDeg = 0.0f;
+    float cameraDistance = 0.0f;
+    const char* vertexLayout = "POSITION,NORMAL,TEXCOORD_0,COLOR_0";
+    MaterialConstants material;
     uint64_t framesRendered = 0;
 
     const char* sceneId() const {
@@ -59,8 +69,25 @@ struct RenderLabState {
         f << indent << "  \"cubeStatus\": \"" << (cubeReady ? "ok" : "failed") << "\",\n";
         f << indent << "  \"depthStatus\": \"" << (depthReady ? "ok" : "failed") << "\",\n";
         f << indent << "  \"cameraStatus\": \"" << (cameraReady ? "ok" : "failed") << "\",\n";
+        f << indent << "  \"cameraMvpStatus\": \"" << (cameraMvpReady ? "ok" : "failed") << "\",\n";
+        f << indent << "  \"cameraControlsStatus\": \"" << (cameraControlsReady ? "ok" : "not_implemented") << "\",\n";
+        f << indent << "  \"cameraYawDeg\": " << cameraYawDeg << ",\n";
+        f << indent << "  \"cameraPitchDeg\": " << cameraPitchDeg << ",\n";
+        f << indent << "  \"cameraDistance\": " << cameraDistance << ",\n";
         f << indent << "  \"indexBufferReady\": " << (indexBufferReady ? "true" : "false") << ",\n";
         f << indent << "  \"uniformOrPushConstantsReady\": " << (uniformOrPushConstantsReady ? "true" : "false") << ",\n";
+        f << indent << "  \"materialConstantsReady\": " << (materialConstantsReady ? "true" : "false") << ",\n";
+        f << indent << "  \"meshAttributeLayoutReady\": " << (meshAttributeLayoutReady ? "true" : "false") << ",\n";
+        f << indent << "  \"vertexLayout\": \"" << vertexLayout << "\",\n";
+        f << indent << "  \"vertexStrideBytes\": " << vertexStrideBytes << ",\n";
+        f << indent << "  \"material\": {\n";
+        f << indent << "    \"materialId\": " << material.materialId << ",\n";
+        f << indent << "    \"baseColorFactor\": [" << material.baseColorFactor[0] << ", " << material.baseColorFactor[1] << ", " << material.baseColorFactor[2] << ", " << material.baseColorFactor[3] << "],\n";
+        f << indent << "    \"metallicFactor\": " << material.metallicFactor << ",\n";
+        f << indent << "    \"roughnessFactor\": " << material.roughnessFactor << ",\n";
+        f << indent << "    \"emissiveFactor\": [" << material.emissiveFactor[0] << ", " << material.emissiveFactor[1] << ", " << material.emissiveFactor[2] << "],\n";
+        f << indent << "    \"alphaMode\": \"OPAQUE\"\n";
+        f << indent << "  },\n";
         f << indent << "  \"vertexCount\": " << vertexCount << ",\n";
         f << indent << "  \"indexCount\": " << indexCount << ",\n";
         f << indent << "  \"framesRendered\": " << framesRendered << ",\n";

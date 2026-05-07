@@ -7,7 +7,7 @@ Current status:
 ```text
 foundation only
 currentLabScene = scene01_foundation_cube
-current implementation = real indexed Vulkan cube + depth + MVP foundation
+current implementation = real indexed Vulkan cube + depth + interactive camera + material constants + mesh attribute layout foundation
 ```
 
 No shadow/import/performance feature is claimed ready until a real Vulkan implementation and diagnostics proof exist.
@@ -17,8 +17,10 @@ No shadow/import/performance feature is claimed ready until a real Vulkan implem
 Purpose:
 
 - first real Vulkan cube target;
-- camera baseline;
+- interactive camera baseline;
 - depth baseline;
+- material constants foundation;
+- mesh attribute layout foundation;
 - engine diagnostics smoke scene.
 
 Current state:
@@ -27,9 +29,11 @@ Current state:
 scene id: scene01_foundation_cube
 status: implemented_foundation
 geometry: indexed cube
-attributes: position + color
+attributes: POSITION,NORMAL,TEXCOORD_0,COLOR_0
 depth: color + depth render pass attachment
-camera: perspective MVP through push constants
+camera: drag rotate + pinch/buttons zoom, perspective MVP through push constants
+material constants: baseColorFactor, metallicFactor, roughnessFactor, emissiveFactor, alphaMode, materialId
+shader material use: vertexColor * baseColorFactor.rgb, alpha = baseColorFactor.a
 triangle fallback: available/disabled
 screenshot/readback: not_available, renderer_readback_not_implemented
 ```
@@ -40,8 +44,10 @@ Expected runtime status:
 Render Lab: Scene01 Foundation Cube
 Cube draw: OK
 Depth: OK
-Camera: OK
-Next: Material Constants / Asset Mesh Upload
+Camera: controls OK
+Material constants: OK
+Mesh layout: OK
+Next: Texture Binding / Asset Mesh Upload
 ```
 
 ## Scene02 Material Lab
@@ -132,10 +138,27 @@ Engine diagnostics must include:
     "cubeStatus": "ok",
     "depthStatus": "ok",
     "cameraStatus": "ok",
+    "cameraMvpStatus": "ok",
+    "cameraControlsStatus": "ok",
+    "cameraYawDeg": 28.0,
+    "cameraPitchDeg": -18.0,
+    "cameraDistance": 4.2,
+    "materialConstantsReady": true,
+    "meshAttributeLayoutReady": true,
+    "vertexLayout": "POSITION,NORMAL,TEXCOORD_0,COLOR_0",
+    "vertexStrideBytes": 44,
     "indexBufferReady": true,
     "uniformOrPushConstantsReady": true,
-    "vertexCount": 8,
+    "vertexCount": 24,
     "indexCount": 36,
+    "material": {
+      "materialId": 1,
+      "baseColorFactor": [0.92, 0.78, 1.0, 1.0],
+      "metallicFactor": 0.0,
+      "roughnessFactor": 0.65,
+      "emissiveFactor": [0.0, 0.0, 0.0],
+      "alphaMode": "OPAQUE"
+    },
     "rendererPath": "Android Native Vulkan",
     "screenshot": {
       "status": "not_available",

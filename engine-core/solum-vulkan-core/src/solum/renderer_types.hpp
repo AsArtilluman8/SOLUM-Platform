@@ -18,7 +18,26 @@ namespace solum {
 struct Vertex2D { float x; float y; };
 struct Vertex3D {
     float px; float py; float pz;
+    float nx; float ny; float nz;
+    float u; float v;
     float r; float g; float b;
+};
+
+struct CameraState {
+    float yawDeg = 28.0f;
+    float pitchDeg = -18.0f;
+    float distance = 4.2f;
+    bool controlsActive = false;
+};
+
+struct MaterialConstants {
+    float baseColorFactor[4] = { 0.92f, 0.78f, 1.0f, 1.0f };
+    float metallicFactor = 0.0f;
+    float roughnessFactor = 0.65f;
+    float padding0[2] = { 0.0f, 0.0f };
+    float emissiveFactor[3] = { 0.0f, 0.0f, 0.0f };
+    int alphaMode = 0;
+    int materialId = 1;
 };
 
 struct Mat4 {
@@ -32,6 +51,11 @@ struct Mat4 {
         out.m[15] = 1.0f;
         return out;
     }
+};
+
+struct PushConstants {
+    Mat4 mvp;
+    MaterialConstants material;
 };
 
 inline Mat4 multiply(const Mat4& a, const Mat4& b) {
@@ -63,6 +87,17 @@ inline Mat4 rotationY(float radians) {
     out.m[0] = c;
     out.m[2] = -s;
     out.m[8] = s;
+    out.m[10] = c;
+    return out;
+}
+
+inline Mat4 rotationX(float radians) {
+    Mat4 out = Mat4::identity();
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out.m[5] = c;
+    out.m[6] = s;
+    out.m[9] = -s;
     out.m[10] = c;
     return out;
 }

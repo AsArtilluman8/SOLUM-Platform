@@ -41,8 +41,14 @@ struct RendererCore {
     bool cubeDrawn = false;
     bool depthReady = false;
     bool cameraReady = false;
+    bool cameraMvpReady = false;
+    bool cameraControlsReady = false;
     bool pushConstantsReady = false;
+    bool materialConstantsReady = false;
+    bool meshAttributeLayoutReady = false;
     bool rendererCoreReady = false;
+    CameraState camera;
+    MaterialConstants material;
 
     void setOutputRoot(const std::string& root) { outputRoot = root; diagnostics.outputRoot = root; }
 
@@ -55,19 +61,35 @@ struct RendererCore {
         diagnostics.indexBufferReady = validationMesh.indexedReady();
         diagnostics.cubeReady = cubeDrawn && validationMesh.indexedReady();
         diagnostics.depthReady = depthReady;
-        diagnostics.cameraReady = cameraReady;
+        diagnostics.cameraReady = cameraMvpReady && cameraControlsReady;
+        diagnostics.cameraMvpReady = cameraMvpReady;
+        diagnostics.cameraControlsReady = cameraControlsReady;
         diagnostics.uniformOrPushConstantsReady = pushConstantsReady;
+        diagnostics.materialConstantsReady = materialConstantsReady;
+        diagnostics.meshAttributeLayoutReady = meshAttributeLayoutReady;
         diagnostics.vertexCount = validationMesh.vertexCount;
         diagnostics.indexCount = validationMesh.indexCount;
+        diagnostics.vertexStrideBytes = sizeof(Vertex3D);
+        diagnostics.camera = camera;
+        diagnostics.material = material;
         diagnostics.framesRendered = framesRendered;
         diagnostics.triangleDrawn = triangleDrawn;
         diagnostics.renderLab.cubeReady = diagnostics.cubeReady;
         diagnostics.renderLab.depthReady = diagnostics.depthReady;
         diagnostics.renderLab.cameraReady = diagnostics.cameraReady;
+        diagnostics.renderLab.cameraMvpReady = diagnostics.cameraMvpReady;
+        diagnostics.renderLab.cameraControlsReady = diagnostics.cameraControlsReady;
+        diagnostics.renderLab.cameraYawDeg = camera.yawDeg;
+        diagnostics.renderLab.cameraPitchDeg = camera.pitchDeg;
+        diagnostics.renderLab.cameraDistance = camera.distance;
         diagnostics.renderLab.indexBufferReady = diagnostics.indexBufferReady;
         diagnostics.renderLab.uniformOrPushConstantsReady = diagnostics.uniformOrPushConstantsReady;
+        diagnostics.renderLab.materialConstantsReady = diagnostics.materialConstantsReady;
+        diagnostics.renderLab.meshAttributeLayoutReady = diagnostics.meshAttributeLayoutReady;
         diagnostics.renderLab.vertexCount = diagnostics.vertexCount;
         diagnostics.renderLab.indexCount = diagnostics.indexCount;
+        diagnostics.renderLab.vertexStrideBytes = diagnostics.vertexStrideBytes;
+        diagnostics.renderLab.material = material;
         diagnostics.renderLab.framesRendered = diagnostics.framesRendered;
     }
 
@@ -118,7 +140,11 @@ struct RendererCore {
         cubeDrawn = false;
         depthReady = false;
         cameraReady = false;
+        cameraMvpReady = false;
+        cameraControlsReady = false;
         pushConstantsReady = false;
+        materialConstantsReady = false;
+        meshAttributeLayoutReady = false;
         rendererCoreReady = false;
     }
 
@@ -375,11 +401,34 @@ struct RendererCore {
         const float aspect = extent.height > 0 ? (float)extent.width / (float)extent.height : 1.0f;
         const float nearPlane = 0.1f;
         const float farPlane = 32.0f;
-        const Mat4 model = rotationY(0.55f);
-        const Mat4 view = translation(0.0f, 0.0f, 3.2f);
+        const float degToRad = 3.1415926535f / 180.0f;
+        const Mat4 model = rotationY(0.25f);
+        const Mat4 view = multiply(translation(0.0f, 0.0f, camera.distance), multiply(rotationX(camera.pitchDeg * degToRad), rotationY(camera.yawDeg * degToRad)));
         const Mat4 proj = perspective(60.0f * 3.1415926535f / 180.0f, aspect, nearPlane, farPlane);
-        cameraReady = aspect > 0.0f && nearPlane > 0.0f && farPlane > nearPlane;
+        cameraMvpReady = aspect > 0.0f && nearPlane > 0.0f && farPlane > nearPlane && camera.distance >= 2.0f && camera.distance <= 8.0f;
+        cameraReady = cameraMvpReady;
         return multiply(proj, multiply(view, model));
+    }
+
+    static float clampFloat(float v, float lo, float hi) {
+        return v < lo ? lo : (v > hi ? hi : v);
+    }
+
+    void updateReadyStatus() {
+        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene01 Foundation Cube\nVertex buffer: OK\nIndex buffer: OK\nTriangle fallback: available/disabled\nCube draw: OK\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: Texture Binding / Asset Mesh Upload";
+    }
+
+    bool setCamera(float yawDeg, float pitchDeg, float distance, bool controlsActive) {
+        camera.yawDeg = yawDeg;
+        camera.pitchDeg = clampFloat(pitchDeg, -75.0f, 75.0f);
+        camera.distance = clampFloat(distance, 2.0f, 8.0f);
+        camera.controlsActive = controlsActive;
+        cameraControlsReady = controlsActive;
+        const bool ok = renderOneFrame();
+        syncDiagnostics();
+        diagnostics.write(ok ? "valid" : diagnostics.status, ok ? "Camera controls updated MVP and rendered Scene01." : diagnostics.reason);
+        if (ok) updateReadyStatus();
+        return ok;
     }
 
     bool createCommandsAndSync() {
@@ -425,9 +474,13 @@ struct RendererCore {
         rp.pClearValues = clear;
         vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.pipeline);
-        const Mat4 mvp = buildMvp();
-        vkCmdPushConstants(cmd, trianglePipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &mvp);
+        PushConstants pc{};
+        pc.mvp = buildMvp();
+        pc.material = material;
+        vkCmdPushConstants(cmd, trianglePipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pc);
         pushConstantsReady = true;
+        materialConstantsReady = true;
+        meshAttributeLayoutReady = sizeof(Vertex3D) == 44;
         validationMesh.bindIndexed(cmd);
         vkCmdDrawIndexed(cmd, validationMesh.indexCount, 1, 0, 0, 0);
         vkCmdEndRenderPass(cmd);
@@ -479,6 +532,7 @@ struct RendererCore {
         if (!createDepthResources()) return false;
         if (!createFramebuffers()) return false;
         if (!validationMesh.createFoundationCube(physicalDevice, device, error)) { fail("MeshResource cube failed: " + error); return false; }
+        meshAttributeLayoutReady = validationMesh.vertexCount == 24 && sizeof(Vertex3D) == 44;
         if (!trianglePipeline.createTrianglePipeline(device, renderPass, extent, error)) { fail("PipelineBundle failed: " + error); return false; }
         if (!createCommandsAndSync()) return false;
         return true;
@@ -495,10 +549,11 @@ struct RendererCore {
         if (!createSwapchain(width, height)) return false;
         if (!createRendererResources()) return false;
         if (!renderOneFrame()) return false;
+        cameraControlsReady = true;
         rendererCoreReady = true;
         syncDiagnostics();
-        diagnostics.write("valid", "Scene01 Foundation Cube rendered with indexed geometry, depth attachment and push-constant MVP.");
-        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene01 Foundation Cube\nVertex buffer: OK\nIndex buffer: OK\nTriangle fallback: available/disabled\nCube draw: OK\nDepth: OK\nCamera: OK\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: Material Constants / Asset Mesh Upload";
+        diagnostics.write("valid", "Scene01 Foundation Cube rendered with indexed geometry, depth attachment, interactive camera, material constants and mesh attribute layout.");
+        updateReadyStatus();
         return true;
     }
 };

@@ -25,6 +25,24 @@
 
 ## Work intensity modes
 
+Default для Codex patch work:
+
+```text
+STRICT SILENT MODE
+```
+
+В этом режиме во время работы разрешены только короткие milestone строки:
+
+```text
+READ
+EDIT
+BUILD
+CHECK
+RESULT
+```
+
+Подробности, HTML/TXT report и Telegram отправка — только один раз в финальном `RESULT`. Проверки не повторяются без новой причины.
+
 Default для обычного PR:
 
 ```text

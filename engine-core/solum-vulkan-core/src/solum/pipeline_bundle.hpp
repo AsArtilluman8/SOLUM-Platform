@@ -55,7 +55,7 @@ struct PipelineBundle {
         binding.binding = 0;
         binding.stride = sizeof(Vertex3D);
         binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        VkVertexInputAttributeDescription attrs[2]{};
+        VkVertexInputAttributeDescription attrs[4]{};
         attrs[0].location = 0;
         attrs[0].binding = 0;
         attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -63,11 +63,19 @@ struct PipelineBundle {
         attrs[1].location = 1;
         attrs[1].binding = 0;
         attrs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attrs[1].offset = offsetof(Vertex3D, r);
+        attrs[1].offset = offsetof(Vertex3D, nx);
+        attrs[2].location = 2;
+        attrs[2].binding = 0;
+        attrs[2].format = VK_FORMAT_R32G32_SFLOAT;
+        attrs[2].offset = offsetof(Vertex3D, u);
+        attrs[3].location = 3;
+        attrs[3].binding = 0;
+        attrs[3].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attrs[3].offset = offsetof(Vertex3D, r);
         VkPipelineVertexInputStateCreateInfo vertexInput{ VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
         vertexInput.vertexBindingDescriptionCount = 1;
         vertexInput.pVertexBindingDescriptions = &binding;
-        vertexInput.vertexAttributeDescriptionCount = 2;
+        vertexInput.vertexAttributeDescriptionCount = 4;
         vertexInput.pVertexAttributeDescriptions = attrs;
 
         VkPipelineInputAssemblyStateCreateInfo assembly{ VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
@@ -104,9 +112,9 @@ struct PipelineBundle {
         blend.pAttachments = &blendAttachment;
 
         VkPushConstantRange push{};
-        push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         push.offset = 0;
-        push.size = sizeof(Mat4);
+        push.size = sizeof(PushConstants);
         VkPipelineLayoutCreateInfo layoutInfo{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
         layoutInfo.pushConstantRangeCount = 1;
         layoutInfo.pPushConstantRanges = &push;

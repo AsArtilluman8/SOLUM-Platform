@@ -40,6 +40,64 @@ SUCCESS / FAILED / NOT TESTED
 
 ---
 
+## Patch P03B/P04A — Interactive Camera + Material Constants + Mesh Attribute Layout
+
+### Goal
+
+Extend Scene01 Foundation Cube with user-controlled camera, honest material constants and real mesh attribute layout without replacing the Vulkan renderer.
+
+### Scope
+
+- Added drag yaw/pitch camera controls and pinch/buttons zoom in `apps/engine`.
+- Added native camera state fields: `cameraYawDeg`, `cameraPitchDeg`, `cameraDistance`.
+- Split diagnostics into `cameraMvpStatus` and `cameraControlsStatus`.
+- Added default material constants: `materialId = 1`, `baseColorFactor`, `metallicFactor`, `roughnessFactor`, `emissiveFactor`, `alphaMode = OPAQUE`.
+- Extended push constants so fragment shader applies `baseColorFactor`.
+- Updated cube mesh to `POSITION,NORMAL,TEXCOORD_0,COLOR_0` with 24 vertices / 36 indices.
+- Added `materialConstantsReady`, `meshAttributeLayoutReady`, `vertexStrideBytes`, `vertexLayout`.
+- Added STRICT SILENT MODE rules for patch work.
+
+### Out of scope
+
+- Texture binding.
+- PBR lighting.
+- Shadows.
+- Model import.
+- The Forge import.
+
+### Expected runtime status
+
+```text
+Cube: OK
+Depth: OK
+Camera: controls OK
+Material constants: OK
+Mesh layout: OK
+Next: Texture Binding / Asset Mesh Upload
+```
+
+### Diagnostics
+
+`engine_runtime_state.json` and `engine_diagnostics_manifest.json` must report:
+
+```text
+cameraMvpStatus = ok
+cameraControlsStatus = ok
+cameraYawDeg = current value
+cameraPitchDeg = current value
+cameraDistance = current value
+materialConstantsReady = true
+meshAttributeLayoutReady = true
+vertexLayout = POSITION,NORMAL,TEXCOORD_0,COLOR_0
+vertexStrideBytes = 44
+vertexCount = 24
+indexCount = 36
+```
+
+### Next
+
+P04B Texture Binding Foundation or Asset Mesh Upload, depending on runtime result.
+
 ## Patch P03 — Real Vulkan 3D Render Lab Foundation Pack
 
 ### Goal

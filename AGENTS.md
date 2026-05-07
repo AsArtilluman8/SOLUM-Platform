@@ -21,6 +21,16 @@
 - Telegram/HTML report делать только один раз в конце;
 - build runner запускать только когда scope реально требует.
 
+## STRICT SILENT MODE
+
+Для patch work STRICT SILENT MODE обязателен, если пользователь явно включил его или запросил silent/low-chatter patch flow.
+
+- во время работы не писать reasoning/prose;
+- разрешённые milestone строки: `READ`, `EDIT`, `BUILD`, `CHECK`, `RESULT`;
+- подробности давать только в финальном `RESULT`;
+- Telegram/HTML report делать и отправлять только один раз в конце;
+- не повторять проверки без новой причины.
+
 Перед любой задачей прочитай:
 1. docs/PROJECT_MEMORY_INDEX.md
 2. docs/CURRENT_STAGE.md

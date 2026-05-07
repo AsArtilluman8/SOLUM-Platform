@@ -10,6 +10,7 @@ import android.os.Bundle;
 import android.provider.DocumentsContract;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -49,6 +50,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private String lastExportReason = "";
     private String lastExportPath = "";
     private String lastExportTimestamp = "";
+    private float cameraYawDeg = 28.0f;
+    private float cameraPitchDeg = -18.0f;
+    private float cameraDistance = 4.2f;
+    private float lastTouchX = 0.0f;
+    private float lastTouchY = 0.0f;
+    private float lastPinchDistance = 0.0f;
+    private boolean pinchActive = false;
 
     private static native long nativeCreate();
     private static native void nativeDestroy(long handle);
@@ -57,6 +65,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native void nativeSurfaceDestroyed(long handle);
     private static native String nativeGetStatus(long handle);
     private static native String nativeGetRenderLabState(long handle);
+    private static native void nativeSetCamera(long handle, float yawDeg, float pitchDeg, float distance);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,13 +76,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         super.onCreate(savedInstanceState);
         SurfaceView surfaceView = new SurfaceView(this);
         surfaceView.getHolder().addCallback(this);
+        surfaceView.setOnTouchListener((view, event) -> handleCameraTouch(event));
         statusView = new TextView(this);
         statusView.setTextColor(Color.rgb(210, 245, 255));
         statusView.setTextSize(12f);
         statusView.setPadding(14, 10, 14, 10);
         statusView.setGravity(Gravity.START);
         statusView.setSingleLine(false);
-        statusView.setMaxLines(4);
+        statusView.setMaxLines(12);
         statusView.setBackgroundColor(Color.argb(150, 3, 10, 12));
         statusView.setText("SOLUM Engine\nVulkan: loading\nStatus: starting");
         diagnosticsStatusView = new TextView(this);
@@ -105,6 +115,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         exportParams.gravity = Gravity.BOTTOM | Gravity.END;
         exportParams.setMargins(12, 12, 12, 36);
         root.addView(exportButton, exportParams);
+        Button zoomInButton = new Button(this);
+        zoomInButton.setText("Zoom In");
+        zoomInButton.setAllCaps(false);
+        zoomInButton.setOnClickListener(v -> applyCamera(cameraYawDeg, cameraPitchDeg, cameraDistance - 0.35f));
+        FrameLayout.LayoutParams zoomInParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        zoomInParams.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+        zoomInParams.setMargins(12, 12, 12, 86);
+        root.addView(zoomInButton, zoomInParams);
+        Button zoomOutButton = new Button(this);
+        zoomOutButton.setText("Zoom Out");
+        zoomOutButton.setAllCaps(false);
+        zoomOutButton.setOnClickListener(v -> applyCamera(cameraYawDeg, cameraPitchDeg, cameraDistance + 0.35f));
+        FrameLayout.LayoutParams zoomOutParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        zoomOutParams.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+        zoomOutParams.setMargins(12, 86, 12, 12);
+        root.addView(zoomOutButton, zoomOutParams);
         FrameLayout.LayoutParams diagnosticsParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
         diagnosticsParams.gravity = Gravity.BOTTOM;
         diagnosticsParams.setMargins(12, 12, 12, 118);
@@ -174,7 +200,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private void updateStatus() {
         runOnUiThread(() -> {
             if (nativeLoaded && nativeHandle != 0L) {
-                try { statusView.setMaxLines(5); statusView.setText(compactStatus(nativeGetStatus(nativeHandle))); }
+                try { statusView.setMaxLines(12); statusView.setText(compactStatus(nativeGetStatus(nativeHandle))); }
                 catch (Throwable t) { writeCrashReport("native_status_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: status call failed\n" + shortThrowable(t)); }
             }
         });
@@ -193,7 +219,89 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         else if (full.toLowerCase(Locale.US).contains("failed")) status = "Error";
         if (gpu.isEmpty()) gpu = "detecting";
         if (next.isEmpty()) next = "Material Constants / Asset Mesh Upload";
-        return "SOLUM Engine" + "\nVulkan: " + gpu + "\nRender Lab: Scene01 Foundation Cube\nStatus: " + status + "\nNext: " + shorten(next, 42);
+        String cube = full.contains("Cube draw: OK") ? "OK" : "pending";
+        String depth = full.contains("Depth: OK") ? "OK" : "pending";
+        String camera = full.contains("Camera: controls OK") ? "controls OK" : "pending";
+        String material = full.contains("Material constants: OK") ? "OK" : "pending";
+        String mesh = full.contains("Mesh layout: OK") ? "OK" : "pending";
+        return "SOLUM Engine"
+            + "\nVulkan: " + gpu
+            + "\nRender Lab: Scene01 Foundation Cube"
+            + "\nCube: " + cube
+            + "\nDepth: " + depth
+            + "\nCamera: " + camera
+            + "\nMaterial constants: " + material
+            + "\nMesh layout: " + mesh
+            + "\nHint: Drag rotate / pinch zoom or buttons zoom"
+            + "\nStatus: " + status
+            + "\nNext: " + shorten(next, 48);
+    }
+
+    private boolean handleCameraTouch(MotionEvent event) {
+        if (!nativeLoaded || nativeHandle == 0L) return true;
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            lastTouchX = event.getX();
+            lastTouchY = event.getY();
+            pinchActive = false;
+            return true;
+        }
+        if (action == MotionEvent.ACTION_POINTER_DOWN && event.getPointerCount() >= 2) {
+            lastPinchDistance = touchDistance(event);
+            pinchActive = true;
+            return true;
+        }
+        if (action == MotionEvent.ACTION_MOVE) {
+            if (event.getPointerCount() >= 2) {
+                float d = touchDistance(event);
+                if (lastPinchDistance > 0.0f && d > 0.0f) {
+                    float delta = (lastPinchDistance - d) * 0.006f;
+                    applyCamera(cameraYawDeg, cameraPitchDeg, cameraDistance + delta);
+                }
+                lastPinchDistance = d;
+                pinchActive = true;
+                return true;
+            }
+            if (!pinchActive) {
+                float x = event.getX();
+                float y = event.getY();
+                float dx = x - lastTouchX;
+                float dy = y - lastTouchY;
+                applyCamera(cameraYawDeg + dx * 0.35f, cameraPitchDeg + dy * 0.25f, cameraDistance);
+                lastTouchX = x;
+                lastTouchY = y;
+            }
+            return true;
+        }
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_UP) {
+            pinchActive = false;
+            lastPinchDistance = 0.0f;
+            return true;
+        }
+        return true;
+    }
+
+    private float touchDistance(MotionEvent event) {
+        if (event.getPointerCount() < 2) return 0.0f;
+        float dx = event.getX(0) - event.getX(1);
+        float dy = event.getY(0) - event.getY(1);
+        return (float)Math.sqrt(dx * dx + dy * dy);
+    }
+
+    private void applyCamera(float yawDeg, float pitchDeg, float distance) {
+        cameraYawDeg = yawDeg;
+        cameraPitchDeg = clamp(pitchDeg, -75.0f, 75.0f);
+        cameraDistance = clamp(distance, 2.0f, 8.0f);
+        try {
+            nativeSetCamera(nativeHandle, cameraYawDeg, cameraPitchDeg, cameraDistance);
+            updateStatus();
+        } catch (Throwable t) {
+            writeCrashReport("native_camera_update_failed", t);
+        }
+    }
+
+    private float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private String pickValue(String text, String prefix) {
@@ -325,6 +433,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"build\": { \"versionName\": \"" + escape(versionName) + "\", \"versionCode\": " + versionCode + " },\n"
             + "  \"backend\": { \"rendererPath\": \"Android Native Vulkan\", \"statusText\": \"" + escape(nativeStatus) + "\" },\n"
             + "  \"currentScene\": \"scene01_foundation_cube\",\n"
+            + "  \"cubeStatus\": \"" + escape(jsonStringField(renderLab, "cubeStatus", "unknown")) + "\",\n"
+            + "  \"depthStatus\": \"" + escape(jsonStringField(renderLab, "depthStatus", "unknown")) + "\",\n"
+            + "  \"cameraStatus\": \"" + escape(jsonStringField(renderLab, "cameraStatus", "unknown")) + "\",\n"
+            + "  \"cameraMvpStatus\": \"" + escape(jsonStringField(renderLab, "cameraMvpStatus", "unknown")) + "\",\n"
+            + "  \"cameraControlsStatus\": \"" + escape(jsonStringField(renderLab, "cameraControlsStatus", "unknown")) + "\",\n"
+            + "  \"cameraYawDeg\": " + jsonNumberField(renderLab, "cameraYawDeg", "0") + ",\n"
+            + "  \"cameraPitchDeg\": " + jsonNumberField(renderLab, "cameraPitchDeg", "0") + ",\n"
+            + "  \"cameraDistance\": " + jsonNumberField(renderLab, "cameraDistance", "0") + ",\n"
+            + "  \"framesRendered\": " + jsonNumberField(renderLab, "framesRendered", "0") + ",\n"
+            + "  \"materialConstantsReady\": " + jsonBooleanField(renderLab, "materialConstantsReady", "false") + ",\n"
+            + "  \"meshAttributeLayoutReady\": " + jsonBooleanField(renderLab, "meshAttributeLayoutReady", "false") + ",\n"
+            + "  \"vertexLayout\": \"" + escape(jsonStringField(renderLab, "vertexLayout", "unknown")) + "\",\n"
+            + "  \"vertexStrideBytes\": " + jsonNumberField(renderLab, "vertexStrideBytes", "0") + ",\n"
+            + "  \"vertexCount\": " + jsonNumberField(renderLab, "vertexCount", "0") + ",\n"
+            + "  \"indexCount\": " + jsonNumberField(renderLab, "indexCount", "0") + ",\n"
             + "  \"renderLab\": " + renderLab + "\n"
             + "}\n";
     }
@@ -349,8 +472,52 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  },\n"
             + "  \"files\": [\"engine_runtime_state.json\", \"engine_diagnostics_manifest.json\"],\n"
             + "  \"screenshot\": { \"status\": \"not_available\", \"reason\": \"renderer_readback_not_implemented\" },\n"
+            + "  \"camera\": {\n"
+            + "    \"cameraMvpStatus\": \"" + escape(jsonStringField(renderLab, "cameraMvpStatus", "unknown")) + "\",\n"
+            + "    \"cameraControlsStatus\": \"" + escape(jsonStringField(renderLab, "cameraControlsStatus", "unknown")) + "\",\n"
+            + "    \"cameraYawDeg\": " + jsonNumberField(renderLab, "cameraYawDeg", "0") + ",\n"
+            + "    \"cameraPitchDeg\": " + jsonNumberField(renderLab, "cameraPitchDeg", "0") + ",\n"
+            + "    \"cameraDistance\": " + jsonNumberField(renderLab, "cameraDistance", "0") + "\n"
+            + "  },\n"
+            + "  \"materialConstantsReady\": " + jsonBooleanField(renderLab, "materialConstantsReady", "false") + ",\n"
+            + "  \"meshAttributeLayoutReady\": " + jsonBooleanField(renderLab, "meshAttributeLayoutReady", "false") + ",\n"
+            + "  \"vertexLayout\": \"" + escape(jsonStringField(renderLab, "vertexLayout", "unknown")) + "\",\n"
+            + "  \"vertexStrideBytes\": " + jsonNumberField(renderLab, "vertexStrideBytes", "0") + ",\n"
             + "  \"renderLab\": " + renderLab + "\n"
             + "}\n";
+    }
+
+    private String jsonStringField(String json, String key, String fallback) {
+        String marker = "\"" + key + "\":\"";
+        int start = json.indexOf(marker);
+        if (start < 0) return fallback;
+        start += marker.length();
+        int end = json.indexOf('"', start);
+        return end > start ? json.substring(start, end) : fallback;
+    }
+
+    private String jsonNumberField(String json, String key, String fallback) {
+        String marker = "\"" + key + "\":";
+        int start = json.indexOf(marker);
+        if (start < 0) return fallback;
+        start += marker.length();
+        int end = start;
+        while (end < json.length()) {
+            char c = json.charAt(end);
+            if (!((c >= '0' && c <= '9') || c == '-' || c == '.')) break;
+            end++;
+        }
+        return end > start ? json.substring(start, end) : fallback;
+    }
+
+    private String jsonBooleanField(String json, String key, String fallback) {
+        String marker = "\"" + key + "\":";
+        int start = json.indexOf(marker);
+        if (start < 0) return fallback;
+        start += marker.length();
+        if (json.startsWith("true", start)) return "true";
+        if (json.startsWith("false", start)) return "false";
+        return fallback;
     }
 
     private ExportResult openDiagnosticsWriters() throws Exception {

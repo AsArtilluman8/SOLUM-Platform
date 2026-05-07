@@ -18,27 +18,37 @@
 
 Wrapper не является runtime/Vulkan частью проекта и не меняет Android build system.
 
-## P01G companion MCP placeholders
+## P01H companion route status
 
-P01G документирует future Accessibility companion route только как skeleton/stub. Эти MCP tools ещё не выполняют real device action и не добавлены в runtime bridge:
+P01H реализует Android Accessibility companion methods inside `apps/solum-companion`, но MCP wrapper ещё не вызывает Android service напрямую.
+
+Future MCP commands:
 
 ```text
 solum_companion_status
 solum_companion_screenshot
 solum_companion_ui_tree
+solum_companion_action_log
 solum_companion_visual_pack
 ```
 
-Planned behavior for P01H:
+Target behavior after MCP-to-Android bridge is added:
 
-- `solum_companion_status` — проверить доступность companion service и активный allowlisted SOLUM package.
-- `solum_companion_screenshot` — запросить screenshot только для SOLUM allowlist.
-- `solum_companion_ui_tree` — запросить UI tree только для SOLUM allowlist.
-- `solum_companion_visual_pack` — собрать visual diagnostics pack paths.
+- `solum_companion_status` — проверить доступность companion service и active allowlisted SOLUM package.
+- `solum_companion_screenshot` — запросить `final.png` только для SOLUM allowlist.
+- `solum_companion_ui_tree` — запросить `ui_tree.json` только для SOLUM allowlist.
+- `solum_companion_action_log` — запросить/обновить `action_log.json`.
+- `solum_companion_visual_pack` — собрать `visual_diagnostics_manifest.json` и paths.
 
-P01G не делает real screenshot, UI tree dump, launch, force-stop или tap automation.
+Important P01H limitation:
 
-Planned output paths:
+```text
+MCP does not call the Android Accessibility service directly yet.
+```
+
+P01H также не делает launch, force-stop или tap automation.
+
+Companion output paths:
 
 ```text
 /storage/emulated/0/SOLUMCreative/device_agent/latest/action_log.json

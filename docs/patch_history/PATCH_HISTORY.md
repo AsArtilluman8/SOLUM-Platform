@@ -40,6 +40,84 @@ SUCCESS / FAILED / NOT TESTED
 
 ---
 
+## Patch P01H — Accessibility Companion Real Routes
+
+### Goal
+
+Добавить real route layer для SOLUM Accessibility Companion: status, screenshot, UI tree, action log и visual manifest.
+
+### Scope
+
+- SOLUM-only active package tracking.
+- `takeScreenshot` route for API >= 30.
+- Honest screenshot failure manifest when screenshot is unavailable.
+- UI tree export.
+- Action log writer.
+- Visual diagnostics manifest.
+- Docs update for companion, visual pack and MCP future commands.
+
+### Changed files/modules
+
+- `apps/solum-companion/src/main/java/com/solum/companion/SolumAccessibilityService.kt`
+- `apps/solum-companion/src/main/java/com/solum/companion/SolumCompanionCommand.kt`
+- `apps/solum-companion/src/main/java/com/solum/companion/SolumDeviceAgentState.kt`
+- `apps/solum-companion/README.md`
+- `docs/ACCESSIBILITY_COMPANION_PLAN.md`
+- `docs/VISUAL_DIAGNOSTICS_PACK.md`
+- `docs/MCP_SERVER_SETUP.md`
+- `docs/patch_history/PATCH_HISTORY.md`
+
+### Build result
+
+BUILD_SUCCESS for current wired Gradle app after running:
+
+```text
+ANDROID_HOME=/data/data/com.termux/files/home/android-sdk ANDROID_SDK_ROOT=/data/data/com.termux/files/home/android-sdk bash tools/agent_build_runner.sh
+```
+
+Note: `apps/solum-companion` is not connected to Gradle yet, so this runner does not compile companion Kotlin.
+
+### Runtime result
+
+NOT TESTED on Android device in this patch session. Accessibility Service must be enabled manually.
+
+### Diagnostics
+
+Expected output paths:
+
+```text
+/storage/emulated/0/SOLUMCreative/device_agent/latest/action_log.json
+/storage/emulated/0/SOLUMCreative/device_agent/latest/ui_tree.json
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/final.png
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/visual_diagnostics_manifest.json
+```
+
+### User-visible result
+
+Companion now has real code paths for allowlisted SOLUM package evidence. Non-allowlisted packages return:
+
+```text
+status=blocked
+reason=package_not_allowlisted
+```
+
+### Known issues
+
+- Companion is still not connected to MCP direct Android service invocation.
+- Launch and force-stop remain stub only.
+- Tap/gesture automation is intentionally not implemented.
+- Runtime screenshot requires API >= 30 and enabled Accessibility Service.
+
+### Lessons
+
+Device automation must keep package allowlist enforcement at every route boundary.
+
+### Next
+
+P01I — connect MCP/bridge command dispatch to the Android companion service or define the device-side IPC entrypoint.
+
+---
+
 ## Patch P01G — Accessibility Companion Skeleton
 
 ### Goal

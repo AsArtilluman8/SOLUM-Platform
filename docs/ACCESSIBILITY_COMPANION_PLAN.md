@@ -1,8 +1,8 @@
 # ACCESSIBILITY_COMPANION_PLAN — future SOLUM companion app
 
-Этот документ фиксирует будущий Android Accessibility companion для SOLUM.
+Этот документ фиксирует Android Accessibility companion для SOLUM.
 
-P01G status: создан skeleton в `apps/solum-companion`. Реальные device actions не реализованы и входят в P01H.
+P01H status: `apps/solum-companion` получил real route layer для status, screenshot, UI tree и action log. Tap/gesture automation, launch и force-stop остаются stub/future only.
 
 ## Что даст companion app
 
@@ -10,7 +10,7 @@ Companion app нужен, чтобы агент мог получать факт
 
 - screenshot текущего SOLUM экрана;
 - UI tree для видимых controls;
-- controlled launch / force-stop SOLUM apps;
+- controlled launch / force-stop SOLUM apps later;
 - visual diagnostics pack для сравнения кадров;
 - compact evidence для HTML dashboard и Telegram report.
 
@@ -18,18 +18,22 @@ Companion не заменяет diagnostics и не становится product
 
 ## Screenshot route
 
-Будущий route:
+P01H route:
 
 ```text
 request screenshot
 ↓
 companion проверяет active package allowlist
 ↓
-делает screenshot только SOLUM app
+если API >= 30, вызывает AccessibilityService.takeScreenshot
+↓
+если screenshot недоступен, пишет честный failed status и reason
+↓
+делает screenshot только для SOLUM app
 ↓
 сохраняет файл в SOLUMCreative diagnostics area
 ↓
-bridge/MCP возвращает path
+пишет visual diagnostics manifest
 ```
 
 Expected output:
@@ -41,7 +45,7 @@ Expected output:
 
 ## UI tree route
 
-Будущий route:
+P01H route:
 
 ```text
 request UI tree
@@ -49,8 +53,6 @@ request UI tree
 companion проверяет active package allowlist
 ↓
 читает AccessibilityNode tree
-↓
-redacts text if needed
 ↓
 пишет structured JSON
 ```
@@ -63,9 +65,43 @@ Expected output:
 
 UI tree нужен для SOLUM editor controls, panels, errors и status overlay. Он не должен использоваться для чужих приложений.
 
+## Action log route
+
+P01H пишет журнал команд и событий:
+
+```text
+/storage/emulated/0/SOLUMCreative/device_agent/latest/action_log.json
+```
+
+Журнал содержит:
+
+- timestamp UTC;
+- command;
+- status;
+- reason при отказе/ошибке;
+- active package info;
+- output path, если команда пишет файл.
+
+## Status route
+
+P01H status JSON строится из active package tracking:
+
+```text
+status=ready
+```
+
+только если текущий active package входит в SOLUM allowlist.
+
+Любой другой package возвращает:
+
+```text
+status=blocked
+reason=package_not_allowlisted
+```
+
 ## Launch / force-stop
 
-Companion может позже дать controlled commands:
+Launch / force-stop остаются future/stub only:
 
 ```text
 launch SOLUM package
@@ -94,6 +130,42 @@ status=blocked
 reason=package_not_allowlisted
 ```
 
+## Как вручную включить Accessibility Service
+
+На устройстве Android:
+
+```text
+Settings
+↓
+Accessibility
+↓
+Installed apps / Downloaded apps
+↓
+SOLUM Accessibility Companion
+↓
+Enable
+```
+
+После включения открой один из allowlisted SOLUM apps, затем запроси route через будущий bridge/MCP или локальный Android entrypoint.
+
+## Как проверить output files
+
+После capture/dump проверь:
+
+```text
+/storage/emulated/0/SOLUMCreative/device_agent/latest/action_log.json
+/storage/emulated/0/SOLUMCreative/device_agent/latest/ui_tree.json
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/final.png
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/visual_diagnostics_manifest.json
+```
+
+Если active package не из allowlist, JSON должен содержать:
+
+```text
+status=blocked
+reason=package_not_allowlisted
+```
+
 ## Запрет на Telegram UI automation
 
 Companion не должен:
@@ -109,28 +181,24 @@ Telegram send остаётся только через explicit Bot API tool:
 tools/send_telegram_report.py
 ```
 
-## Будущий visual diagnostics pack
+## Visual diagnostics pack
 
-Companion и renderer diagnostics позже должны сохранять pack:
+P01H companion пишет:
 
 ```text
 final.png
-shadow_mask.png
-normals.png
-depth.png
+visual_diagnostics_manifest.json
+ui_tree.json
+action_log.json
+```
+
+Later Vulkan/render diagnostics may add:
+
+```text
 frame_001.png
 frame_002.png
 diff.png
 ```
-
-Назначение:
-
-- `final.png` — итоговый вид;
-- `shadow_mask.png` — shadow coverage/debug;
-- `normals.png` — normal visualization;
-- `depth.png` — depth visualization;
-- `frame_001.png` / `frame_002.png` — сравнение соседних кадров;
-- `diff.png` — visual regression diff.
 
 Pack должен прикрепляться к diagnostics ZIP и показываться в HTML dashboard.
 
@@ -146,29 +214,37 @@ Companion должен:
 - не менять Vulkan/render state;
 - не делать destructive app/device actions.
 
-## P01G skeleton
+## P01H implementation
 
-Добавленные файлы:
+Companion files:
 
 ```text
 apps/solum-companion/README.md
 apps/solum-companion/AndroidManifest.xml
 apps/solum-companion/src/main/java/com/solum/companion/SolumAccessibilityService.kt
 apps/solum-companion/src/main/java/com/solum/companion/SolumCompanionCommand.kt
+apps/solum-companion/src/main/java/com/solum/companion/SolumDeviceAgentState.kt
 apps/solum-companion/src/main/res/xml/solum_accessibility_service.xml
 ```
 
-AccessibilityService содержит только stubs:
+Real in P01H:
 
 ```text
-captureScreenshotStub()
-dumpUiTreeStub()
-writeActionLogStub()
+buildStatusJson()
+captureScreenshot()
+dumpUiTree()
+writeActionLog()
+buildVisualPack()
+```
+
+Stub only after P01H:
+
+```text
 launchSolumStub()
 forceStopSolumStub()
 ```
 
-Planned outputs:
+Output paths:
 
 ```text
 /storage/emulated/0/SOLUMCreative/device_agent/latest/action_log.json
@@ -177,4 +253,4 @@ Planned outputs:
 /storage/emulated/0/SOLUMCreative/diagnostics/latest/visual_diagnostics_manifest.json
 ```
 
-P01G не реализует taps outside allowlist и не выполняет real screenshot/UI tree capture.
+P01H не реализует taps, gestures, arbitrary package automation или Telegram UI automation.

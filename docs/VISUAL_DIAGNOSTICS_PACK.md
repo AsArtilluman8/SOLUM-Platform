@@ -1,20 +1,17 @@
 # VISUAL_DIAGNOSTICS_PACK — SOLUM visual evidence outputs
 
-Этот документ фиксирует future visual diagnostics pack для SOLUM. В P01G это только contract/skeleton, без real device action.
+Этот документ фиксирует visual diagnostics pack для SOLUM.
 
-## P01G status
+## P01H status
 
-P01G добавляет companion skeleton и документирует стабильные output paths.
+P01H добавляет real companion route layer для:
 
-Не реализовано в P01G:
+- `final.png` через `AccessibilityService.takeScreenshot` на API >= 30;
+- `ui_tree.json` через AccessibilityNode tree;
+- `action_log.json`;
+- `visual_diagnostics_manifest.json`.
 
-- real screenshot capture;
-- real UI tree dump;
-- real visual diff;
-- renderer/Vulkan diagnostics integration;
-- HTML dashboard generation.
-
-Real screenshot/UI tree/device action входит в P01H.
+Если screenshot недоступен, companion пишет `status=failed` и `reason` в manifest.
 
 ## Output paths
 
@@ -32,9 +29,9 @@ Visual diagnostics outputs:
 /storage/emulated/0/SOLUMCreative/diagnostics/latest/visual_diagnostics_manifest.json
 ```
 
-## Future pack contents
+## P01H pack contents
 
-Expected future files:
+Expected files:
 
 ```text
 final.png
@@ -43,16 +40,15 @@ ui_tree.json
 action_log.json
 ```
 
-Later Vulkan/render diagnostics may add:
+Later flicker/visual regression tests may add:
 
 ```text
-shadow_mask.png
-normals.png
-depth.png
 frame_001.png
 frame_002.png
 diff.png
 ```
+
+Renderer-specific debug images may be specified separately when Vulkan diagnostics needs them.
 
 ## Safety
 

@@ -14,4 +14,5 @@ build/
 *.dex
 local.properties
 apps/engine/src/main/jniLibs/arm64-v8a/libsolum_engine.so
+apps/engine/src/main/jniLibs/arm64-v8a/libc++_shared.so
 engine-core/solum-vulkan-core/src/generated/

@@ -25,6 +25,9 @@
 Для Vulkan/render/resource задач дополнительно:
 
 - `docs/RENDERING_TARGET_SPEC.md`
+- `docs/RUNTIME_TRUTH.md`
+- `docs/RENDER_LAB.md`
+- `docs/RENDER_BACKEND_DECISION.md`
 - `docs/RENDER_RESOURCE_LIFETIME_RULES.md`
 - `docs/VISUAL_QA_SPEC.md`
 - `docs/errors/ERROR_KNOWLEDGE_BASE.md`
@@ -189,8 +192,11 @@ Patch 01 continuation: проверка repo/build/tools foundation без runti
 ### Diagnostics
 
 - `docs/DIAGNOSTICS_SPEC.md`
+- `docs/RUNTIME_TRUTH.md`
 
 Структура latest diagnostics ZIP, HTML report, device/env/git/vulkan/performance state.
+
+`RUNTIME_TRUTH.md` фиксирует main runtime app, companion app, APK output root, diagnostics root и engine-native renderer diagnostics.
 
 ### Build environment
 
@@ -207,8 +213,14 @@ FPS tiers, frame budget, diagnostics overhead limits, regression snapshots.
 ### Rendering target
 
 - `docs/RENDERING_TARGET_SPEC.md`
+- `docs/RENDER_LAB.md`
+- `docs/RENDER_BACKEND_DECISION.md`
 
 Vulkan target, Android/Mali constraints, forbidden fallbacks, external repo reference rules.
+
+`RENDER_LAB.md` фиксирует controlled render scenes, текущий `scene01_foundation_cube` и честный foundation-only статус.
+
+`RENDER_BACKEND_DECISION.md` фиксирует direct Vulkan fallback и The Forge как reference/adapter target, не wholesale dependency.
 
 ### Asset formats
 

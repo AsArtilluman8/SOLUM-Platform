@@ -23,6 +23,52 @@
 
 Без такого разрешения действуют обычные правила `supervised-autopilot`: можно готовить изменения и отчёт, но нельзя автоматически делать commit, push или PR.
 
+## Work intensity modes
+
+Default для обычного PR:
+
+```text
+PATCH_LIGHT
+```
+
+### FAST_CHECK
+
+- Только чтение, status, grep/smoke checks.
+- Без scoped edits.
+- Без build runner, если пользователь не просит.
+- Без Telegram/HTML до финального ответа.
+
+### PATCH_LIGHT
+
+- Scoped edits.
+- Один build runner run, если scope затрагивает build/runtime/code.
+- Дополнительные проверки только из scope.
+- Telegram/HTML report только один раз в конце.
+
+### PATCH_FULL
+
+- Более широкий патч с docs/code/test/report.
+- Build runner допустим после meaningful code/build changes.
+- Fix loop максимум 3 раза.
+- Telegram/HTML report только один раз в конце.
+
+### RUNTIME_PATCH
+
+- Runtime/Vulkan/build/device truth patch.
+- Требует runtime truth paths, diagnostics evidence и честные fallback reasons.
+- Build runner используется только когда изменение может влиять на APK/runtime.
+- Нельзя заявлять runtime success без diagnostics/runtime proof.
+
+## Low-Chatter Mode
+
+Если пользователь включает LOW-CHATTER MODE:
+
+- во время работы писать только короткие milestones;
+- не объяснять ход работы длинно;
+- не повторять проверки без причины;
+- подробный RESULT, HTML/TXT и Telegram отправка только в конце;
+- build runner не гонять повторно без новой причины.
+
 ## Обязательный цикл
 
 1. Прочитать обязательные docs проекта.

@@ -17,8 +17,9 @@ fi
 REPORT_LATEST="$OUTROOT/reports/latest"
 DIAG_LATEST="$OUTROOT/diagnostics/latest"
 RELEASE_LATEST="$OUTROOT/releases/latest"
+APK_OUT_ROOT="/storage/emulated/0/Download/SOLUM_APK"
 
-mkdir -p "$REPORT_LATEST" "$DIAG_LATEST" "$RELEASE_LATEST" _work/agent_reports/latest
+mkdir -p "$REPORT_LATEST" "$DIAG_LATEST" "$RELEASE_LATEST" "$APK_OUT_ROOT" _work/agent_reports/latest
 
 FULL_LOG="$REPORT_LATEST/SOLUM_LATEST_BUILD_LOG.txt"
 SHORT_LOG="$REPORT_LATEST/SOLUM_LATEST_BUILD_LOG_SHORT.txt"
@@ -67,6 +68,23 @@ path_state(){
     log "$label=$value [missing]"
   else
     log "$label= [empty]"
+  fi
+}
+
+copy_named_apk(){
+  local label="$1"
+  local src="$2"
+  local latest_name="$3"
+  local download_name="$4"
+
+  if [ -n "$src" ] && [ -f "$src" ]; then
+    cp "$src" "$RELEASE_LATEST/$latest_name" 2>/dev/null || true
+    cp "$src" "$APK_OUT_ROOT/$download_name" 2>/dev/null || true
+    cp "$src" "$APK_OUT_ROOT/$latest_name" 2>/dev/null || true
+    short "$label=$APK_OUT_ROOT/$download_name"
+    short "${label}_ALIAS=$APK_OUT_ROOT/$latest_name"
+  else
+    short "$label=not found"
   fi
 }
 
@@ -224,9 +242,30 @@ else
     short "aapt2=not found"
   fi
 
+  NATIVE_CODE=0
+  if [ -x "tools/build_native_engine.sh" ]; then
+    log "native_command=bash tools/build_native_engine.sh"
+    set +e
+    bash tools/build_native_engine.sh 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL"
+    NATIVE_CODE=${PIPESTATUS[0]}
+    set -e
+    if [ "$NATIVE_CODE" -eq 0 ]; then
+      short "NATIVE_ENGINE_BUILD=OK"
+    else
+      short "NATIVE_ENGINE_BUILD=FAILED"
+      short "Native build log=$OUTROOT/reports/latest/P04_native_build.log"
+    fi
+  else
+    short "NATIVE_ENGINE_BUILD=not_available"
+  fi
+
   set +e
-  bash -c "$BUILD_CMD" 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL"
-  CODE=${PIPESTATUS[0]}
+  if [ "$NATIVE_CODE" -eq 0 ]; then
+    bash -c "$BUILD_CMD" 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL"
+    CODE=${PIPESTATUS[0]}
+  else
+    CODE="$NATIVE_CODE"
+  fi
   set -e
 
   if [ "$CODE" -eq 0 ]; then
@@ -234,16 +273,11 @@ else
     short "RESULT=$RESULT"
     short "Command: $BUILD_CMD"
 
-    FOUND_APK="$(find . -type f -path "*/build/outputs/apk/*/*.apk" | head -1 || true)"
-    if [ -n "$FOUND_APK" ]; then
-      APK_NAME="$(basename "$FOUND_APK")"
-      cp "$FOUND_APK" "$RELEASE_LATEST/$APK_NAME" 2>/dev/null || true
-      cp "$FOUND_APK" "$RELEASE_LATEST/SOLUM_LATEST.apk" 2>/dev/null || true
-      short "APK=$RELEASE_LATEST/$APK_NAME"
-      short "Latest APK=$RELEASE_LATEST/SOLUM_LATEST.apk"
-    else
-      short "APK=not found"
-    fi
+    ENGINE_FOUND_APK="$(find apps/engine/build/outputs/apk -type f -name "*.apk" 2>/dev/null | sort | head -1 || true)"
+    COMPANION_FOUND_APK="$(find apps/solum-companion/build/outputs/apk -type f -name "*.apk" 2>/dev/null | sort | head -1 || true)"
+    copy_named_apk "ENGINE_APK" "$ENGINE_FOUND_APK" "SOLUM_ENGINE_LATEST.apk" "SOLUM-engine-debug.apk"
+    copy_named_apk "COMPANION_APK" "$COMPANION_FOUND_APK" "SOLUM_COMPANION_LATEST.apk" "SOLUM-companion-debug.apk"
+    short "SOLUM_LATEST ambiguity fixed: use ENGINE_APK or COMPANION_APK, not a shared latest APK."
   else
     RESULT="BUILD_FAILED"
     short "RESULT=$RESULT"

@@ -51,7 +51,46 @@ Engine diagnostics latest:
 /storage/emulated/0/SOLUMCreative/diagnostics/latest
 ```
 
-Если direct public storage недоступен Android app, engine пишет в app-specific fallback и manifest обязан указать exact reason.
+Engine app exposes:
+
+```text
+Choose Diagnostics Folder
+Export Engine Diagnostics
+```
+
+Preferred route:
+
+```text
+ACTION_OPEN_DOCUMENT_TREE -> user chooses /storage/emulated/0/SOLUMCreative -> persisted SAF read/write permission
+```
+
+Export writes:
+
+```text
+diagnostics/latest/engine_runtime_state.json
+diagnostics/latest/engine_diagnostics_manifest.json
+```
+
+Route order:
+
+```text
+saf -> direct public path -> app-specific fallback -> failed
+```
+
+Manifest must state:
+
+```text
+exportStatus
+exportRoute
+actualRoot
+reason
+screenshot.status = not_available
+screenshot.reason = renderer_readback_not_implemented
+```
+
+Engine screen must show visible diagnostics status. Toast is not enough.
+
+If direct public storage is blocked by Android storage rules, engine writes app-specific fallback and manifest/status panel must show the exact route and reason.
 
 ## Visual pack
 

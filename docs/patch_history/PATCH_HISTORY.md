@@ -40,6 +40,93 @@ SUCCESS / FAILED / NOT TESTED
 
 ---
 
+## Patch P02D — Engine Diagnostics SAF + Visible Button Feedback
+
+### Goal
+
+Make Engine diagnostics export visible on screen and writable to `SOLUMCreative` through Android SAF.
+
+### Scope
+
+- Added `Choose Diagnostics Folder` to `apps/engine`.
+- Added `ACTION_OPEN_DOCUMENT_TREE` folder picker with persisted read/write URI permission.
+- Added SAF export route for:
+
+```text
+diagnostics/latest/engine_runtime_state.json
+diagnostics/latest/engine_diagnostics_manifest.json
+```
+
+- Kept direct public path and app-specific fallback routes.
+- Added visible diagnostics status panel.
+- Added export button states: `Exporting...`, `Export OK`, `Export Failed`.
+- Added `SOLUM_ENGINE_DIAG` logcat events.
+- Documented honest screenshot status:
+
+```text
+renderer_readback_not_implemented
+```
+
+### Changed files/modules
+
+- `apps/engine/src/main/java/com/solum/engine/MainActivity.java`
+- `docs/RUNTIME_TRUTH.md`
+- `docs/ENGINE_DIAGNOSTICS_EXPORT.md`
+- `docs/patch_history/PATCH_HISTORY.md`
+
+### Build result
+
+BUILD_SUCCESS through the allowed SOLUM runner:
+
+```text
+bash tools/agent_build_runner.sh
+```
+
+Output APK:
+
+```text
+/storage/emulated/0/Download/SOLUM_APK/SOLUM-engine-debug.apk
+```
+
+### Runtime result
+
+Manual phone verification required.
+
+### Diagnostics
+
+Expected preferred files:
+
+```text
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/engine_runtime_state.json
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/engine_diagnostics_manifest.json
+```
+
+### User-visible result
+
+Engine screen now has:
+
+```text
+Choose Diagnostics Folder
+Export Engine Diagnostics
+Diagnostics folder: configured/not configured
+Last export: not run/running/ok/failed
+Last export route: saf/direct/fallback/failed
+```
+
+### Known issues
+
+Screenshot/readback remains intentionally unavailable.
+
+### Lessons
+
+Runtime diagnostics need persistent SAF route plus visible status, not only a button and Toast.
+
+### Next
+
+P03 upgrade existing triangle renderer to cube + camera + depth.
+
+---
+
 ## Patch P02A/P02B/P02C — Runtime Truth, Engine Diagnostics Export, Render Lab Foundation
 
 ### Goal

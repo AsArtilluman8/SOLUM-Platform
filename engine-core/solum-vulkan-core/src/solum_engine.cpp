@@ -56,3 +56,14 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     return env->NewStringUTF(renderer ? renderer->status.c_str() : "SOLUM Engine\nNo native handle");
 }
+
+extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
+    auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
+    if (!renderer) {
+        return env->NewStringUTF("{\"currentLabScene\":\"scene01_foundation_cube\",\"status\":\"native_handle_missing\"}");
+    }
+    std::string json = std::string("{\"currentLabScene\":\"") + renderer->diagnostics.renderLab.sceneId()
+        + "\",\"currentLabSceneName\":\"" + renderer->diagnostics.renderLab.sceneName()
+        + "\",\"renderingStatus\":\"foundation_only\",\"cubeStatus\":\"not_implemented\",\"depthStatus\":\"not_implemented\"}";
+    return env->NewStringUTF(json.c_str());
+}

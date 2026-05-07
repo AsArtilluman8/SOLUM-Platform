@@ -6,6 +6,7 @@ import android.view.Gravity;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.graphics.Color;
@@ -16,12 +17,14 @@ import java.io.PrintWriter;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.TimeZone;
 
 public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private long nativeHandle = 0L;
     private TextView statusView;
     private boolean nativeLoaded = false;
     private File cachedReportDir = null;
+    private String cachedReportDirReason = "not_resolved";
 
     private static native long nativeCreate();
     private static native void nativeDestroy(long handle);
@@ -29,6 +32,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native void nativeSurfaceChanged(long handle, Surface surface, int width, int height);
     private static native void nativeSurfaceDestroyed(long handle);
     private static native String nativeGetStatus(long handle);
+    private static native String nativeGetRenderLabState(long handle);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,6 +57,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
         statusParams.gravity = Gravity.TOP;
         root.addView(statusView, statusParams);
+        Button exportButton = new Button(this);
+        exportButton.setText("Export Engine Diagnostics");
+        exportButton.setAllCaps(false);
+        exportButton.setOnClickListener(v -> exportEngineDiagnostics("manual_button"));
+        FrameLayout.LayoutParams exportParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        exportParams.gravity = Gravity.BOTTOM | Gravity.END;
+        exportParams.setMargins(12, 12, 12, 36);
+        root.addView(exportButton, exportParams);
         setContentView(root);
         try {
             System.loadLibrary("solum_engine");
@@ -60,9 +72,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             nativeHandle = nativeCreate();
             statusView.setText("SOLUM Engine\nVulkan: loading\nStatus: native ready");
             writeRuntimeNote("native_load_ok", "libsolum_engine loaded and native object created");
+            exportEngineDiagnostics("native_load_ok");
         } catch (Throwable t) {
             nativeLoaded = false;
             writeCrashReport("native_load_failed", t);
+            exportEngineDiagnostics("native_load_failed");
             statusView.setMaxLines(8);
             statusView.setText("SOLUM Engine\nStatus: native load failed\n" + shortThrowable(t));
         }
@@ -75,13 +89,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override public void surfaceCreated(SurfaceHolder holder) {
         if (!nativeLoaded || nativeHandle == 0L) return;
-        try { nativeSurfaceCreated(nativeHandle, holder.getSurface(), getRuntimeReportDirPath()); updateStatus(); }
+        try { nativeSurfaceCreated(nativeHandle, holder.getSurface(), getRuntimeReportDirPath()); updateStatus(); exportEngineDiagnostics("surface_created"); }
         catch (Throwable t) { writeCrashReport("surface_created_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: surface init failed\n" + shortThrowable(t)); }
     }
 
     @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         if (!nativeLoaded || nativeHandle == 0L) return;
-        try { nativeSurfaceChanged(nativeHandle, holder.getSurface(), width, height); updateStatus(); }
+        try { nativeSurfaceChanged(nativeHandle, holder.getSurface(), width, height); updateStatus(); exportEngineDiagnostics("surface_changed"); }
         catch (Throwable t) { writeCrashReport("surface_changed_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: surface resize failed\n" + shortThrowable(t)); }
     }
 
@@ -129,15 +143,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private File getReportDir() {
         if (cachedReportDir != null && cachedReportDir.exists()) return cachedReportDir;
         File solumCreative = new File("/storage/emulated/0/SOLUMCreative/diagnostics/latest");
-        if (canWriteDirectory(solumCreative)) { cachedReportDir = solumCreative; return cachedReportDir; }
+        if (canWriteDirectory(solumCreative)) { cachedReportDir = solumCreative; cachedReportDirReason = "direct_public_storage_ok"; return cachedReportDir; }
         File externalBase = getExternalFilesDir(null);
         if (externalBase != null) {
             File externalDir = new File(externalBase, "solum_diagnostics");
-            if (canWriteDirectory(externalDir)) { cachedReportDir = externalDir; return cachedReportDir; }
+            if (canWriteDirectory(externalDir)) { cachedReportDir = externalDir; cachedReportDirReason = "direct_public_storage_write_probe_failed_app_specific_external_fallback"; return cachedReportDir; }
         }
         File appDir = new File(getFilesDir(), "solum_diagnostics");
         appDir.mkdirs();
         cachedReportDir = appDir;
+        cachedReportDirReason = "direct_public_storage_write_probe_failed_internal_files_fallback";
         return cachedReportDir;
     }
 
@@ -165,6 +180,90 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 w.write("}\n");
             }
         } catch (Throwable ignored) { }
+    }
+
+    private void exportEngineDiagnostics(String trigger) {
+        try {
+            File dir = getReportDir();
+            String timestamp = timestampUtc();
+            String nativeStatus = getNativeStatusForExport();
+            String renderLab = getRenderLabStateForExport();
+            String versionName = getVersionName();
+            int versionCode = getVersionCode();
+            String diagnosticsRoot = dir.getAbsolutePath();
+            boolean publicStorage = diagnosticsRoot.startsWith("/storage/emulated/0/SOLUMCreative/");
+
+            File runtime = new File(dir, "engine_runtime_state.json");
+            try (FileWriter w = new FileWriter(runtime, false)) {
+                w.write("{\n");
+                w.write("  \"schema\": \"solum.engine_runtime_state\",\n");
+                w.write("  \"schemaVersion\": 1,\n");
+                w.write("  \"timestampUtc\": \"" + escape(timestamp) + "\",\n");
+                w.write("  \"app\": \"engine\",\n");
+                w.write("  \"packageName\": \"" + escape(getPackageName()) + "\",\n");
+                w.write("  \"trigger\": \"" + escape(trigger) + "\",\n");
+                w.write("  \"diagnosticsRoot\": \"" + escape(diagnosticsRoot) + "\",\n");
+                w.write("  \"diagnosticsRootStatus\": \"" + escape(cachedReportDirReason) + "\",\n");
+                w.write("  \"build\": { \"versionName\": \"" + escape(versionName) + "\", \"versionCode\": " + versionCode + " },\n");
+                w.write("  \"backend\": { \"rendererPath\": \"Android Native Vulkan\", \"statusText\": \"" + escape(nativeStatus) + "\" },\n");
+                w.write("  \"currentScene\": \"scene01_foundation_cube\",\n");
+                w.write("  \"renderLab\": " + renderLab + "\n");
+                w.write("}\n");
+            }
+
+            File manifest = new File(dir, "engine_diagnostics_manifest.json");
+            try (FileWriter w = new FileWriter(manifest, false)) {
+                w.write("{\n");
+                w.write("  \"schema\": \"solum.engine_diagnostics_manifest\",\n");
+                w.write("  \"schemaVersion\": 1,\n");
+                w.write("  \"timestampUtc\": \"" + escape(timestamp) + "\",\n");
+                w.write("  \"app\": \"engine\",\n");
+                w.write("  \"packageName\": \"" + escape(getPackageName()) + "\",\n");
+                w.write("  \"diagnosticsRoot\": \"" + escape(diagnosticsRoot) + "\",\n");
+                w.write("  \"storage\": {\n");
+                w.write("    \"publicRoot\": \"/storage/emulated/0/SOLUMCreative/diagnostics/latest\",\n");
+                w.write("    \"actualRoot\": \"" + escape(diagnosticsRoot) + "\",\n");
+                w.write("    \"directPublicStorage\": \"" + (publicStorage ? "ok" : "failed") + "\",\n");
+                w.write("    \"reason\": \"" + escape(cachedReportDirReason) + "\"\n");
+                w.write("  },\n");
+                w.write("  \"files\": [\"engine_runtime_state.json\", \"engine_diagnostics_manifest.json\"],\n");
+                w.write("  \"screenshot\": { \"status\": \"not_available\", \"reason\": \"renderer_readback_not_implemented\" },\n");
+                w.write("  \"renderLab\": " + renderLab + "\n");
+                w.write("}\n");
+            }
+            writeRuntimeNote("engine_diagnostics_exported", "Export Engine Diagnostics wrote engine_runtime_state.json and engine_diagnostics_manifest.json");
+        } catch (Throwable t) {
+            writeCrashReport("engine_diagnostics_export_failed", t);
+        }
+    }
+
+    private String getNativeStatusForExport() {
+        if (!nativeLoaded || nativeHandle == 0L) return "native_not_loaded";
+        try { return nativeGetStatus(nativeHandle); } catch (Throwable t) { return "native_status_failed: " + shortThrowable(t); }
+    }
+
+    private String getRenderLabStateForExport() {
+        if (!nativeLoaded || nativeHandle == 0L) {
+            return "{\"currentLabScene\":\"scene01_foundation_cube\",\"status\":\"native_not_loaded\"}";
+        }
+        try { return nativeGetRenderLabState(nativeHandle); }
+        catch (Throwable t) { return "{\"currentLabScene\":\"scene01_foundation_cube\",\"status\":\"native_render_lab_state_failed\",\"reason\":\"" + escape(shortThrowable(t)) + "\"}"; }
+    }
+
+    private String timestampUtc() {
+        SimpleDateFormat fmt = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
+        fmt.setTimeZone(TimeZone.getTimeZone("UTC"));
+        return fmt.format(new Date());
+    }
+
+    private String getVersionName() {
+        try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionName; }
+        catch (Throwable t) { return "unknown"; }
+    }
+
+    private int getVersionCode() {
+        try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode; }
+        catch (Throwable t) { return 0; }
     }
 
     private void writeCrashReport(String stage, Throwable throwable) {

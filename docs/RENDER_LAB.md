@@ -1,0 +1,117 @@
+# RENDER_LAB — foundation scenes
+
+Render Lab — controlled scene set for future Vulkan renderer validation.
+
+Current status:
+
+```text
+foundation only
+currentLabScene = scene01_foundation_cube
+```
+
+No cube/depth/shadow/import/performance feature is claimed ready until a real Vulkan implementation and diagnostics proof exist.
+
+## Scene01 Foundation Cube
+
+Purpose:
+
+- first real Vulkan cube target;
+- camera baseline;
+- depth baseline;
+- engine diagnostics smoke scene.
+
+Current state:
+
+```text
+scene id: scene01_foundation_cube
+status: not_implemented
+```
+
+## Scene02 Material Lab
+
+Purpose:
+
+- material parameter validation;
+- texture slot validation;
+- future Material Studio preview target.
+
+Current state:
+
+```text
+scene id: scene02_material_lab
+status: planned
+```
+
+## Scene03 Camera/Depth Lab
+
+Purpose:
+
+- camera projection checks;
+- near/far/depth precision checks;
+- viewport resize checks.
+
+Current state:
+
+```text
+scene id: scene03_camera_depth_lab
+status: planned
+```
+
+## Scene04 Light/Shadow Lab
+
+Purpose:
+
+- first real light/shadow validation;
+- future CSM checks;
+- mobile shadow budget tracking.
+
+Current state:
+
+```text
+scene id: scene04_light_shadow_lab
+status: planned
+```
+
+## Scene05 Import Lab
+
+Purpose:
+
+- imported mesh/material smoke checks;
+- asset schema compatibility checks.
+
+Current state:
+
+```text
+scene id: scene05_import_lab
+status: planned
+```
+
+## Scene06 Performance Lab
+
+Purpose:
+
+- baseline frame timing;
+- diagnostics overhead checks;
+- future regression snapshots.
+
+Current state:
+
+```text
+scene id: scene06_performance_lab
+status: planned
+```
+
+## Diagnostics
+
+Engine diagnostics must include:
+
+```json
+{
+  "renderLab": {
+    "schema": "solum.render_lab_state",
+    "schemaVersion": 1,
+    "currentLabScene": "scene01_foundation_cube",
+    "renderingStatus": "foundation_only"
+  }
+}
+```

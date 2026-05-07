@@ -1,4 +1,5 @@
 #pragma once
+#include "render_lab.hpp"
 #include "renderer_types.hpp"
 
 namespace solum {
@@ -17,6 +18,7 @@ struct RuntimeDiagnostics {
     bool triangleDrawn = false;
     uint32_t vertexCount = 0;
     uint64_t framesRendered = 0;
+    RenderLabState renderLab;
 
     void write(const std::string& newStatus, const std::string& newReason) {
         status = newStatus;
@@ -39,7 +41,9 @@ struct RuntimeDiagnostics {
         f << "  \"vertexBufferReady\": " << (vertexBufferReady ? "true" : "false") << ",\n";
         f << "  \"vertexCount\": " << vertexCount << ",\n";
         f << "  \"framesRendered\": " << framesRendered << ",\n";
-        f << "  \"triangleDrawn\": " << (triangleDrawn ? "true" : "false") << "\n";
+        f << "  \"triangleDrawn\": " << (triangleDrawn ? "true" : "false") << ",\n";
+        renderLab.writeJsonFields(f);
+        f << "\n";
         f << "}\n";
     }
 };

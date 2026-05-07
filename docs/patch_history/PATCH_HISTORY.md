@@ -40,6 +40,105 @@ SUCCESS / FAILED / NOT TESTED
 
 ---
 
+## Patch P02A/P02B/P02C — Runtime Truth, Engine Diagnostics Export, Render Lab Foundation
+
+### Goal
+
+Fix runtime truth before deeper Vulkan work.
+
+### Scope
+
+- P02A: Low-Chatter Mode rules, autopilot intensity modes, explicit engine/companion APK paths.
+- P02B: engine-native diagnostics export from `apps/engine`.
+- P02C: Render Lab docs and minimal render lab state/config foundation.
+
+### Changed files/modules
+
+- `AGENTS.md`
+- `docs/AGENT_AUTOPILOT_WORKFLOW.md`
+- `docs/RUNTIME_TRUTH.md`
+- `docs/RENDER_LAB.md`
+- `docs/RENDER_BACKEND_DECISION.md`
+- `docs/PROJECT_MEMORY_INDEX.md`
+- `docs/patch_history/PATCH_HISTORY.md`
+- `tools/agent_build_runner.sh`
+- `tools/build_native_engine.sh`
+- `apps/engine/src/main/java/com/solum/engine/MainActivity.java`
+- `engine-core/solum-vulkan-core/src/solum/render_lab.hpp`
+- `engine-core/solum-vulkan-core/src/solum/runtime_diagnostics.hpp`
+- `engine-core/solum-vulkan-core/src/solum_engine.cpp`
+
+### Build result
+
+BUILD_SUCCESS through the allowed SOLUM runner:
+
+```text
+bash tools/agent_build_runner.sh
+```
+
+Runner executed:
+
+```text
+native_command=bash tools/build_native_engine.sh
+gradle assembleDebug
+```
+
+Output APKs:
+
+```text
+/storage/emulated/0/Download/SOLUM_APK/SOLUM-engine-debug.apk
+/storage/emulated/0/Download/SOLUM_APK/SOLUM-companion-debug.apk
+```
+
+### Runtime result
+
+Manual phone verification required.
+
+### Diagnostics
+
+Engine export writes:
+
+```text
+engine_runtime_state.json
+engine_diagnostics_manifest.json
+```
+
+If renderer readback is unavailable, manifest reports:
+
+```text
+screenshot.status = not_available
+reason = renderer_readback_not_implemented
+```
+
+### User-visible result
+
+Engine UI includes:
+
+```text
+Export Engine Diagnostics
+```
+
+Build runner reports:
+
+```text
+ENGINE_APK=/storage/emulated/0/Download/SOLUM_APK/SOLUM-engine-debug.apk
+COMPANION_APK=/storage/emulated/0/Download/SOLUM_APK/SOLUM-companion-debug.apk
+```
+
+### Known issues
+
+Render Lab is foundation-only. Cube/depth/camera are not implemented in this patch.
+
+### Lessons
+
+Runtime/render truth must live in `apps/engine`. Companion visual packs are evidence support, not renderer truth.
+
+### Next
+
+P03 real Vulkan cube + camera + depth.
+
+---
+
 ## Patch P01I — Companion Real Visual Capture Button
 
 ### Goal

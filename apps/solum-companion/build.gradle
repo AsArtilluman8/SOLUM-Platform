@@ -1,0 +1,22 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.solum.companion'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.solum.companion'
+        minSdk 30
+        targetSdk 34
+        versionCode 1
+        versionName '0.1.0'
+    }
+
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+        }
+    }
+}

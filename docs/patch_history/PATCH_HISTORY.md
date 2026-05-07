@@ -54,10 +54,14 @@ SUCCESS / FAILED / NOT TESTED
 - UI tree export.
 - Action log writer.
 - Visual diagnostics manifest.
+- Gradle module wiring for `:apps:solum-companion`.
 - Docs update for companion, visual pack and MCP future commands.
 
 ### Changed files/modules
 
+- `settings.gradle`
+- `build.gradle`
+- `apps/solum-companion/build.gradle`
 - `apps/solum-companion/src/main/java/com/solum/companion/SolumAccessibilityService.kt`
 - `apps/solum-companion/src/main/java/com/solum/companion/SolumCompanionCommand.kt`
 - `apps/solum-companion/src/main/java/com/solum/companion/SolumDeviceAgentState.kt`
@@ -75,7 +79,19 @@ BUILD_SUCCESS for current wired Gradle app after running:
 ANDROID_HOME=/data/data/com.termux/files/home/android-sdk ANDROID_SDK_ROOT=/data/data/com.termux/files/home/android-sdk bash tools/agent_build_runner.sh
 ```
 
-Note: `apps/solum-companion` is not connected to Gradle yet, so this runner does not compile companion Kotlin.
+Follow-up BUILD_SUCCESS for companion:
+
+```text
+ANDROID_HOME=/data/data/com.termux/files/home/android-sdk ANDROID_SDK_ROOT=/data/data/com.termux/files/home/android-sdk gradle :apps:solum-companion:assembleDebug
+```
+
+APK:
+
+```text
+apps/solum-companion/build/outputs/apk/debug/solum-companion-debug.apk
+```
+
+Note: AGP 8.2.2 failed under current Gradle 9.4.1 with `Cannot mutate the dependencies of configuration ':apps:solum-companion:debugCompileClasspath' after the configuration was resolved`. The follow-up updates Android Gradle Plugin to 9.1.0, which provides built-in Kotlin support. During the first AGP 9.1 build, Gradle auto-downloaded Android SDK Build-Tools 36 before the process could be stopped; final build reuses that installed SDK component.
 
 ### Runtime result
 
@@ -107,6 +123,7 @@ reason=package_not_allowlisted
 - Launch and force-stop remain stub only.
 - Tap/gesture automation is intentionally not implemented.
 - Runtime screenshot requires API >= 30 and enabled Accessibility Service.
+- Runtime screenshot still needs a manual device test after installing/enabling the companion APK.
 
 ### Lessons
 

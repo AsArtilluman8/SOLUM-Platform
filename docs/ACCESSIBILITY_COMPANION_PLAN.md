@@ -2,7 +2,7 @@
 
 Этот документ фиксирует Android Accessibility companion для SOLUM.
 
-P01H status: `apps/solum-companion` получил real route layer для status, screenshot, UI tree и action log. Tap/gesture automation, launch и force-stop остаются stub/future only.
+P01H status: `apps/solum-companion` получил real route layer для status, screenshot, UI tree и action log. Follow-up подключил companion как отдельный Gradle Android app module. Tap/gesture automation, launch и force-stop остаются stub/future only.
 
 ## Что даст companion app
 
@@ -219,12 +219,33 @@ Companion должен:
 Companion files:
 
 ```text
+settings.gradle
+build.gradle
 apps/solum-companion/README.md
+apps/solum-companion/build.gradle
 apps/solum-companion/AndroidManifest.xml
 apps/solum-companion/src/main/java/com/solum/companion/SolumAccessibilityService.kt
 apps/solum-companion/src/main/java/com/solum/companion/SolumCompanionCommand.kt
 apps/solum-companion/src/main/java/com/solum/companion/SolumDeviceAgentState.kt
 apps/solum-companion/src/main/res/xml/solum_accessibility_service.xml
+```
+
+Gradle module:
+
+```text
+:apps:solum-companion
+```
+
+Build command:
+
+```text
+ANDROID_HOME=/data/data/com.termux/files/home/android-sdk ANDROID_SDK_ROOT=/data/data/com.termux/files/home/android-sdk gradle :apps:solum-companion:assembleDebug
+```
+
+Successful APK output:
+
+```text
+apps/solum-companion/build/outputs/apk/debug/solum-companion-debug.apk
 ```
 
 Real in P01H:

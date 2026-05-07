@@ -21,6 +21,23 @@ object SolumDeviceAgentState {
     const val SCREENSHOT_PATH = "$DIAGNOSTICS_LATEST_DIR/final.png"
     const val VISUAL_MANIFEST_PATH = "$DIAGNOSTICS_LATEST_DIR/visual_diagnostics_manifest.json"
 
+    data class ManualEvidenceWriteResult(
+        val success: Boolean,
+        val actionLogPath: String,
+        val visualManifestPath: String,
+        val error: String?,
+    )
+
+    fun outputPathsText(): String {
+        return """
+            root: $CREATIVE_ROOT
+            action log: $ACTION_LOG_PATH
+            ui tree: $UI_TREE_PATH
+            screenshot: $SCREENSHOT_PATH
+            visual manifest: $VISUAL_MANIFEST_PATH
+        """.trimIndent()
+    }
+
     fun timestampUtc(): String {
         val formatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
         formatter.timeZone = TimeZone.getTimeZone("UTC")
@@ -67,6 +84,64 @@ object SolumDeviceAgentState {
         } catch (_: Exception) {
             false
         }
+    }
+
+    fun writeManualEvidenceFiles(packageName: String, appVersion: String): ManualEvidenceWriteResult {
+        val timestamp = timestampUtc()
+        val actionLog = """
+            {
+              "schema": "solum.device_agent.action_log",
+              "schemaVersion": 1,
+              "timestampUtc": ${jsonEscape(timestamp)},
+              "entries": [
+                {
+                  "timestampUtc": ${jsonEscape(timestamp)},
+                  "command": "MANUAL_TEST_WRITE_EVIDENCE_FILES",
+                  "status": "ok",
+                  "reason": "launcher_activity_manual_test",
+                  "activePackage": {
+                    "packageName": ${jsonEscape(packageName)},
+                    "allowlisted": true,
+                    "lastEventAt": ${jsonEscape(timestamp)}
+                  },
+                  "outputPath": ${jsonEscape(ACTION_LOG_PATH)}
+                }
+              ]
+            }
+        """.trimIndent()
+        val manifest = """
+            {
+              "schema": "solum.visual_diagnostics.manifest",
+              "schemaVersion": 1,
+              "timestampUtc": ${jsonEscape(timestamp)},
+              "status": "ok",
+              "reason": "launcher_activity_manual_test_no_screenshot",
+              "source": {
+                "packageName": ${jsonEscape(packageName)},
+                "appVersion": ${jsonEscape(appVersion)}
+              },
+              "files": {
+                "final": null,
+                "uiTree": ${jsonEscape(UI_TREE_PATH)},
+                "actionLog": ${jsonEscape(ACTION_LOG_PATH)}
+              }
+            }
+        """.trimIndent()
+
+        val actionOk = writeTextSafely(ACTION_LOG_PATH, actionLog)
+        val manifestOk = writeTextSafely(VISUAL_MANIFEST_PATH, manifest)
+        val error = when {
+            actionOk && manifestOk -> null
+            !actionOk && !manifestOk -> "failed_to_write_action_log_and_visual_manifest"
+            !actionOk -> "failed_to_write_action_log"
+            else -> "failed_to_write_visual_manifest"
+        }
+        return ManualEvidenceWriteResult(
+            success = actionOk && manifestOk,
+            actionLogPath = ACTION_LOG_PATH,
+            visualManifestPath = VISUAL_MANIFEST_PATH,
+            error = error,
+        )
     }
 
     fun activePackageJson(activePackage: SolumActivePackageInfo): String {

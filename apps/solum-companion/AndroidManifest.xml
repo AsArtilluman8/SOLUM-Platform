@@ -4,6 +4,17 @@
         android:allowBackup="false"
         android:label="SOLUM Companion"
         android:supportsRtl="true">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="SOLUM Companion">
+            <intent-filter>
+                <!-- Launcher Activity: Intent.ACTION_MAIN + Intent.CATEGORY_LAUNCHER. -->
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".SolumAccessibilityService"
             android:exported="true"

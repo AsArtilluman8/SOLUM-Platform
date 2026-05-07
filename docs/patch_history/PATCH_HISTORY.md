@@ -40,6 +40,64 @@ SUCCESS / FAILED / NOT TESTED
 
 ---
 
+## Patch P01H2 — Companion Launcher Activity + Manual Test Screen
+
+### Goal
+
+Make SOLUM Companion a normal openable Android app while preserving the existing Accessibility service.
+
+### Scope
+
+- Added native Android/Kotlin `MainActivity` for `com.solum.companion`.
+- Added `MAIN` / `LAUNCHER` manifest entry.
+- Added manual buttons:
+  - Open Accessibility Settings;
+  - Open App Details Settings;
+  - Test Write Evidence Files;
+  - Open Output Folder.
+- Extended `SolumDeviceAgentState` for output path text and manual evidence JSON writes.
+- Documented install/open/manual test/Restricted Settings flow.
+
+### Out of scope
+
+- Vulkan renderer/material logic.
+- Accessibility tap/gesture automation.
+- Telegram UI automation.
+- APK auto-install.
+
+### Expected manual evidence outputs
+
+```text
+/storage/emulated/0/SOLUMCreative/device_agent/latest/action_log.json
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/visual_diagnostics_manifest.json
+```
+
+### Build result
+
+SUCCESS after one user-approved additional Gradle build cycle.
+
+```text
+gradle :apps:solum-companion:assembleDebug
+gradle :apps:engine:assembleDebug
+```
+
+Both commands completed with `BUILD SUCCESSFUL`.
+
+The earlier Kotlin compile issue in `MainActivity.kt` was corrected by using `ViewGroup.LayoutParams`.
+
+### Report
+
+```text
+_work/agent_reports/P01H2_COMPANION_LAUNCHER_REPORT.txt
+_work/agent_reports/P01H2_COMPANION_LAUNCHER_DASHBOARD.html
+```
+
+### Known issue
+
+Some TECNO/HiOS builds can hide `Allow restricted settings`. If so, use adb/wireless debugging install route.
+
+---
+
 ## Patch P01H — Accessibility Companion Real Routes
 
 ### Goal

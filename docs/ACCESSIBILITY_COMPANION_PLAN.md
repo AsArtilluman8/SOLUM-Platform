@@ -4,6 +4,8 @@
 
 P01H status: `apps/solum-companion` получил real route layer для status, screenshot, UI tree и action log. Follow-up подключил companion как отдельный Gradle Android app module. Tap/gesture automation, launch и force-stop остаются stub/future only.
 
+P01H2 status: companion получает launcher Activity и ручной test screen, чтобы установленный APK был открываемым приложением, а не только Accessibility service.
+
 ## Что даст companion app
 
 Companion app нужен, чтобы агент мог получать факты о SOLUM UI/runtime на телефоне без ручного копирования:
@@ -148,6 +150,70 @@ Enable
 
 После включения открой один из allowlisted SOLUM apps, затем запроси route через будущий bridge/MCP или локальный Android entrypoint.
 
+## P01H2 launcher Activity
+
+Launcher Activity:
+
+```text
+apps/solum-companion/src/main/java/com/solum/companion/MainActivity.kt
+```
+
+Manifest entry:
+
+```text
+android.intent.action.MAIN
+android.intent.category.LAUNCHER
+```
+
+Экран делает только ручные действия:
+
+- показывает `packageName`, `appVersion` и output paths;
+- открывает Android Accessibility Settings;
+- открывает App Details Settings для `com.solum.companion`;
+- пишет manual evidence files без screenshot;
+- открывает системный folder picker, если Android это поддерживает.
+
+P01H2 не добавляет taps, gestures, renderer hooks или Telegram UI automation.
+
+## P01H2 manual test flow
+
+После установки APK:
+
+```text
+Open SOLUM Companion
+↓
+press Test Write Evidence Files
+↓
+check toast success/failure
+↓
+verify files
+```
+
+Expected files:
+
+```text
+/storage/emulated/0/SOLUMCreative/device_agent/latest/action_log.json
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/visual_diagnostics_manifest.json
+```
+
+Manual test пишет только JSON evidence. Screenshot route остаётся Accessibility route.
+
+## TECNO/HiOS Restricted Settings blocker
+
+Known blocker:
+
+```text
+Доступ к настройкам ограничен
+```
+
+Manual route:
+
+```text
+Settings -> Apps -> SOLUM Companion -> menu/dots -> Allow restricted settings
+```
+
+На некоторых TECNO/HiOS этот пункт может быть скрыт. Если пункта нет, используй adb/wireless debugging install route. Companion screen должен показывать эту инструкцию, потому что приложение не может программно обойти Android restricted settings policy.
+
 ## Как проверить output files
 
 После capture/dump проверь:
@@ -224,6 +290,7 @@ build.gradle
 apps/solum-companion/README.md
 apps/solum-companion/build.gradle
 apps/solum-companion/AndroidManifest.xml
+apps/solum-companion/src/main/java/com/solum/companion/MainActivity.kt
 apps/solum-companion/src/main/java/com/solum/companion/SolumAccessibilityService.kt
 apps/solum-companion/src/main/java/com/solum/companion/SolumCompanionCommand.kt
 apps/solum-companion/src/main/java/com/solum/companion/SolumDeviceAgentState.kt
@@ -275,3 +342,5 @@ Output paths:
 ```
 
 P01H не реализует taps, gestures, arbitrary package automation или Telegram UI automation.
+
+P01H2 не меняет Vulkan renderer/material logic.

@@ -40,6 +40,116 @@ SUCCESS / FAILED / NOT TESTED
 
 ---
 
+## Patch P01I — Companion Real Visual Capture Button
+
+### Goal
+
+Add a real manual visual diagnostics button to SOLUM Companion.
+
+### Scope
+
+- Added `Run Visual Diagnostics` to the launcher Activity.
+- Added UI status lines for Accessibility service, SAF output folder and last visual diagnostics.
+- Added a safe `SolumAccessibilityService.currentInstance` bridge inside companion.
+- Kept capture limited to SOLUM allowlist plus `com.solum.companion` self-test.
+- Added SAF PNG write for `diagnostics/latest/final.png`.
+- Added SAF writes for `action_log.json`, `ui_tree.json` and `visual_diagnostics_manifest.json`.
+- Added exact failure reasons:
+
+```text
+accessibility_service_not_connected
+screenshot_api_unavailable
+screenshot_failed
+saf_not_configured
+package_not_allowlisted
+```
+
+### Out of scope
+
+- Vulkan/renderer/material changes.
+- taps/gestures/autoclicks.
+- MANAGE_EXTERNAL_STORAGE.
+- package launch/force-stop automation.
+- package installation automation.
+
+### Changed files/modules
+
+- `apps/solum-companion/src/main/java/com/solum/companion/MainActivity.kt`
+- `apps/solum-companion/src/main/java/com/solum/companion/SolumAccessibilityService.kt`
+- `apps/solum-companion/src/main/java/com/solum/companion/SolumCompanionCommand.kt`
+- `apps/solum-companion/src/main/java/com/solum/companion/SolumDeviceAgentState.kt`
+- `apps/solum-companion/README.md`
+- `docs/ACCESSIBILITY_COMPANION_PLAN.md`
+- `docs/VISUAL_DIAGNOSTICS_PACK.md`
+- `docs/patch_history/PATCH_HISTORY.md`
+
+### Build result
+
+BUILD_SUCCESS through the allowed SOLUM runner:
+
+```text
+bash tools/agent_build_runner.sh
+```
+
+Runner executed:
+
+```text
+gradle assembleDebug
+```
+
+Confirmed tasks:
+
+```text
+:apps:engine:assembleDebug
+:apps:solum-companion:assembleDebug
+```
+
+Additional checks:
+
+```text
+grep -R --exclude-dir=build "Run Visual Diagnostics" apps/solum-companion
+grep -R --exclude-dir=build "takeScreenshot" apps/solum-companion
+grep -R --exclude-dir=build "rootInActiveWindow" apps/solum-companion
+grep -R --exclude-dir=build "final.png" apps/solum-companion docs
+grep -R --exclude-dir=build "package_not_allowlisted" apps/solum-companion docs
+python3 tools/mcp_server/solum_mcp_server.py smoke-test
+git diff --check
+```
+
+### Runtime result
+
+Manual phone verification required after installing the companion APK and enabling Accessibility.
+
+### User-visible result
+
+Companion screen shows:
+
+```text
+Accessibility service: enabled / disabled / unknown
+SAF output folder: configured / not configured
+Last visual diagnostics: ok / partial / failed
+Run Visual Diagnostics
+```
+
+Expected output after SAF + Accessibility setup:
+
+```text
+device_agent/latest/action_log.json
+device_agent/latest/ui_tree.json
+diagnostics/latest/final.png
+diagnostics/latest/visual_diagnostics_manifest.json
+```
+
+### Known issues
+
+Build can prove APK creation only. Real screenshot capture must be checked on the phone because Android controls Accessibility consent and screenshot availability.
+
+### Next
+
+Install companion APK, choose `/storage/emulated/0/SOLUMCreative`, enable Accessibility, press `Run Visual Diagnostics`, then inspect the four pack files.
+
+---
+
 ## Patch P01H3 — Companion SAF Storage Permission + Evidence Write Fix
 
 ### Goal

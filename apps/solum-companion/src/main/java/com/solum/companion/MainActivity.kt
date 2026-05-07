@@ -1,6 +1,7 @@
 package com.solum.companion
 
 import android.app.Activity
+import android.content.ComponentName
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -21,6 +22,8 @@ class MainActivity : Activity() {
     private val outputFolderRequestCode = 4101
     private val prefsName = "solum_companion_output"
     private val treeUriPrefKey = "saf_output_tree_uri"
+    private val lastVisualStatusPrefKey = "last_visual_diagnostics_status"
+    private val lastVisualReasonPrefKey = "last_visual_diagnostics_reason"
 
     private lateinit var pathTextView: TextView
     private lateinit var statusTextView: TextView
@@ -76,6 +79,15 @@ class MainActivity : Activity() {
             },
         )
 
+        content.addView(actionButton("Choose SOLUMCreative Output Folder") {
+            chooseOutputFolder()
+        })
+        content.addView(actionButton("Test Write Evidence Files") {
+            testWriteEvidenceFiles()
+        })
+        content.addView(actionButton("Run Visual Diagnostics") {
+            runVisualDiagnostics()
+        })
         content.addView(actionButton("Open Accessibility Settings") {
             openIntent(
                 intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
@@ -90,12 +102,6 @@ class MainActivity : Activity() {
                 failureMessage = "App Details Settings недоступны",
             )
         })
-        content.addView(actionButton("Test Write Evidence Files") {
-            testWriteEvidenceFiles()
-        })
-        content.addView(actionButton("Choose SOLUMCreative Output Folder") {
-            chooseOutputFolder()
-        })
         content.addView(actionButton("Clear Output Folder Permission") {
             clearOutputFolderPermission()
         })
@@ -107,7 +113,9 @@ class MainActivity : Activity() {
         statusTextView.text = """
             packageName: $packageName
             appVersion: ${appVersion()}
+            Accessibility service: ${accessibilityServiceStatus()}
             SAF output folder: ${if (savedTreeUri() != null) "configured" else "not configured"}
+            Last visual diagnostics: ${lastVisualDiagnosticsStatus()}
             treeUri: ${redactedTreeUri()}
         """.trimIndent()
     }
@@ -130,6 +138,55 @@ class MainActivity : Activity() {
         } else {
             toast("Evidence write failed: choose output folder")
         }
+    }
+
+    private fun runVisualDiagnostics() {
+        val service = SolumAccessibilityService.currentInstance
+        val result = if (service == null) {
+            writeVisualDiagnosticsServiceMissing()
+        } else {
+            service.runVisualDiagnostics(
+                context = this,
+                treeUri = savedTreeUri(),
+                requestingPackage = packageName,
+            )
+        }
+
+        saveLastVisualDiagnosticsStatus(result.status, result.reason)
+        pathTextView.text = SolumDeviceAgentState.outputPathsText()
+        refreshStatusText()
+        when (result.status) {
+            "ok" -> toast("Visual diagnostics ok")
+            "partial" -> toast("Visual diagnostics partial: ${result.reason ?: "screenshot pending"}")
+            else -> toast("Visual diagnostics ${result.status}: ${result.reason ?: "unknown"}")
+        }
+    }
+
+    private fun writeVisualDiagnosticsServiceMissing(): SolumDeviceAgentState.VisualDiagnosticsWriteResult {
+        val activePackage = SolumActivePackageInfo(
+            packageName = packageName,
+            isAllowlisted = true,
+            lastEventAt = SolumDeviceAgentState.timestampUtc(),
+        )
+        val result = SolumDeviceAgentState.writeVisualDiagnosticsManifestViaSaf(
+            context = this,
+            treeUri = savedTreeUri(),
+            status = "failed",
+            reason = "accessibility_service_not_connected",
+            activePackage = activePackage,
+            finalPath = null,
+        )
+        val entry = """
+            {
+              "timestampUtc": ${SolumDeviceAgentState.jsonEscape(SolumDeviceAgentState.timestampUtc())},
+              "command": ${SolumDeviceAgentState.jsonEscape(SolumCompanionCommand.RUN_VISUAL_DIAGNOSTICS.name)},
+              "status": "failed",
+              "reason": "accessibility_service_not_connected",
+              "activePackage": ${SolumDeviceAgentState.activePackageJson(activePackage)}
+            }
+        """.trimIndent()
+        SolumDeviceAgentState.writeActionLogViaSaf(this, savedTreeUri(), listOf(entry))
+        return result.copy(status = "failed", reason = "accessibility_service_not_connected", finalPath = null)
     }
 
     private fun chooseOutputFolder() {
@@ -203,6 +260,37 @@ class MainActivity : Activity() {
     private fun savedTreeUri(): Uri? {
         val value = prefs().getString(treeUriPrefKey, null) ?: return null
         return runCatching { Uri.parse(value) }.getOrNull()
+    }
+
+    private fun accessibilityServiceStatus(): String {
+        SolumAccessibilityService.currentInstance?.let { return "enabled" }
+        return try {
+            val expected = ComponentName(this, SolumAccessibilityService::class.java).flattenToString()
+            val enabledServices = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+            ) ?: return "disabled"
+            if (enabledServices.split(':').any { it.equals(expected, ignoreCase = true) }) {
+                "enabled"
+            } else {
+                "disabled"
+            }
+        } catch (_: Exception) {
+            "unknown"
+        }
+    }
+
+    private fun lastVisualDiagnosticsStatus(): String {
+        val status = prefs().getString(lastVisualStatusPrefKey, null) ?: return "unknown"
+        val reason = prefs().getString(lastVisualReasonPrefKey, null)
+        return if (reason.isNullOrBlank()) status else "$status ($reason)"
+    }
+
+    private fun saveLastVisualDiagnosticsStatus(status: String, reason: String?) {
+        prefs().edit()
+            .putString(lastVisualStatusPrefKey, status)
+            .putString(lastVisualReasonPrefKey, reason ?: "")
+            .apply()
     }
 
     private fun redactedTreeUri(): String {

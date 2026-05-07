@@ -6,6 +6,8 @@ P01H status: `apps/solum-companion` получил real route layer для statu
 
 P01H2 status: companion получает launcher Activity и ручной test screen, чтобы установленный APK был открываемым приложением, а не только Accessibility service.
 
+P01I status: launcher Activity получает кнопку `Run Visual Diagnostics`. Кнопка не делает taps/gestures: она вызывает только локальный bridge к текущему `SolumAccessibilityService`, пишет action log, dump UI tree, пробует Accessibility screenshot API и сохраняет pack через SAF.
+
 ## Что даст companion app
 
 Companion app нужен, чтобы агент мог получать факты о SOLUM UI/runtime на телефоне без ручного копирования:
@@ -174,6 +176,77 @@ android.intent.category.LAUNCHER
 - открывает системный SAF folder picker через `ACTION_OPEN_DOCUMENT_TREE`, если Android это поддерживает.
 
 P01H2 не добавляет taps, gestures, renderer hooks или Telegram UI automation.
+
+## P01I real visual diagnostics button
+
+Launcher Activity показывает:
+
+```text
+Accessibility service: enabled / disabled / unknown
+SAF output folder: configured / not configured
+Last visual diagnostics: ok / partial / failed
+```
+
+Кнопки:
+
+```text
+Choose SOLUMCreative Output Folder
+Test Write Evidence Files
+Run Visual Diagnostics
+Open Accessibility Settings
+Open App Details Settings
+```
+
+Flow:
+
+```text
+press Run Visual Diagnostics
+↓
+если Accessibility service не подключён → manifest.status=failed, reason=accessibility_service_not_connected
+↓
+если SAF не настроен → manifest.status=failed, reason=saf_not_configured
+↓
+если active package не allowlisted → manifest.status=blocked, reason=package_not_allowlisted
+↓
+write action_log.json
+↓
+dump rootInActiveWindow to ui_tree.json
+↓
+if API >= 30 call AccessibilityService.takeScreenshot
+↓
+write diagnostics/latest/final.png through SAF
+↓
+write diagnostics/latest/visual_diagnostics_manifest.json
+```
+
+Expected pack:
+
+```text
+device_agent/latest/action_log.json
+device_agent/latest/ui_tree.json
+diagnostics/latest/final.png
+diagnostics/latest/visual_diagnostics_manifest.json
+```
+
+Failure reasons:
+
+```text
+accessibility_service_not_connected
+screenshot_api_unavailable
+screenshot_failed
+saf_not_configured
+package_not_allowlisted
+```
+
+Self-test package:
+
+```text
+com.solum.companion
+```
+
+Self-test is allowed only for companion evidence capture. Arbitrary package capture remains blocked.
+
+P01I не добавляет taps, gestures, arbitrary package automation, launch, force-stop, MANAGE_EXTERNAL_STORAGE или Telegram UI automation.
 
 ## P01H2 manual test flow
 
@@ -369,6 +442,15 @@ captureScreenshot()
 dumpUiTree()
 writeActionLog()
 buildVisualPack()
+```
+
+Real in P01I:
+
+```text
+Run Visual Diagnostics button
+SolumAccessibilityService.currentInstance bridge
+SAF PNG writer for diagnostics/latest/final.png
+SAF ui_tree/action_log/visual manifest writers
 ```
 
 Stub only after P01H:

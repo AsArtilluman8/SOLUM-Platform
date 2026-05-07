@@ -6,6 +6,7 @@ P01H implements real route methods for status, screenshot, UI tree, action log a
 
 P01H2 adds a normal launcher Activity so Android can open the installed companion APK from the app list.
 P01H3 adds SAF folder permission for Android scoped storage so targetSdk 34 can write evidence files into the chosen `SOLUMCreative` folder.
+P01I adds the real `Run Visual Diagnostics` launcher button. It bridges to the enabled Accessibility service, writes `action_log.json`, writes `ui_tree.json`, captures `final.png` through `AccessibilityService.takeScreenshot` on API >= 30, and updates `visual_diagnostics_manifest.json` through SAF.
 
 ## Purpose
 
@@ -32,6 +33,7 @@ The companion must not:
 Allowed packages:
 
 ```text
+com.solum.companion
 com.solum.engine
 com.solum.launcher
 com.solum.assethub
@@ -116,6 +118,46 @@ In that case, choose the output folder through SAF and run the test again.
 
 Use `Clear Output Folder Permission` only when you need to reset the persisted SAF permission.
 
+## Run visual diagnostics
+
+Before running visual diagnostics:
+
+```text
+Choose SOLUMCreative Output Folder
+Enable SOLUM Accessibility Companion
+Open an allowlisted SOLUM app, or keep SOLUM Companion open for self-test
+Run Visual Diagnostics
+```
+
+Expected files through SAF:
+
+```text
+device_agent/latest/action_log.json
+device_agent/latest/ui_tree.json
+diagnostics/latest/final.png
+diagnostics/latest/visual_diagnostics_manifest.json
+```
+
+The screen shows:
+
+```text
+Accessibility service: enabled / disabled / unknown
+SAF output folder: configured / not configured
+Last visual diagnostics: ok / partial / failed
+```
+
+Failure reasons are explicit:
+
+```text
+accessibility_service_not_connected
+screenshot_api_unavailable
+screenshot_failed
+saf_not_configured
+package_not_allowlisted
+```
+
+No taps, gestures, app launch automation, package force-stop, or Telegram UI automation are performed.
+
 ## Enable Accessibility
 
 From the companion screen, press:
@@ -154,6 +196,7 @@ Real:
 
 ```text
 STATUS
+RUN_VISUAL_DIAGNOSTICS
 CAPTURE_SCREENSHOT
 DUMP_UI_TREE
 WRITE_ACTION_LOG

@@ -3,16 +3,25 @@ package com.solum.companion
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.net.Uri
 import android.os.Build
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import java.io.File
 
 class SolumAccessibilityService : AccessibilityService() {
     private var activePackageName: String? = null
     private var lastEventAt: String? = null
     private val actionLogEntries = ArrayDeque<String>()
+
+    override fun onServiceConnected() {
+        currentInstance = this
+        appendActionLogEntry(
+            command = SolumCompanionCommand.STATUS,
+            status = "connected",
+            reason = null,
+        )
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val packageName = event?.packageName?.toString() ?: return
@@ -33,6 +42,13 @@ class SolumAccessibilityService : AccessibilityService() {
         )
     }
 
+    override fun onDestroy() {
+        if (currentInstance === this) {
+            currentInstance = null
+        }
+        super.onDestroy()
+    }
+
     fun isPackageAllowed(packageName: String): Boolean {
         return packageName in SOLUM_ALLOWED_PACKAGES
     }
@@ -49,14 +65,63 @@ class SolumAccessibilityService : AccessibilityService() {
         )
     }
 
-    fun captureScreenshot() {
-        val activePackage = activePackageInfo()
+    fun runVisualDiagnostics(context: android.content.Context, treeUri: Uri?, requestingPackage: String): SolumDeviceAgentState.VisualDiagnosticsWriteResult {
+        val activePackage = activePackageInfo(fallbackPackage = requestingPackage)
+        if (activePackageName == null && activePackage.isAllowlisted) {
+            activePackageName = requestingPackage
+            lastEventAt = SolumDeviceAgentState.timestampUtc()
+        }
+        appendActionLogEntry(
+            command = SolumCompanionCommand.RUN_VISUAL_DIAGNOSTICS,
+            status = "started",
+            reason = null,
+        )
+
         if (!activePackage.isAllowlisted) {
-            writeScreenshotFailure("blocked", "package_not_allowlisted", activePackage)
+            val result = writeVisualDiagnosticsFailure(
+                context = context,
+                treeUri = treeUri,
+                status = "blocked",
+                reason = "package_not_allowlisted",
+                activePackage = activePackage,
+            )
+            writeActionLog(context, treeUri)
+            return result
+        }
+
+        if (treeUri == null) {
+            val result = writeVisualDiagnosticsFailure(
+                context = context,
+                treeUri = null,
+                status = "failed",
+                reason = "saf_not_configured",
+                activePackage = activePackage,
+            )
+            writeActionLog(context, null)
+            return result
+        }
+
+        dumpUiTree(context = context, treeUri = treeUri, fallbackPackage = requestingPackage)
+        writeActionLog(context, treeUri)
+        captureScreenshot(context = context, treeUri = treeUri, fallbackPackage = requestingPackage)
+        return SolumDeviceAgentState.VisualDiagnosticsWriteResult(
+            status = "partial",
+            reason = "screenshot_capture_requested",
+        )
+    }
+
+    fun captureScreenshot(context: android.content.Context? = null, treeUri: Uri? = null, fallbackPackage: String? = null) {
+        val activePackage = activePackageInfo(fallbackPackage = fallbackPackage)
+        if (!activePackage.isAllowlisted) {
+            writeScreenshotFailure(context, treeUri, "blocked", "package_not_allowlisted", activePackage)
             return
         }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            writeScreenshotFailure("failed", "takeScreenshot_requires_api_30", activePackage)
+            writeScreenshotFailure(context, treeUri, "failed", "screenshot_api_unavailable", activePackage)
+            return
+        }
+        if (context == null || treeUri == null) {
+            writeScreenshotFailure(context, treeUri, "failed", "saf_not_configured", activePackage)
             return
         }
 
@@ -71,18 +136,27 @@ class SolumAccessibilityService : AccessibilityService() {
                             screenshot.colorSpace,
                         )
                         if (hardwareBitmap == null) {
-                            writeScreenshotFailure("failed", "hardware_buffer_bitmap_unavailable", activePackage)
+                            writeScreenshotFailure(context, treeUri, "failed", "screenshot_failed", activePackage)
                             return
                         }
                         val bitmap = hardwareBitmap.copy(Bitmap.Config.ARGB_8888, false)
-                        File(SolumDeviceAgentState.SCREENSHOT_PATH).parentFile?.mkdirs()
-                        File(SolumDeviceAgentState.SCREENSHOT_PATH).outputStream().use { output ->
-                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+                        val pngWrite = SolumDeviceAgentState.writePngViaSaf(
+                            context = context,
+                            treeUri = treeUri,
+                            relativePath = SolumDeviceAgentState.SCREENSHOT_RELATIVE_PATH,
+                            bitmap = bitmap,
+                        )
+                        if (!pngWrite.success) {
+                            writeScreenshotFailure(context, treeUri, "failed", "screenshot_failed", activePackage)
+                            return
                         }
                         writeVisualManifest(
+                            context = context,
+                            treeUri = treeUri,
                             status = "ok",
                             reason = null,
                             activePackage = activePackage,
+                            finalPath = SolumDeviceAgentState.SCREENSHOT_RELATIVE_PATH,
                         )
                         appendActionLogEntry(
                             command = SolumCompanionCommand.CAPTURE_SCREENSHOT,
@@ -91,21 +165,21 @@ class SolumAccessibilityService : AccessibilityService() {
                             outputPath = SolumDeviceAgentState.SCREENSHOT_PATH,
                         )
                     } catch (error: Exception) {
-                        writeScreenshotFailure("failed", error.javaClass.simpleName, activePackage)
+                        writeScreenshotFailure(context, treeUri, "failed", "screenshot_failed", activePackage)
                     } finally {
                         screenshot.hardwareBuffer.close()
                     }
                 }
 
                 override fun onFailure(errorCode: Int) {
-                    writeScreenshotFailure("failed", "takeScreenshot_error_$errorCode", activePackage)
+                    writeScreenshotFailure(context, treeUri, "failed", "screenshot_failed", activePackage)
                 }
             },
         )
     }
 
-    fun dumpUiTree() {
-        val activePackage = activePackageInfo()
+    fun dumpUiTree(context: android.content.Context? = null, treeUri: Uri? = null, fallbackPackage: String? = null) {
+        val activePackage = activePackageInfo(fallbackPackage = fallbackPackage)
         if (!activePackage.isAllowlisted) {
             writeBlockedOutput(
                 command = SolumCompanionCommand.DUMP_UI_TREE,
@@ -124,7 +198,11 @@ class SolumAccessibilityService : AccessibilityService() {
                 reason = "root_window_unavailable",
                 outputPath = SolumDeviceAgentState.UI_TREE_PATH,
             )
-            SolumDeviceAgentState.writeTextSafely(SolumDeviceAgentState.UI_TREE_PATH, failed)
+            if (context != null) {
+                SolumDeviceAgentState.writeUiTreeViaSaf(context, treeUri, failed)
+            } else {
+                SolumDeviceAgentState.writeTextSafely(SolumDeviceAgentState.UI_TREE_PATH, failed)
+            }
             appendActionLogEntry(
                 command = SolumCompanionCommand.DUMP_UI_TREE,
                 status = "failed",
@@ -144,7 +222,11 @@ class SolumAccessibilityService : AccessibilityService() {
               "root": ${nodeToJson(rootNode, 0)}
             }
         """.trimIndent()
-        SolumDeviceAgentState.writeTextSafely(SolumDeviceAgentState.UI_TREE_PATH, treeJson)
+        if (context != null) {
+            SolumDeviceAgentState.writeUiTreeViaSaf(context, treeUri, treeJson)
+        } else {
+            SolumDeviceAgentState.writeTextSafely(SolumDeviceAgentState.UI_TREE_PATH, treeJson)
+        }
         appendActionLogEntry(
             command = SolumCompanionCommand.DUMP_UI_TREE,
             status = "ok",
@@ -153,7 +235,7 @@ class SolumAccessibilityService : AccessibilityService() {
         )
     }
 
-    fun writeActionLog() {
+    fun writeActionLog(context: android.content.Context? = null, treeUri: Uri? = null) {
         val activePackage = activePackageInfo()
         if (!activePackage.isAllowlisted) {
             appendActionLogEntry(
@@ -162,6 +244,9 @@ class SolumAccessibilityService : AccessibilityService() {
                 reason = "package_not_allowlisted",
                 outputPath = SolumDeviceAgentState.ACTION_LOG_PATH,
             )
+            if (context != null) {
+                SolumDeviceAgentState.writeActionLogViaSaf(context, treeUri, actionLogEntries.toList())
+            }
             return
         }
         appendActionLogEntry(
@@ -170,6 +255,9 @@ class SolumAccessibilityService : AccessibilityService() {
             reason = null,
             outputPath = SolumDeviceAgentState.ACTION_LOG_PATH,
         )
+        if (context != null) {
+            SolumDeviceAgentState.writeActionLogViaSaf(context, treeUri, actionLogEntries.toList())
+        }
     }
 
     fun buildVisualPack() {
@@ -182,7 +270,7 @@ class SolumAccessibilityService : AccessibilityService() {
             )
             return
         }
-        writeVisualManifest(status = "ok", reason = null, activePackage = activePackage)
+        writeVisualManifest(context = null, treeUri = null, status = "ok", reason = null, activePackage = activePackage)
         appendActionLogEntry(
             command = SolumCompanionCommand.BUILD_VISUAL_PACK,
             status = "ok",
@@ -207,8 +295,8 @@ class SolumAccessibilityService : AccessibilityService() {
         )
     }
 
-    private fun activePackageInfo(): SolumActivePackageInfo {
-        val packageName = activePackageName
+    private fun activePackageInfo(fallbackPackage: String? = null): SolumActivePackageInfo {
+        val packageName = activePackageName ?: fallbackPackage
         return SolumActivePackageInfo(
             packageName = packageName,
             isAllowlisted = packageName != null && isPackageAllowed(packageName),
@@ -217,17 +305,43 @@ class SolumAccessibilityService : AccessibilityService() {
     }
 
     private fun writeScreenshotFailure(
+        context: android.content.Context?,
+        treeUri: Uri?,
         status: String,
         reason: String,
         activePackage: SolumActivePackageInfo,
     ) {
-        writeVisualManifest(status = status, reason = reason, activePackage = activePackage)
+        writeVisualManifest(context = context, treeUri = treeUri, status = status, reason = reason, activePackage = activePackage, finalPath = null)
         appendActionLogEntry(
             command = SolumCompanionCommand.CAPTURE_SCREENSHOT,
             status = status,
             reason = reason,
             outputPath = SolumDeviceAgentState.VISUAL_MANIFEST_PATH,
         )
+    }
+
+    private fun writeVisualDiagnosticsFailure(
+        context: android.content.Context,
+        treeUri: Uri?,
+        status: String,
+        reason: String,
+        activePackage: SolumActivePackageInfo,
+    ): SolumDeviceAgentState.VisualDiagnosticsWriteResult {
+        writeVisualManifest(
+            context = context,
+            treeUri = treeUri,
+            status = status,
+            reason = reason,
+            activePackage = activePackage,
+            finalPath = null,
+        )
+        appendActionLogEntry(
+            command = SolumCompanionCommand.RUN_VISUAL_DIAGNOSTICS,
+            status = status,
+            reason = reason,
+            outputPath = SolumDeviceAgentState.VISUAL_MANIFEST_PATH,
+        )
+        return SolumDeviceAgentState.VisualDiagnosticsWriteResult(status = status, reason = reason, finalPath = null)
     }
 
     private fun writeBlockedOutput(
@@ -252,26 +366,31 @@ class SolumAccessibilityService : AccessibilityService() {
     }
 
     private fun writeVisualManifest(
+        context: android.content.Context?,
+        treeUri: Uri?,
         status: String,
         reason: String?,
         activePackage: SolumActivePackageInfo,
+        finalPath: String? = SolumDeviceAgentState.SCREENSHOT_PATH,
     ) {
-        val reasonLine = reason?.let { ",\n  \"reason\": ${SolumDeviceAgentState.jsonEscape(it)}" } ?: ""
-        val manifest = """
-            {
-              "schema": "solum.visual_diagnostics.manifest",
-              "schemaVersion": 1,
-              "timestampUtc": ${SolumDeviceAgentState.jsonEscape(SolumDeviceAgentState.timestampUtc())},
-              "status": ${SolumDeviceAgentState.jsonEscape(status)}$reasonLine,
-              "activePackage": ${SolumDeviceAgentState.activePackageJson(activePackage)},
-              "files": {
-                "final": ${SolumDeviceAgentState.jsonEscape(SolumDeviceAgentState.SCREENSHOT_PATH)},
-                "uiTree": ${SolumDeviceAgentState.jsonEscape(SolumDeviceAgentState.UI_TREE_PATH)},
-                "actionLog": ${SolumDeviceAgentState.jsonEscape(SolumDeviceAgentState.ACTION_LOG_PATH)}
-              }
-            }
-        """.trimIndent()
-        SolumDeviceAgentState.writeTextSafely(SolumDeviceAgentState.VISUAL_MANIFEST_PATH, manifest)
+        if (context != null) {
+            SolumDeviceAgentState.writeVisualDiagnosticsManifestViaSaf(
+                context = context,
+                treeUri = treeUri,
+                status = status,
+                reason = reason,
+                activePackage = activePackage,
+                finalPath = finalPath,
+            )
+        } else {
+            val manifest = SolumDeviceAgentState.visualDiagnosticsManifestJson(
+                status = status,
+                reason = reason,
+                activePackage = activePackage,
+                finalPath = finalPath,
+            )
+            SolumDeviceAgentState.writeTextSafely(SolumDeviceAgentState.VISUAL_MANIFEST_PATH, manifest)
+        }
     }
 
     private fun appendActionLogEntry(
@@ -347,11 +466,16 @@ class SolumAccessibilityService : AccessibilityService() {
         private const val MAX_UI_TREE_CHILDREN_PER_NODE = 64
 
         val SOLUM_ALLOWED_PACKAGES = setOf(
+            "com.solum.companion",
             "com.solum.engine",
             "com.solum.launcher",
             "com.solum.assethub",
             "com.solum.materialstudio",
             "com.asart.solum",
         )
+
+        @Volatile
+        var currentInstance: SolumAccessibilityService? = null
+            private set
     }
 }

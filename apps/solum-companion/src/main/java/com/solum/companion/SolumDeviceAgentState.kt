@@ -1,6 +1,7 @@
 package com.solum.companion
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.DocumentsContract
 import java.io.File
@@ -24,6 +25,8 @@ object SolumDeviceAgentState {
     const val SCREENSHOT_PATH = "$DIAGNOSTICS_LATEST_DIR/final.png"
     const val VISUAL_MANIFEST_PATH = "$DIAGNOSTICS_LATEST_DIR/visual_diagnostics_manifest.json"
     const val ACTION_LOG_RELATIVE_PATH = "device_agent/latest/action_log.json"
+    const val UI_TREE_RELATIVE_PATH = "device_agent/latest/ui_tree.json"
+    const val SCREENSHOT_RELATIVE_PATH = "diagnostics/latest/final.png"
     const val VISUAL_MANIFEST_RELATIVE_PATH = "diagnostics/latest/visual_diagnostics_manifest.json"
     const val DIRECT_PUBLIC_STORAGE_FAILED_CHOOSE_OUTPUT_FOLDER =
         "direct_public_storage_failed_choose_output_folder"
@@ -41,6 +44,15 @@ object SolumDeviceAgentState {
         val success: Boolean,
         val uri: Uri?,
         val reason: String?,
+    )
+
+    data class VisualDiagnosticsWriteResult(
+        val status: String,
+        val reason: String?,
+        val actionLogPath: String = ACTION_LOG_RELATIVE_PATH,
+        val uiTreePath: String = UI_TREE_RELATIVE_PATH,
+        val finalPath: String? = SCREENSHOT_RELATIVE_PATH,
+        val visualManifestPath: String = VISUAL_MANIFEST_RELATIVE_PATH,
     )
 
     fun outputPathsText(): String {
@@ -102,6 +114,42 @@ object SolumDeviceAgentState {
     }
 
     fun writeTextViaSaf(context: Context, treeUri: Uri, relativePath: String, text: String): SafWriteResult {
+        return writeBytesViaSaf(
+            context = context,
+            treeUri = treeUri,
+            relativePath = relativePath,
+            bytes = text.toByteArray(Charsets.UTF_8),
+            mimeType = "application/json",
+        )
+    }
+
+    fun writePngViaSaf(context: Context, treeUri: Uri, relativePath: String, bitmap: Bitmap): SafWriteResult {
+        return try {
+            val bytes = java.io.ByteArrayOutputStream().use { output ->
+                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                    return SafWriteResult(false, null, "png_compress_failed")
+                }
+                output.toByteArray()
+            }
+            writeBytesViaSaf(
+                context = context,
+                treeUri = treeUri,
+                relativePath = relativePath,
+                bytes = bytes,
+                mimeType = "image/png",
+            )
+        } catch (exception: Exception) {
+            SafWriteResult(false, null, exception.javaClass.simpleName.ifBlank { "screenshot_failed" })
+        }
+    }
+
+    fun writeBytesViaSaf(
+        context: Context,
+        treeUri: Uri,
+        relativePath: String,
+        bytes: ByteArray,
+        mimeType: String,
+    ): SafWriteResult {
         return try {
             val normalizedPath = relativePath.trim('/').split('/').filter { it.isNotBlank() }
             if (normalizedPath.isEmpty()) {
@@ -133,22 +181,111 @@ object SolumDeviceAgentState {
                 treeUri = treeUri,
                 parentUri = parentUri,
                 displayName = fileName,
-                mimeType = "application/json",
+                mimeType = mimeType,
             ) ?: DocumentsContract.createDocument(
                 resolver,
                 parentUri,
-                "application/json",
+                mimeType,
                 fileName,
             ) ?: return SafWriteResult(false, null, "failed_to_create_saf_file:$fileName")
 
             resolver.openOutputStream(fileUri, "wt")?.use { output ->
-                output.write(text.toByteArray(Charsets.UTF_8))
+                output.write(bytes)
             } ?: return SafWriteResult(false, fileUri, "failed_to_open_saf_output_stream")
 
             SafWriteResult(true, fileUri, null)
         } catch (exception: Exception) {
             SafWriteResult(false, null, exception.javaClass.simpleName.ifBlank { "saf_write_failed" })
         }
+    }
+
+    fun writeVisualDiagnosticsManifestViaSaf(
+        context: Context,
+        treeUri: Uri?,
+        status: String,
+        reason: String?,
+        activePackage: SolumActivePackageInfo,
+        finalPath: String?,
+    ): VisualDiagnosticsWriteResult {
+        val manifest = visualDiagnosticsManifestJson(
+            status = status,
+            reason = reason,
+            activePackage = activePackage,
+            finalPath = finalPath,
+        )
+        if (treeUri == null) {
+            writeTextSafely(VISUAL_MANIFEST_PATH, manifest)
+            return VisualDiagnosticsWriteResult(status = status, reason = reason ?: "saf_not_configured")
+        }
+
+        val manifestWrite = writeTextViaSaf(context, treeUri, VISUAL_MANIFEST_RELATIVE_PATH, manifest)
+        return if (manifestWrite.success) {
+            VisualDiagnosticsWriteResult(status = status, reason = reason, finalPath = finalPath)
+        } else {
+            VisualDiagnosticsWriteResult(
+                status = "failed",
+                reason = manifestWrite.reason ?: "saf_write_failed",
+                finalPath = finalPath,
+            )
+        }
+    }
+
+    fun writeActionLogViaSaf(
+        context: Context,
+        treeUri: Uri?,
+        entries: List<String>,
+    ): SafWriteResult {
+        val log = """
+            {
+              "schema": "solum.device_agent.action_log",
+              "schemaVersion": 1,
+              "timestampUtc": ${jsonEscape(timestampUtc())},
+              "entries": [
+                ${entries.joinToString(",\n    ")}
+              ]
+            }
+        """.trimIndent()
+        if (treeUri != null) {
+            return writeTextViaSaf(context, treeUri, ACTION_LOG_RELATIVE_PATH, log)
+        }
+        val directOk = writeTextSafely(ACTION_LOG_PATH, log)
+        return SafWriteResult(directOk, null, if (directOk) null else DIRECT_PUBLIC_STORAGE_FAILED_CHOOSE_OUTPUT_FOLDER)
+    }
+
+    fun writeUiTreeViaSaf(
+        context: Context,
+        treeUri: Uri?,
+        uiTreeJson: String,
+    ): SafWriteResult {
+        if (treeUri != null) {
+            return writeTextViaSaf(context, treeUri, UI_TREE_RELATIVE_PATH, uiTreeJson)
+        }
+        val directOk = writeTextSafely(UI_TREE_PATH, uiTreeJson)
+        return SafWriteResult(directOk, null, if (directOk) null else DIRECT_PUBLIC_STORAGE_FAILED_CHOOSE_OUTPUT_FOLDER)
+    }
+
+    fun visualDiagnosticsManifestJson(
+        status: String,
+        reason: String?,
+        activePackage: SolumActivePackageInfo,
+        finalPath: String?,
+    ): String {
+        val reasonLine = reason?.let { ",\n  \"reason\": ${jsonEscape(it)}" } ?: ""
+        val finalValue = finalPath?.let { jsonEscape(it) } ?: "null"
+        return """
+            {
+              "schema": "solum.visual_diagnostics.manifest",
+              "schemaVersion": 1,
+              "timestampUtc": ${jsonEscape(timestampUtc())},
+              "status": ${jsonEscape(status)}$reasonLine,
+              "activePackage": ${activePackageJson(activePackage)},
+              "files": {
+                "final": $finalValue,
+                "uiTree": ${jsonEscape(UI_TREE_RELATIVE_PATH)},
+                "actionLog": ${jsonEscape(ACTION_LOG_RELATIVE_PATH)}
+              }
+            }
+        """.trimIndent()
     }
 
     fun writeManualEvidenceFiles(

@@ -1,5 +1,8 @@
 package com.solum.companion
 
+import android.content.Context
+import android.net.Uri
+import android.provider.DocumentsContract
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -20,12 +23,24 @@ object SolumDeviceAgentState {
     const val UI_TREE_PATH = "$DEVICE_AGENT_LATEST_DIR/ui_tree.json"
     const val SCREENSHOT_PATH = "$DIAGNOSTICS_LATEST_DIR/final.png"
     const val VISUAL_MANIFEST_PATH = "$DIAGNOSTICS_LATEST_DIR/visual_diagnostics_manifest.json"
+    const val ACTION_LOG_RELATIVE_PATH = "device_agent/latest/action_log.json"
+    const val VISUAL_MANIFEST_RELATIVE_PATH = "diagnostics/latest/visual_diagnostics_manifest.json"
+    const val DIRECT_PUBLIC_STORAGE_FAILED_CHOOSE_OUTPUT_FOLDER =
+        "direct_public_storage_failed_choose_output_folder"
 
     data class ManualEvidenceWriteResult(
         val success: Boolean,
         val actionLogPath: String,
         val visualManifestPath: String,
         val error: String?,
+        val writeRoute: String?,
+        val reason: String?,
+    )
+
+    data class SafWriteResult(
+        val success: Boolean,
+        val uri: Uri?,
+        val reason: String?,
     )
 
     fun outputPathsText(): String {
@@ -86,7 +101,62 @@ object SolumDeviceAgentState {
         }
     }
 
-    fun writeManualEvidenceFiles(packageName: String, appVersion: String): ManualEvidenceWriteResult {
+    fun writeTextViaSaf(context: Context, treeUri: Uri, relativePath: String, text: String): SafWriteResult {
+        return try {
+            val normalizedPath = relativePath.trim('/').split('/').filter { it.isNotBlank() }
+            if (normalizedPath.isEmpty()) {
+                return SafWriteResult(false, null, "empty_relative_path")
+            }
+
+            val resolver = context.contentResolver
+            val treeDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
+            var parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocumentId)
+
+            normalizedPath.dropLast(1).forEach { directoryName ->
+                parentUri = findChildDocument(
+                    context = context,
+                    treeUri = treeUri,
+                    parentUri = parentUri,
+                    displayName = directoryName,
+                    mimeType = DocumentsContract.Document.MIME_TYPE_DIR,
+                ) ?: DocumentsContract.createDocument(
+                    resolver,
+                    parentUri,
+                    DocumentsContract.Document.MIME_TYPE_DIR,
+                    directoryName,
+                ) ?: return SafWriteResult(false, null, "failed_to_create_saf_directory:$directoryName")
+            }
+
+            val fileName = normalizedPath.last()
+            val fileUri = findChildDocument(
+                context = context,
+                treeUri = treeUri,
+                parentUri = parentUri,
+                displayName = fileName,
+                mimeType = "application/json",
+            ) ?: DocumentsContract.createDocument(
+                resolver,
+                parentUri,
+                "application/json",
+                fileName,
+            ) ?: return SafWriteResult(false, null, "failed_to_create_saf_file:$fileName")
+
+            resolver.openOutputStream(fileUri, "wt")?.use { output ->
+                output.write(text.toByteArray(Charsets.UTF_8))
+            } ?: return SafWriteResult(false, fileUri, "failed_to_open_saf_output_stream")
+
+            SafWriteResult(true, fileUri, null)
+        } catch (exception: Exception) {
+            SafWriteResult(false, null, exception.javaClass.simpleName.ifBlank { "saf_write_failed" })
+        }
+    }
+
+    fun writeManualEvidenceFiles(
+        context: Context? = null,
+        treeUri: Uri? = null,
+        packageName: String,
+        appVersion: String,
+    ): ManualEvidenceWriteResult {
         val timestamp = timestampUtc()
         val actionLog = """
             {
@@ -128,20 +198,65 @@ object SolumDeviceAgentState {
             }
         """.trimIndent()
 
+        if (context != null && treeUri != null) {
+            val actionSaf = writeTextViaSaf(context, treeUri, ACTION_LOG_RELATIVE_PATH, actionLog)
+            val manifestSaf = writeTextViaSaf(context, treeUri, VISUAL_MANIFEST_RELATIVE_PATH, manifest)
+            if (actionSaf.success && manifestSaf.success) {
+                return ManualEvidenceWriteResult(
+                    success = true,
+                    actionLogPath = ACTION_LOG_RELATIVE_PATH,
+                    visualManifestPath = VISUAL_MANIFEST_RELATIVE_PATH,
+                    error = null,
+                    writeRoute = "saf",
+                    reason = null,
+                )
+            }
+        }
+
         val actionOk = writeTextSafely(ACTION_LOG_PATH, actionLog)
         val manifestOk = writeTextSafely(VISUAL_MANIFEST_PATH, manifest)
         val error = when {
             actionOk && manifestOk -> null
-            !actionOk && !manifestOk -> "failed_to_write_action_log_and_visual_manifest"
-            !actionOk -> "failed_to_write_action_log"
-            else -> "failed_to_write_visual_manifest"
+            else -> DIRECT_PUBLIC_STORAGE_FAILED_CHOOSE_OUTPUT_FOLDER
         }
         return ManualEvidenceWriteResult(
             success = actionOk && manifestOk,
             actionLogPath = ACTION_LOG_PATH,
             visualManifestPath = VISUAL_MANIFEST_PATH,
             error = error,
+            writeRoute = if (actionOk && manifestOk) "direct" else null,
+            reason = error,
         )
+    }
+
+    private fun findChildDocument(
+        context: Context,
+        treeUri: Uri,
+        parentUri: Uri,
+        displayName: String,
+        mimeType: String,
+    ): Uri? {
+        val parentDocumentId = DocumentsContract.getDocumentId(parentUri)
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocumentId)
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+        )
+        context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+            val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            val mimeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+            while (cursor.moveToNext()) {
+                val childName = cursor.getString(nameIndex)
+                val childMime = cursor.getString(mimeIndex)
+                if (childName == displayName && (mimeType == childMime || mimeType != DocumentsContract.Document.MIME_TYPE_DIR)) {
+                    val childDocumentId = cursor.getString(idIndex)
+                    return DocumentsContract.buildDocumentUriUsingTree(treeUri, childDocumentId)
+                }
+            }
+        }
+        return null
     }
 
     fun activePackageJson(activePackage: SolumActivePackageInfo): String {

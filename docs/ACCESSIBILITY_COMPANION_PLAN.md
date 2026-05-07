@@ -167,11 +167,11 @@ android.intent.category.LAUNCHER
 
 Экран делает только ручные действия:
 
-- показывает `packageName`, `appVersion` и output paths;
+- показывает `packageName`, `appVersion`, SAF output folder status и output paths;
 - открывает Android Accessibility Settings;
 - открывает App Details Settings для `com.solum.companion`;
 - пишет manual evidence files без screenshot;
-- открывает системный folder picker, если Android это поддерживает.
+- открывает системный SAF folder picker через `ACTION_OPEN_DOCUMENT_TREE`, если Android это поддерживает.
 
 P01H2 не добавляет taps, gestures, renderer hooks или Telegram UI automation.
 
@@ -197,6 +197,52 @@ Expected files:
 ```
 
 Manual test пишет только JSON evidence. Screenshot route остаётся Accessibility route.
+
+## P01H3 SAF storage fix
+
+Причина P01H3: `com.solum.companion` с `targetSdk 34` не может надёжно писать напрямую в `/storage/emulated/0/SOLUMCreative` из-за scoped storage, даже если Termux пишет туда успешно.
+
+Решение:
+
+```text
+Open SOLUM Companion
+↓
+press Choose SOLUMCreative Output Folder
+↓
+select /storage/emulated/0/SOLUMCreative in Android folder picker
+↓
+Android grants persisted read/write treeUri permission
+↓
+press Test Write Evidence Files
+```
+
+Manual evidence write order:
+
+```text
+SAF write via persisted treeUri
+↓
+if SAF is not configured or failed, direct path fallback
+↓
+if direct path fails, reason=direct_public_storage_failed_choose_output_folder
+```
+
+Expected success toast after SAF setup:
+
+```text
+Evidence files written via SAF
+```
+
+Expected fallback success toast:
+
+```text
+Evidence files written via direct path
+```
+
+Expected failure toast:
+
+```text
+Evidence write failed: choose output folder
+```
 
 ## TECNO/HiOS Restricted Settings blocker
 

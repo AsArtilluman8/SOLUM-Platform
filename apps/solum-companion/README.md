@@ -5,6 +5,7 @@
 P01H implements real route methods for status, screenshot, UI tree, action log and visual manifest. It is still intentionally narrow and does not implement tap/gesture automation.
 
 P01H2 adds a normal launcher Activity so Android can open the installed companion APK from the app list.
+P01H3 adds SAF folder permission for Android scoped storage so targetSdk 34 can write evidence files into the chosen `SOLUMCreative` folder.
 
 ## Purpose
 
@@ -75,6 +76,18 @@ Open it from the launcher or from Android's Open button on the app details scree
 Inside `SOLUM Companion`, press:
 
 ```text
+Choose SOLUMCreative Output Folder
+```
+
+In the Android folder picker, select:
+
+```text
+/storage/emulated/0/SOLUMCreative
+```
+
+Then press:
+
+```text
 Test Write Evidence Files
 ```
 
@@ -87,7 +100,21 @@ Expected files:
 
 This manual test does not capture a screenshot.
 
-If the write fails, check Android storage restrictions for this local APK route and use the toast/error text as evidence.
+Expected toast after SAF setup:
+
+```text
+Evidence files written via SAF
+```
+
+If no folder is selected, the app tries the legacy direct path as a fallback. On targetSdk 34 this can fail with:
+
+```text
+direct_public_storage_failed_choose_output_folder
+```
+
+In that case, choose the output folder through SAF and run the test again.
+
+Use `Clear Output Folder Permission` only when you need to reset the persisted SAF permission.
 
 ## Enable Accessibility
 

@@ -40,6 +40,103 @@ SUCCESS / FAILED / NOT TESTED
 
 ---
 
+## Patch P01H3 — Companion SAF Storage Permission + Evidence Write Fix
+
+### Goal
+
+Fix Companion manual evidence writes on Android scoped storage by using a persisted SAF output folder permission.
+
+### Scope
+
+- Replaced the old output-folder action with `Choose SOLUMCreative Output Folder`.
+- Added `ACTION_OPEN_DOCUMENT_TREE` folder picker handling.
+- Persisted selected tree URI in `SharedPreferences`.
+- Added `takePersistableUriPermission` for read/write access.
+- Added SAF evidence writes through `DocumentsContract`.
+- Kept direct `/storage/emulated/0/SOLUMCreative` fallback with explicit reason:
+
+```text
+direct_public_storage_failed_choose_output_folder
+```
+
+- Added `Clear Output Folder Permission`.
+- Documented manual SAF setup flow.
+
+### Changed files/modules
+
+- `apps/solum-companion/src/main/java/com/solum/companion/MainActivity.kt`
+- `apps/solum-companion/src/main/java/com/solum/companion/SolumDeviceAgentState.kt`
+- `apps/solum-companion/README.md`
+- `docs/ACCESSIBILITY_COMPANION_PLAN.md`
+- `docs/patch_history/PATCH_HISTORY.md`
+
+### Build result
+
+BUILD_SUCCESS through the allowed SOLUM runner:
+
+```text
+bash tools/agent_build_runner.sh
+```
+
+Runner executed `gradle assembleDebug`; both app tasks completed:
+
+```text
+:apps:engine:assembleDebug
+:apps:solum-companion:assembleDebug
+```
+
+Additional checks:
+
+```text
+grep -R --exclude-dir=build "ACTION_OPEN_DOCUMENT_TREE" apps/solum-companion
+grep -R --exclude-dir=build "takePersistableUriPermission" apps/solum-companion
+grep -R --exclude-dir=build "DocumentsContract" apps/solum-companion
+grep -R --exclude-dir=build "direct_public_storage_failed_choose_output_folder" apps/solum-companion docs
+python3 tools/mcp_server/solum_mcp_server.py smoke-test
+git diff --check
+```
+
+All passed.
+
+### Runtime result
+
+Manual phone verification required after installing the companion APK.
+
+### User-visible result
+
+Companion screen shows:
+
+```text
+SAF output folder: configured / not configured
+treeUri: redacted/short
+```
+
+After choosing `/storage/emulated/0/SOLUMCreative`, `Test Write Evidence Files` should write:
+
+```text
+device_agent/latest/action_log.json
+diagnostics/latest/visual_diagnostics_manifest.json
+```
+
+### Known issues
+
+Runtime grant cannot be proven by build alone. The phone must manually select the folder once.
+
+Build runner copied `SOLUM_LATEST.apk` from the first found APK; use the explicit companion APK path for install:
+
+```text
+apps/solum-companion/build/outputs/apk/debug/solum-companion-debug.apk
+```
+
+### Report
+
+```text
+_work/agent_reports/P01H3_COMPANION_SAF_REPORT.txt
+_work/agent_reports/P01H3_COMPANION_SAF_DASHBOARD.html
+```
+
+---
+
 ## Patch P01H2 — Companion Launcher Activity + Manual Test Screen
 
 ### Goal

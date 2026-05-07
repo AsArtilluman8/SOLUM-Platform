@@ -2,6 +2,7 @@ package com.solum.companion
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.graphics.Typeface
 import android.net.Uri
@@ -17,6 +18,10 @@ import android.widget.TextView
 import android.widget.Toast
 
 class MainActivity : Activity() {
+    private val outputFolderRequestCode = 4101
+    private val prefsName = "solum_companion_output"
+    private val treeUriPrefKey = "saf_output_tree_uri"
+
     private lateinit var pathTextView: TextView
     private lateinit var statusTextView: TextView
 
@@ -88,8 +93,11 @@ class MainActivity : Activity() {
         content.addView(actionButton("Test Write Evidence Files") {
             testWriteEvidenceFiles()
         })
-        content.addView(actionButton("Open Output Folder") {
-            openOutputFolder()
+        content.addView(actionButton("Choose SOLUMCreative Output Folder") {
+            chooseOutputFolder()
+        })
+        content.addView(actionButton("Clear Output Folder Permission") {
+            clearOutputFolderPermission()
         })
 
         return scrollView
@@ -99,35 +107,111 @@ class MainActivity : Activity() {
         statusTextView.text = """
             packageName: $packageName
             appVersion: ${appVersion()}
+            SAF output folder: ${if (savedTreeUri() != null) "configured" else "not configured"}
+            treeUri: ${redactedTreeUri()}
         """.trimIndent()
     }
 
     private fun testWriteEvidenceFiles() {
         val result = SolumDeviceAgentState.writeManualEvidenceFiles(
+            context = this,
+            treeUri = savedTreeUri(),
             packageName = packageName,
             appVersion = appVersion(),
         )
         pathTextView.text = SolumDeviceAgentState.outputPathsText()
+        refreshStatusText()
         if (result.success) {
-            toast("Evidence files written")
+            when (result.writeRoute) {
+                "saf" -> toast("Evidence files written via SAF")
+                "direct" -> toast("Evidence files written via direct path")
+                else -> toast("Evidence files written")
+            }
         } else {
-            toast("Evidence write failed: ${result.error ?: "unknown"}")
+            toast("Evidence write failed: choose output folder")
         }
     }
 
-    private fun openOutputFolder() {
+    private fun chooseOutputFolder() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
         }
         try {
-            startActivity(intent)
-            toast(SolumDeviceAgentState.CREATIVE_ROOT)
+            startActivityForResult(intent, outputFolderRequestCode)
         } catch (_: ActivityNotFoundException) {
             pathTextView.text = SolumDeviceAgentState.outputPathsText()
-            toast(SolumDeviceAgentState.CREATIVE_ROOT)
+            toast("Folder picker unavailable")
         }
     }
+
+    @Deprecated("Activity result callback is enough for this no-AndroidX launcher Activity.")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != outputFolderRequestCode) return
+        if (resultCode != RESULT_OK) {
+            refreshStatusText()
+            toast("Output folder not configured")
+            return
+        }
+
+        val treeUri = data?.data
+        if (treeUri == null) {
+            refreshStatusText()
+            toast("Output folder not configured")
+            return
+        }
+
+        val permissionFlags = data.flags and (
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        )
+        val persistFlags = if (permissionFlags != 0) {
+            permissionFlags
+        } else {
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        }
+        try {
+            contentResolver.takePersistableUriPermission(treeUri, persistFlags)
+            prefs().edit().putString(treeUriPrefKey, treeUri.toString()).apply()
+            refreshStatusText()
+            pathTextView.text = SolumDeviceAgentState.outputPathsText()
+            toast("SOLUMCreative output folder configured")
+        } catch (_: Exception) {
+            refreshStatusText()
+            toast("Failed to persist output folder permission")
+        }
+    }
+
+    private fun clearOutputFolderPermission() {
+        savedTreeUri()?.let { uri ->
+            try {
+                contentResolver.releasePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            } catch (_: Exception) {
+            }
+        }
+        prefs().edit().remove(treeUriPrefKey).apply()
+        refreshStatusText()
+        pathTextView.text = SolumDeviceAgentState.outputPathsText()
+        toast("Output folder permission cleared")
+    }
+
+    private fun savedTreeUri(): Uri? {
+        val value = prefs().getString(treeUriPrefKey, null) ?: return null
+        return runCatching { Uri.parse(value) }.getOrNull()
+    }
+
+    private fun redactedTreeUri(): String {
+        val value = savedTreeUri()?.toString() ?: return "not configured"
+        if (value.length <= 28) return "configured"
+        return "${value.take(16)}...${value.takeLast(10)}"
+    }
+
+    private fun prefs() = getSharedPreferences(prefsName, Context.MODE_PRIVATE)
 
     private fun openIntent(intent: Intent, failureMessage: String) {
         try {

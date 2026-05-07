@@ -40,6 +40,62 @@ SUCCESS / FAILED / NOT TESTED
 
 ---
 
+## Patch P03 — Real Vulkan 3D Render Lab Foundation Pack
+
+### Goal
+
+Upgrade the existing Android Native Vulkan triangle path into Scene01 Foundation Cube without creating a parallel renderer.
+
+### Scope
+
+- Extended `RendererCore` existing swapchain/render pass/pipeline path.
+- Added indexed cube geometry with position + color attributes.
+- Added index buffer support beside the existing vertex buffer helper.
+- Added depth image, depth memory, depth image view, depth format selection and color+depth framebuffers.
+- Added perspective camera/model/view/projection foundation through vertex push constants.
+- Kept triangle validation path as fallback/debug availability, disabled for Scene01.
+- Updated runtime status and native/Java diagnostics export fields.
+
+### Out of scope
+
+- Materials/PBR.
+- Texture binding.
+- Shadows.
+- Model import.
+- The Forge import.
+- Screenshot/readback.
+
+### Expected runtime status
+
+```text
+Render Lab: Scene01 Foundation Cube
+Cube draw: OK
+Depth: OK
+Camera: OK
+Frames rendered: >= 1
+Next: Material Constants / Asset Mesh Upload
+```
+
+### Diagnostics
+
+`engine_runtime_state.json` and `engine_diagnostics_manifest.json` must report:
+
+```text
+renderLab.currentLabScene = scene01_foundation_cube
+cubeStatus = ok
+depthStatus = ok
+cameraStatus = ok
+indexBufferReady = true
+uniformOrPushConstantsReady = true
+vertexCount = 8
+indexCount = 36
+screenshot.reason = renderer_readback_not_implemented
+```
+
+### Next
+
+P04 Material Constants + Mesh Attribute Layout.
+
 ## Patch P02D — Engine Diagnostics SAF + Visible Button Feedback
 
 ### Goal

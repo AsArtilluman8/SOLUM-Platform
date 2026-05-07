@@ -64,6 +64,17 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
     }
     std::string json = std::string("{\"currentLabScene\":\"") + renderer->diagnostics.renderLab.sceneId()
         + "\",\"currentLabSceneName\":\"" + renderer->diagnostics.renderLab.sceneName()
-        + "\",\"renderingStatus\":\"foundation_only\",\"cubeStatus\":\"not_implemented\",\"depthStatus\":\"not_implemented\"}";
+        + "\",\"renderingStatus\":\"foundation_only\""
+        + ",\"cubeStatus\":\"" + (renderer->diagnostics.cubeReady ? "ok" : "failed") + "\""
+        + ",\"depthStatus\":\"" + (renderer->diagnostics.depthReady ? "ok" : "failed") + "\""
+        + ",\"cameraStatus\":\"" + (renderer->diagnostics.cameraReady ? "ok" : "failed") + "\""
+        + ",\"indexBufferReady\":" + (renderer->diagnostics.indexBufferReady ? "true" : "false")
+        + ",\"uniformOrPushConstantsReady\":" + (renderer->diagnostics.uniformOrPushConstantsReady ? "true" : "false")
+        + ",\"vertexCount\":" + std::to_string(renderer->diagnostics.vertexCount)
+        + ",\"indexCount\":" + std::to_string(renderer->diagnostics.indexCount)
+        + ",\"framesRendered\":" + std::to_string(renderer->diagnostics.framesRendered)
+        + ",\"rendererPath\":\"Android Native Vulkan\""
+        + ",\"triangleFallback\":\"available/disabled\""
+        + ",\"screenshot\":{\"status\":\"not_available\",\"reason\":\"renderer_readback_not_implemented\"}}";
     return env->NewStringUTF(json.c_str());
 }

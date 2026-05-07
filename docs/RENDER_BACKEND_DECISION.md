@@ -46,15 +46,15 @@ REFERENCE_ONLY now, possible ADAPTER later.
 
 The current patch adds Render Lab state/config only. It does not claim cube, depth, shadow, material or import rendering is implemented.
 
-## Next real Vulkan step
+## Current Render Lab step
 
-Next real Vulkan step:
+Current real Vulkan step:
 
 ```text
 P03 real Vulkan cube + camera + depth
 ```
 
-P03 must prove:
+P03 implementation target:
 
 - real cube geometry;
 - camera/projection;
@@ -62,3 +62,15 @@ P03 must prove:
 - diagnostics state;
 - build success;
 - runtime evidence.
+
+The backend decision remains unchanged:
+
+```text
+direct Vulkan fallback, The Forge reference-only
+```
+
+Next renderer step:
+
+```text
+P04 Material Constants + Mesh Attribute Layout
+```

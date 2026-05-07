@@ -14,6 +14,16 @@ enum class RenderLabScene {
 
 struct RenderLabState {
     RenderLabScene currentScene = RenderLabScene::Scene01FoundationCube;
+    bool cubeReady = false;
+    bool depthReady = false;
+    bool cameraReady = false;
+    bool indexBufferReady = false;
+    bool uniformOrPushConstantsReady = false;
+    bool triangleFallbackAvailable = true;
+    bool triangleFallbackEnabled = false;
+    uint32_t vertexCount = 0;
+    uint32_t indexCount = 0;
+    uint64_t framesRendered = 0;
 
     const char* sceneId() const {
         switch (currentScene) {
@@ -46,8 +56,17 @@ struct RenderLabState {
         f << indent << "  \"currentLabScene\": \"" << sceneId() << "\",\n";
         f << indent << "  \"currentLabSceneName\": \"" << sceneName() << "\",\n";
         f << indent << "  \"renderingStatus\": \"foundation_only\",\n";
-        f << indent << "  \"cubeStatus\": \"not_implemented\",\n";
-        f << indent << "  \"depthStatus\": \"not_implemented\"\n";
+        f << indent << "  \"cubeStatus\": \"" << (cubeReady ? "ok" : "failed") << "\",\n";
+        f << indent << "  \"depthStatus\": \"" << (depthReady ? "ok" : "failed") << "\",\n";
+        f << indent << "  \"cameraStatus\": \"" << (cameraReady ? "ok" : "failed") << "\",\n";
+        f << indent << "  \"indexBufferReady\": " << (indexBufferReady ? "true" : "false") << ",\n";
+        f << indent << "  \"uniformOrPushConstantsReady\": " << (uniformOrPushConstantsReady ? "true" : "false") << ",\n";
+        f << indent << "  \"vertexCount\": " << vertexCount << ",\n";
+        f << indent << "  \"indexCount\": " << indexCount << ",\n";
+        f << indent << "  \"framesRendered\": " << framesRendered << ",\n";
+        f << indent << "  \"rendererPath\": \"Android Native Vulkan\",\n";
+        f << indent << "  \"triangleFallback\": \"" << (triangleFallbackEnabled ? "enabled" : "available/disabled") << "\",\n";
+        f << indent << "  \"screenshot\": { \"status\": \"not_available\", \"reason\": \"renderer_readback_not_implemented\" }\n";
         f << indent << "}";
     }
 };

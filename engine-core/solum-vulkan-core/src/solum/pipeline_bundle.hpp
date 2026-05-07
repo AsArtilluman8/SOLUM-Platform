@@ -53,18 +53,22 @@ struct PipelineBundle {
 
         VkVertexInputBindingDescription binding{};
         binding.binding = 0;
-        binding.stride = sizeof(Vertex2D);
+        binding.stride = sizeof(Vertex3D);
         binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        VkVertexInputAttributeDescription attr{};
-        attr.location = 0;
-        attr.binding = 0;
-        attr.format = VK_FORMAT_R32G32_SFLOAT;
-        attr.offset = 0;
+        VkVertexInputAttributeDescription attrs[2]{};
+        attrs[0].location = 0;
+        attrs[0].binding = 0;
+        attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attrs[0].offset = offsetof(Vertex3D, px);
+        attrs[1].location = 1;
+        attrs[1].binding = 0;
+        attrs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attrs[1].offset = offsetof(Vertex3D, r);
         VkPipelineVertexInputStateCreateInfo vertexInput{ VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
         vertexInput.vertexBindingDescriptionCount = 1;
         vertexInput.pVertexBindingDescriptions = &binding;
-        vertexInput.vertexAttributeDescriptionCount = 1;
-        vertexInput.pVertexAttributeDescriptions = &attr;
+        vertexInput.vertexAttributeDescriptionCount = 2;
+        vertexInput.pVertexAttributeDescriptions = attrs;
 
         VkPipelineInputAssemblyStateCreateInfo assembly{ VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
         assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -87,13 +91,25 @@ struct PipelineBundle {
         raster.lineWidth = 1.0f;
         VkPipelineMultisampleStateCreateInfo msaa{ VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
         msaa.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        VkPipelineDepthStencilStateCreateInfo depth{ VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
+        depth.depthTestEnable = VK_TRUE;
+        depth.depthWriteEnable = VK_TRUE;
+        depth.depthCompareOp = VK_COMPARE_OP_LESS;
+        depth.depthBoundsTestEnable = VK_FALSE;
+        depth.stencilTestEnable = VK_FALSE;
         VkPipelineColorBlendAttachmentState blendAttachment{};
         blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         VkPipelineColorBlendStateCreateInfo blend{ VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
         blend.attachmentCount = 1;
         blend.pAttachments = &blendAttachment;
 
+        VkPushConstantRange push{};
+        push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        push.offset = 0;
+        push.size = sizeof(Mat4);
         VkPipelineLayoutCreateInfo layoutInfo{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+        layoutInfo.pushConstantRangeCount = 1;
+        layoutInfo.pPushConstantRanges = &push;
         VkResult r = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &layout);
         if (r != VK_SUCCESS) { error = "PipelineLayout failed: " + vkResultName(r); vkDestroyShaderModule(device, frag, nullptr); vkDestroyShaderModule(device, vert, nullptr); return false; }
 
@@ -105,6 +121,7 @@ struct PipelineBundle {
         pipe.pViewportState = &viewportState;
         pipe.pRasterizationState = &raster;
         pipe.pMultisampleState = &msaa;
+        pipe.pDepthStencilState = &depth;
         pipe.pColorBlendState = &blend;
         pipe.layout = layout;
         pipe.renderPass = renderPass;

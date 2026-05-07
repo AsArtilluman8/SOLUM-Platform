@@ -15,8 +15,14 @@ struct RuntimeDiagnostics {
     VkExtent2D extent{};
     bool rendererCoreReady = false;
     bool vertexBufferReady = false;
+    bool indexBufferReady = false;
+    bool cubeReady = false;
+    bool depthReady = false;
+    bool cameraReady = false;
+    bool uniformOrPushConstantsReady = false;
     bool triangleDrawn = false;
     uint32_t vertexCount = 0;
+    uint32_t indexCount = 0;
     uint64_t framesRendered = 0;
     RenderLabState renderLab;
 
@@ -39,8 +45,15 @@ struct RuntimeDiagnostics {
         f << "  \"swapchainFormat\": " << (int)swapchainFormat << ",\n";
         f << "  \"extent\": { \"width\": " << extent.width << ", \"height\": " << extent.height << " },\n";
         f << "  \"vertexBufferReady\": " << (vertexBufferReady ? "true" : "false") << ",\n";
+        f << "  \"indexBufferReady\": " << (indexBufferReady ? "true" : "false") << ",\n";
+        f << "  \"uniformOrPushConstantsReady\": " << (uniformOrPushConstantsReady ? "true" : "false") << ",\n";
         f << "  \"vertexCount\": " << vertexCount << ",\n";
+        f << "  \"indexCount\": " << indexCount << ",\n";
         f << "  \"framesRendered\": " << framesRendered << ",\n";
+        f << "  \"cubeStatus\": \"" << (cubeReady ? "ok" : "failed") << "\",\n";
+        f << "  \"depthStatus\": \"" << (depthReady ? "ok" : "failed") << "\",\n";
+        f << "  \"cameraStatus\": \"" << (cameraReady ? "ok" : "failed") << "\",\n";
+        f << "  \"screenshot\": { \"status\": \"not_available\", \"reason\": \"renderer_readback_not_implemented\" },\n";
         f << "  \"triangleDrawn\": " << (triangleDrawn ? "true" : "false") << ",\n";
         renderLab.writeJsonFields(f);
         f << "\n";

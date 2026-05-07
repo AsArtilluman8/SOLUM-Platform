@@ -2,6 +2,9 @@
 #define VK_USE_PLATFORM_ANDROID_KHR 1
 #include <vulkan/vulkan.h>
 #include <android/native_window.h>
+#include <array>
+#include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -13,6 +16,67 @@
 namespace solum {
 
 struct Vertex2D { float x; float y; };
+struct Vertex3D {
+    float px; float py; float pz;
+    float r; float g; float b;
+};
+
+struct Mat4 {
+    float m[16]{};
+
+    static Mat4 identity() {
+        Mat4 out{};
+        out.m[0] = 1.0f;
+        out.m[5] = 1.0f;
+        out.m[10] = 1.0f;
+        out.m[15] = 1.0f;
+        return out;
+    }
+};
+
+inline Mat4 multiply(const Mat4& a, const Mat4& b) {
+    Mat4 out{};
+    for (int col = 0; col < 4; ++col) {
+        for (int row = 0; row < 4; ++row) {
+            out.m[col * 4 + row] =
+                a.m[0 * 4 + row] * b.m[col * 4 + 0] +
+                a.m[1 * 4 + row] * b.m[col * 4 + 1] +
+                a.m[2 * 4 + row] * b.m[col * 4 + 2] +
+                a.m[3 * 4 + row] * b.m[col * 4 + 3];
+        }
+    }
+    return out;
+}
+
+inline Mat4 translation(float x, float y, float z) {
+    Mat4 out = Mat4::identity();
+    out.m[12] = x;
+    out.m[13] = y;
+    out.m[14] = z;
+    return out;
+}
+
+inline Mat4 rotationY(float radians) {
+    Mat4 out = Mat4::identity();
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out.m[0] = c;
+    out.m[2] = -s;
+    out.m[8] = s;
+    out.m[10] = c;
+    return out;
+}
+
+inline Mat4 perspective(float fovyRadians, float aspect, float nearPlane, float farPlane) {
+    Mat4 out{};
+    const float f = 1.0f / std::tan(fovyRadians * 0.5f);
+    out.m[0] = f / aspect;
+    out.m[5] = -f;
+    out.m[10] = farPlane / (farPlane - nearPlane);
+    out.m[11] = 1.0f;
+    out.m[14] = -(farPlane * nearPlane) / (farPlane - nearPlane);
+    return out;
+}
 
 inline std::string vkResultName(VkResult r) {
     switch (r) {

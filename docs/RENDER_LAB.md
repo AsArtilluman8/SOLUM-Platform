@@ -7,9 +7,10 @@ Current status:
 ```text
 foundation only
 currentLabScene = scene01_foundation_cube
+current implementation = real indexed Vulkan cube + depth + MVP foundation
 ```
 
-No cube/depth/shadow/import/performance feature is claimed ready until a real Vulkan implementation and diagnostics proof exist.
+No shadow/import/performance feature is claimed ready until a real Vulkan implementation and diagnostics proof exist.
 
 ## Scene01 Foundation Cube
 
@@ -24,7 +25,23 @@ Current state:
 
 ```text
 scene id: scene01_foundation_cube
-status: not_implemented
+status: implemented_foundation
+geometry: indexed cube
+attributes: position + color
+depth: color + depth render pass attachment
+camera: perspective MVP through push constants
+triangle fallback: available/disabled
+screenshot/readback: not_available, renderer_readback_not_implemented
+```
+
+Expected runtime status:
+
+```text
+Render Lab: Scene01 Foundation Cube
+Cube draw: OK
+Depth: OK
+Camera: OK
+Next: Material Constants / Asset Mesh Upload
 ```
 
 ## Scene02 Material Lab
@@ -111,7 +128,19 @@ Engine diagnostics must include:
     "schema": "solum.render_lab_state",
     "schemaVersion": 1,
     "currentLabScene": "scene01_foundation_cube",
-    "renderingStatus": "foundation_only"
+    "renderingStatus": "foundation_only",
+    "cubeStatus": "ok",
+    "depthStatus": "ok",
+    "cameraStatus": "ok",
+    "indexBufferReady": true,
+    "uniformOrPushConstantsReady": true,
+    "vertexCount": 8,
+    "indexCount": 36,
+    "rendererPath": "Android Native Vulkan",
+    "screenshot": {
+      "status": "not_available",
+      "reason": "renderer_readback_not_implemented"
+    }
   }
 }
 ```

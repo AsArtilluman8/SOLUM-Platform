@@ -17,12 +17,16 @@ struct RendererCore {
     VkQueue graphicsQueue = VK_NULL_HANDLE;
     uint32_t graphicsQueueFamily = UINT32_MAX;
     VkFormat swapchainFormat = VK_FORMAT_UNDEFINED;
+    VkFormat depthFormat = VK_FORMAT_UNDEFINED;
     VkExtent2D extent{};
 
     std::vector<VkImage> swapchainImages;
     std::vector<VkImageView> swapchainImageViews;
     VkRenderPass renderPass = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> framebuffers;
+    VkImage depthImage = VK_NULL_HANDLE;
+    VkDeviceMemory depthMemory = VK_NULL_HANDLE;
+    VkImageView depthImageView = VK_NULL_HANDLE;
     VkCommandPool commandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> commandBuffers;
     VkSemaphore imageAvailable = VK_NULL_HANDLE;
@@ -34,6 +38,10 @@ struct RendererCore {
     uint64_t framesRendered = 0;
     bool firstFrameRendered = false;
     bool triangleDrawn = false;
+    bool cubeDrawn = false;
+    bool depthReady = false;
+    bool cameraReady = false;
+    bool pushConstantsReady = false;
     bool rendererCoreReady = false;
 
     void setOutputRoot(const std::string& root) { outputRoot = root; diagnostics.outputRoot = root; }
@@ -44,9 +52,23 @@ struct RendererCore {
         diagnostics.extent = extent;
         diagnostics.rendererCoreReady = rendererCoreReady;
         diagnostics.vertexBufferReady = validationMesh.ready();
+        diagnostics.indexBufferReady = validationMesh.indexedReady();
+        diagnostics.cubeReady = cubeDrawn && validationMesh.indexedReady();
+        diagnostics.depthReady = depthReady;
+        diagnostics.cameraReady = cameraReady;
+        diagnostics.uniformOrPushConstantsReady = pushConstantsReady;
         diagnostics.vertexCount = validationMesh.vertexCount;
+        diagnostics.indexCount = validationMesh.indexCount;
         diagnostics.framesRendered = framesRendered;
         diagnostics.triangleDrawn = triangleDrawn;
+        diagnostics.renderLab.cubeReady = diagnostics.cubeReady;
+        diagnostics.renderLab.depthReady = diagnostics.depthReady;
+        diagnostics.renderLab.cameraReady = diagnostics.cameraReady;
+        diagnostics.renderLab.indexBufferReady = diagnostics.indexBufferReady;
+        diagnostics.renderLab.uniformOrPushConstantsReady = diagnostics.uniformOrPushConstantsReady;
+        diagnostics.renderLab.vertexCount = diagnostics.vertexCount;
+        diagnostics.renderLab.indexCount = diagnostics.indexCount;
+        diagnostics.renderLab.framesRendered = diagnostics.framesRendered;
     }
 
     void fail(const std::string& reason) {
@@ -65,6 +87,11 @@ struct RendererCore {
         if (imageAvailable != VK_NULL_HANDLE) { vkDestroySemaphore(device, imageAvailable, nullptr); imageAvailable = VK_NULL_HANDLE; }
         for (VkFramebuffer fb : framebuffers) vkDestroyFramebuffer(device, fb, nullptr);
         framebuffers.clear();
+        if (depthImageView != VK_NULL_HANDLE) { vkDestroyImageView(device, depthImageView, nullptr); depthImageView = VK_NULL_HANDLE; }
+        if (depthImage != VK_NULL_HANDLE) { vkDestroyImage(device, depthImage, nullptr); depthImage = VK_NULL_HANDLE; }
+        if (depthMemory != VK_NULL_HANDLE) { vkFreeMemory(device, depthMemory, nullptr); depthMemory = VK_NULL_HANDLE; }
+        depthFormat = VK_FORMAT_UNDEFINED;
+        depthReady = false;
         if (commandPool != VK_NULL_HANDLE) { vkDestroyCommandPool(device, commandPool, nullptr); commandPool = VK_NULL_HANDLE; }
         commandBuffers.clear();
         if (renderPass != VK_NULL_HANDLE) { vkDestroyRenderPass(device, renderPass, nullptr); renderPass = VK_NULL_HANDLE; }
@@ -88,6 +115,10 @@ struct RendererCore {
         framesRendered = 0;
         firstFrameRendered = false;
         triangleDrawn = false;
+        cubeDrawn = false;
+        depthReady = false;
+        cameraReady = false;
+        pushConstantsReady = false;
         rendererCoreReady = false;
     }
 
@@ -218,6 +249,8 @@ struct RendererCore {
     }
 
     bool createRenderPass() {
+        depthFormat = chooseDepthFormat();
+        if (depthFormat == VK_FORMAT_UNDEFINED) { fail("Depth format selection failed"); return false; }
         VkAttachmentDescription color{};
         color.format = swapchainFormat;
         color.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -230,19 +263,33 @@ struct RendererCore {
         VkAttachmentReference colorRef{};
         colorRef.attachment = 0;
         colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        VkAttachmentDescription depth{};
+        depth.format = depthFormat;
+        depth.samples = VK_SAMPLE_COUNT_1_BIT;
+        depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        depth.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depth.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        VkAttachmentReference depthRef{};
+        depthRef.attachment = 1;
+        depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         VkSubpassDescription subpass{};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount = 1;
         subpass.pColorAttachments = &colorRef;
+        subpass.pDepthStencilAttachment = &depthRef;
         VkSubpassDependency dep{};
         dep.srcSubpass = VK_SUBPASS_EXTERNAL;
         dep.dstSubpass = 0;
-        dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        VkAttachmentDescription attachments[] = { color, depth };
         VkRenderPassCreateInfo ci{ VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
-        ci.attachmentCount = 1;
-        ci.pAttachments = &color;
+        ci.attachmentCount = 2;
+        ci.pAttachments = attachments;
         ci.subpassCount = 1;
         ci.pSubpasses = &subpass;
         ci.dependencyCount = 1;
@@ -252,13 +299,68 @@ struct RendererCore {
         return true;
     }
 
+    VkFormat chooseDepthFormat() {
+        const VkFormat candidates[] = {
+            VK_FORMAT_D24_UNORM_S8_UINT,
+            VK_FORMAT_D32_SFLOAT,
+            VK_FORMAT_D16_UNORM
+        };
+        for (VkFormat candidate : candidates) {
+            VkFormatProperties props{};
+            vkGetPhysicalDeviceFormatProperties(physicalDevice, candidate, &props);
+            if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) return candidate;
+        }
+        return VK_FORMAT_UNDEFINED;
+    }
+
+    bool createDepthResources() {
+        VkImageCreateInfo image{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+        image.imageType = VK_IMAGE_TYPE_2D;
+        image.format = depthFormat;
+        image.extent = { extent.width, extent.height, 1 };
+        image.mipLevels = 1;
+        image.arrayLayers = 1;
+        image.samples = VK_SAMPLE_COUNT_1_BIT;
+        image.tiling = VK_IMAGE_TILING_OPTIMAL;
+        image.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        VkResult r = vkCreateImage(device, &image, nullptr, &depthImage);
+        if (r != VK_SUCCESS) { fail("Depth image failed: " + vkResultName(r)); return false; }
+        VkMemoryRequirements req{};
+        vkGetImageMemoryRequirements(device, depthImage, &req);
+        uint32_t memoryType = 0;
+        if (!GpuBuffer::findMemoryType(physicalDevice, req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &memoryType)) {
+            fail("Depth device-local memory type not found");
+            return false;
+        }
+        VkMemoryAllocateInfo alloc{ VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+        alloc.allocationSize = req.size;
+        alloc.memoryTypeIndex = memoryType;
+        r = vkAllocateMemory(device, &alloc, nullptr, &depthMemory);
+        if (r != VK_SUCCESS) { fail("Depth memory failed: " + vkResultName(r)); return false; }
+        r = vkBindImageMemory(device, depthImage, depthMemory, 0);
+        if (r != VK_SUCCESS) { fail("Depth bind failed: " + vkResultName(r)); return false; }
+        VkImageViewCreateInfo view{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+        view.image = depthImage;
+        view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        view.format = depthFormat;
+        view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        view.subresourceRange.levelCount = 1;
+        view.subresourceRange.layerCount = 1;
+        r = vkCreateImageView(device, &view, nullptr, &depthImageView);
+        if (r != VK_SUCCESS) { fail("Depth image view failed: " + vkResultName(r)); return false; }
+        depthReady = true;
+        return true;
+    }
+
     bool createFramebuffers() {
         framebuffers.resize(swapchainImageViews.size(), VK_NULL_HANDLE);
         for (size_t i = 0; i < swapchainImageViews.size(); ++i) {
-            VkImageView attachments[] = { swapchainImageViews[i] };
+            VkImageView attachments[] = { swapchainImageViews[i], depthImageView };
             VkFramebufferCreateInfo ci{ VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
             ci.renderPass = renderPass;
-            ci.attachmentCount = 1;
+            ci.attachmentCount = 2;
             ci.pAttachments = attachments;
             ci.width = extent.width;
             ci.height = extent.height;
@@ -267,6 +369,17 @@ struct RendererCore {
             if (r != VK_SUCCESS) { fail("Framebuffer failed: " + vkResultName(r)); return false; }
         }
         return true;
+    }
+
+    Mat4 buildMvp() {
+        const float aspect = extent.height > 0 ? (float)extent.width / (float)extent.height : 1.0f;
+        const float nearPlane = 0.1f;
+        const float farPlane = 32.0f;
+        const Mat4 model = rotationY(0.55f);
+        const Mat4 view = translation(0.0f, 0.0f, 3.2f);
+        const Mat4 proj = perspective(60.0f * 3.1415926535f / 180.0f, aspect, nearPlane, farPlane);
+        cameraReady = aspect > 0.0f && nearPlane > 0.0f && farPlane > nearPlane;
+        return multiply(proj, multiply(view, model));
     }
 
     bool createCommandsAndSync() {
@@ -297,21 +410,26 @@ struct RendererCore {
         bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         VkResult r = vkBeginCommandBuffer(cmd, &bi);
         if (r != VK_SUCCESS) { fail("Begin command buffer failed: " + vkResultName(r)); return false; }
-        VkClearValue clear{};
-        clear.color.float32[0] = 0.02f;
-        clear.color.float32[1] = 0.07f;
-        clear.color.float32[2] = 0.09f;
-        clear.color.float32[3] = 1.0f;
+        VkClearValue clear[2]{};
+        clear[0].color.float32[0] = 0.02f;
+        clear[0].color.float32[1] = 0.07f;
+        clear[0].color.float32[2] = 0.09f;
+        clear[0].color.float32[3] = 1.0f;
+        clear[1].depthStencil.depth = 1.0f;
+        clear[1].depthStencil.stencil = 0;
         VkRenderPassBeginInfo rp{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
         rp.renderPass = renderPass;
         rp.framebuffer = framebuffers[imageIndex];
         rp.renderArea.extent = extent;
-        rp.clearValueCount = 1;
-        rp.pClearValues = &clear;
+        rp.clearValueCount = 2;
+        rp.pClearValues = clear;
         vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.pipeline);
-        validationMesh.bind(cmd);
-        vkCmdDraw(cmd, validationMesh.vertexCount, 1, 0, 0);
+        const Mat4 mvp = buildMvp();
+        vkCmdPushConstants(cmd, trianglePipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &mvp);
+        pushConstantsReady = true;
+        validationMesh.bindIndexed(cmd);
+        vkCmdDrawIndexed(cmd, validationMesh.indexCount, 1, 0, 0, 0);
         vkCmdEndRenderPass(cmd);
         r = vkEndCommandBuffer(cmd);
         if (r != VK_SUCCESS) { fail("End command buffer failed: " + vkResultName(r)); return false; }
@@ -319,7 +437,7 @@ struct RendererCore {
     }
 
     bool renderOneFrame() {
-        if (device == VK_NULL_HANDLE || swapchain == VK_NULL_HANDLE || commandBuffers.empty() || !validationMesh.ready()) return false;
+        if (device == VK_NULL_HANDLE || swapchain == VK_NULL_HANDLE || commandBuffers.empty() || !validationMesh.indexedReady()) return false;
         vkWaitForFences(device, 1, &inFlight, VK_TRUE, UINT64_MAX);
         vkResetFences(device, 1, &inFlight);
         uint32_t imageIndex = 0;
@@ -349,7 +467,8 @@ struct RendererCore {
         if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR && r != VK_ERROR_OUT_OF_DATE_KHR) { fail("Present failed: " + vkResultName(r)); return false; }
         framesRendered += 1;
         firstFrameRendered = true;
-        triangleDrawn = true;
+        triangleDrawn = false;
+        cubeDrawn = true;
         return true;
     }
 
@@ -357,8 +476,9 @@ struct RendererCore {
         std::string error;
         if (!createImageViews()) return false;
         if (!createRenderPass()) return false;
+        if (!createDepthResources()) return false;
         if (!createFramebuffers()) return false;
-        if (!validationMesh.createValidationTriangle(physicalDevice, device, error)) { fail("MeshResource failed: " + error); return false; }
+        if (!validationMesh.createFoundationCube(physicalDevice, device, error)) { fail("MeshResource cube failed: " + error); return false; }
         if (!trianglePipeline.createTrianglePipeline(device, renderPass, extent, error)) { fail("PipelineBundle failed: " + error); return false; }
         if (!createCommandsAndSync()) return false;
         return true;
@@ -377,8 +497,8 @@ struct RendererCore {
         if (!renderOneFrame()) return false;
         rendererCoreReady = true;
         syncDiagnostics();
-        diagnostics.write("valid", "RendererCore, MeshResource, GpuBuffer and PipelineBundle initialized; validation triangle rendered.");
-        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: clear color OK\nRenderer core: OK\nVertex buffer: OK\nTriangle draw: OK\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: Asset Mesh Upload";
+        diagnostics.write("valid", "Scene01 Foundation Cube rendered with indexed geometry, depth attachment and push-constant MVP.");
+        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene01 Foundation Cube\nVertex buffer: OK\nIndex buffer: OK\nTriangle fallback: available/disabled\nCube draw: OK\nDepth: OK\nCamera: OK\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: Material Constants / Asset Mesh Upload";
         return true;
     }
 };

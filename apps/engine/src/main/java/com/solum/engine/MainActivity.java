@@ -174,7 +174,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private void updateStatus() {
         runOnUiThread(() -> {
             if (nativeLoaded && nativeHandle != 0L) {
-                try { statusView.setMaxLines(4); statusView.setText(compactStatus(nativeGetStatus(nativeHandle))); }
+                try { statusView.setMaxLines(5); statusView.setText(compactStatus(nativeGetStatus(nativeHandle))); }
                 catch (Throwable t) { writeCrashReport("native_status_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: status call failed\n" + shortThrowable(t)); }
             }
         });
@@ -184,15 +184,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String gpu = pickValue(full, "GPU: ");
         String status = "running";
         String next = pickValue(full, "Next: ");
-        if (full.contains("Renderer core: OK")) status = "Renderer Core OK";
+        if (full.contains("Cube draw: OK")) status = "Scene01 Cube OK";
+        else if (full.contains("Renderer core: OK")) status = "Renderer Core OK";
         else if (full.contains("Vertex buffer: OK")) status = "Vertex Buffer OK";
         else if (full.contains("Triangle draw: OK")) status = "Triangle OK";
         else if (full.contains("Render pass: clear color OK")) status = "Render Pass OK";
         else if (full.contains("Swapchain: created")) status = "Swapchain OK";
         else if (full.toLowerCase(Locale.US).contains("failed")) status = "Error";
         if (gpu.isEmpty()) gpu = "detecting";
-        if (next.isEmpty()) next = "Asset Mesh Upload";
-        return "SOLUM Engine" + "\nVulkan: " + gpu + "\nStatus: " + status + "\nNext: " + shorten(next, 34);
+        if (next.isEmpty()) next = "Material Constants / Asset Mesh Upload";
+        return "SOLUM Engine" + "\nVulkan: " + gpu + "\nRender Lab: Scene01 Foundation Cube\nStatus: " + status + "\nNext: " + shorten(next, 42);
     }
 
     private String pickValue(String text, String prefix) {

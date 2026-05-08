@@ -40,6 +40,101 @@ SUCCESS / FAILED / NOT TESTED
 
 ---
 
+## Patch P06 — GLB Mesh GPU Upload + Single Primitive Render + Compact Editor UI Foundation
+
+### Goal
+
+Render the first primitive of the active imported GLB through the existing Vulkan renderer and reduce Engine UI overlap.
+
+### Scope
+
+- CPU extraction of active model mesh 0 / primitive 0.
+- Supported attributes: POSITION, NORMAL, TEXCOORD_0, COLOR_0.
+- Supported indices: UNSIGNED_SHORT / UNSIGNED_INT.
+- Accessor `byteOffset`, bufferView `byteOffset` and stride handling.
+- Vulkan model vertex/index buffers in the existing renderer path.
+- First primitive draw with current material constants and baseColorFactor.
+- Auto center/scale from model bounds.
+- Honest fallback cube when no active model or unsupported data is detected.
+- Runtime diagnostics for upload/draw/counts/bounds/scale/fallback.
+- Compact top HUD, side rail and collapsible Assets/Camera/Diagnostics panels.
+
+### Out of scope
+
+- Texture binding.
+- PBR lighting.
+- Skeletal animation.
+- New renderer.
+- Full editor framework.
+
+### Changed files/modules
+
+- `apps/engine/src/main/java/com/solum/engine/MainActivity.java`
+- `engine-core/solum-vulkan-core/src/solum_engine.cpp`
+- `engine-core/solum-vulkan-core/src/solum/renderer_core.hpp`
+- `engine-core/solum-vulkan-core/src/solum/renderer_types.hpp`
+- `engine-core/solum-vulkan-core/src/solum/mesh_resource.hpp`
+- `engine-core/solum-vulkan-core/src/solum/render_lab.hpp`
+- `engine-core/solum-vulkan-core/src/solum/runtime_diagnostics.hpp`
+- `docs/RENDER_LAB.md`
+- `docs/GLB_IMPORT_PIPELINE.md`
+- `docs/EDITOR_UI_FOUNDATION.md`
+- `docs/patch_history/PATCH_HISTORY.md`
+
+### Build result
+
+Pending this patch validation.
+
+### Runtime result
+
+Manual phone verification required.
+
+### Diagnostics
+
+Expected fields:
+
+```text
+activeModelName
+activeModelPath
+activePrimitiveIndex
+gpuUploadStatus
+drawStatus
+uploadedVertexCount
+uploadedIndexCount
+modelVertexLayout
+modelBoundsMin
+modelBoundsMax
+modelBoundsCenter
+modelScale
+modelRenderMode = first_primitive
+fallbackCubeVisible
+reason
+```
+
+### User-visible result
+
+Engine shows:
+
+```text
+Render Lab: Scene03 GLB Mesh Render Lab
+Active model: name
+GPU Upload: ok/failed
+Draw Model: ok/fallback
+Vertices / indices
+Fallback cube: on/off
+Next: Texture Binding Foundation
+```
+
+### Known issues
+
+Texture sampling and PBR are deferred to P07.
+
+### Next
+
+P07 Texture Binding Foundation + BaseColor Texture.
+
+---
+
 ## Patch P05 — GLB Import Button + Asset Library + Model Diagnostics
 
 ### Goal

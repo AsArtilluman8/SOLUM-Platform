@@ -6,14 +6,14 @@ namespace solum {
 enum class RenderLabScene {
     Scene01FoundationCube,
     Scene02ModelImportLab,
-    Scene03CameraDepthLab,
+    Scene03GlbMeshRenderLab,
     Scene04LightShadowLab,
     Scene05ImportLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene02ModelImportLab;
+    RenderLabScene currentScene = RenderLabScene::Scene03GlbMeshRenderLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -34,12 +34,13 @@ struct RenderLabState {
     const char* vertexLayout = "POSITION,NORMAL,TEXCOORD_0,COLOR_0";
     MaterialConstants material;
     uint64_t framesRendered = 0;
+    ModelRenderState model;
 
     const char* sceneId() const {
         switch (currentScene) {
             case RenderLabScene::Scene01FoundationCube: return "scene01_foundation_cube";
             case RenderLabScene::Scene02ModelImportLab: return "scene02_model_import_lab";
-            case RenderLabScene::Scene03CameraDepthLab: return "scene03_camera_depth_lab";
+            case RenderLabScene::Scene03GlbMeshRenderLab: return "scene03_glb_mesh_render_lab";
             case RenderLabScene::Scene04LightShadowLab: return "scene04_light_shadow_lab";
             case RenderLabScene::Scene05ImportLab: return "scene05_import_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
@@ -51,7 +52,7 @@ struct RenderLabState {
         switch (currentScene) {
             case RenderLabScene::Scene01FoundationCube: return "Scene01 Foundation Cube";
             case RenderLabScene::Scene02ModelImportLab: return "Scene02 Model Import Lab";
-            case RenderLabScene::Scene03CameraDepthLab: return "Scene03 Camera/Depth Lab";
+            case RenderLabScene::Scene03GlbMeshRenderLab: return "Scene03 GLB Mesh Render Lab";
             case RenderLabScene::Scene04LightShadowLab: return "Scene04 Light/Shadow Lab";
             case RenderLabScene::Scene05ImportLab: return "Scene05 Import Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
@@ -65,12 +66,23 @@ struct RenderLabState {
         f << indent << "  \"schemaVersion\": 1,\n";
         f << indent << "  \"currentLabScene\": \"" << sceneId() << "\",\n";
         f << indent << "  \"currentLabSceneName\": \"" << sceneName() << "\",\n";
-        f << indent << "  \"renderingStatus\": \"foundation_only\",\n";
-        f << indent << "  \"assetImportStatus\": \"not run\",\n";
-        f << indent << "  \"activeModelName\": \"none\",\n";
-        f << indent << "  \"activeModelSummary\": \"metadata parsed by Java GLB CPU parser when a model is imported\",\n";
-        f << indent << "  \"gpuUploadStatus\": \"not_implemented\",\n";
-        f << indent << "  \"drawStatus\": \"not_implemented\",\n";
+        f << indent << "  \"renderingStatus\": \"" << (model.modelReady() ? "model_first_primitive" : "fallback_cube") << "\",\n";
+        f << indent << "  \"assetImportStatus\": \"" << (model.activeModelName == "none" ? "no active model" : "active model") << "\",\n";
+        f << indent << "  \"activeModelName\": \"" << escapeJson(model.activeModelName) << "\",\n";
+        f << indent << "  \"activeModelPath\": \"" << escapeJson(model.activeModelPath) << "\",\n";
+        f << indent << "  \"activePrimitiveIndex\": " << model.activePrimitiveIndex << ",\n";
+        f << indent << "  \"gpuUploadStatus\": \"" << escapeJson(model.gpuUploadStatus) << "\",\n";
+        f << indent << "  \"drawStatus\": \"" << escapeJson(model.drawStatus) << "\",\n";
+        f << indent << "  \"uploadedVertexCount\": " << model.uploadedVertexCount << ",\n";
+        f << indent << "  \"uploadedIndexCount\": " << model.uploadedIndexCount << ",\n";
+        f << indent << "  \"modelVertexLayout\": \"" << model.modelVertexLayout << "\",\n";
+        f << indent << "  \"modelBoundsMin\": [" << model.boundsMin[0] << ", " << model.boundsMin[1] << ", " << model.boundsMin[2] << "],\n";
+        f << indent << "  \"modelBoundsMax\": [" << model.boundsMax[0] << ", " << model.boundsMax[1] << ", " << model.boundsMax[2] << "],\n";
+        f << indent << "  \"modelBoundsCenter\": [" << model.boundsCenter[0] << ", " << model.boundsCenter[1] << ", " << model.boundsCenter[2] << "],\n";
+        f << indent << "  \"modelScale\": " << model.modelScale << ",\n";
+        f << indent << "  \"modelRenderMode\": \"" << model.modelRenderMode << "\",\n";
+        f << indent << "  \"fallbackCubeVisible\": " << (model.fallbackCubeVisible ? "true" : "false") << ",\n";
+        f << indent << "  \"reason\": \"" << escapeJson(model.reason) << "\",\n";
         f << indent << "  \"cubeStatus\": \"" << (cubeReady ? "ok" : "failed") << "\",\n";
         f << indent << "  \"depthStatus\": \"" << (depthReady ? "ok" : "failed") << "\",\n";
         f << indent << "  \"cameraStatus\": \"" << (cameraReady ? "ok" : "failed") << "\",\n";

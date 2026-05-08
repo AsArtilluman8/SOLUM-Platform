@@ -66,16 +66,27 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetCa
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) {
-        return env->NewStringUTF("{\"currentLabScene\":\"scene02_model_import_lab\",\"currentLabSceneName\":\"Scene02 Model Import Lab\",\"status\":\"native_handle_missing\",\"gpuUploadStatus\":\"not_implemented\",\"drawStatus\":\"not_implemented\"}");
+        return env->NewStringUTF("{\"currentLabScene\":\"scene03_glb_mesh_render_lab\",\"currentLabSceneName\":\"Scene03 GLB Mesh Render Lab\",\"status\":\"native_handle_missing\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"fallbackCubeVisible\":true}");
     }
     std::string json = std::string("{\"currentLabScene\":\"") + renderer->diagnostics.renderLab.sceneId()
         + "\",\"currentLabSceneName\":\"" + renderer->diagnostics.renderLab.sceneName()
-        + "\",\"renderingStatus\":\"foundation_only\""
-        + ",\"assetImportStatus\":\"not run\""
-        + ",\"activeModelName\":\"none\""
-        + ",\"activeModelSummary\":\"metadata parsed by Java GLB CPU parser when a model is imported\""
-        + ",\"gpuUploadStatus\":\"not_implemented\""
-        + ",\"drawStatus\":\"not_implemented\""
+        + "\",\"renderingStatus\":\"" + (renderer->model.modelReady() ? "model_first_primitive" : "fallback_cube") + "\""
+        + ",\"assetImportStatus\":\"" + (renderer->model.activeModelName == "none" ? "no active model" : "active model") + "\""
+        + ",\"activeModelName\":\"" + solum::escapeJson(renderer->model.activeModelName) + "\""
+        + ",\"activeModelPath\":\"" + solum::escapeJson(renderer->model.activeModelPath) + "\""
+        + ",\"activePrimitiveIndex\":" + std::to_string(renderer->model.activePrimitiveIndex)
+        + ",\"gpuUploadStatus\":\"" + solum::escapeJson(renderer->model.gpuUploadStatus) + "\""
+        + ",\"drawStatus\":\"" + solum::escapeJson(renderer->model.drawStatus) + "\""
+        + ",\"uploadedVertexCount\":" + std::to_string(renderer->model.uploadedVertexCount)
+        + ",\"uploadedIndexCount\":" + std::to_string(renderer->model.uploadedIndexCount)
+        + ",\"modelVertexLayout\":\"" + renderer->model.modelVertexLayout + "\""
+        + ",\"modelBoundsMin\":[" + std::to_string(renderer->model.boundsMin[0]) + "," + std::to_string(renderer->model.boundsMin[1]) + "," + std::to_string(renderer->model.boundsMin[2]) + "]"
+        + ",\"modelBoundsMax\":[" + std::to_string(renderer->model.boundsMax[0]) + "," + std::to_string(renderer->model.boundsMax[1]) + "," + std::to_string(renderer->model.boundsMax[2]) + "]"
+        + ",\"modelBoundsCenter\":[" + std::to_string(renderer->model.boundsCenter[0]) + "," + std::to_string(renderer->model.boundsCenter[1]) + "," + std::to_string(renderer->model.boundsCenter[2]) + "]"
+        + ",\"modelScale\":" + std::to_string(renderer->model.modelScale)
+        + ",\"modelRenderMode\":\"first_primitive\""
+        + ",\"fallbackCubeVisible\":" + (renderer->model.fallbackCubeVisible ? "true" : "false")
+        + ",\"reason\":\"" + solum::escapeJson(renderer->model.reason) + "\""
         + ",\"cubeStatus\":\"" + (renderer->diagnostics.cubeReady ? "ok" : "failed") + "\""
         + ",\"depthStatus\":\"" + (renderer->diagnostics.depthReady ? "ok" : "failed") + "\""
         + ",\"cameraStatus\":\"" + (renderer->diagnostics.cameraReady ? "ok" : "failed") + "\""
@@ -103,4 +114,92 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"triangleFallback\":\"available/disabled\""
         + ",\"screenshot\":{\"status\":\"not_available\",\"reason\":\"renderer_readback_not_implemented\"}}";
     return env->NewStringUTF(json.c_str());
+}
+
+extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeUploadModelFirstPrimitive(
+    JNIEnv* env,
+    jclass,
+    jlong handle,
+    jstring modelName,
+    jstring modelPath,
+    jfloatArray vertexData,
+    jintArray indexData,
+    jfloatArray boundsMinArray,
+    jfloatArray boundsMaxArray,
+    jfloatArray boundsCenterArray,
+    jfloat modelScale,
+    jfloatArray baseColorArray
+) {
+    auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
+    if (!renderer || !vertexData) return JNI_FALSE;
+    const char* nameChars = env->GetStringUTFChars(modelName, nullptr);
+    const char* pathChars = env->GetStringUTFChars(modelPath, nullptr);
+    std::string name = nameChars ? nameChars : "imported.glb";
+    std::string path = pathChars ? pathChars : "";
+    jsize vertexFloatCount = env->GetArrayLength(vertexData);
+    if (vertexFloatCount <= 0 || (vertexFloatCount % 11) != 0) {
+        renderer->setModelFallback(name, path, "vertex data must use POSITION,NORMAL,TEXCOORD_0,COLOR_0 stride 11 floats");
+        if (nameChars) env->ReleaseStringUTFChars(modelName, nameChars);
+        if (pathChars) env->ReleaseStringUTFChars(modelPath, pathChars);
+        return JNI_FALSE;
+    }
+    jfloat* vertices = env->GetFloatArrayElements(vertexData, nullptr);
+    jint* indices = indexData ? env->GetIntArrayElements(indexData, nullptr) : nullptr;
+    jsize indexCount = indexData ? env->GetArrayLength(indexData) : 0;
+    float boundsMin[3] = {0.0f, 0.0f, 0.0f};
+    float boundsMax[3] = {0.0f, 0.0f, 0.0f};
+    float boundsCenter[3] = {0.0f, 0.0f, 0.0f};
+    float baseColor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    if (boundsMinArray && env->GetArrayLength(boundsMinArray) >= 3) env->GetFloatArrayRegion(boundsMinArray, 0, 3, boundsMin);
+    if (boundsMaxArray && env->GetArrayLength(boundsMaxArray) >= 3) env->GetFloatArrayRegion(boundsMaxArray, 0, 3, boundsMax);
+    if (boundsCenterArray && env->GetArrayLength(boundsCenterArray) >= 3) env->GetFloatArrayRegion(boundsCenterArray, 0, 3, boundsCenter);
+    if (baseColorArray && env->GetArrayLength(baseColorArray) >= 4) env->GetFloatArrayRegion(baseColorArray, 0, 4, baseColor);
+    std::vector<uint32_t> index32;
+    if (indices && indexCount > 0) {
+        index32.resize((size_t)indexCount);
+        for (jsize i = 0; i < indexCount; ++i) index32[(size_t)i] = (uint32_t)indices[i];
+    }
+    std::string error;
+    bool ok = renderer->uploadModelFirstPrimitive(
+        name,
+        path,
+        reinterpret_cast<const solum::Vertex3D*>(vertices),
+        (uint32_t)(vertexFloatCount / 11),
+        index32.empty() ? nullptr : index32.data(),
+        (uint32_t)index32.size(),
+        boundsMin,
+        boundsMax,
+        boundsCenter,
+        modelScale,
+        baseColor,
+        error
+    );
+    env->ReleaseFloatArrayElements(vertexData, vertices, JNI_ABORT);
+    if (indices) env->ReleaseIntArrayElements(indexData, indices, JNI_ABORT);
+    if (nameChars) env->ReleaseStringUTFChars(modelName, nameChars);
+    if (pathChars) env->ReleaseStringUTFChars(modelPath, pathChars);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetModelFallback(
+    JNIEnv* env,
+    jclass,
+    jlong handle,
+    jstring modelName,
+    jstring modelPath,
+    jstring reason
+) {
+    auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
+    if (!renderer) return;
+    const char* nameChars = env->GetStringUTFChars(modelName, nullptr);
+    const char* pathChars = env->GetStringUTFChars(modelPath, nullptr);
+    const char* reasonChars = env->GetStringUTFChars(reason, nullptr);
+    renderer->setModelFallback(
+        nameChars ? nameChars : "none",
+        pathChars ? pathChars : "",
+        reasonChars ? reasonChars : "no active model"
+    );
+    if (nameChars) env->ReleaseStringUTFChars(modelName, nameChars);
+    if (pathChars) env->ReleaseStringUTFChars(modelPath, pathChars);
+    if (reasonChars) env->ReleaseStringUTFChars(reason, reasonChars);
 }

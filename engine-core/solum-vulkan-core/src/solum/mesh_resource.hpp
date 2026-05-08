@@ -8,6 +8,7 @@ struct MeshResource {
     GpuBuffer indexBuffer;
     uint32_t vertexCount = 0;
     uint32_t indexCount = 0;
+    VkIndexType indexType = VK_INDEX_TYPE_UINT16;
     std::string debugName;
 
     void destroy() {
@@ -15,6 +16,7 @@ struct MeshResource {
         vertexBuffer.destroy();
         vertexCount = 0;
         indexCount = 0;
+        indexType = VK_INDEX_TYPE_UINT16;
         debugName.clear();
     }
 
@@ -79,6 +81,7 @@ struct MeshResource {
         debugName = "scene01_foundation_cube_mesh";
         vertexCount = 24;
         indexCount = 36;
+        indexType = VK_INDEX_TYPE_UINT16;
         if (!vertexBuffer.createHostVisible(physicalDevice, device, sizeof(verts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, verts, error)) {
             vertexCount = 0;
             indexCount = 0;
@@ -92,6 +95,54 @@ struct MeshResource {
         return true;
     }
 
+    bool createFromInterleaved(
+        VkPhysicalDevice physicalDevice,
+        VkDevice device,
+        const Vertex3D* vertices,
+        uint32_t inVertexCount,
+        const uint32_t* indices,
+        uint32_t inIndexCount,
+        const std::string& name,
+        std::string& error
+    ) {
+        destroy();
+        if (!vertices || inVertexCount == 0) {
+            error = "model vertex data is empty";
+            return false;
+        }
+        debugName = name;
+        vertexCount = inVertexCount;
+        indexCount = inIndexCount;
+        indexType = VK_INDEX_TYPE_UINT32;
+        if (!vertexBuffer.createHostVisible(
+                physicalDevice,
+                device,
+                sizeof(Vertex3D) * (VkDeviceSize)inVertexCount,
+                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                vertices,
+                error
+            )) {
+            vertexCount = 0;
+            indexCount = 0;
+            return false;
+        }
+        if (indices && inIndexCount > 0) {
+            if (!indexBuffer.createHostVisible(
+                    physicalDevice,
+                    device,
+                    sizeof(uint32_t) * (VkDeviceSize)inIndexCount,
+                    VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                    indices,
+                    error
+                )) {
+                vertexCount = 0;
+                indexCount = 0;
+                return false;
+            }
+        }
+        return true;
+    }
+
     void bind(VkCommandBuffer cmd) const {
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer.buffer, offsets);
@@ -99,7 +150,7 @@ struct MeshResource {
 
     void bindIndexed(VkCommandBuffer cmd) const {
         bind(cmd);
-        vkCmdBindIndexBuffer(cmd, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(cmd, indexBuffer.buffer, 0, indexType);
     }
 };
 

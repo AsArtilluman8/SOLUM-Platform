@@ -5,9 +5,9 @@ Render Lab — controlled scene set for future Vulkan renderer validation.
 Current status:
 
 ```text
-foundation only
-currentLabScene = scene02_model_import_lab
-current implementation = real indexed Vulkan cube fallback/current render + GLB import/scan/CPU metadata parser
+first primitive render foundation
+currentLabScene = scene03_glb_mesh_render_lab
+current implementation = real indexed Vulkan cube fallback + GLB import/scan/CPU metadata parser + first primitive Vulkan GPU upload/draw
 ```
 
 No shadow/import/performance feature is claimed ready until a real Vulkan implementation and diagnostics proof exist.
@@ -41,13 +41,14 @@ screenshot/readback: not_available, renderer_readback_not_implemented
 Expected runtime status:
 
 ```text
-Render Lab: Scene02 Model Import Lab
+Render Lab: Scene03 GLB Mesh Render Lab
 Import: OK/FAILED/not run
 Active model: name or none
 Meshes / primitives / materials / textures
-GPU Upload: not implemented
-Draw Model: not implemented
-Next: GLB Mesh GPU Upload
+GPU Upload: ok/failed
+Draw Model: ok/fallback
+Fallback cube: on/off
+Next: Texture Binding Foundation
 ```
 
 ## Scene02 Model Import Lab
@@ -72,19 +73,26 @@ drawStatus: not_implemented
 next: GLB Mesh GPU Upload
 ```
 
-## Scene03 Camera/Depth Lab
+## Scene03 GLB Mesh Render Lab
 
 Purpose:
 
-- camera projection checks;
-- near/far/depth precision checks;
-- viewport resize checks.
+- upload first active GLB mesh primitive to Vulkan buffers;
+- draw the first primitive with POSITION,NORMAL,TEXCOORD_0,COLOR_0 layout;
+- preserve cube fallback when no active model or unsupported data is detected;
+- report runtime truth for upload, draw, bounds, scale and fallback state.
 
 Current state:
 
 ```text
-scene id: scene03_camera_depth_lab
-status: planned
+scene id: scene03_glb_mesh_render_lab
+status: implemented_foundation
+render mode: first_primitive
+supported POSITION/NORMAL/TEXCOORD_0: FLOAT VEC3/VEC2
+supported indices: UNSIGNED_SHORT / UNSIGNED_INT
+unsupported accessor/component: gpuUploadStatus=failed, drawStatus=fallback, exact reason
+fallback: Scene01 cube remains visible
+next: Texture Binding Foundation
 ```
 
 ## Scene04 Light/Shadow Lab
@@ -140,13 +148,25 @@ Engine diagnostics must include:
   "renderLab": {
     "schema": "solum.render_lab_state",
     "schemaVersion": 1,
-    "currentLabScene": "scene02_model_import_lab",
-    "currentLabSceneName": "Scene02 Model Import Lab",
-    "renderingStatus": "foundation_only",
-    "assetImportStatus": "not run",
-    "activeModelName": "none",
-    "gpuUploadStatus": "not_implemented",
-    "drawStatus": "not_implemented",
+    "currentLabScene": "scene03_glb_mesh_render_lab",
+    "currentLabSceneName": "Scene03 GLB Mesh Render Lab",
+    "renderingStatus": "model_first_primitive",
+    "assetImportStatus": "active model",
+    "activeModelName": "cottage_medieval.glb",
+    "activeModelPath": ".../cottage_medieval.glb",
+    "activePrimitiveIndex": 0,
+    "gpuUploadStatus": "ok",
+    "drawStatus": "ok",
+    "uploadedVertexCount": 4374,
+    "uploadedIndexCount": 7002,
+    "modelVertexLayout": "POSITION,NORMAL,TEXCOORD_0,COLOR_0",
+    "modelBoundsMin": [0.0, 0.0, 0.0],
+    "modelBoundsMax": [0.0, 0.0, 0.0],
+    "modelBoundsCenter": [0.0, 0.0, 0.0],
+    "modelScale": 1.0,
+    "modelRenderMode": "first_primitive",
+    "fallbackCubeVisible": false,
+    "reason": "first primitive uploaded to Vulkan buffers",
     "cubeStatus": "ok",
     "depthStatus": "ok",
     "cameraStatus": "ok",

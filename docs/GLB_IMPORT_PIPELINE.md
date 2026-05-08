@@ -1,8 +1,9 @@
-# GLB_IMPORT_PIPELINE — P05 model import foundation
+# GLB_IMPORT_PIPELINE — GLB import and first primitive render
 
 ## Scope
 
-P05 adds the first real model import path for SOLUM Engine.
+P05 added the first real model import path for SOLUM Engine.
+P06 adds first primitive CPU extraction, Vulkan GPU upload and draw.
 
 Implemented:
 
@@ -25,14 +26,15 @@ saf -> direct -> fallback -> failed
 ```
 
 - `Scan Models` button.
-- CPU-only GLB parser foundation.
+- CPU GLB parser foundation.
+- First primitive CPU extraction for active imported model.
+- Vulkan model vertex/index buffer upload.
+- Single primitive draw through the existing Vulkan renderer path.
 - Model diagnostics JSON.
-- Cube render remains the fallback/current render.
+- Cube render remains the fallback when no supported model is active.
 
-Not implemented in P05:
+Not implemented:
 
-- GPU mesh upload.
-- Model draw.
 - Texture binding.
 - PBR lighting.
 - Skeletal animation.
@@ -102,6 +104,40 @@ Attributes detected:
 
 If metadata cannot be read, fields stay `unknown/not_parsed` or zero and `reason` contains the exact failure.
 
+## P06 First Primitive Extraction
+
+Supported first primitive data:
+
+- `POSITION`: FLOAT VEC3, required.
+- `NORMAL`: FLOAT VEC3, optional.
+- `TEXCOORD_0`: FLOAT VEC2, optional.
+- `COLOR_0`: FLOAT VEC3/VEC4, optional, default white.
+- indices: UNSIGNED_SHORT or UNSIGNED_INT.
+
+Accessor handling:
+
+- accessor `byteOffset`;
+- bufferView `byteOffset`;
+- bufferView `byteStride`;
+- tightly packed fallback when stride is absent.
+
+Unsupported primitive data does not claim success:
+
+```text
+gpuUploadStatus = failed
+drawStatus = fallback
+fallbackCubeVisible = true
+reason = exact unsupported accessor/component/type
+```
+
+Model transform:
+
+- CPU extracts first primitive vertex data.
+- Bounds are measured from raw POSITION data.
+- Vertices are centered and normalized before upload.
+- `modelScale`, `modelBoundsMin`, `modelBoundsMax`, `modelBoundsCenter` are exported.
+- Base color uses glTF `baseColorFactor`; texture sampling is deferred to P07.
+
 ## Diagnostics Files
 
 P05 writes:
@@ -139,32 +175,46 @@ Both files include:
 - hasTangents;
 - hasNormals;
 - hasTexcoord0;
-- gpuUploadStatus = `not_implemented`;
-- drawStatus = `not_implemented`;
+- gpuUploadStatus;
+- drawStatus;
+- uploadedVertexCount;
+- uploadedIndexCount;
+- fallbackCubeVisible;
 - reason.
 
 `engine_runtime_state.json` also includes:
 
 - assetImportStatus;
 - activeModelName;
+- activeModelPath;
+- activePrimitiveIndex;
 - activeModelSummary;
-- gpuUploadStatus = `not_implemented`;
-- drawStatus = `not_implemented`.
+- gpuUploadStatus;
+- drawStatus;
+- uploadedVertexCount;
+- uploadedIndexCount;
+- modelVertexLayout;
+- modelBoundsMin;
+- modelBoundsMax;
+- modelBoundsCenter;
+- modelScale;
+- modelRenderMode = `first_primitive`;
+- fallbackCubeVisible;
+- reason.
 
 ## Runtime Truth
 
 Scene label:
 
 ```text
-Render Lab: Scene02 Model Import Lab
+Render Lab: Scene03 GLB Mesh Render Lab
 ```
 
-The model is imported and parsed only on CPU in P05.
-
-The visible Vulkan cube remains the current render fallback. A successful import is not a fake model render success.
+The model is imported, parsed on CPU, extracted as first primitive and uploaded to Vulkan buffers when supported.
+The visible Vulkan cube remains the fallback. A failed upload or unsupported accessor is reported honestly.
 
 Next step:
 
 ```text
-P06 GLB Mesh GPU Upload + Single Primitive Render
+P07 Texture Binding Foundation + BaseColor Texture
 ```

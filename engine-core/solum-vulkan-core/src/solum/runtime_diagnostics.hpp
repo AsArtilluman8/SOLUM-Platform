@@ -32,6 +32,7 @@ struct RuntimeDiagnostics {
     MaterialConstants material;
     uint64_t framesRendered = 0;
     RenderLabState renderLab;
+    ModelRenderState model;
 
     void write(const std::string& newStatus, const std::string& newReason) {
         status = newStatus;
@@ -46,11 +47,21 @@ struct RuntimeDiagnostics {
         f << "  \"reason\": \"" << escapeJson(reason) << "\",\n";
         f << "  \"rendererPath\": \"Android Native Vulkan\",\n";
         f << "  \"rendererCoreReady\": " << (rendererCoreReady ? "true" : "false") << ",\n";
-        f << "  \"assetImportStatus\": \"not run\",\n";
-        f << "  \"activeModelName\": \"none\",\n";
-        f << "  \"activeModelSummary\": \"model metadata is owned by model_import_state.json and asset_report.json\",\n";
-        f << "  \"gpuUploadStatus\": \"not_implemented\",\n";
-        f << "  \"drawStatus\": \"not_implemented\",\n";
+        f << "  \"assetImportStatus\": \"" << (model.activeModelName == "none" ? "no active model" : "active model") << "\",\n";
+        f << "  \"activeModelName\": \"" << escapeJson(model.activeModelName) << "\",\n";
+        f << "  \"activeModelPath\": \"" << escapeJson(model.activeModelPath) << "\",\n";
+        f << "  \"activePrimitiveIndex\": " << model.activePrimitiveIndex << ",\n";
+        f << "  \"gpuUploadStatus\": \"" << escapeJson(model.gpuUploadStatus) << "\",\n";
+        f << "  \"drawStatus\": \"" << escapeJson(model.drawStatus) << "\",\n";
+        f << "  \"uploadedVertexCount\": " << model.uploadedVertexCount << ",\n";
+        f << "  \"uploadedIndexCount\": " << model.uploadedIndexCount << ",\n";
+        f << "  \"modelVertexLayout\": \"" << model.modelVertexLayout << "\",\n";
+        f << "  \"modelBoundsMin\": [" << model.boundsMin[0] << ", " << model.boundsMin[1] << ", " << model.boundsMin[2] << "],\n";
+        f << "  \"modelBoundsMax\": [" << model.boundsMax[0] << ", " << model.boundsMax[1] << ", " << model.boundsMax[2] << "],\n";
+        f << "  \"modelBoundsCenter\": [" << model.boundsCenter[0] << ", " << model.boundsCenter[1] << ", " << model.boundsCenter[2] << "],\n";
+        f << "  \"modelScale\": " << model.modelScale << ",\n";
+        f << "  \"modelRenderMode\": \"" << model.modelRenderMode << "\",\n";
+        f << "  \"fallbackCubeVisible\": " << (model.fallbackCubeVisible ? "true" : "false") << ",\n";
         f << "  \"deviceName\": \"" << escapeJson(gpuName) << "\",\n";
         f << "  \"deviceType\": \"" << escapeJson(gpuType) << "\",\n";
         f << "  \"apiVersion\": \"" << escapeJson(apiVersion) << "\",\n";

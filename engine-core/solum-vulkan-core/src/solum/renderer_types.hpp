@@ -40,6 +40,28 @@ struct MaterialConstants {
     int materialId = 1;
 };
 
+struct ModelRenderState {
+    std::string activeModelName = "none";
+    std::string activeModelPath;
+    int activePrimitiveIndex = 0;
+    std::string gpuUploadStatus = "failed";
+    std::string drawStatus = "fallback";
+    uint32_t uploadedVertexCount = 0;
+    uint32_t uploadedIndexCount = 0;
+    const char* modelVertexLayout = "POSITION,NORMAL,TEXCOORD_0,COLOR_0";
+    float boundsMin[3] = { 0.0f, 0.0f, 0.0f };
+    float boundsMax[3] = { 0.0f, 0.0f, 0.0f };
+    float boundsCenter[3] = { 0.0f, 0.0f, 0.0f };
+    float modelScale = 1.0f;
+    const char* modelRenderMode = "first_primitive";
+    bool fallbackCubeVisible = true;
+    std::string reason = "no active model";
+
+    bool modelReady() const {
+        return gpuUploadStatus == "ok" && drawStatus == "ok" && uploadedVertexCount > 0;
+    }
+};
+
 struct Mat4 {
     float m[16]{};
 

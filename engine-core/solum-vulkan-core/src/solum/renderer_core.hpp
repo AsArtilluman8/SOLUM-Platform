@@ -34,6 +34,7 @@ struct RendererCore {
     VkFence inFlight = VK_NULL_HANDLE;
 
     MeshResource validationMesh;
+    MeshResource modelMesh;
     PipelineBundle trianglePipeline;
     uint64_t framesRendered = 0;
     bool firstFrameRendered = false;
@@ -49,6 +50,7 @@ struct RendererCore {
     bool rendererCoreReady = false;
     CameraState camera;
     MaterialConstants material;
+    ModelRenderState model;
 
     void setOutputRoot(const std::string& root) { outputRoot = root; diagnostics.outputRoot = root; }
 
@@ -72,6 +74,7 @@ struct RendererCore {
         diagnostics.vertexStrideBytes = sizeof(Vertex3D);
         diagnostics.camera = camera;
         diagnostics.material = material;
+        diagnostics.model = model;
         diagnostics.framesRendered = framesRendered;
         diagnostics.triangleDrawn = triangleDrawn;
         diagnostics.renderLab.cubeReady = diagnostics.cubeReady;
@@ -90,6 +93,7 @@ struct RendererCore {
         diagnostics.renderLab.indexCount = diagnostics.indexCount;
         diagnostics.renderLab.vertexStrideBytes = diagnostics.vertexStrideBytes;
         diagnostics.renderLab.material = material;
+        diagnostics.renderLab.model = model;
         diagnostics.renderLab.framesRendered = diagnostics.framesRendered;
     }
 
@@ -102,6 +106,7 @@ struct RendererCore {
     void destroyFrameResources() {
         if (device == VK_NULL_HANDLE) return;
         vkDeviceWaitIdle(device);
+        modelMesh.destroy();
         validationMesh.destroy();
         trianglePipeline.destroy();
         if (inFlight != VK_NULL_HANDLE) { vkDestroyFence(device, inFlight, nullptr); inFlight = VK_NULL_HANDLE; }
@@ -146,6 +151,7 @@ struct RendererCore {
         materialConstantsReady = false;
         meshAttributeLayoutReady = false;
         rendererCoreReady = false;
+        model = ModelRenderState{};
     }
 
     bool createInstance() {
@@ -402,12 +408,12 @@ struct RendererCore {
         const float nearPlane = 0.1f;
         const float farPlane = 32.0f;
         const float degToRad = 3.1415926535f / 180.0f;
-        const Mat4 model = rotationY(0.25f);
+        const Mat4 modelMatrix = model.modelReady() ? Mat4::identity() : rotationY(0.25f);
         const Mat4 view = multiply(translation(0.0f, 0.0f, camera.distance), multiply(rotationX(camera.pitchDeg * degToRad), rotationY(camera.yawDeg * degToRad)));
         const Mat4 proj = perspective(60.0f * 3.1415926535f / 180.0f, aspect, nearPlane, farPlane);
         cameraMvpReady = aspect > 0.0f && nearPlane > 0.0f && farPlane > nearPlane && camera.distance >= 2.0f && camera.distance <= 8.0f;
         cameraReady = cameraMvpReady;
-        return multiply(proj, multiply(view, model));
+        return multiply(proj, multiply(view, modelMatrix));
     }
 
     static float clampFloat(float v, float lo, float hi) {
@@ -415,7 +421,7 @@ struct RendererCore {
     }
 
     void updateReadyStatus() {
-        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene02 Model Import Lab\nVertex buffer: OK\nIndex buffer: OK\nTriangle fallback: available/disabled\nCube draw: OK\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nGPU Upload: not implemented\nDraw Model: not implemented\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: GLB Mesh GPU Upload";
+        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene03 GLB Mesh Render Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: Texture Binding Foundation";
     }
 
     bool setCamera(float yawDeg, float pitchDeg, float distance, bool controlsActive) {
@@ -481,8 +487,18 @@ struct RendererCore {
         pushConstantsReady = true;
         materialConstantsReady = true;
         meshAttributeLayoutReady = sizeof(Vertex3D) == 44;
-        validationMesh.bindIndexed(cmd);
-        vkCmdDrawIndexed(cmd, validationMesh.indexCount, 1, 0, 0, 0);
+        if (model.modelReady() && modelMesh.ready()) {
+            modelMesh.bind(cmd);
+            if (modelMesh.indexedReady()) {
+                vkCmdBindIndexBuffer(cmd, modelMesh.indexBuffer.buffer, 0, modelMesh.indexType);
+                vkCmdDrawIndexed(cmd, modelMesh.indexCount, 1, 0, 0, 0);
+            } else {
+                vkCmdDraw(cmd, modelMesh.vertexCount, 1, 0, 0);
+            }
+        } else {
+            validationMesh.bindIndexed(cmd);
+            vkCmdDrawIndexed(cmd, validationMesh.indexCount, 1, 0, 0, 0);
+        }
         vkCmdEndRenderPass(cmd);
         r = vkEndCommandBuffer(cmd);
         if (r != VK_SUCCESS) { fail("End command buffer failed: " + vkResultName(r)); return false; }
@@ -521,7 +537,86 @@ struct RendererCore {
         framesRendered += 1;
         firstFrameRendered = true;
         triangleDrawn = false;
-        cubeDrawn = true;
+        cubeDrawn = model.fallbackCubeVisible;
+        return true;
+    }
+
+    void setModelFallback(const std::string& name, const std::string& path, const std::string& reason) {
+        model.activeModelName = name.empty() ? "none" : name;
+        model.activeModelPath = path;
+        model.gpuUploadStatus = (name.empty() || name == "none") ? "failed" : "failed";
+        model.drawStatus = "fallback";
+        model.uploadedVertexCount = 0;
+        model.uploadedIndexCount = 0;
+        model.fallbackCubeVisible = true;
+        model.reason = reason.empty() ? "no active model" : reason;
+        if (device != VK_NULL_HANDLE) modelMesh.destroy();
+        renderOneFrame();
+        syncDiagnostics();
+        diagnostics.write("valid", model.reason);
+        updateReadyStatus();
+    }
+
+    bool uploadModelFirstPrimitive(
+        const std::string& name,
+        const std::string& path,
+        const Vertex3D* vertices,
+        uint32_t vertexCount,
+        const uint32_t* indices,
+        uint32_t indexCount,
+        const float* boundsMin,
+        const float* boundsMax,
+        const float* boundsCenter,
+        float scale,
+        const float* baseColorFactor,
+        std::string& error
+    ) {
+        if (device == VK_NULL_HANDLE || physicalDevice == VK_NULL_HANDLE) {
+            error = "renderer not initialized";
+            return false;
+        }
+        if (!modelMesh.createFromInterleaved(physicalDevice, device, vertices, vertexCount, indices, indexCount, name, error)) {
+            setModelFallback(name, path, error);
+            return false;
+        }
+        model.activeModelName = name.empty() ? "imported.glb" : name;
+        model.activeModelPath = path;
+        model.activePrimitiveIndex = 0;
+        model.gpuUploadStatus = "ok";
+        model.drawStatus = "ok";
+        model.uploadedVertexCount = vertexCount;
+        model.uploadedIndexCount = indexCount;
+        for (int i = 0; i < 3; ++i) {
+            model.boundsMin[i] = boundsMin ? boundsMin[i] : 0.0f;
+            model.boundsMax[i] = boundsMax ? boundsMax[i] : 0.0f;
+            model.boundsCenter[i] = boundsCenter ? boundsCenter[i] : 0.0f;
+        }
+        model.modelScale = scale;
+        model.fallbackCubeVisible = false;
+        model.reason = "first primitive uploaded to Vulkan buffers";
+        if (baseColorFactor) {
+            material.baseColorFactor[0] = baseColorFactor[0];
+            material.baseColorFactor[1] = baseColorFactor[1];
+            material.baseColorFactor[2] = baseColorFactor[2];
+            material.baseColorFactor[3] = baseColorFactor[3];
+        }
+        camera.distance = clampFloat(3.6f, 2.0f, 8.0f);
+        cameraControlsReady = true;
+        bool ok = renderOneFrame();
+        if (!ok) {
+            model.drawStatus = "fallback";
+            model.fallbackCubeVisible = true;
+            model.reason = diagnostics.reason.empty() ? "model draw failed" : diagnostics.reason;
+            error = model.reason;
+            renderOneFrame();
+            syncDiagnostics();
+            diagnostics.write("valid", model.reason);
+            updateReadyStatus();
+            return false;
+        }
+        syncDiagnostics();
+        diagnostics.write("valid", "Scene03 GLB Mesh Render Lab uploaded and drew first primitive.");
+        updateReadyStatus();
         return true;
     }
 
@@ -551,8 +646,12 @@ struct RendererCore {
         if (!renderOneFrame()) return false;
         cameraControlsReady = true;
         rendererCoreReady = true;
+        model.gpuUploadStatus = "failed";
+        model.drawStatus = "fallback";
+        model.fallbackCubeVisible = true;
+        model.reason = "no active model";
         syncDiagnostics();
-        diagnostics.write("valid", "Scene01 Foundation Cube rendered with indexed geometry, depth attachment, interactive camera, material constants and mesh attribute layout.");
+        diagnostics.write("valid", "Scene03 GLB Mesh Render Lab initialized with cube fallback while waiting for active model upload.");
         updateReadyStatus();
         return true;
     }

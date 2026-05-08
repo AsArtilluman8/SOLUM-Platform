@@ -14,11 +14,15 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceHolder;
+import android.view.View;
 import android.view.SurfaceView;
 import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -56,7 +60,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button chooseFolderButton;
     private Button importGlbButton;
     private Button scanModelsButton;
+    private Button assetsToggleButton;
+    private Button cameraToggleButton;
+    private Button debugToggleButton;
+    private LinearLayout assetsPanel;
+    private LinearLayout cameraPanel;
+    private LinearLayout debugPanel;
+    private TextView topHudView;
     private boolean nativeLoaded = false;
+    private boolean assetsPanelVisible = true;
+    private boolean cameraPanelVisible = false;
+    private boolean debugPanelVisible = false;
     private File cachedReportDir = null;
     private String cachedReportDirReason = "not_resolved";
     private String lastExportStatus = "not run";
@@ -81,6 +95,50 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native String nativeGetStatus(long handle);
     private static native String nativeGetRenderLabState(long handle);
     private static native void nativeSetCamera(long handle, float yawDeg, float pitchDeg, float distance);
+    private static native boolean nativeUploadModelFirstPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, float[] baseColorFactor);
+    private static native void nativeSetModelFallback(long handle, String modelName, String modelPath, String reason);
+
+    private TextView panelText(float sizeSp, int maxLines) {
+        TextView view = new TextView(this);
+        view.setTextColor(Color.rgb(210, 245, 255));
+        view.setTextSize(sizeSp);
+        view.setPadding(12, 8, 12, 8);
+        view.setGravity(Gravity.START);
+        view.setSingleLine(false);
+        view.setMaxLines(maxLines);
+        view.setBackground(panelBackground(160));
+        return view;
+    }
+
+    private Button compactButton(String label) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setAllCaps(false);
+        button.setTextSize(10f);
+        button.setTextColor(Color.rgb(218, 248, 255));
+        button.setMinHeight(44);
+        button.setMinimumHeight(44);
+        button.setPadding(10, 4, 10, 4);
+        button.setBackground(panelBackground(190));
+        return button;
+    }
+
+    private GradientDrawable panelBackground(int alpha) {
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.argb(alpha, 3, 12, 17));
+        bg.setStroke(1, Color.argb(220, 0, 190, 220));
+        bg.setCornerRadius(8f);
+        return bg;
+    }
+
+    private void syncPanelVisibility() {
+        if (assetsPanel != null) assetsPanel.setVisibility(assetsPanelVisible ? View.VISIBLE : View.GONE);
+        if (cameraPanel != null) cameraPanel.setVisibility(cameraPanelVisible ? View.VISIBLE : View.GONE);
+        if (debugPanel != null) debugPanel.setVisibility(debugPanelVisible ? View.VISIBLE : View.GONE);
+        if (assetsToggleButton != null) assetsToggleButton.setText(assetsPanelVisible ? "Assets -" : "Assets +");
+        if (cameraToggleButton != null) cameraToggleButton.setText(cameraPanelVisible ? "Camera -" : "Camera +");
+        if (debugToggleButton != null) debugToggleButton.setText(debugPanelVisible ? "Debug -" : "Debug +");
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -92,80 +150,83 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         SurfaceView surfaceView = new SurfaceView(this);
         surfaceView.getHolder().addCallback(this);
         surfaceView.setOnTouchListener((view, event) -> handleCameraTouch(event));
-        statusView = new TextView(this);
-        statusView.setTextColor(Color.rgb(210, 245, 255));
-        statusView.setTextSize(12f);
-        statusView.setPadding(14, 10, 14, 10);
-        statusView.setGravity(Gravity.START);
-        statusView.setSingleLine(false);
-        statusView.setMaxLines(12);
-        statusView.setBackgroundColor(Color.argb(150, 3, 10, 12));
+        topHudView = panelText(11f, 2);
+        topHudView.setText("SOLUM Engine / SOLUM V2  |  Vulkan loading");
+        statusView = panelText(11f, 9);
         statusView.setText("SOLUM Engine\nVulkan: loading\nStatus: starting");
         diagnosticsStatusView = new TextView(this);
-        diagnosticsStatusView.setTextColor(Color.rgb(232, 246, 255));
-        diagnosticsStatusView.setTextSize(11f);
+        diagnosticsStatusView.setTextColor(Color.rgb(222, 242, 250));
+        diagnosticsStatusView.setTextSize(10f);
         diagnosticsStatusView.setPadding(14, 10, 14, 10);
         diagnosticsStatusView.setGravity(Gravity.START);
         diagnosticsStatusView.setSingleLine(false);
-        diagnosticsStatusView.setMaxLines(12);
-        diagnosticsStatusView.setBackgroundColor(Color.argb(165, 3, 10, 12));
+        diagnosticsStatusView.setMaxLines(8);
         FrameLayout root = new FrameLayout(this);
         root.addView(surfaceView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        statusParams.gravity = Gravity.TOP;
-        root.addView(statusView, statusParams);
-        chooseFolderButton = new Button(this);
-        chooseFolderButton.setText("Choose Diagnostics Folder");
-        chooseFolderButton.setAllCaps(false);
-        chooseFolderButton.setOnClickListener(v -> chooseDiagnosticsFolder());
-        FrameLayout.LayoutParams chooseParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        chooseParams.gravity = Gravity.BOTTOM | Gravity.START;
-        chooseParams.setMargins(12, 12, 12, 36);
-        root.addView(chooseFolderButton, chooseParams);
-        importGlbButton = new Button(this);
-        importGlbButton.setText("Import GLB");
-        importGlbButton.setAllCaps(false);
+        FrameLayout.LayoutParams topParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        topParams.gravity = Gravity.TOP;
+        root.addView(topHudView, topParams);
+
+        LinearLayout rail = new LinearLayout(this);
+        rail.setOrientation(LinearLayout.VERTICAL);
+        rail.setPadding(8, 8, 8, 8);
+        rail.setBackground(panelBackground(170));
+        assetsToggleButton = compactButton("Assets");
+        cameraToggleButton = compactButton("Camera");
+        debugToggleButton = compactButton("Debug");
+        assetsToggleButton.setOnClickListener(v -> { assetsPanelVisible = !assetsPanelVisible; syncPanelVisibility(); });
+        cameraToggleButton.setOnClickListener(v -> { cameraPanelVisible = !cameraPanelVisible; syncPanelVisibility(); });
+        debugToggleButton.setOnClickListener(v -> { debugPanelVisible = !debugPanelVisible; syncPanelVisibility(); });
+        rail.addView(assetsToggleButton);
+        rail.addView(cameraToggleButton);
+        rail.addView(debugToggleButton);
+        FrameLayout.LayoutParams railParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        railParams.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
+        railParams.setMargins(10, 72, 10, 96);
+        root.addView(rail, railParams);
+
+        ScrollView dockScroll = new ScrollView(this);
+        LinearLayout dock = new LinearLayout(this);
+        dock.setOrientation(LinearLayout.VERTICAL);
+        dock.setPadding(10, 8, 10, 8);
+        dock.setBackground(panelBackground(175));
+        dockScroll.addView(dock);
+        statusView.setBackgroundColor(Color.TRANSPARENT);
+        dock.addView(statusView);
+        assetsPanel = new LinearLayout(this);
+        assetsPanel.setOrientation(LinearLayout.VERTICAL);
+        importGlbButton = compactButton("Import GLB");
         importGlbButton.setOnClickListener(v -> chooseGlbForImport());
-        FrameLayout.LayoutParams importParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        importParams.gravity = Gravity.BOTTOM | Gravity.START;
-        importParams.setMargins(12, 12, 12, 100);
-        root.addView(importGlbButton, importParams);
-        scanModelsButton = new Button(this);
-        scanModelsButton.setText("Scan Models");
-        scanModelsButton.setAllCaps(false);
+        scanModelsButton = compactButton("Scan Models");
         scanModelsButton.setOnClickListener(v -> scanModelsFromButton());
-        FrameLayout.LayoutParams scanParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        scanParams.gravity = Gravity.BOTTOM | Gravity.START;
-        scanParams.setMargins(12, 12, 12, 164);
-        root.addView(scanModelsButton, scanParams);
-        exportButton = new Button(this);
-        exportButton.setText("Export Engine Diagnostics");
-        exportButton.setAllCaps(false);
-        exportButton.setOnClickListener(v -> exportEngineDiagnosticsFromButton());
-        FrameLayout.LayoutParams exportParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        exportParams.gravity = Gravity.BOTTOM | Gravity.END;
-        exportParams.setMargins(12, 12, 12, 36);
-        root.addView(exportButton, exportParams);
-        Button zoomInButton = new Button(this);
-        zoomInButton.setText("Zoom In");
-        zoomInButton.setAllCaps(false);
+        assetsPanel.addView(importGlbButton);
+        assetsPanel.addView(scanModelsButton);
+        dock.addView(assetsPanel);
+        cameraPanel = new LinearLayout(this);
+        cameraPanel.setOrientation(LinearLayout.HORIZONTAL);
+        Button zoomInButton = compactButton("Zoom In");
         zoomInButton.setOnClickListener(v -> applyCamera(cameraYawDeg, cameraPitchDeg, cameraDistance - 0.35f));
-        FrameLayout.LayoutParams zoomInParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        zoomInParams.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
-        zoomInParams.setMargins(12, 12, 12, 86);
-        root.addView(zoomInButton, zoomInParams);
-        Button zoomOutButton = new Button(this);
-        zoomOutButton.setText("Zoom Out");
-        zoomOutButton.setAllCaps(false);
+        Button zoomOutButton = compactButton("Zoom Out");
         zoomOutButton.setOnClickListener(v -> applyCamera(cameraYawDeg, cameraPitchDeg, cameraDistance + 0.35f));
-        FrameLayout.LayoutParams zoomOutParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        zoomOutParams.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
-        zoomOutParams.setMargins(12, 86, 12, 12);
-        root.addView(zoomOutButton, zoomOutParams);
-        FrameLayout.LayoutParams diagnosticsParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        diagnosticsParams.gravity = Gravity.BOTTOM;
-        diagnosticsParams.setMargins(12, 12, 12, 228);
-        root.addView(diagnosticsStatusView, diagnosticsParams);
+        cameraPanel.addView(zoomInButton);
+        cameraPanel.addView(zoomOutButton);
+        dock.addView(cameraPanel);
+        debugPanel = new LinearLayout(this);
+        debugPanel.setOrientation(LinearLayout.VERTICAL);
+        chooseFolderButton = compactButton("Choose Diagnostics Folder");
+        chooseFolderButton.setOnClickListener(v -> chooseDiagnosticsFolder());
+        exportButton = compactButton("Export Diagnostics");
+        exportButton.setOnClickListener(v -> exportEngineDiagnosticsFromButton());
+        diagnosticsStatusView.setBackgroundColor(Color.TRANSPARENT);
+        debugPanel.addView(chooseFolderButton);
+        debugPanel.addView(exportButton);
+        debugPanel.addView(diagnosticsStatusView);
+        dock.addView(debugPanel);
+        FrameLayout.LayoutParams dockParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        dockParams.gravity = Gravity.BOTTOM;
+        dockParams.setMargins(76, 12, 12, 28);
+        root.addView(dockScroll, dockParams);
+        syncPanelVisibility();
         scanModels("startup");
         updateDiagnosticsStatusPanel();
         setContentView(root);
@@ -226,13 +287,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override public void surfaceCreated(SurfaceHolder holder) {
         if (!nativeLoaded || nativeHandle == 0L) return;
-        try { nativeSurfaceCreated(nativeHandle, holder.getSurface(), getRuntimeReportDirPath()); updateStatus(); exportEngineDiagnostics("surface_created"); }
+        try { nativeSurfaceCreated(nativeHandle, holder.getSurface(), getRuntimeReportDirPath()); attemptActiveModelGpuUpload("surface_created"); updateStatus(); exportEngineDiagnostics("surface_created"); }
         catch (Throwable t) { writeCrashReport("surface_created_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: surface init failed\n" + shortThrowable(t)); }
     }
 
     @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         if (!nativeLoaded || nativeHandle == 0L) return;
-        try { nativeSurfaceChanged(nativeHandle, holder.getSurface(), width, height); updateStatus(); exportEngineDiagnostics("surface_changed"); }
+        try { nativeSurfaceChanged(nativeHandle, holder.getSurface(), width, height); attemptActiveModelGpuUpload("surface_changed"); updateStatus(); exportEngineDiagnostics("surface_changed"); }
         catch (Throwable t) { writeCrashReport("surface_changed_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: surface resize failed\n" + shortThrowable(t)); }
     }
 
@@ -256,7 +317,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String importStatus = modelState.importStatus;
         String activeName = modelState.activeModelName();
         GlbParseResult p = modelState.parse;
-        if (full.contains("Cube draw: OK")) status = "Scene01 Cube OK";
+        if (full.contains("Draw Model: ok")) status = "Model OK";
+        else if (full.contains("Cube draw: OK")) status = "Cube Fallback OK";
         else if (full.contains("Renderer core: OK")) status = "Renderer Core OK";
         else if (full.contains("Vertex buffer: OK")) status = "Vertex Buffer OK";
         else if (full.contains("Triangle draw: OK")) status = "Triangle OK";
@@ -264,18 +326,28 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         else if (full.contains("Swapchain: created")) status = "Swapchain OK";
         else if (full.toLowerCase(Locale.US).contains("failed")) status = "Error";
         if (gpu.isEmpty()) gpu = "detecting";
-        return "SOLUM Engine"
-            + "\nVulkan: " + gpu
-            + "\nRender Lab: Scene02 Model Import Lab"
+        String upload = pickValue(full, "GPU Upload: ");
+        String draw = pickValue(full, "Draw Model: ");
+        String fallback = pickValue(full, "Fallback cube: ");
+        String counts = pickValue(full, "Vertices / indices: ");
+        if (upload.isEmpty()) upload = modelState.gpuUploadStatus;
+        if (draw.isEmpty()) draw = modelState.drawStatus;
+        if (fallback.isEmpty()) fallback = modelState.fallbackCubeVisible ? "on" : "off";
+        if (counts.isEmpty()) counts = modelState.uploadedVertexCount + " / " + modelState.uploadedIndexCount;
+        if (topHudView != null) {
+            topHudView.setText("SOLUM Engine / SOLUM V2  |  Frames " + jsonNumberField(getRenderLabStateForExport(), "framesRendered", "0")
+                + "  |  GPU " + gpu + "  |  Vulkan  |  Scene03 GLB Mesh Render Lab  |  " + upload);
+        }
+        return "Render Lab: Scene03 GLB Mesh Render Lab"
             + "\nImport: " + importStatus
             + "\nActive model: " + (activeName.isEmpty() ? "none" : shorten(activeName, 34))
-            + "\nMeshes / primitives / materials / textures: " + p.meshCount + " / " + p.primitiveCount + " / " + p.materialCount + " / " + p.textureCount
-            + "\nGPU Upload: not implemented"
-            + "\nDraw Model: not implemented"
-            + "\nCube fallback: preserved"
-            + "\nHint: Drag rotate / pinch zoom or buttons zoom"
+            + "\nGPU Upload: " + upload
+            + "\nDraw Model: " + draw
+            + "\nVertices / indices: " + counts
+            + "\nFallback cube: " + fallback
+            + "\nMesh meta: " + p.meshCount + " / " + p.primitiveCount + " / " + p.materialCount + " / " + p.textureCount
             + "\nStatus: " + status
-            + "\nNext: GLB Mesh GPU Upload";
+            + "\nNext: Texture Binding Foundation";
     }
 
     private boolean handleCameraTouch(MotionEvent event) {
@@ -357,6 +429,70 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private String shorten(String text, int max) { if (text == null) return ""; if (text.length() <= max) return text; return text.substring(0, Math.max(0, max - 1)) + "…"; }
     private String getRuntimeReportDirPath() { return getReportDir().getAbsolutePath(); }
 
+    private void attemptActiveModelGpuUpload(String trigger) {
+        if (!nativeLoaded || nativeHandle == 0L) return;
+        if (modelState.activeModelPath == null || modelState.activeModelPath.isEmpty()) {
+            setModelFallbackState("no active model");
+            nativeSetModelFallback(nativeHandle, "none", "", "no active model");
+            return;
+        }
+        File active = new File(modelState.localExtractionPath());
+        if (!active.exists()) {
+            setModelFallbackState("active model missing: " + active.getAbsolutePath());
+            nativeSetModelFallback(nativeHandle, modelState.activeModelName(), modelState.activeModelPath, modelState.reason);
+            return;
+        }
+        try {
+            if (modelState.parse == null || !modelState.parse.glbValid || modelState.parse.binChunk == null) modelState.parse = GlbParser.parse(active);
+            GlbPrimitiveMesh mesh = GlbParser.extractFirstPrimitive(modelState.parse);
+            boolean ok = nativeUploadModelFirstPrimitive(
+                nativeHandle,
+                modelState.activeModelName(),
+                modelState.activeModelPath,
+                mesh.vertexData,
+                mesh.indexData,
+                mesh.boundsMin,
+                mesh.boundsMax,
+                mesh.boundsCenter,
+                mesh.modelScale,
+                mesh.baseColorFactor
+            );
+            if (ok) {
+                modelState.gpuUploadStatus = "ok";
+                modelState.drawStatus = "ok";
+                modelState.uploadedVertexCount = mesh.vertexCount;
+                modelState.uploadedIndexCount = mesh.indexCount;
+                modelState.fallbackCubeVisible = false;
+                modelState.reason = trigger + ": first primitive uploaded";
+                modelState.parse.gpuUploadStatus = "ok";
+                modelState.parse.drawStatus = "ok";
+                modelState.parse.uploadedVertexCount = mesh.vertexCount;
+                modelState.parse.uploadedIndexCount = mesh.indexCount;
+            } else {
+                setModelFallbackState(trigger + ": native model upload/draw failed");
+            }
+        } catch (Throwable t) {
+            setModelFallbackState(trigger + ": " + shortThrowable(t));
+            nativeSetModelFallback(nativeHandle, modelState.activeModelName(), modelState.activeModelPath, modelState.reason);
+        }
+        writeModelDiagnostics("gpu_upload_" + trigger);
+    }
+
+    private void setModelFallbackState(String reason) {
+        modelState.gpuUploadStatus = "failed";
+        modelState.drawStatus = "fallback";
+        modelState.uploadedVertexCount = 0;
+        modelState.uploadedIndexCount = 0;
+        modelState.fallbackCubeVisible = true;
+        modelState.reason = reason;
+        if (modelState.parse != null) {
+            modelState.parse.gpuUploadStatus = "failed";
+            modelState.parse.drawStatus = "fallback";
+            modelState.parse.uploadedVertexCount = 0;
+            modelState.parse.uploadedIndexCount = 0;
+        }
+    }
+
     private void chooseGlbForImport() {
         Log.i(TAG_DIAG, "import_glb_clicked");
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -386,6 +522,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 modelState.importRoute = copy.route;
                 modelState.importedPath = copy.path;
                 modelState.activeModelPath = copy.path;
+                modelState.activeModelLocalPath = copy.localFile.getAbsolutePath();
                 modelState.lastImportedModel = copy.path;
                 modelState.reason = copy.reason;
                 modelState.parse = GlbParser.parse(copy.localFile);
@@ -396,6 +533,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 }
                 scanModels("after_import");
                 importGlbButton.setText(modelState.parse.glbValid ? "Import OK" : "Import Failed");
+                attemptActiveModelGpuUpload("model_import");
             } catch (Throwable t) {
                 modelState.importStatus = "failed";
                 modelState.importRoute = "failed";
@@ -413,8 +551,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private void scanModelsFromButton() {
         scanModelsButton.setEnabled(false);
         scanModelsButton.setText("Scanning...");
-        scanModelsButton.post(() -> {
+            scanModelsButton.post(() -> {
             scanModels("manual_scan");
+            attemptActiveModelGpuUpload("manual_scan");
             scanModelsButton.setText("Scan Models");
             scanModelsButton.setEnabled(true);
             writeModelDiagnostics("scan");
@@ -432,10 +571,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         File appDir = new File(getFilesDir(), "assets/models/imported");
         if (models.isEmpty()) collectGlbFiles(appDir, models);
         modelState.modelsFoundCount = models.size();
-        if (modelState.activeModelPath.isEmpty() && !models.isEmpty()) modelState.activeModelPath = models.get(0).getAbsolutePath();
+        if (modelState.activeModelPath.isEmpty() && !models.isEmpty()) {
+            modelState.activeModelPath = models.get(0).getAbsolutePath();
+            modelState.activeModelLocalPath = models.get(0).getAbsolutePath();
+        }
         if (modelState.lastImportedModel.isEmpty() && !models.isEmpty()) modelState.lastImportedModel = models.get(models.size() - 1).getAbsolutePath();
         if (!modelState.activeModelPath.isEmpty()) {
-            File active = new File(modelState.activeModelPath);
+            File active = new File(modelState.localExtractionPath());
             if (active.exists()) modelState.parse = GlbParser.parse(active);
         }
         if ("not run".equals(modelState.importStatus) && models.isEmpty()) modelState.reason = trigger + ": no .glb files found";
@@ -661,12 +803,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"diagnosticsRootStatus\": \"" + escape(result.reason) + "\",\n"
             + "  \"build\": { \"versionName\": \"" + escape(versionName) + "\", \"versionCode\": " + versionCode + " },\n"
             + "  \"backend\": { \"rendererPath\": \"Android Native Vulkan\", \"statusText\": \"" + escape(nativeStatus) + "\" },\n"
-            + "  \"currentScene\": \"scene02_model_import_lab\",\n"
+            + "  \"currentScene\": \"scene03_glb_mesh_render_lab\",\n"
             + "  \"assetImportStatus\": \"" + escape(modelState.importStatus) + "\",\n"
             + "  \"activeModelName\": \"" + escape(modelState.activeModelName()) + "\",\n"
+            + "  \"activeModelPath\": \"" + escape(modelState.activeModelPath) + "\",\n"
+            + "  \"activePrimitiveIndex\": 0,\n"
             + "  \"activeModelSummary\": \"" + escape(modelState.summary()) + "\",\n"
-            + "  \"gpuUploadStatus\": \"not_implemented\",\n"
-            + "  \"drawStatus\": \"not_implemented\",\n"
+            + "  \"gpuUploadStatus\": \"" + escape(jsonStringField(renderLab, "gpuUploadStatus", modelState.gpuUploadStatus)) + "\",\n"
+            + "  \"drawStatus\": \"" + escape(jsonStringField(renderLab, "drawStatus", modelState.drawStatus)) + "\",\n"
+            + "  \"uploadedVertexCount\": " + jsonNumberField(renderLab, "uploadedVertexCount", String.valueOf(modelState.uploadedVertexCount)) + ",\n"
+            + "  \"uploadedIndexCount\": " + jsonNumberField(renderLab, "uploadedIndexCount", String.valueOf(modelState.uploadedIndexCount)) + ",\n"
+            + "  \"modelVertexLayout\": \"" + escape(jsonStringField(renderLab, "modelVertexLayout", "POSITION,NORMAL,TEXCOORD_0,COLOR_0")) + "\",\n"
+            + "  \"modelBoundsMin\": " + jsonArrayField(renderLab, "modelBoundsMin", "[0,0,0]") + ",\n"
+            + "  \"modelBoundsMax\": " + jsonArrayField(renderLab, "modelBoundsMax", "[0,0,0]") + ",\n"
+            + "  \"modelBoundsCenter\": " + jsonArrayField(renderLab, "modelBoundsCenter", "[0,0,0]") + ",\n"
+            + "  \"modelScale\": " + jsonNumberField(renderLab, "modelScale", "1") + ",\n"
+            + "  \"modelRenderMode\": \"" + escape(jsonStringField(renderLab, "modelRenderMode", "first_primitive")) + "\",\n"
+            + "  \"fallbackCubeVisible\": " + jsonBooleanField(renderLab, "fallbackCubeVisible", modelState.fallbackCubeVisible ? "true" : "false") + ",\n"
             + "  \"cubeStatus\": \"" + escape(jsonStringField(renderLab, "cubeStatus", "unknown")) + "\",\n"
             + "  \"depthStatus\": \"" + escape(jsonStringField(renderLab, "depthStatus", "unknown")) + "\",\n"
             + "  \"cameraStatus\": \"" + escape(jsonStringField(renderLab, "cameraStatus", "unknown")) + "\",\n"
@@ -752,6 +905,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (json.startsWith("true", start)) return "true";
         if (json.startsWith("false", start)) return "false";
         return fallback;
+    }
+
+    private String jsonArrayField(String json, String key, String fallback) {
+        String marker = "\"" + key + "\":[";
+        int start = json.indexOf(marker);
+        if (start < 0) return fallback;
+        start += marker.length() - 1;
+        int end = json.indexOf(']', start);
+        return end > start ? json.substring(start, end + 1) : fallback;
     }
 
     private ExportResult openDiagnosticsWriters() throws Exception {
@@ -914,6 +1076,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     + "Last export reason/path: " + shorten((lastExportReason + " " + lastExportPath).trim(), 72) + "\n"
                     + "Last export timestamp: " + (lastExportTimestamp.isEmpty() ? "not run" : lastExportTimestamp) + "\n"
                     + "Import GLB: " + modelState.importStatus + " route=" + modelState.importRoute + "\n"
+                    + "GPU Upload / Draw: " + modelState.gpuUploadStatus + " / " + modelState.drawStatus + "\n"
+                    + "Uploaded vertices/indices: " + modelState.uploadedVertexCount + " / " + modelState.uploadedIndexCount + "\n"
                     + "Source: " + shorten(modelState.sourceDisplayName.isEmpty() ? "none" : modelState.sourceDisplayName, 48) + "\n"
                     + "Imported: " + shorten(modelState.importedPath.isEmpty() ? "none" : modelState.importedPath, 72) + "\n"
                     + "Models found: " + modelState.modelsFoundCount + " active=" + (modelState.activeModelName().isEmpty() ? "none" : shorten(modelState.activeModelName(), 40)) + "\n"
@@ -929,10 +1093,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private String getRenderLabStateForExport() {
         if (!nativeLoaded || nativeHandle == 0L) {
-            return "{\"currentLabScene\":\"scene02_model_import_lab\",\"currentLabSceneName\":\"Scene02 Model Import Lab\",\"status\":\"native_not_loaded\",\"gpuUploadStatus\":\"not_implemented\",\"drawStatus\":\"not_implemented\"}";
+            return "{\"currentLabScene\":\"scene03_glb_mesh_render_lab\",\"currentLabSceneName\":\"Scene03 GLB Mesh Render Lab\",\"status\":\"native_not_loaded\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"first_primitive\",\"fallbackCubeVisible\":true}";
         }
         try { return nativeGetRenderLabState(nativeHandle); }
-        catch (Throwable t) { return "{\"currentLabScene\":\"scene02_model_import_lab\",\"currentLabSceneName\":\"Scene02 Model Import Lab\",\"status\":\"native_render_lab_state_failed\",\"gpuUploadStatus\":\"not_implemented\",\"drawStatus\":\"not_implemented\",\"reason\":\"" + escape(shortThrowable(t)) + "\"}"; }
+        catch (Throwable t) { return "{\"currentLabScene\":\"scene03_glb_mesh_render_lab\",\"currentLabSceneName\":\"Scene03 GLB Mesh Render Lab\",\"status\":\"native_render_lab_state_failed\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"fallbackCubeVisible\":true,\"reason\":\"" + escape(shortThrowable(t)) + "\"}"; }
     }
 
     private String timestampUtc() {
@@ -971,16 +1135,27 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String sourceDisplayName = "";
         String importedPath = "";
         String activeModelPath = "";
+        String activeModelLocalPath = "";
         String lastImportedModel = "";
         String reason = "not run";
         int modelsFoundCount = 0;
         GlbParseResult parse = GlbParseResult.notParsed("not_parsed");
+        String gpuUploadStatus = "failed";
+        String drawStatus = "fallback";
+        int uploadedVertexCount = 0;
+        int uploadedIndexCount = 0;
+        boolean fallbackCubeVisible = true;
 
         static ModelImportState notRun() { return new ModelImportState(); }
 
         String activeModelName() {
             if (activeModelPath == null || activeModelPath.isEmpty()) return "";
             return new File(activeModelPath).getName();
+        }
+
+        String localExtractionPath() {
+            if (activeModelLocalPath != null && !activeModelLocalPath.isEmpty()) return activeModelLocalPath;
+            return activeModelPath == null ? "" : activeModelPath;
         }
 
         String summary() {
@@ -1001,9 +1176,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"sourceDisplayName\": \"" + esc(sourceDisplayName) + "\",\n"
                 + "  \"importedPath\": \"" + esc(importedPath) + "\",\n"
                 + "  \"activeModelPath\": \"" + esc(activeModelPath) + "\",\n"
+                + "  \"activeModelLocalPath\": \"" + esc(activeModelLocalPath) + "\",\n"
                 + "  \"lastImportedModel\": \"" + esc(lastImportedModel) + "\",\n"
                 + "  \"importReason\": \"" + esc(reason) + "\",\n"
                 + "  \"modelsFoundCount\": " + modelsFoundCount + ",\n"
+                + "  \"gpuUploadStatus\": \"" + esc(gpuUploadStatus) + "\",\n"
+                + "  \"drawStatus\": \"" + esc(drawStatus) + "\",\n"
+                + "  \"uploadedVertexCount\": " + uploadedVertexCount + ",\n"
+                + "  \"uploadedIndexCount\": " + uploadedIndexCount + ",\n"
+                + "  \"fallbackCubeVisible\": " + fallbackCubeVisible + ",\n"
                 + parse.toJsonFields()
                 + "}\n";
         }
@@ -1027,6 +1208,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 if (version != 2) return GlbParseResult.failed("unsupported_glb_version_" + version, raf.length(), version);
                 if (length != raf.length()) return GlbParseResult.failed("glb_total_length_mismatch_header_" + length + "_actual_" + raf.length(), raf.length(), version);
                 String json = null;
+                byte[] bin = null;
                 boolean binFound = false;
                 while (raf.getFilePointer() + 8 <= raf.length()) {
                     byte[] chunkHeader = new byte[8];
@@ -1038,10 +1220,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     byte[] data = new byte[chunkLength];
                     raf.readFully(data);
                     if (chunkType == 0x4E4F534A) json = new String(data, StandardCharsets.UTF_8).trim();
-                    if (chunkType == 0x004E4942) binFound = true;
+                    if (chunkType == 0x004E4942) { binFound = true; bin = data; }
                 }
                 if (json == null || json.isEmpty()) return GlbParseResult.failed("missing_json_chunk", raf.length(), version);
                 r.binChunkFound = binFound;
+                r.jsonText = json;
+                r.binChunk = bin;
                 parseJson(json, r);
                 r.glbValid = true;
                 r.reason = "ok";
@@ -1122,6 +1306,225 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 if (!value.isEmpty()) out.add(value);
             }
         }
+
+        static GlbPrimitiveMesh extractFirstPrimitive(GlbParseResult parsed) throws Exception {
+            if (parsed == null || !parsed.glbValid) throw new IllegalStateException("glb_not_valid: " + (parsed == null ? "null" : parsed.reason));
+            if (parsed.jsonText == null || parsed.jsonText.isEmpty()) throw new IllegalStateException("missing_cached_glb_json");
+            if (parsed.binChunk == null || parsed.binChunk.length == 0) throw new IllegalStateException("missing_glb_bin_chunk");
+            JSONObject root = new JSONObject(parsed.jsonText);
+            JSONArray meshes = root.optJSONArray("meshes");
+            JSONArray accessors = root.optJSONArray("accessors");
+            JSONArray bufferViews = root.optJSONArray("bufferViews");
+            if (meshes == null || meshes.length() == 0) throw new IllegalStateException("no_meshes_in_glb");
+            JSONObject mesh = meshes.optJSONObject(0);
+            if (mesh == null) throw new IllegalStateException("mesh_0_missing");
+            JSONArray primitives = mesh.optJSONArray("primitives");
+            if (primitives == null || primitives.length() == 0) throw new IllegalStateException("mesh_0_has_no_primitives");
+            JSONObject primitive = primitives.optJSONObject(0);
+            if (primitive == null) throw new IllegalStateException("primitive_0_missing");
+            int mode = primitive.optInt("mode", 4);
+            if (mode != 4) throw new IllegalStateException("unsupported_primitive_mode_" + mode + "_expected_TRIANGLES");
+            JSONObject attrs = primitive.optJSONObject("attributes");
+            if (attrs == null || !attrs.has("POSITION")) throw new IllegalStateException("POSITION_attribute_missing");
+            int positionAccessor = attrs.optInt("POSITION", -1);
+            int normalAccessor = attrs.optInt("NORMAL", -1);
+            int texcoordAccessor = attrs.optInt("TEXCOORD_0", -1);
+            int colorAccessor = attrs.optInt("COLOR_0", -1);
+            AccessorReader positions = AccessorReader.create(accessors, bufferViews, parsed.binChunk, positionAccessor, 5126, "VEC3", "POSITION");
+            AccessorReader normals = normalAccessor >= 0 ? AccessorReader.create(accessors, bufferViews, parsed.binChunk, normalAccessor, 5126, "VEC3", "NORMAL") : null;
+            AccessorReader texcoords = texcoordAccessor >= 0 ? AccessorReader.create(accessors, bufferViews, parsed.binChunk, texcoordAccessor, 5126, "VEC2", "TEXCOORD_0") : null;
+            AccessorReader colors = colorAccessor >= 0 ? AccessorReader.createColor(accessors, bufferViews, parsed.binChunk, colorAccessor) : null;
+            int vertexCount = positions.count;
+            float[] rawPositions = new float[vertexCount * 3];
+            float minX = Float.POSITIVE_INFINITY, minY = Float.POSITIVE_INFINITY, minZ = Float.POSITIVE_INFINITY;
+            float maxX = Float.NEGATIVE_INFINITY, maxY = Float.NEGATIVE_INFINITY, maxZ = Float.NEGATIVE_INFINITY;
+            for (int i = 0; i < vertexCount; i++) {
+                float x = positions.floatAt(i, 0);
+                float y = positions.floatAt(i, 1);
+                float z = positions.floatAt(i, 2);
+                rawPositions[i * 3] = x;
+                rawPositions[i * 3 + 1] = y;
+                rawPositions[i * 3 + 2] = z;
+                minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
+                maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
+            }
+            float cx = (minX + maxX) * 0.5f;
+            float cy = (minY + maxY) * 0.5f;
+            float cz = (minZ + maxZ) * 0.5f;
+            float extent = Math.max(Math.max(maxX - minX, maxY - minY), maxZ - minZ);
+            float scale = extent > 0.00001f ? 1.8f / extent : 1.0f;
+            float[] vertexData = new float[vertexCount * 11];
+            for (int i = 0; i < vertexCount; i++) {
+                int o = i * 11;
+                vertexData[o] = (rawPositions[i * 3] - cx) * scale;
+                vertexData[o + 1] = (rawPositions[i * 3 + 1] - cy) * scale;
+                vertexData[o + 2] = (rawPositions[i * 3 + 2] - cz) * scale;
+                vertexData[o + 3] = normals != null ? normals.floatAt(i, 0) : 0.0f;
+                vertexData[o + 4] = normals != null ? normals.floatAt(i, 1) : 1.0f;
+                vertexData[o + 5] = normals != null ? normals.floatAt(i, 2) : 0.0f;
+                vertexData[o + 6] = texcoords != null ? texcoords.floatAt(i, 0) : 0.0f;
+                vertexData[o + 7] = texcoords != null ? texcoords.floatAt(i, 1) : 0.0f;
+                vertexData[o + 8] = colors != null ? colors.floatAt(i, 0) : 1.0f;
+                vertexData[o + 9] = colors != null ? colors.floatAt(i, 1) : 1.0f;
+                vertexData[o + 10] = colors != null ? colors.floatAt(i, 2) : 1.0f;
+            }
+            int[] indices = new int[0];
+            if (primitive.has("indices")) {
+                IndexReader reader = IndexReader.create(accessors, bufferViews, parsed.binChunk, primitive.optInt("indices", -1));
+                indices = new int[reader.count];
+                for (int i = 0; i < reader.count; i++) indices[i] = reader.indexAt(i);
+            }
+            GlbPrimitiveMesh out = new GlbPrimitiveMesh();
+            out.vertexData = vertexData;
+            out.indexData = indices;
+            out.vertexCount = vertexCount;
+            out.indexCount = indices.length;
+            out.boundsMin = new float[] { minX, minY, minZ };
+            out.boundsMax = new float[] { maxX, maxY, maxZ };
+            out.boundsCenter = new float[] { cx, cy, cz };
+            out.modelScale = scale;
+            out.baseColorFactor = readBaseColorFactor(root, primitive);
+            return out;
+        }
+
+        private static float[] readBaseColorFactor(JSONObject root, JSONObject primitive) {
+            float[] out = new float[] { 1f, 1f, 1f, 1f };
+            JSONArray materials = root.optJSONArray("materials");
+            int materialIndex = primitive.optInt("material", -1);
+            JSONObject material = materials != null && materialIndex >= 0 && materialIndex < materials.length() ? materials.optJSONObject(materialIndex) : null;
+            JSONObject pbr = material == null ? null : material.optJSONObject("pbrMetallicRoughness");
+            JSONArray factor = pbr == null ? null : pbr.optJSONArray("baseColorFactor");
+            if (factor != null && factor.length() >= 4) {
+                for (int i = 0; i < 4; i++) out[i] = (float)factor.optDouble(i, 1.0);
+            }
+            return out;
+        }
+    }
+
+    private static final class AccessorReader {
+        final ByteBuffer data;
+        final int offset;
+        final int stride;
+        final int count;
+        final int components;
+        final String label;
+
+        AccessorReader(ByteBuffer data, int offset, int stride, int count, int components, String label) {
+            this.data = data;
+            this.offset = offset;
+            this.stride = stride;
+            this.count = count;
+            this.components = components;
+            this.label = label;
+        }
+
+        static AccessorReader create(JSONArray accessors, JSONArray bufferViews, byte[] bin, int accessorIndex, int requiredComponentType, String requiredType, String label) throws Exception {
+            JSONObject accessor = checkedObject(accessors, accessorIndex, label + "_accessor");
+            int componentType = accessor.optInt("componentType", -1);
+            String type = accessor.optString("type", "");
+            if (componentType != requiredComponentType || !requiredType.equals(type)) {
+                throw new IllegalStateException("unsupported_" + label + "_accessor_componentType_" + componentType + "_type_" + type);
+            }
+            return createRaw(accessor, bufferViews, bin, label, componentsForType(type), 4);
+        }
+
+        static AccessorReader createColor(JSONArray accessors, JSONArray bufferViews, byte[] bin, int accessorIndex) throws Exception {
+            JSONObject accessor = checkedObject(accessors, accessorIndex, "COLOR_0_accessor");
+            int componentType = accessor.optInt("componentType", -1);
+            String type = accessor.optString("type", "");
+            if (componentType != 5126 || (!"VEC3".equals(type) && !"VEC4".equals(type))) {
+                throw new IllegalStateException("unsupported_COLOR_0_accessor_componentType_" + componentType + "_type_" + type);
+            }
+            return createRaw(accessor, bufferViews, bin, "COLOR_0", componentsForType(type), 4);
+        }
+
+        private static AccessorReader createRaw(JSONObject accessor, JSONArray bufferViews, byte[] bin, String label, int components, int componentBytes) throws Exception {
+            int viewIndex = accessor.optInt("bufferView", -1);
+            JSONObject view = checkedObject(bufferViews, viewIndex, label + "_bufferView");
+            int count = Math.max(0, accessor.optInt("count", 0));
+            int accessorOffset = accessor.optInt("byteOffset", 0);
+            int viewOffset = view.optInt("byteOffset", 0);
+            int stride = view.optInt("byteStride", components * componentBytes);
+            int offset = viewOffset + accessorOffset;
+            int needed = offset + (count <= 0 ? 0 : ((count - 1) * stride + components * componentBytes));
+            if (offset < 0 || needed > bin.length) throw new IllegalStateException(label + "_accessor_out_of_bin_bounds");
+            return new AccessorReader(ByteBuffer.wrap(bin).order(ByteOrder.LITTLE_ENDIAN), offset, stride, count, components, label);
+        }
+
+        float floatAt(int index, int component) {
+            if (component >= components) return 1.0f;
+            return data.getFloat(offset + index * stride + component * 4);
+        }
+    }
+
+    private static final class IndexReader {
+        final ByteBuffer data;
+        final int offset;
+        final int stride;
+        final int count;
+        final int componentType;
+
+        IndexReader(ByteBuffer data, int offset, int stride, int count, int componentType) {
+            this.data = data;
+            this.offset = offset;
+            this.stride = stride;
+            this.count = count;
+            this.componentType = componentType;
+        }
+
+        static IndexReader create(JSONArray accessors, JSONArray bufferViews, byte[] bin, int accessorIndex) throws Exception {
+            JSONObject accessor = checkedObject(accessors, accessorIndex, "indices_accessor");
+            int componentType = accessor.optInt("componentType", -1);
+            int componentBytes;
+            if (componentType == 5123) componentBytes = 2;
+            else if (componentType == 5125) componentBytes = 4;
+            else throw new IllegalStateException("unsupported_indices_componentType_" + componentType);
+            String type = accessor.optString("type", "");
+            if (!"SCALAR".equals(type)) throw new IllegalStateException("unsupported_indices_type_" + type);
+            int viewIndex = accessor.optInt("bufferView", -1);
+            JSONObject view = checkedObject(bufferViews, viewIndex, "indices_bufferView");
+            int count = Math.max(0, accessor.optInt("count", 0));
+            int offset = view.optInt("byteOffset", 0) + accessor.optInt("byteOffset", 0);
+            int stride = view.optInt("byteStride", componentBytes);
+            int needed = offset + (count <= 0 ? 0 : ((count - 1) * stride + componentBytes));
+            if (offset < 0 || needed > bin.length) throw new IllegalStateException("indices_accessor_out_of_bin_bounds");
+            return new IndexReader(ByteBuffer.wrap(bin).order(ByteOrder.LITTLE_ENDIAN), offset, stride, count, componentType);
+        }
+
+        int indexAt(int i) {
+            int p = offset + i * stride;
+            if (componentType == 5123) return data.getShort(p) & 0xffff;
+            long value = Integer.toUnsignedLong(data.getInt(p));
+            if (value > Integer.MAX_VALUE) throw new IllegalStateException("index_value_exceeds_java_int");
+            return (int)value;
+        }
+    }
+
+    private static JSONObject checkedObject(JSONArray array, int index, String label) {
+        if (array == null || index < 0 || index >= array.length()) throw new IllegalStateException(label + "_missing_index_" + index);
+        JSONObject obj = array.optJSONObject(index);
+        if (obj == null) throw new IllegalStateException(label + "_not_object_" + index);
+        return obj;
+    }
+
+    private static int componentsForType(String type) {
+        if ("SCALAR".equals(type)) return 1;
+        if ("VEC2".equals(type)) return 2;
+        if ("VEC3".equals(type)) return 3;
+        if ("VEC4".equals(type)) return 4;
+        throw new IllegalStateException("unsupported_accessor_type_" + type);
+    }
+
+    private static final class GlbPrimitiveMesh {
+        float[] vertexData;
+        int[] indexData;
+        float[] boundsMin;
+        float[] boundsMax;
+        float[] boundsCenter;
+        float[] baseColorFactor;
+        float modelScale;
+        int vertexCount;
+        int indexCount;
     }
 
     private static final class GlbParseResult {
@@ -1151,6 +1554,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         boolean hasNormals = false;
         boolean hasTexcoord0 = false;
         String reason = "not_parsed";
+        transient String jsonText = "";
+        transient byte[] binChunk = null;
+        String gpuUploadStatus = "failed";
+        String drawStatus = "fallback";
+        int uploadedVertexCount = 0;
+        int uploadedIndexCount = 0;
 
         static GlbParseResult notParsed(String reason) {
             GlbParseResult r = new GlbParseResult();
@@ -1198,8 +1607,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"hasTangents\": " + hasTangents + ",\n"
                 + "  \"hasNormals\": " + hasNormals + ",\n"
                 + "  \"hasTexcoord0\": " + hasTexcoord0 + ",\n"
-                + "  \"gpuUploadStatus\": \"not_implemented\",\n"
-                + "  \"drawStatus\": \"not_implemented\",\n"
                 + "  \"reason\": \"" + esc(reason) + "\"\n";
         }
     }

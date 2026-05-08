@@ -7,13 +7,14 @@ enum class RenderLabScene {
     Scene01FoundationCube,
     Scene02ModelImportLab,
     Scene03GlbMeshRenderLab,
+    Scene04TextureBindingLab,
     Scene04LightShadowLab,
     Scene05ImportLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene03GlbMeshRenderLab;
+    RenderLabScene currentScene = RenderLabScene::Scene04TextureBindingLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -41,6 +42,7 @@ struct RenderLabState {
             case RenderLabScene::Scene01FoundationCube: return "scene01_foundation_cube";
             case RenderLabScene::Scene02ModelImportLab: return "scene02_model_import_lab";
             case RenderLabScene::Scene03GlbMeshRenderLab: return "scene03_glb_mesh_render_lab";
+            case RenderLabScene::Scene04TextureBindingLab: return "scene04_texture_binding_lab";
             case RenderLabScene::Scene04LightShadowLab: return "scene04_light_shadow_lab";
             case RenderLabScene::Scene05ImportLab: return "scene05_import_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
@@ -53,6 +55,7 @@ struct RenderLabState {
             case RenderLabScene::Scene01FoundationCube: return "Scene01 Foundation Cube";
             case RenderLabScene::Scene02ModelImportLab: return "Scene02 Model Import Lab";
             case RenderLabScene::Scene03GlbMeshRenderLab: return "Scene03 GLB Mesh Render Lab";
+            case RenderLabScene::Scene04TextureBindingLab: return "Scene04 Texture Binding Lab";
             case RenderLabScene::Scene04LightShadowLab: return "Scene04 Light/Shadow Lab";
             case RenderLabScene::Scene05ImportLab: return "Scene05 Import Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
@@ -73,6 +76,16 @@ struct RenderLabState {
         f << indent << "  \"activePrimitiveIndex\": " << model.activePrimitiveIndex << ",\n";
         f << indent << "  \"gpuUploadStatus\": \"" << escapeJson(model.gpuUploadStatus) << "\",\n";
         f << indent << "  \"drawStatus\": \"" << escapeJson(model.drawStatus) << "\",\n";
+        f << indent << "  \"meshDrawStatus\": \"" << escapeJson(model.meshDrawStatus) << "\",\n";
+        f << indent << "  \"textureUploadStatus\": \"" << escapeJson(model.textureUploadStatus) << "\",\n";
+        f << indent << "  \"baseColorTextureStatus\": \"" << escapeJson(model.baseColorTextureStatus) << "\",\n";
+        f << indent << "  \"baseColorTextureName\": \"" << escapeJson(model.baseColorTextureName) << "\",\n";
+        f << indent << "  \"baseColorTextureSource\": \"" << escapeJson(model.baseColorTextureSource) << "\",\n";
+        f << indent << "  \"baseColorTextureMimeType\": \"" << escapeJson(model.baseColorTextureMimeType) << "\",\n";
+        f << indent << "  \"textureWidth\": " << model.textureWidth << ",\n";
+        f << indent << "  \"textureHeight\": " << model.textureHeight << ",\n";
+        f << indent << "  \"textureBytes\": " << model.textureBytes << ",\n";
+        f << indent << "  \"textureFallbackUsed\": " << (model.textureFallbackUsed ? "true" : "false") << ",\n";
         f << indent << "  \"uploadedVertexCount\": " << model.uploadedVertexCount << ",\n";
         f << indent << "  \"uploadedIndexCount\": " << model.uploadedIndexCount << ",\n";
         f << indent << "  \"modelVertexLayout\": \"" << model.modelVertexLayout << "\",\n";
@@ -82,8 +95,9 @@ struct RenderLabState {
         f << indent << "  \"modelScale\": " << model.modelScale << ",\n";
         f << indent << "  \"modelRenderMode\": \"" << model.modelRenderMode << "\",\n";
         f << indent << "  \"fallbackCubeVisible\": " << (model.fallbackCubeVisible ? "true" : "false") << ",\n";
+        f << indent << "  \"fallbackCubeStatus\": \"" << escapeJson(model.fallbackCubeStatus) << "\",\n";
         f << indent << "  \"reason\": \"" << escapeJson(model.reason) << "\",\n";
-        f << indent << "  \"cubeStatus\": \"" << (cubeReady ? "ok" : "failed") << "\",\n";
+        f << indent << "  \"cubeStatus\": \"" << (cubeReady || !model.fallbackCubeVisible ? "ok" : "failed") << "\",\n";
         f << indent << "  \"depthStatus\": \"" << (depthReady ? "ok" : "failed") << "\",\n";
         f << indent << "  \"cameraStatus\": \"" << (cameraReady ? "ok" : "failed") << "\",\n";
         f << indent << "  \"cameraMvpStatus\": \"" << (cameraMvpReady ? "ok" : "failed") << "\",\n";

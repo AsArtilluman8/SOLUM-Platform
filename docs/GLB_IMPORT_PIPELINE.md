@@ -4,6 +4,7 @@
 
 P05 added the first real model import path for SOLUM Engine.
 P06 adds first primitive CPU extraction, Vulkan GPU upload and draw.
+P07 adds baseColor texture extraction, Android decode, Vulkan upload and shader sampling.
 
 Implemented:
 
@@ -29,14 +30,19 @@ saf -> direct -> fallback -> failed
 - CPU GLB parser foundation.
 - First primitive CPU extraction for active imported model.
 - Vulkan model vertex/index buffer upload.
+- Embedded GLB baseColorTexture extraction from `image.bufferView`.
+- Android `BitmapFactory` decode for `image/png` and `image/jpeg`.
+- Vulkan RGBA8 image/imageView/sampler upload for one active first primitive baseColor texture.
+- Fragment shader sampling through `sampler2D` and `TEXCOORD_0`.
 - Single primitive draw through the existing Vulkan renderer path.
 - Model diagnostics JSON.
 - Cube render remains the fallback when no supported model is active.
 
-Not implemented:
+Not implemented yet:
 
-- Texture binding.
 - PBR lighting.
+- normal, metallicRoughness, AO, emissive texture sampling.
+- mipmaps, anisotropy, texture arrays, multi-material binding.
 - Skeletal animation.
 
 ## Asset Folder
@@ -136,7 +142,19 @@ Model transform:
 - Bounds are measured from raw POSITION data.
 - Vertices are centered and normalized before upload.
 - `modelScale`, `modelBoundsMin`, `modelBoundsMax`, `modelBoundsCenter` are exported.
-- Base color uses glTF `baseColorFactor`; texture sampling is deferred to P07.
+- Base color uses glTF `baseColorFactor`.
+- If the first primitive material has `pbrMetallicRoughness.baseColorTexture.index`, P07 resolves:
+  - `textures[index].source`;
+  - `images[source].bufferView`;
+  - `images[source].mimeType`;
+  - `bufferViews[bufferView].byteOffset`;
+  - `bufferViews[bufferView].byteLength`;
+  - GLB BIN chunk bytes.
+- Supported embedded MIME now:
+  - `image/png`;
+  - `image/jpeg` when Android `BitmapFactory` decodes it.
+- Missing texture reports `baseColorTextureStatus = missing` and keeps white/baseColor fallback.
+- Decode/upload failure reports `baseColorTextureStatus = failed` / `textureUploadStatus = failed` with reason and keeps mesh draw alive.
 
 ## Diagnostics Files
 
@@ -177,9 +195,16 @@ Both files include:
 - hasTexcoord0;
 - gpuUploadStatus;
 - drawStatus;
+- meshDrawStatus;
+- textureUploadStatus;
+- baseColorTextureStatus;
+- textureWidth;
+- textureHeight;
+- textureFallbackUsed;
 - uploadedVertexCount;
 - uploadedIndexCount;
 - fallbackCubeVisible;
+- fallbackCubeStatus;
 - reason.
 
 `engine_runtime_state.json` also includes:
@@ -191,6 +216,15 @@ Both files include:
 - activeModelSummary;
 - gpuUploadStatus;
 - drawStatus;
+- meshDrawStatus;
+- textureUploadStatus;
+- baseColorTextureStatus;
+- baseColorTextureName/source;
+- baseColorTextureMimeType;
+- textureWidth;
+- textureHeight;
+- textureBytes;
+- textureFallbackUsed;
 - uploadedVertexCount;
 - uploadedIndexCount;
 - modelVertexLayout;
@@ -200,6 +234,7 @@ Both files include:
 - modelScale;
 - modelRenderMode = `first_primitive`;
 - fallbackCubeVisible;
+- fallbackCubeStatus;
 - reason.
 
 ## Runtime Truth
@@ -207,14 +242,14 @@ Both files include:
 Scene label:
 
 ```text
-Render Lab: Scene03 GLB Mesh Render Lab
+Render Lab: Scene04 Texture Binding Lab
 ```
 
-The model is imported, parsed on CPU, extracted as first primitive and uploaded to Vulkan buffers when supported.
-The visible Vulkan cube remains the fallback. A failed upload or unsupported accessor is reported honestly.
+The model is imported, parsed on CPU, extracted as first primitive, uploaded to Vulkan buffers and optionally rendered with one baseColor texture when supported.
+The visible Vulkan cube remains the mesh fallback. White/baseColor remains the material fallback. A failed texture decode/upload does not turn a successful mesh draw into `drawStatus=failed`.
 
 Next step:
 
 ```text
-P07 Texture Binding Foundation + BaseColor Texture
+P08 PBR Material Maps Foundation: metallicRoughness + normal + AO
 ```

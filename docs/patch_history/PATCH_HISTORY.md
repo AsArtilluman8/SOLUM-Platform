@@ -40,6 +40,110 @@ SUCCESS / FAILED / NOT TESTED
 
 ---
 
+## Patch P07 — Texture Binding Foundation + BaseColor Texture + Diagnostics/UI Cleanup
+
+### Goal
+
+Render the active first GLB primitive with its embedded baseColor texture when available, while preserving mesh draw and white/baseColor fallback.
+
+### Scope
+
+- Resolve `pbrMetallicRoughness.baseColorTexture.index` for the active first primitive.
+- Decode embedded GLB `image.bufferView` PNG/JPEG through Android `BitmapFactory`.
+- Upload one RGBA8 baseColor texture to Vulkan image/memory/view/sampler.
+- Add minimal combined image sampler descriptor and `sampler2D` shader path.
+- Keep fallback white/baseColor path for missing or failed textures.
+- Split mesh draw truth from texture truth in diagnostics.
+- Replace misleading fallback cube truth with `fallbackCubeStatus` + `fallbackCubeVisible`.
+- Keep Export Diagnostics visible through a compact dock button.
+
+### Out of scope
+
+- PBR lighting.
+- normal, metallicRoughness, AO, emissive textures.
+- mipmaps, anisotropy, texture arrays.
+- skeletal animation.
+- renderer replacement.
+
+### Changed files/modules
+
+- `apps/engine/src/main/java/com/solum/engine/MainActivity.java`
+- `engine-core/solum-vulkan-core/shaders/triangle.vert`
+- `engine-core/solum-vulkan-core/shaders/triangle.frag.glsl`
+- `engine-core/solum-vulkan-core/src/solum/texture_resource.hpp`
+- `engine-core/solum-vulkan-core/src/solum/pipeline_bundle.hpp`
+- `engine-core/solum-vulkan-core/src/solum/renderer_core.hpp`
+- `engine-core/solum-vulkan-core/src/solum/renderer_types.hpp`
+- `engine-core/solum-vulkan-core/src/solum/render_lab.hpp`
+- `engine-core/solum-vulkan-core/src/solum/runtime_diagnostics.hpp`
+- `engine-core/solum-vulkan-core/src/solum_engine.cpp`
+- `docs/RENDER_LAB.md`
+- `docs/GLB_IMPORT_PIPELINE.md`
+- `docs/EDITOR_UI_FOUNDATION.md`
+- `docs/TEXTURE_BINDING_FOUNDATION.md`
+- `docs/patch_history/PATCH_HISTORY.md`
+
+### Build result
+
+BUILD_SUCCESS through:
+
+```text
+bash tools/agent_build_runner.sh
+```
+
+Output APK:
+
+```text
+/storage/emulated/0/Download/SOLUM_APK/SOLUM-engine-debug.apk
+```
+
+### Runtime result
+
+Manual phone verification required.
+
+### Diagnostics
+
+Expected added fields:
+
+```text
+meshDrawStatus
+textureUploadStatus
+baseColorTextureStatus
+baseColorTextureName
+baseColorTextureSource
+baseColorTextureMimeType
+textureWidth
+textureHeight
+textureBytes
+textureFallbackUsed
+fallbackCubeStatus
+```
+
+### User-visible result
+
+Engine shows:
+
+```text
+Render Lab: Scene04 Texture Binding Lab
+Active model: name
+GPU Upload: ok
+Draw Model: ok
+BaseColor Texture: ok/missing/failed
+Texture size
+Fallback texture: yes/no
+Next: PBR Material Maps Foundation
+```
+
+### Known issues
+
+Only baseColor texture is supported. Other PBR maps and lighting are deferred.
+
+### Next
+
+P08 PBR Material Maps Foundation: metallicRoughness + normal + AO.
+
+---
+
 ## Patch P06 — GLB Mesh GPU Upload + Single Primitive Render + Compact Editor UI Foundation
 
 ### Goal

@@ -15,8 +15,10 @@ layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inTexcoord0;
 layout(location = 3) in vec3 inColor;
 layout(location = 0) out vec3 outColor;
+layout(location = 1) out vec2 outTexcoord0;
 
 void main() {
     outColor = inColor;
+    outTexcoord0 = inTexcoord0;
     gl_Position = pc.mvp * vec4(inPosition, 1.0);
 }

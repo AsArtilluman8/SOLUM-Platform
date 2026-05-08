@@ -5,9 +5,9 @@ Render Lab — controlled scene set for future Vulkan renderer validation.
 Current status:
 
 ```text
-first primitive render foundation
-currentLabScene = scene03_glb_mesh_render_lab
-current implementation = real indexed Vulkan cube fallback + GLB import/scan/CPU metadata parser + first primitive Vulkan GPU upload/draw
+texture binding foundation
+currentLabScene = scene04_texture_binding_lab
+current implementation = real indexed Vulkan cube fallback + GLB import/scan/CPU metadata parser + first primitive Vulkan GPU upload/draw + baseColor texture decode/upload/sample
 ```
 
 No shadow/import/performance feature is claimed ready until a real Vulkan implementation and diagnostics proof exist.
@@ -41,14 +41,17 @@ screenshot/readback: not_available, renderer_readback_not_implemented
 Expected runtime status:
 
 ```text
-Render Lab: Scene03 GLB Mesh Render Lab
+Render Lab: Scene04 Texture Binding Lab
 Import: OK/FAILED/not run
 Active model: name or none
 Meshes / primitives / materials / textures
 GPU Upload: ok/failed
 Draw Model: ok/fallback
+BaseColor Texture: ok/missing/failed
+Texture size: width x height or none
+Fallback texture: yes/no
 Fallback cube: on/off
-Next: Texture Binding Foundation
+Next: PBR Material Maps Foundation
 ```
 
 ## Scene02 Model Import Lab
@@ -95,19 +98,29 @@ fallback: Scene01 cube remains visible
 next: Texture Binding Foundation
 ```
 
-## Scene04 Light/Shadow Lab
+## Scene04 Texture Binding Lab
 
 Purpose:
 
-- first real light/shadow validation;
-- future CSM checks;
-- mobile shadow budget tracking.
+- extract first primitive material `pbrMetallicRoughness.baseColorTexture`;
+- decode embedded GLB `image.bufferView` PNG/JPEG through Android `BitmapFactory`;
+- upload one RGBA8 baseColor texture to Vulkan image/imageView/sampler;
+- sample texture in the current material shader using `TEXCOORD_0`;
+- preserve white/baseColor fallback when texture is absent or failed;
+- report texture status without changing mesh draw success.
 
 Current state:
 
 ```text
-scene id: scene04_light_shadow_lab
-status: planned
+scene id: scene04_texture_binding_lab
+status: implemented_foundation
+supported texture slots: baseColorTexture only
+supported image storage: embedded GLB image.bufferView in BIN chunk
+supported MIME: image/png, image/jpeg when Android decode supports it
+textureUploadStatus: ok/failed/missing
+baseColorTextureStatus: ok/failed/missing
+fallback: white/baseColor when texture missing/failed
+next: PBR Material Maps Foundation
 ```
 
 ## Scene05 Import Lab
@@ -148,8 +161,8 @@ Engine diagnostics must include:
   "renderLab": {
     "schema": "solum.render_lab_state",
     "schemaVersion": 1,
-    "currentLabScene": "scene03_glb_mesh_render_lab",
-    "currentLabSceneName": "Scene03 GLB Mesh Render Lab",
+    "currentLabScene": "scene04_texture_binding_lab",
+    "currentLabSceneName": "Scene04 Texture Binding Lab",
     "renderingStatus": "model_first_primitive",
     "assetImportStatus": "active model",
     "activeModelName": "cottage_medieval.glb",
@@ -157,6 +170,16 @@ Engine diagnostics must include:
     "activePrimitiveIndex": 0,
     "gpuUploadStatus": "ok",
     "drawStatus": "ok",
+    "meshDrawStatus": "ok",
+    "textureUploadStatus": "ok",
+    "baseColorTextureStatus": "ok",
+    "baseColorTextureName": "baseColorTexture_0",
+    "baseColorTextureSource": "textures[0].source=images[0].bufferView=4",
+    "baseColorTextureMimeType": "image/png",
+    "textureWidth": 1024,
+    "textureHeight": 1024,
+    "textureBytes": 4194304,
+    "textureFallbackUsed": false,
     "uploadedVertexCount": 4374,
     "uploadedIndexCount": 7002,
     "modelVertexLayout": "POSITION,NORMAL,TEXCOORD_0,COLOR_0",
@@ -166,6 +189,7 @@ Engine diagnostics must include:
     "modelScale": 1.0,
     "modelRenderMode": "first_primitive",
     "fallbackCubeVisible": false,
+    "fallbackCubeStatus": "off",
     "reason": "first primitive uploaded to Vulkan buffers",
     "cubeStatus": "ok",
     "depthStatus": "ok",

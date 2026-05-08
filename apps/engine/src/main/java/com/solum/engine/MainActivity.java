@@ -22,6 +22,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.drawable.GradientDrawable;
 
 import java.io.File;
@@ -57,6 +59,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private TextView statusView;
     private TextView diagnosticsStatusView;
     private Button exportButton;
+    private Button quickExportButton;
     private Button chooseFolderButton;
     private Button importGlbButton;
     private Button scanModelsButton;
@@ -96,6 +99,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native String nativeGetRenderLabState(long handle);
     private static native void nativeSetCamera(long handle, float yawDeg, float pitchDeg, float distance);
     private static native boolean nativeUploadModelFirstPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, float[] baseColorFactor);
+    private static native boolean nativeUploadBaseColorTexture(long handle, int[] rgbaPixels, int width, int height, String textureName, String textureSource, String mimeType);
     private static native void nativeSetModelFallback(long handle, String modelName, String modelPath, String reason);
 
     private TextView panelText(float sizeSp, int maxLines) {
@@ -193,6 +197,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         dockScroll.addView(dock);
         statusView.setBackgroundColor(Color.TRANSPARENT);
         dock.addView(statusView);
+        quickExportButton = compactButton("Export");
+        quickExportButton.setOnClickListener(v -> exportEngineDiagnosticsFromButton());
+        dock.addView(quickExportButton);
         assetsPanel = new LinearLayout(this);
         assetsPanel.setOrientation(LinearLayout.VERTICAL);
         importGlbButton = compactButton("Import GLB");
@@ -336,18 +343,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (counts.isEmpty()) counts = modelState.uploadedVertexCount + " / " + modelState.uploadedIndexCount;
         if (topHudView != null) {
             topHudView.setText("SOLUM Engine / SOLUM V2  |  Frames " + jsonNumberField(getRenderLabStateForExport(), "framesRendered", "0")
-                + "  |  GPU " + gpu + "  |  Vulkan  |  Scene03 GLB Mesh Render Lab  |  " + upload);
+                + "  |  GPU " + gpu + "  |  Vulkan  |  Scene04 Texture Binding Lab  |  " + upload);
         }
-        return "Render Lab: Scene03 GLB Mesh Render Lab"
+        return "Render Lab: Scene04 Texture Binding Lab"
             + "\nImport: " + importStatus
             + "\nActive model: " + (activeName.isEmpty() ? "none" : shorten(activeName, 34))
             + "\nGPU Upload: " + upload
             + "\nDraw Model: " + draw
+            + "\nBaseColor Texture: " + modelState.baseColorTextureStatus
+            + "\nTexture size: " + (modelState.textureWidth > 0 ? modelState.textureWidth + "x" + modelState.textureHeight : "none")
+            + "\nFallback texture: " + (modelState.textureFallbackUsed ? "yes" : "no")
             + "\nVertices / indices: " + counts
             + "\nFallback cube: " + fallback
             + "\nMesh meta: " + p.meshCount + " / " + p.primitiveCount + " / " + p.materialCount + " / " + p.textureCount
             + "\nStatus: " + status
-            + "\nNext: Texture Binding Foundation";
+            + "\nNext: PBR Material Maps Foundation";
     }
 
     private boolean handleCameraTouch(MotionEvent event) {
@@ -460,14 +470,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (ok) {
                 modelState.gpuUploadStatus = "ok";
                 modelState.drawStatus = "ok";
+                modelState.meshDrawStatus = "ok";
                 modelState.uploadedVertexCount = mesh.vertexCount;
                 modelState.uploadedIndexCount = mesh.indexCount;
                 modelState.fallbackCubeVisible = false;
+                modelState.fallbackCubeStatus = "off";
                 modelState.reason = trigger + ": first primitive uploaded";
                 modelState.parse.gpuUploadStatus = "ok";
                 modelState.parse.drawStatus = "ok";
                 modelState.parse.uploadedVertexCount = mesh.vertexCount;
                 modelState.parse.uploadedIndexCount = mesh.indexCount;
+                applyBaseColorTexture(mesh, trigger);
             } else {
                 setModelFallbackState(trigger + ": native model upload/draw failed");
             }
@@ -478,12 +491,55 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         writeModelDiagnostics("gpu_upload_" + trigger);
     }
 
+    private void applyBaseColorTexture(GlbPrimitiveMesh mesh, String trigger) {
+        if (mesh == null || mesh.texture == null) {
+            setTextureState("missing", "missing", "none", "none", "none", 0, 0, 0, true, trigger + ": baseColorTexture missing");
+            return;
+        }
+        if (!"ok".equals(mesh.texture.status)) {
+            setTextureState("missing".equals(mesh.texture.status) ? "missing" : "failed", mesh.texture.status, mesh.texture.name, mesh.texture.source, mesh.texture.mimeType, 0, 0, 0, true, mesh.texture.reason);
+            return;
+        }
+        try {
+            boolean ok = nativeUploadBaseColorTexture(nativeHandle, mesh.texture.pixels, mesh.texture.width, mesh.texture.height, mesh.texture.name, mesh.texture.source, mesh.texture.mimeType);
+            if (ok) {
+                setTextureState("ok", "ok", mesh.texture.name, mesh.texture.source, mesh.texture.mimeType, mesh.texture.width, mesh.texture.height, mesh.texture.pixels.length * 4, false, trigger + ": baseColor texture uploaded");
+            } else {
+                setTextureState("failed", "failed", mesh.texture.name, mesh.texture.source, mesh.texture.mimeType, 0, 0, 0, true, trigger + ": native texture upload failed");
+            }
+        } catch (Throwable t) {
+            setTextureState("failed", "failed", mesh.texture.name, mesh.texture.source, mesh.texture.mimeType, 0, 0, 0, true, trigger + ": " + shortThrowable(t));
+        }
+    }
+
+    private void setTextureState(String uploadStatus, String baseColorStatus, String name, String source, String mimeType, int width, int height, int bytes, boolean fallbackUsed, String reason) {
+        modelState.textureUploadStatus = uploadStatus;
+        modelState.baseColorTextureStatus = baseColorStatus;
+        modelState.baseColorTextureName = name == null || name.isEmpty() ? "none" : name;
+        modelState.baseColorTextureSource = source == null || source.isEmpty() ? "none" : source;
+        modelState.baseColorTextureMimeType = mimeType == null || mimeType.isEmpty() ? "none" : mimeType;
+        modelState.textureWidth = Math.max(0, width);
+        modelState.textureHeight = Math.max(0, height);
+        modelState.textureBytes = Math.max(0, bytes);
+        modelState.textureFallbackUsed = fallbackUsed;
+        modelState.reason = reason;
+        if (modelState.parse != null) {
+            modelState.parse.textureUploadStatus = uploadStatus;
+            modelState.parse.baseColorTextureStatus = baseColorStatus;
+            modelState.parse.textureWidth = Math.max(0, width);
+            modelState.parse.textureHeight = Math.max(0, height);
+            modelState.parse.textureFallbackUsed = fallbackUsed;
+        }
+    }
+
     private void setModelFallbackState(String reason) {
         modelState.gpuUploadStatus = "failed";
         modelState.drawStatus = "fallback";
+        modelState.meshDrawStatus = "fallback";
         modelState.uploadedVertexCount = 0;
         modelState.uploadedIndexCount = 0;
         modelState.fallbackCubeVisible = true;
+        modelState.fallbackCubeStatus = "on";
         modelState.reason = reason;
         if (modelState.parse != null) {
             modelState.parse.gpuUploadStatus = "failed";
@@ -700,18 +756,32 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         lastExportReason = "export in progress";
         lastExportPath = "";
         lastExportTimestamp = timestampUtc();
-        exportButton.setEnabled(false);
-        exportButton.setText("Exporting...");
+        if (exportButton != null) {
+            exportButton.setEnabled(false);
+            exportButton.setText("Exporting...");
+        }
+        if (quickExportButton != null) {
+            quickExportButton.setEnabled(false);
+            quickExportButton.setText("Exporting...");
+        }
         updateDiagnosticsStatusPanel();
-        exportButton.post(() -> {
+        View poster = exportButton != null ? exportButton : quickExportButton;
+        if (poster == null) poster = statusView;
+        poster.post(() -> {
             ExportResult result = exportEngineDiagnostics("manual_button");
             lastExportStatus = result.ok ? "ok" : "failed";
             lastExportRoute = result.route;
             lastExportReason = result.reason;
             lastExportPath = result.actualRoot;
             lastExportTimestamp = result.timestamp;
-            exportButton.setText(result.ok ? "Export OK" : "Export Failed");
-            exportButton.setEnabled(true);
+            if (exportButton != null) {
+                exportButton.setText(result.ok ? "Export OK" : "Export Failed");
+                exportButton.setEnabled(true);
+            }
+            if (quickExportButton != null) {
+                quickExportButton.setText(result.ok ? "Export OK" : "Export Failed");
+                quickExportButton.setEnabled(true);
+            }
             updateDiagnosticsStatusPanel();
         });
     }
@@ -803,7 +873,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"diagnosticsRootStatus\": \"" + escape(result.reason) + "\",\n"
             + "  \"build\": { \"versionName\": \"" + escape(versionName) + "\", \"versionCode\": " + versionCode + " },\n"
             + "  \"backend\": { \"rendererPath\": \"Android Native Vulkan\", \"statusText\": \"" + escape(nativeStatus) + "\" },\n"
-            + "  \"currentScene\": \"scene03_glb_mesh_render_lab\",\n"
+            + "  \"currentScene\": \"scene04_texture_binding_lab\",\n"
             + "  \"assetImportStatus\": \"" + escape(modelState.importStatus) + "\",\n"
             + "  \"activeModelName\": \"" + escape(modelState.activeModelName()) + "\",\n"
             + "  \"activeModelPath\": \"" + escape(modelState.activeModelPath) + "\",\n"
@@ -811,6 +881,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"activeModelSummary\": \"" + escape(modelState.summary()) + "\",\n"
             + "  \"gpuUploadStatus\": \"" + escape(jsonStringField(renderLab, "gpuUploadStatus", modelState.gpuUploadStatus)) + "\",\n"
             + "  \"drawStatus\": \"" + escape(jsonStringField(renderLab, "drawStatus", modelState.drawStatus)) + "\",\n"
+            + "  \"meshDrawStatus\": \"" + escape(jsonStringField(renderLab, "meshDrawStatus", modelState.meshDrawStatus)) + "\",\n"
+            + "  \"textureUploadStatus\": \"" + escape(jsonStringField(renderLab, "textureUploadStatus", modelState.textureUploadStatus)) + "\",\n"
+            + "  \"baseColorTextureStatus\": \"" + escape(jsonStringField(renderLab, "baseColorTextureStatus", modelState.baseColorTextureStatus)) + "\",\n"
+            + "  \"baseColorTextureName\": \"" + escape(jsonStringField(renderLab, "baseColorTextureName", modelState.baseColorTextureName)) + "\",\n"
+            + "  \"baseColorTextureSource\": \"" + escape(jsonStringField(renderLab, "baseColorTextureSource", modelState.baseColorTextureSource)) + "\",\n"
+            + "  \"baseColorTextureMimeType\": \"" + escape(jsonStringField(renderLab, "baseColorTextureMimeType", modelState.baseColorTextureMimeType)) + "\",\n"
+            + "  \"textureWidth\": " + jsonNumberField(renderLab, "textureWidth", String.valueOf(modelState.textureWidth)) + ",\n"
+            + "  \"textureHeight\": " + jsonNumberField(renderLab, "textureHeight", String.valueOf(modelState.textureHeight)) + ",\n"
+            + "  \"textureBytes\": " + jsonNumberField(renderLab, "textureBytes", String.valueOf(modelState.textureBytes)) + ",\n"
+            + "  \"textureFallbackUsed\": " + jsonBooleanField(renderLab, "textureFallbackUsed", modelState.textureFallbackUsed ? "true" : "false") + ",\n"
             + "  \"uploadedVertexCount\": " + jsonNumberField(renderLab, "uploadedVertexCount", String.valueOf(modelState.uploadedVertexCount)) + ",\n"
             + "  \"uploadedIndexCount\": " + jsonNumberField(renderLab, "uploadedIndexCount", String.valueOf(modelState.uploadedIndexCount)) + ",\n"
             + "  \"modelVertexLayout\": \"" + escape(jsonStringField(renderLab, "modelVertexLayout", "POSITION,NORMAL,TEXCOORD_0,COLOR_0")) + "\",\n"
@@ -820,6 +900,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"modelScale\": " + jsonNumberField(renderLab, "modelScale", "1") + ",\n"
             + "  \"modelRenderMode\": \"" + escape(jsonStringField(renderLab, "modelRenderMode", "first_primitive")) + "\",\n"
             + "  \"fallbackCubeVisible\": " + jsonBooleanField(renderLab, "fallbackCubeVisible", modelState.fallbackCubeVisible ? "true" : "false") + ",\n"
+            + "  \"fallbackCubeStatus\": \"" + escape(jsonStringField(renderLab, "fallbackCubeStatus", modelState.fallbackCubeStatus)) + "\",\n"
             + "  \"cubeStatus\": \"" + escape(jsonStringField(renderLab, "cubeStatus", "unknown")) + "\",\n"
             + "  \"depthStatus\": \"" + escape(jsonStringField(renderLab, "depthStatus", "unknown")) + "\",\n"
             + "  \"cameraStatus\": \"" + escape(jsonStringField(renderLab, "cameraStatus", "unknown")) + "\",\n"
@@ -1077,6 +1158,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     + "Last export timestamp: " + (lastExportTimestamp.isEmpty() ? "not run" : lastExportTimestamp) + "\n"
                     + "Import GLB: " + modelState.importStatus + " route=" + modelState.importRoute + "\n"
                     + "GPU Upload / Draw: " + modelState.gpuUploadStatus + " / " + modelState.drawStatus + "\n"
+                    + "BaseColor Texture: " + modelState.baseColorTextureStatus + " upload=" + modelState.textureUploadStatus + "\n"
+                    + "Texture size/fallback: " + modelState.textureWidth + "x" + modelState.textureHeight + " / " + (modelState.textureFallbackUsed ? "yes" : "no") + "\n"
                     + "Uploaded vertices/indices: " + modelState.uploadedVertexCount + " / " + modelState.uploadedIndexCount + "\n"
                     + "Source: " + shorten(modelState.sourceDisplayName.isEmpty() ? "none" : modelState.sourceDisplayName, 48) + "\n"
                     + "Imported: " + shorten(modelState.importedPath.isEmpty() ? "none" : modelState.importedPath, 72) + "\n"
@@ -1093,10 +1176,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private String getRenderLabStateForExport() {
         if (!nativeLoaded || nativeHandle == 0L) {
-            return "{\"currentLabScene\":\"scene03_glb_mesh_render_lab\",\"currentLabSceneName\":\"Scene03 GLB Mesh Render Lab\",\"status\":\"native_not_loaded\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"first_primitive\",\"fallbackCubeVisible\":true}";
+            return "{\"currentLabScene\":\"scene04_texture_binding_lab\",\"currentLabSceneName\":\"Scene04 Texture Binding Lab\",\"status\":\"native_not_loaded\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"first_primitive\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\"}";
         }
         try { return nativeGetRenderLabState(nativeHandle); }
-        catch (Throwable t) { return "{\"currentLabScene\":\"scene03_glb_mesh_render_lab\",\"currentLabSceneName\":\"Scene03 GLB Mesh Render Lab\",\"status\":\"native_render_lab_state_failed\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"fallbackCubeVisible\":true,\"reason\":\"" + escape(shortThrowable(t)) + "\"}"; }
+        catch (Throwable t) { return "{\"currentLabScene\":\"scene04_texture_binding_lab\",\"currentLabSceneName\":\"Scene04 Texture Binding Lab\",\"status\":\"native_render_lab_state_failed\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"failed\",\"baseColorTextureStatus\":\"failed\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(shortThrowable(t)) + "\"}"; }
     }
 
     private String timestampUtc() {
@@ -1142,9 +1225,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         GlbParseResult parse = GlbParseResult.notParsed("not_parsed");
         String gpuUploadStatus = "failed";
         String drawStatus = "fallback";
+        String meshDrawStatus = "fallback";
         int uploadedVertexCount = 0;
         int uploadedIndexCount = 0;
         boolean fallbackCubeVisible = true;
+        String fallbackCubeStatus = "on";
+        String textureUploadStatus = "missing";
+        String baseColorTextureStatus = "missing";
+        String baseColorTextureName = "none";
+        String baseColorTextureSource = "none";
+        String baseColorTextureMimeType = "none";
+        int textureWidth = 0;
+        int textureHeight = 0;
+        int textureBytes = 0;
+        boolean textureFallbackUsed = true;
 
         static ModelImportState notRun() { return new ModelImportState(); }
 
@@ -1182,9 +1276,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"modelsFoundCount\": " + modelsFoundCount + ",\n"
                 + "  \"gpuUploadStatus\": \"" + esc(gpuUploadStatus) + "\",\n"
                 + "  \"drawStatus\": \"" + esc(drawStatus) + "\",\n"
+                + "  \"meshDrawStatus\": \"" + esc(meshDrawStatus) + "\",\n"
+                + "  \"textureUploadStatus\": \"" + esc(textureUploadStatus) + "\",\n"
+                + "  \"baseColorTextureStatus\": \"" + esc(baseColorTextureStatus) + "\",\n"
+                + "  \"baseColorTextureName\": \"" + esc(baseColorTextureName) + "\",\n"
+                + "  \"baseColorTextureSource\": \"" + esc(baseColorTextureSource) + "\",\n"
+                + "  \"baseColorTextureMimeType\": \"" + esc(baseColorTextureMimeType) + "\",\n"
+                + "  \"textureWidth\": " + textureWidth + ",\n"
+                + "  \"textureHeight\": " + textureHeight + ",\n"
+                + "  \"textureBytes\": " + textureBytes + ",\n"
+                + "  \"textureFallbackUsed\": " + textureFallbackUsed + ",\n"
                 + "  \"uploadedVertexCount\": " + uploadedVertexCount + ",\n"
                 + "  \"uploadedIndexCount\": " + uploadedIndexCount + ",\n"
                 + "  \"fallbackCubeVisible\": " + fallbackCubeVisible + ",\n"
+                + "  \"fallbackCubeStatus\": \"" + esc(fallbackCubeStatus) + "\",\n"
                 + parse.toJsonFields()
                 + "}\n";
         }
@@ -1384,6 +1489,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             out.boundsCenter = new float[] { cx, cy, cz };
             out.modelScale = scale;
             out.baseColorFactor = readBaseColorFactor(root, primitive);
+            out.texture = readBaseColorTexture(root, primitive, parsed.binChunk);
             return out;
         }
 
@@ -1398,6 +1504,55 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 for (int i = 0; i < 4; i++) out[i] = (float)factor.optDouble(i, 1.0);
             }
             return out;
+        }
+
+        private static BaseColorTexture readBaseColorTexture(JSONObject root, JSONObject primitive, byte[] bin) {
+            BaseColorTexture out = BaseColorTexture.missing("baseColorTexture missing");
+            try {
+                JSONArray materials = root.optJSONArray("materials");
+                JSONArray textures = root.optJSONArray("textures");
+                JSONArray images = root.optJSONArray("images");
+                JSONArray bufferViews = root.optJSONArray("bufferViews");
+                int materialIndex = primitive.optInt("material", -1);
+                JSONObject material = materials != null && materialIndex >= 0 && materialIndex < materials.length() ? materials.optJSONObject(materialIndex) : null;
+                JSONObject pbr = material == null ? null : material.optJSONObject("pbrMetallicRoughness");
+                JSONObject baseColorTexture = pbr == null ? null : pbr.optJSONObject("baseColorTexture");
+                if (baseColorTexture == null) return out;
+                int textureIndex = baseColorTexture.optInt("index", -1);
+                JSONObject texture = textures != null && textureIndex >= 0 && textureIndex < textures.length() ? textures.optJSONObject(textureIndex) : null;
+                if (texture == null) return BaseColorTexture.failed("baseColorTexture texture index missing: " + textureIndex);
+                int sourceIndex = texture.optInt("source", -1);
+                JSONObject image = images != null && sourceIndex >= 0 && sourceIndex < images.length() ? images.optJSONObject(sourceIndex) : null;
+                if (image == null) return BaseColorTexture.failed("baseColorTexture image source missing: " + sourceIndex);
+                if (image.has("uri")) return BaseColorTexture.failed("external_or_data_uri_image_not_supported_in_p07");
+                int viewIndex = image.optInt("bufferView", -1);
+                String mimeType = image.optString("mimeType", "");
+                if (!"image/png".equals(mimeType) && !"image/jpeg".equals(mimeType)) return BaseColorTexture.failed("unsupported_baseColorTexture_mimeType_" + mimeType);
+                JSONObject view = checkedObject(bufferViews, viewIndex, "baseColorTexture_image_bufferView");
+                int offset = view.optInt("byteOffset", 0);
+                int length = view.optInt("byteLength", -1);
+                if (bin == null || length <= 0 || offset < 0 || offset + length > bin.length) return BaseColorTexture.failed("baseColorTexture_bufferView_out_of_bin_bounds");
+                Bitmap decoded = BitmapFactory.decodeByteArray(bin, offset, length);
+                if (decoded == null) return BaseColorTexture.failed("BitmapFactory decode failed for " + mimeType);
+                Bitmap rgba = decoded.getConfig() == Bitmap.Config.ARGB_8888 ? decoded : decoded.copy(Bitmap.Config.ARGB_8888, false);
+                if (rgba == null) return BaseColorTexture.failed("Bitmap ARGB_8888 conversion failed");
+                int width = rgba.getWidth();
+                int height = rgba.getHeight();
+                int[] pixels = new int[width * height];
+                rgba.getPixels(pixels, 0, width, 0, 0, width, height);
+                BaseColorTexture ok = new BaseColorTexture();
+                ok.status = "ok";
+                ok.reason = "decoded";
+                ok.name = image.optString("name", "baseColorTexture_" + textureIndex);
+                ok.source = "textures[" + textureIndex + "].source=images[" + sourceIndex + "].bufferView=" + viewIndex;
+                ok.mimeType = mimeType;
+                ok.width = width;
+                ok.height = height;
+                ok.pixels = pixels;
+                return ok;
+            } catch (Throwable t) {
+                return BaseColorTexture.failed(t.getClass().getSimpleName() + ": " + (t.getMessage() == null ? "texture decode failed" : t.getMessage()));
+            }
         }
     }
 
@@ -1522,9 +1677,35 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         float[] boundsMax;
         float[] boundsCenter;
         float[] baseColorFactor;
+        BaseColorTexture texture;
         float modelScale;
         int vertexCount;
         int indexCount;
+    }
+
+    private static final class BaseColorTexture {
+        String status = "missing";
+        String reason = "missing";
+        String name = "none";
+        String source = "none";
+        String mimeType = "none";
+        int width = 0;
+        int height = 0;
+        int[] pixels = null;
+
+        static BaseColorTexture missing(String reason) {
+            BaseColorTexture t = new BaseColorTexture();
+            t.status = "missing";
+            t.reason = reason;
+            return t;
+        }
+
+        static BaseColorTexture failed(String reason) {
+            BaseColorTexture t = new BaseColorTexture();
+            t.status = "failed";
+            t.reason = reason;
+            return t;
+        }
     }
 
     private static final class GlbParseResult {
@@ -1560,6 +1741,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String drawStatus = "fallback";
         int uploadedVertexCount = 0;
         int uploadedIndexCount = 0;
+        String textureUploadStatus = "missing";
+        String baseColorTextureStatus = "missing";
+        int textureWidth = 0;
+        int textureHeight = 0;
+        boolean textureFallbackUsed = true;
 
         static GlbParseResult notParsed(String reason) {
             GlbParseResult r = new GlbParseResult();
@@ -1607,6 +1793,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"hasTangents\": " + hasTangents + ",\n"
                 + "  \"hasNormals\": " + hasNormals + ",\n"
                 + "  \"hasTexcoord0\": " + hasTexcoord0 + ",\n"
+                + "  \"textureUploadStatus\": \"" + esc(textureUploadStatus) + "\",\n"
+                + "  \"baseColorTextureStatus\": \"" + esc(baseColorTextureStatus) + "\",\n"
+                + "  \"textureWidth\": " + textureWidth + ",\n"
+                + "  \"textureHeight\": " + textureHeight + ",\n"
+                + "  \"textureFallbackUsed\": " + textureFallbackUsed + ",\n"
                 + "  \"reason\": \"" + esc(reason) + "\"\n";
         }
     }

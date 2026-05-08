@@ -1,6 +1,7 @@
 #pragma once
 #include "pipeline_bundle.hpp"
 #include "runtime_diagnostics.hpp"
+#include "texture_resource.hpp"
 
 namespace solum {
 
@@ -35,7 +36,10 @@ struct RendererCore {
 
     MeshResource validationMesh;
     MeshResource modelMesh;
+    TextureResource baseColorTexture;
     PipelineBundle trianglePipeline;
+    VkDescriptorPool textureDescriptorPool = VK_NULL_HANDLE;
+    VkDescriptorSet textureDescriptorSet = VK_NULL_HANDLE;
     uint64_t framesRendered = 0;
     bool firstFrameRendered = false;
     bool triangleDrawn = false;
@@ -97,6 +101,10 @@ struct RendererCore {
         diagnostics.renderLab.framesRendered = diagnostics.framesRendered;
     }
 
+    void syncTextureMaterialState() {
+        material.baseColorTextureReady = (baseColorTexture.ready && model.baseColorTextureStatus == "ok" && model.textureUploadStatus == "ok") ? 1 : 0;
+    }
+
     void fail(const std::string& reason) {
         status = "SOLUM Engine\n" + reason;
         syncDiagnostics();
@@ -106,6 +114,9 @@ struct RendererCore {
     void destroyFrameResources() {
         if (device == VK_NULL_HANDLE) return;
         vkDeviceWaitIdle(device);
+        if (textureDescriptorPool != VK_NULL_HANDLE) { vkDestroyDescriptorPool(device, textureDescriptorPool, nullptr); textureDescriptorPool = VK_NULL_HANDLE; }
+        textureDescriptorSet = VK_NULL_HANDLE;
+        baseColorTexture.destroy();
         modelMesh.destroy();
         validationMesh.destroy();
         trianglePipeline.destroy();
@@ -421,7 +432,7 @@ struct RendererCore {
     }
 
     void updateReadyStatus() {
-        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene03 GLB Mesh Render Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: Texture Binding Foundation";
+        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene04 Texture Binding Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nBaseColor Texture: " + model.baseColorTextureStatus + "\nTexture size: " + std::to_string(model.textureWidth) + "x" + std::to_string(model.textureHeight) + "\nFallback texture: " + std::string(model.textureFallbackUsed ? "yes" : "no") + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: PBR Material Maps Foundation";
     }
 
     bool setCamera(float yawDeg, float pitchDeg, float distance, bool controlsActive) {
@@ -480,7 +491,9 @@ struct RendererCore {
         rp.pClearValues = clear;
         vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.pipeline);
+        if (textureDescriptorSet != VK_NULL_HANDLE) vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.layout, 0, 1, &textureDescriptorSet, 0, nullptr);
         PushConstants pc{};
+        syncTextureMaterialState();
         pc.mvp = buildMvp();
         pc.material = material;
         vkCmdPushConstants(cmd, trianglePipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pc);
@@ -546,9 +559,11 @@ struct RendererCore {
         model.activeModelPath = path;
         model.gpuUploadStatus = (name.empty() || name == "none") ? "failed" : "failed";
         model.drawStatus = "fallback";
+        model.meshDrawStatus = "fallback";
         model.uploadedVertexCount = 0;
         model.uploadedIndexCount = 0;
         model.fallbackCubeVisible = true;
+        model.fallbackCubeStatus = "on";
         model.reason = reason.empty() ? "no active model" : reason;
         if (device != VK_NULL_HANDLE) modelMesh.destroy();
         renderOneFrame();
@@ -584,6 +599,7 @@ struct RendererCore {
         model.activePrimitiveIndex = 0;
         model.gpuUploadStatus = "ok";
         model.drawStatus = "ok";
+        model.meshDrawStatus = "ok";
         model.uploadedVertexCount = vertexCount;
         model.uploadedIndexCount = indexCount;
         for (int i = 0; i < 3; ++i) {
@@ -593,6 +609,7 @@ struct RendererCore {
         }
         model.modelScale = scale;
         model.fallbackCubeVisible = false;
+        model.fallbackCubeStatus = "off";
         model.reason = "first primitive uploaded to Vulkan buffers";
         if (baseColorFactor) {
             material.baseColorFactor[0] = baseColorFactor[0];
@@ -605,7 +622,9 @@ struct RendererCore {
         bool ok = renderOneFrame();
         if (!ok) {
             model.drawStatus = "fallback";
+            model.meshDrawStatus = "fallback";
             model.fallbackCubeVisible = true;
+            model.fallbackCubeStatus = "on";
             model.reason = diagnostics.reason.empty() ? "model draw failed" : diagnostics.reason;
             error = model.reason;
             renderOneFrame();
@@ -615,9 +634,123 @@ struct RendererCore {
             return false;
         }
         syncDiagnostics();
-        diagnostics.write("valid", "Scene03 GLB Mesh Render Lab uploaded and drew first primitive.");
+        diagnostics.write("valid", "Scene04 Texture Binding Lab uploaded and drew first primitive.");
         updateReadyStatus();
         return true;
+    }
+
+    bool recreateTextureDescriptor(std::string& error) {
+        if (!baseColorTexture.ready || trianglePipeline.textureSetLayout == VK_NULL_HANDLE) {
+            error = "texture descriptor missing texture or layout";
+            return false;
+        }
+        if (textureDescriptorPool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device, textureDescriptorPool, nullptr);
+            textureDescriptorPool = VK_NULL_HANDLE;
+            textureDescriptorSet = VK_NULL_HANDLE;
+        }
+        VkDescriptorPoolSize poolSize{};
+        poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        poolSize.descriptorCount = 1;
+        VkDescriptorPoolCreateInfo pool{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
+        pool.maxSets = 1;
+        pool.poolSizeCount = 1;
+        pool.pPoolSizes = &poolSize;
+        VkResult r = vkCreateDescriptorPool(device, &pool, nullptr, &textureDescriptorPool);
+        if (r != VK_SUCCESS) { error = "texture descriptor pool failed: " + vkResultName(r); return false; }
+        VkDescriptorSetAllocateInfo alloc{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+        alloc.descriptorPool = textureDescriptorPool;
+        alloc.descriptorSetCount = 1;
+        alloc.pSetLayouts = &trianglePipeline.textureSetLayout;
+        r = vkAllocateDescriptorSets(device, &alloc, &textureDescriptorSet);
+        if (r != VK_SUCCESS) { error = "texture descriptor set failed: " + vkResultName(r); return false; }
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.sampler = baseColorTexture.sampler;
+        imageInfo.imageView = baseColorTexture.view;
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        VkWriteDescriptorSet write{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+        write.dstSet = textureDescriptorSet;
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &imageInfo;
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+        return true;
+    }
+
+    bool createFallbackBaseColorTexture(std::string& error) {
+        const uint8_t white[] = { 255, 255, 255, 255 };
+        if (!baseColorTexture.createRgba8(physicalDevice, device, graphicsQueue, commandPool, white, 1, 1, error)) return false;
+        return recreateTextureDescriptor(error);
+    }
+
+    void restoreTextureFallbackAfterFailure() {
+        std::string ignored;
+        createFallbackBaseColorTexture(ignored);
+        model.textureWidth = 0;
+        model.textureHeight = 0;
+        model.textureBytes = 0;
+        model.textureFallbackUsed = true;
+        syncTextureMaterialState();
+    }
+
+    bool uploadBaseColorTexture(
+        const uint8_t* rgba,
+        uint32_t width,
+        uint32_t height,
+        const std::string& name,
+        const std::string& source,
+        const std::string& mimeType,
+        std::string& error
+    ) {
+        if (device == VK_NULL_HANDLE || physicalDevice == VK_NULL_HANDLE || commandPool == VK_NULL_HANDLE) {
+            error = "renderer not initialized for texture upload";
+            model.textureUploadStatus = "failed";
+            model.baseColorTextureStatus = "failed";
+            model.textureFallbackUsed = true;
+            syncTextureMaterialState();
+            return false;
+        }
+        if (!rgba || width == 0 || height == 0) {
+            error = "decoded texture pixels empty";
+            model.textureUploadStatus = "failed";
+            model.baseColorTextureStatus = "failed";
+            model.textureFallbackUsed = true;
+            syncTextureMaterialState();
+            return false;
+        }
+        vkWaitForFences(device, 1, &inFlight, VK_TRUE, UINT64_MAX);
+        if (!baseColorTexture.createRgba8(physicalDevice, device, graphicsQueue, commandPool, rgba, width, height, error)) {
+            model.textureUploadStatus = "failed";
+            model.baseColorTextureStatus = "failed";
+            model.textureFallbackUsed = true;
+            restoreTextureFallbackAfterFailure();
+            syncTextureMaterialState();
+            return false;
+        }
+        if (!recreateTextureDescriptor(error)) {
+            model.textureUploadStatus = "failed";
+            model.baseColorTextureStatus = "failed";
+            model.textureFallbackUsed = true;
+            restoreTextureFallbackAfterFailure();
+            syncTextureMaterialState();
+            return false;
+        }
+        model.textureUploadStatus = "ok";
+        model.baseColorTextureStatus = "ok";
+        model.baseColorTextureName = name.empty() ? "baseColorTexture" : name;
+        model.baseColorTextureSource = source.empty() ? "glb.bufferView" : source;
+        model.baseColorTextureMimeType = mimeType.empty() ? "unknown" : mimeType;
+        model.textureWidth = width;
+        model.textureHeight = height;
+        model.textureBytes = width * height * 4u;
+        model.textureFallbackUsed = false;
+        syncTextureMaterialState();
+        bool ok = renderOneFrame();
+        syncDiagnostics();
+        diagnostics.write("valid", ok ? "baseColor texture uploaded and sampled" : "baseColor texture uploaded; draw retry failed");
+        updateReadyStatus();
+        return ok;
     }
 
     bool createRendererResources() {
@@ -630,6 +763,7 @@ struct RendererCore {
         meshAttributeLayoutReady = validationMesh.vertexCount == 24 && sizeof(Vertex3D) == 44;
         if (!trianglePipeline.createTrianglePipeline(device, renderPass, extent, error)) { fail("PipelineBundle failed: " + error); return false; }
         if (!createCommandsAndSync()) return false;
+        if (!createFallbackBaseColorTexture(error)) { fail("Fallback texture failed: " + error); return false; }
         return true;
     }
 
@@ -648,10 +782,15 @@ struct RendererCore {
         rendererCoreReady = true;
         model.gpuUploadStatus = "failed";
         model.drawStatus = "fallback";
+        model.meshDrawStatus = "fallback";
         model.fallbackCubeVisible = true;
+        model.fallbackCubeStatus = "on";
+        model.textureUploadStatus = "missing";
+        model.baseColorTextureStatus = "missing";
+        model.textureFallbackUsed = true;
         model.reason = "no active model";
         syncDiagnostics();
-        diagnostics.write("valid", "Scene03 GLB Mesh Render Lab initialized with cube fallback while waiting for active model upload.");
+        diagnostics.write("valid", "Scene04 Texture Binding Lab initialized with cube fallback while waiting for active model upload.");
         updateReadyStatus();
         return true;
     }

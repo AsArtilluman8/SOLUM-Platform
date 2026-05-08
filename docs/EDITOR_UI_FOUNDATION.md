@@ -1,8 +1,8 @@
 # EDITOR_UI_FOUNDATION — compact Engine UI foundation
 
-## P06 Direction
+## P07 Direction
 
-P06 keeps the Vulkan viewport as the primary surface and replaces large floating buttons with compact translucent controls.
+P07 keeps the Vulkan viewport as the primary surface, preserves compact translucent controls and makes diagnostics export reachable even when the Debug panel is hidden.
 
 ## Top HUD
 
@@ -22,12 +22,14 @@ The left rail owns panel visibility:
 - Assets;
 - Camera;
 - Debug.
+- Export.
 
 Panels are collapsible. Default state:
 
 - Assets visible;
 - Camera collapsed;
 - Debug collapsed.
+- Export visible as a compact dock action.
 
 ## Assets
 
@@ -53,6 +55,11 @@ Visible controls when expanded:
 
 - Choose Diagnostics Folder;
 - Export Diagnostics.
+
+Compact dock:
+
+- Export Diagnostics stays directly visible as `Export` outside the expanded Debug panel.
+- Debug details remain inside the collapsed/expanded Debug panel.
 
 Diagnostics text is kept inside the bottom dock, not as a full-screen overlay.
 

@@ -53,6 +53,16 @@ struct RuntimeDiagnostics {
         f << "  \"activePrimitiveIndex\": " << model.activePrimitiveIndex << ",\n";
         f << "  \"gpuUploadStatus\": \"" << escapeJson(model.gpuUploadStatus) << "\",\n";
         f << "  \"drawStatus\": \"" << escapeJson(model.drawStatus) << "\",\n";
+        f << "  \"meshDrawStatus\": \"" << escapeJson(model.meshDrawStatus) << "\",\n";
+        f << "  \"textureUploadStatus\": \"" << escapeJson(model.textureUploadStatus) << "\",\n";
+        f << "  \"baseColorTextureStatus\": \"" << escapeJson(model.baseColorTextureStatus) << "\",\n";
+        f << "  \"baseColorTextureName\": \"" << escapeJson(model.baseColorTextureName) << "\",\n";
+        f << "  \"baseColorTextureSource\": \"" << escapeJson(model.baseColorTextureSource) << "\",\n";
+        f << "  \"baseColorTextureMimeType\": \"" << escapeJson(model.baseColorTextureMimeType) << "\",\n";
+        f << "  \"textureWidth\": " << model.textureWidth << ",\n";
+        f << "  \"textureHeight\": " << model.textureHeight << ",\n";
+        f << "  \"textureBytes\": " << model.textureBytes << ",\n";
+        f << "  \"textureFallbackUsed\": " << (model.textureFallbackUsed ? "true" : "false") << ",\n";
         f << "  \"uploadedVertexCount\": " << model.uploadedVertexCount << ",\n";
         f << "  \"uploadedIndexCount\": " << model.uploadedIndexCount << ",\n";
         f << "  \"modelVertexLayout\": \"" << model.modelVertexLayout << "\",\n";
@@ -62,6 +72,7 @@ struct RuntimeDiagnostics {
         f << "  \"modelScale\": " << model.modelScale << ",\n";
         f << "  \"modelRenderMode\": \"" << model.modelRenderMode << "\",\n";
         f << "  \"fallbackCubeVisible\": " << (model.fallbackCubeVisible ? "true" : "false") << ",\n";
+        f << "  \"fallbackCubeStatus\": \"" << escapeJson(model.fallbackCubeStatus) << "\",\n";
         f << "  \"deviceName\": \"" << escapeJson(gpuName) << "\",\n";
         f << "  \"deviceType\": \"" << escapeJson(gpuType) << "\",\n";
         f << "  \"apiVersion\": \"" << escapeJson(apiVersion) << "\",\n";
@@ -73,7 +84,7 @@ struct RuntimeDiagnostics {
         f << "  \"vertexCount\": " << vertexCount << ",\n";
         f << "  \"indexCount\": " << indexCount << ",\n";
         f << "  \"framesRendered\": " << framesRendered << ",\n";
-        f << "  \"cubeStatus\": \"" << (cubeReady ? "ok" : "failed") << "\",\n";
+        f << "  \"cubeStatus\": \"" << (cubeReady || !model.fallbackCubeVisible ? "ok" : "failed") << "\",\n";
         f << "  \"depthStatus\": \"" << (depthReady ? "ok" : "failed") << "\",\n";
         f << "  \"cameraStatus\": \"" << (cameraReady ? "ok" : "failed") << "\",\n";
         f << "  \"cameraMvpStatus\": \"" << (cameraMvpReady ? "ok" : "failed") << "\",\n";

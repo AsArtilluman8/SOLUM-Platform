@@ -11,6 +11,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <cstdint>
 #include <sys/stat.h>
 
 namespace solum {
@@ -38,6 +39,7 @@ struct MaterialConstants {
     float emissiveFactor[3] = { 0.0f, 0.0f, 0.0f };
     int alphaMode = 0;
     int materialId = 1;
+    int baseColorTextureReady = 0;
 };
 
 struct ModelRenderState {
@@ -55,6 +57,17 @@ struct ModelRenderState {
     float modelScale = 1.0f;
     const char* modelRenderMode = "first_primitive";
     bool fallbackCubeVisible = true;
+    std::string meshDrawStatus = "fallback";
+    std::string fallbackCubeStatus = "on";
+    std::string textureUploadStatus = "missing";
+    std::string baseColorTextureStatus = "missing";
+    std::string baseColorTextureName = "none";
+    std::string baseColorTextureSource = "none";
+    std::string baseColorTextureMimeType = "none";
+    uint32_t textureWidth = 0;
+    uint32_t textureHeight = 0;
+    uint32_t textureBytes = 0;
+    bool textureFallbackUsed = true;
     std::string reason = "no active model";
 
     bool modelReady() const {

@@ -7,6 +7,7 @@ namespace solum {
 
 struct PipelineBundle {
     VkDevice device = VK_NULL_HANDLE;
+    VkDescriptorSetLayout textureSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
 
@@ -14,9 +15,11 @@ struct PipelineBundle {
         if (device != VK_NULL_HANDLE) {
             if (pipeline != VK_NULL_HANDLE) vkDestroyPipeline(device, pipeline, nullptr);
             if (layout != VK_NULL_HANDLE) vkDestroyPipelineLayout(device, layout, nullptr);
+            if (textureSetLayout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(device, textureSetLayout, nullptr);
         }
         pipeline = VK_NULL_HANDLE;
         layout = VK_NULL_HANDLE;
+        textureSetLayout = VK_NULL_HANDLE;
         device = VK_NULL_HANDLE;
     }
 
@@ -115,10 +118,22 @@ struct PipelineBundle {
         push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         push.offset = 0;
         push.size = sizeof(PushConstants);
+        VkDescriptorSetLayoutBinding samplerBinding{};
+        samplerBinding.binding = 0;
+        samplerBinding.descriptorCount = 1;
+        samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutCreateInfo setLayoutInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+        setLayoutInfo.bindingCount = 1;
+        setLayoutInfo.pBindings = &samplerBinding;
+        VkResult r = vkCreateDescriptorSetLayout(device, &setLayoutInfo, nullptr, &textureSetLayout);
+        if (r != VK_SUCCESS) { error = "Texture DescriptorSetLayout failed: " + vkResultName(r); vkDestroyShaderModule(device, frag, nullptr); vkDestroyShaderModule(device, vert, nullptr); return false; }
         VkPipelineLayoutCreateInfo layoutInfo{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+        layoutInfo.setLayoutCount = 1;
+        layoutInfo.pSetLayouts = &textureSetLayout;
         layoutInfo.pushConstantRangeCount = 1;
         layoutInfo.pPushConstantRanges = &push;
-        VkResult r = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &layout);
+        r = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &layout);
         if (r != VK_SUCCESS) { error = "PipelineLayout failed: " + vkResultName(r); vkDestroyShaderModule(device, frag, nullptr); vkDestroyShaderModule(device, vert, nullptr); return false; }
 
         VkGraphicsPipelineCreateInfo pipe{ VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };

@@ -66,7 +66,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetCa
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) {
-        return env->NewStringUTF("{\"currentLabScene\":\"scene03_glb_mesh_render_lab\",\"currentLabSceneName\":\"Scene03 GLB Mesh Render Lab\",\"status\":\"native_handle_missing\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"fallbackCubeVisible\":true}");
+        return env->NewStringUTF("{\"currentLabScene\":\"scene04_texture_binding_lab\",\"currentLabSceneName\":\"Scene04 Texture Binding Lab\",\"status\":\"native_handle_missing\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\"}");
     }
     std::string json = std::string("{\"currentLabScene\":\"") + renderer->diagnostics.renderLab.sceneId()
         + "\",\"currentLabSceneName\":\"" + renderer->diagnostics.renderLab.sceneName()
@@ -77,6 +77,16 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"activePrimitiveIndex\":" + std::to_string(renderer->model.activePrimitiveIndex)
         + ",\"gpuUploadStatus\":\"" + solum::escapeJson(renderer->model.gpuUploadStatus) + "\""
         + ",\"drawStatus\":\"" + solum::escapeJson(renderer->model.drawStatus) + "\""
+        + ",\"meshDrawStatus\":\"" + solum::escapeJson(renderer->model.meshDrawStatus) + "\""
+        + ",\"textureUploadStatus\":\"" + solum::escapeJson(renderer->model.textureUploadStatus) + "\""
+        + ",\"baseColorTextureStatus\":\"" + solum::escapeJson(renderer->model.baseColorTextureStatus) + "\""
+        + ",\"baseColorTextureName\":\"" + solum::escapeJson(renderer->model.baseColorTextureName) + "\""
+        + ",\"baseColorTextureSource\":\"" + solum::escapeJson(renderer->model.baseColorTextureSource) + "\""
+        + ",\"baseColorTextureMimeType\":\"" + solum::escapeJson(renderer->model.baseColorTextureMimeType) + "\""
+        + ",\"textureWidth\":" + std::to_string(renderer->model.textureWidth)
+        + ",\"textureHeight\":" + std::to_string(renderer->model.textureHeight)
+        + ",\"textureBytes\":" + std::to_string(renderer->model.textureBytes)
+        + ",\"textureFallbackUsed\":" + (renderer->model.textureFallbackUsed ? "true" : "false")
         + ",\"uploadedVertexCount\":" + std::to_string(renderer->model.uploadedVertexCount)
         + ",\"uploadedIndexCount\":" + std::to_string(renderer->model.uploadedIndexCount)
         + ",\"modelVertexLayout\":\"" + renderer->model.modelVertexLayout + "\""
@@ -86,8 +96,9 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"modelScale\":" + std::to_string(renderer->model.modelScale)
         + ",\"modelRenderMode\":\"first_primitive\""
         + ",\"fallbackCubeVisible\":" + (renderer->model.fallbackCubeVisible ? "true" : "false")
+        + ",\"fallbackCubeStatus\":\"" + solum::escapeJson(renderer->model.fallbackCubeStatus) + "\""
         + ",\"reason\":\"" + solum::escapeJson(renderer->model.reason) + "\""
-        + ",\"cubeStatus\":\"" + (renderer->diagnostics.cubeReady ? "ok" : "failed") + "\""
+        + ",\"cubeStatus\":\"" + ((renderer->diagnostics.cubeReady || !renderer->model.fallbackCubeVisible) ? "ok" : "failed") + "\""
         + ",\"depthStatus\":\"" + (renderer->diagnostics.depthReady ? "ok" : "failed") + "\""
         + ",\"cameraStatus\":\"" + (renderer->diagnostics.cameraReady ? "ok" : "failed") + "\""
         + ",\"cameraMvpStatus\":\"" + (renderer->diagnostics.cameraMvpReady ? "ok" : "failed") + "\""
@@ -202,4 +213,59 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetMo
     if (nameChars) env->ReleaseStringUTFChars(modelName, nameChars);
     if (pathChars) env->ReleaseStringUTFChars(modelPath, pathChars);
     if (reasonChars) env->ReleaseStringUTFChars(reason, reasonChars);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeUploadBaseColorTexture(
+    JNIEnv* env,
+    jclass,
+    jlong handle,
+    jintArray rgbaPixels,
+    jint width,
+    jint height,
+    jstring textureName,
+    jstring textureSource,
+    jstring mimeType
+) {
+    auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
+    if (!renderer || !rgbaPixels || width <= 0 || height <= 0) return JNI_FALSE;
+    const char* nameChars = env->GetStringUTFChars(textureName, nullptr);
+    const char* sourceChars = env->GetStringUTFChars(textureSource, nullptr);
+    const char* mimeChars = env->GetStringUTFChars(mimeType, nullptr);
+    jsize pixelCount = env->GetArrayLength(rgbaPixels);
+    const int64_t expected = (int64_t)width * (int64_t)height;
+    if (expected <= 0 || pixelCount < expected) {
+        renderer->model.textureUploadStatus = "failed";
+        renderer->model.baseColorTextureStatus = "failed";
+        renderer->model.textureFallbackUsed = true;
+        renderer->model.reason = "texture pixel count mismatch";
+        if (nameChars) env->ReleaseStringUTFChars(textureName, nameChars);
+        if (sourceChars) env->ReleaseStringUTFChars(textureSource, sourceChars);
+        if (mimeChars) env->ReleaseStringUTFChars(mimeType, mimeChars);
+        return JNI_FALSE;
+    }
+    jint* pixels = env->GetIntArrayElements(rgbaPixels, nullptr);
+    std::vector<uint8_t> rgba((size_t)expected * 4u);
+    for (int64_t i = 0; i < expected; ++i) {
+        uint32_t argb = (uint32_t)pixels[i];
+        rgba[(size_t)i * 4u] = (uint8_t)((argb >> 16) & 0xffu);
+        rgba[(size_t)i * 4u + 1u] = (uint8_t)((argb >> 8) & 0xffu);
+        rgba[(size_t)i * 4u + 2u] = (uint8_t)(argb & 0xffu);
+        rgba[(size_t)i * 4u + 3u] = (uint8_t)((argb >> 24) & 0xffu);
+    }
+    std::string error;
+    bool ok = renderer->uploadBaseColorTexture(
+        rgba.data(),
+        (uint32_t)width,
+        (uint32_t)height,
+        nameChars ? nameChars : "baseColorTexture",
+        sourceChars ? sourceChars : "glb.bufferView",
+        mimeChars ? mimeChars : "unknown",
+        error
+    );
+    if (!ok) renderer->model.reason = error.empty() ? "texture upload failed" : error;
+    env->ReleaseIntArrayElements(rgbaPixels, pixels, JNI_ABORT);
+    if (nameChars) env->ReleaseStringUTFChars(textureName, nameChars);
+    if (sourceChars) env->ReleaseStringUTFChars(textureSource, sourceChars);
+    if (mimeChars) env->ReleaseStringUTFChars(mimeType, mimeChars);
+    return ok ? JNI_TRUE : JNI_FALSE;
 }

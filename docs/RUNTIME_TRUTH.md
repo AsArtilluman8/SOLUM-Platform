@@ -51,6 +51,12 @@ Engine diagnostics latest:
 /storage/emulated/0/SOLUMCreative/diagnostics/latest
 ```
 
+Engine asset import root:
+
+```text
+/storage/emulated/0/SOLUMCreative/assets/models/imported/
+```
+
 Engine app exposes:
 
 ```text
@@ -69,6 +75,8 @@ Export writes:
 ```text
 diagnostics/latest/engine_runtime_state.json
 diagnostics/latest/engine_diagnostics_manifest.json
+diagnostics/latest/model_import_state.json
+diagnostics/latest/asset_report.json
 ```
 
 Route order:
@@ -89,6 +97,17 @@ screenshot.reason = renderer_readback_not_implemented
 ```
 
 Engine screen must show visible diagnostics status. Toast is not enough.
+
+P05 model import status must show:
+
+```text
+Import GLB
+Scan Models
+Import: OK/FAILED/not run
+Active model: name or none
+GPU Upload: not implemented
+Draw Model: not implemented
+```
 
 If direct public storage is blocked by Android storage rules, engine writes app-specific fallback and manifest/status panel must show the exact route and reason.
 

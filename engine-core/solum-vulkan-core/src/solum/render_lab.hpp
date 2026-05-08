@@ -5,7 +5,7 @@ namespace solum {
 
 enum class RenderLabScene {
     Scene01FoundationCube,
-    Scene02MaterialLab,
+    Scene02ModelImportLab,
     Scene03CameraDepthLab,
     Scene04LightShadowLab,
     Scene05ImportLab,
@@ -13,7 +13,7 @@ enum class RenderLabScene {
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene01FoundationCube;
+    RenderLabScene currentScene = RenderLabScene::Scene02ModelImportLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -38,7 +38,7 @@ struct RenderLabState {
     const char* sceneId() const {
         switch (currentScene) {
             case RenderLabScene::Scene01FoundationCube: return "scene01_foundation_cube";
-            case RenderLabScene::Scene02MaterialLab: return "scene02_material_lab";
+            case RenderLabScene::Scene02ModelImportLab: return "scene02_model_import_lab";
             case RenderLabScene::Scene03CameraDepthLab: return "scene03_camera_depth_lab";
             case RenderLabScene::Scene04LightShadowLab: return "scene04_light_shadow_lab";
             case RenderLabScene::Scene05ImportLab: return "scene05_import_lab";
@@ -50,7 +50,7 @@ struct RenderLabState {
     const char* sceneName() const {
         switch (currentScene) {
             case RenderLabScene::Scene01FoundationCube: return "Scene01 Foundation Cube";
-            case RenderLabScene::Scene02MaterialLab: return "Scene02 Material Lab";
+            case RenderLabScene::Scene02ModelImportLab: return "Scene02 Model Import Lab";
             case RenderLabScene::Scene03CameraDepthLab: return "Scene03 Camera/Depth Lab";
             case RenderLabScene::Scene04LightShadowLab: return "Scene04 Light/Shadow Lab";
             case RenderLabScene::Scene05ImportLab: return "Scene05 Import Lab";
@@ -66,6 +66,11 @@ struct RenderLabState {
         f << indent << "  \"currentLabScene\": \"" << sceneId() << "\",\n";
         f << indent << "  \"currentLabSceneName\": \"" << sceneName() << "\",\n";
         f << indent << "  \"renderingStatus\": \"foundation_only\",\n";
+        f << indent << "  \"assetImportStatus\": \"not run\",\n";
+        f << indent << "  \"activeModelName\": \"none\",\n";
+        f << indent << "  \"activeModelSummary\": \"metadata parsed by Java GLB CPU parser when a model is imported\",\n";
+        f << indent << "  \"gpuUploadStatus\": \"not_implemented\",\n";
+        f << indent << "  \"drawStatus\": \"not_implemented\",\n";
         f << indent << "  \"cubeStatus\": \"" << (cubeReady ? "ok" : "failed") << "\",\n";
         f << indent << "  \"depthStatus\": \"" << (depthReady ? "ok" : "failed") << "\",\n";
         f << indent << "  \"cameraStatus\": \"" << (cameraReady ? "ok" : "failed") << "\",\n";

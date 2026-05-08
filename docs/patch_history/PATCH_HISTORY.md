@@ -40,6 +40,112 @@ SUCCESS / FAILED / NOT TESTED
 
 ---
 
+## Patch P05 — GLB Import Button + Asset Library + Model Diagnostics
+
+### Goal
+
+Add a real Engine-side GLB import path without claiming model rendering.
+
+### Scope
+
+- `Import GLB` button in `apps/engine`.
+- Android file picker through `ACTION_OPEN_DOCUMENT`.
+- Copy selected `.glb` into:
+
+```text
+/storage/emulated/0/SOLUMCreative/assets/models/imported/
+```
+
+- Route reporting: `saf/direct/fallback/failed`.
+- `Scan Models` button.
+- Active model = last imported model or first scanned `.glb`.
+- CPU-only GLB parser foundation:
+  - magic `glTF`;
+  - version 2;
+  - total length;
+  - JSON chunk;
+  - BIN chunk;
+  - metadata counts for scenes/nodes/meshes/primitives/accessors/bufferViews/buffers/materials/images/textures/samplers/skins;
+  - attributes POSITION, NORMAL, TEXCOORD_0, COLOR_0, TANGENT, JOINTS_0, WEIGHTS_0.
+- Diagnostics:
+  - `model_import_state.json`;
+  - `asset_report.json`;
+  - `engine_runtime_state.json` asset fields.
+
+### Out of scope
+
+- GPU mesh upload.
+- Model draw.
+- Texture binding.
+- PBR lighting.
+- Skeletal animation.
+- Renderer replacement.
+
+### Changed files/modules
+
+- `apps/engine/src/main/java/com/solum/engine/MainActivity.java`
+- `engine-core/solum-vulkan-core/src/solum/render_lab.hpp`
+- `engine-core/solum-vulkan-core/src/solum/runtime_diagnostics.hpp`
+- `engine-core/solum-vulkan-core/src/solum/renderer_core.hpp`
+- `engine-core/solum-vulkan-core/src/solum_engine.cpp`
+- `docs/GLB_IMPORT_PIPELINE.md`
+- `docs/RENDER_LAB.md`
+- `docs/RUNTIME_TRUTH.md`
+- `docs/patch_history/PATCH_HISTORY.md`
+
+### Build result
+
+BUILD_SUCCESS through the allowed SOLUM runner:
+
+```text
+bash tools/agent_build_runner.sh
+```
+
+Output APK:
+
+```text
+/storage/emulated/0/Download/SOLUM_APK/SOLUM-engine-debug.apk
+```
+
+### Runtime result
+
+Manual phone verification required.
+
+### Diagnostics
+
+Expected files:
+
+```text
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/model_import_state.json
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/asset_report.json
+/storage/emulated/0/SOLUMCreative/diagnostics/latest/engine_runtime_state.json
+```
+
+### User-visible result
+
+Engine shows:
+
+```text
+Import GLB
+Scan Models
+Render Lab: Scene02 Model Import Lab
+Import: OK/FAILED/not run
+Active model: name or none
+GPU Upload: not implemented
+Draw Model: not implemented
+Next: GLB Mesh GPU Upload
+```
+
+The cube remains the current visible Vulkan render.
+
+### Known issues
+
+Model GPU upload and draw are intentionally `not_implemented`.
+
+### Next
+
+P06 GLB Mesh GPU Upload + Single Primitive Render.
+
 ## Patch P03B/P04A — Interactive Camera + Material Constants + Mesh Attribute Layout
 
 ### Goal

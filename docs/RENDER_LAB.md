@@ -6,8 +6,8 @@ Current status:
 
 ```text
 foundation only
-currentLabScene = scene01_foundation_cube
-current implementation = real indexed Vulkan cube + depth + interactive camera + material constants + mesh attribute layout foundation
+currentLabScene = scene02_model_import_lab
+current implementation = real indexed Vulkan cube fallback/current render + GLB import/scan/CPU metadata parser
 ```
 
 No shadow/import/performance feature is claimed ready until a real Vulkan implementation and diagnostics proof exist.
@@ -41,28 +41,35 @@ screenshot/readback: not_available, renderer_readback_not_implemented
 Expected runtime status:
 
 ```text
-Render Lab: Scene01 Foundation Cube
-Cube draw: OK
-Depth: OK
-Camera: controls OK
-Material constants: OK
-Mesh layout: OK
-Next: Texture Binding / Asset Mesh Upload
+Render Lab: Scene02 Model Import Lab
+Import: OK/FAILED/not run
+Active model: name or none
+Meshes / primitives / materials / textures
+GPU Upload: not implemented
+Draw Model: not implemented
+Next: GLB Mesh GPU Upload
 ```
 
-## Scene02 Material Lab
+## Scene02 Model Import Lab
 
 Purpose:
 
-- material parameter validation;
-- texture slot validation;
-- future Material Studio preview target.
+- import `.glb` through Android file picker;
+- copy model into the SOLUM asset library;
+- scan imported model assets;
+- parse GLB header/chunks and JSON metadata on CPU;
+- write model diagnostics without claiming GPU upload or model draw.
 
 Current state:
 
 ```text
-scene id: scene02_material_lab
-status: planned
+scene id: scene02_model_import_lab
+status: implemented_import_foundation
+asset root: /storage/emulated/0/SOLUMCreative/assets/models/imported/
+current render: Scene01 cube fallback preserved
+gpuUploadStatus: not_implemented
+drawStatus: not_implemented
+next: GLB Mesh GPU Upload
 ```
 
 ## Scene03 Camera/Depth Lab
@@ -133,8 +140,13 @@ Engine diagnostics must include:
   "renderLab": {
     "schema": "solum.render_lab_state",
     "schemaVersion": 1,
-    "currentLabScene": "scene01_foundation_cube",
+    "currentLabScene": "scene02_model_import_lab",
+    "currentLabSceneName": "Scene02 Model Import Lab",
     "renderingStatus": "foundation_only",
+    "assetImportStatus": "not run",
+    "activeModelName": "none",
+    "gpuUploadStatus": "not_implemented",
+    "drawStatus": "not_implemented",
     "cubeStatus": "ok",
     "depthStatus": "ok",
     "cameraStatus": "ok",

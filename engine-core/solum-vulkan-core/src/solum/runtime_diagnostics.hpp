@@ -46,6 +46,11 @@ struct RuntimeDiagnostics {
         f << "  \"reason\": \"" << escapeJson(reason) << "\",\n";
         f << "  \"rendererPath\": \"Android Native Vulkan\",\n";
         f << "  \"rendererCoreReady\": " << (rendererCoreReady ? "true" : "false") << ",\n";
+        f << "  \"assetImportStatus\": \"not run\",\n";
+        f << "  \"activeModelName\": \"none\",\n";
+        f << "  \"activeModelSummary\": \"model metadata is owned by model_import_state.json and asset_report.json\",\n";
+        f << "  \"gpuUploadStatus\": \"not_implemented\",\n";
+        f << "  \"drawStatus\": \"not_implemented\",\n";
         f << "  \"deviceName\": \"" << escapeJson(gpuName) << "\",\n";
         f << "  \"deviceType\": \"" << escapeJson(gpuType) << "\",\n";
         f << "  \"apiVersion\": \"" << escapeJson(apiVersion) << "\",\n";

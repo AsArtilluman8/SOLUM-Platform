@@ -415,7 +415,7 @@ struct RendererCore {
     }
 
     void updateReadyStatus() {
-        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene01 Foundation Cube\nVertex buffer: OK\nIndex buffer: OK\nTriangle fallback: available/disabled\nCube draw: OK\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: Texture Binding / Asset Mesh Upload";
+        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene02 Model Import Lab\nVertex buffer: OK\nIndex buffer: OK\nTriangle fallback: available/disabled\nCube draw: OK\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nGPU Upload: not implemented\nDraw Model: not implemented\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: GLB Mesh GPU Upload";
     }
 
     bool setCamera(float yawDeg, float pitchDeg, float distance, bool controlsActive) {

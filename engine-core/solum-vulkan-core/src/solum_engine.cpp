@@ -66,11 +66,16 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetCa
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) {
-        return env->NewStringUTF("{\"currentLabScene\":\"scene01_foundation_cube\",\"status\":\"native_handle_missing\"}");
+        return env->NewStringUTF("{\"currentLabScene\":\"scene02_model_import_lab\",\"currentLabSceneName\":\"Scene02 Model Import Lab\",\"status\":\"native_handle_missing\",\"gpuUploadStatus\":\"not_implemented\",\"drawStatus\":\"not_implemented\"}");
     }
     std::string json = std::string("{\"currentLabScene\":\"") + renderer->diagnostics.renderLab.sceneId()
         + "\",\"currentLabSceneName\":\"" + renderer->diagnostics.renderLab.sceneName()
         + "\",\"renderingStatus\":\"foundation_only\""
+        + ",\"assetImportStatus\":\"not run\""
+        + ",\"activeModelName\":\"none\""
+        + ",\"activeModelSummary\":\"metadata parsed by Java GLB CPU parser when a model is imported\""
+        + ",\"gpuUploadStatus\":\"not_implemented\""
+        + ",\"drawStatus\":\"not_implemented\""
         + ",\"cubeStatus\":\"" + (renderer->diagnostics.cubeReady ? "ok" : "failed") + "\""
         + ",\"depthStatus\":\"" + (renderer->diagnostics.depthReady ? "ok" : "failed") + "\""
         + ",\"cameraStatus\":\"" + (renderer->diagnostics.cameraReady ? "ok" : "failed") + "\""

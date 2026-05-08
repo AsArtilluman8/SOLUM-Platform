@@ -7,6 +7,10 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
+import android.os.Environment;
+import android.provider.MediaStore;
+import android.content.ContentValues;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.util.Log;
@@ -34,6 +38,8 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.io.RandomAccessFile;
 import java.io.Writer;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -60,6 +66,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private TextView diagnosticsStatusView;
     private Button exportButton;
     private Button quickExportButton;
+    private Button debugZipButton;
     private Button chooseFolderButton;
     private Button importGlbButton;
     private Button scanModelsButton;
@@ -81,6 +88,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private String lastExportReason = "";
     private String lastExportPath = "";
     private String lastExportTimestamp = "";
+    private String debugZipStatus = "not_run";
+    private String debugZipPath = "";
+    private String debugZipReason = "not_run";
+    private String debugZipIncludedFiles = "";
+    private long fpsWindowStartNs = 0L;
+    private long fpsWindowFrames = 0L;
+    private float fpsCurrent = 0.0f;
+    private float frameTimeMs = 0.0f;
     private float cameraYawDeg = 28.0f;
     private float cameraPitchDeg = -18.0f;
     private float cameraDistance = 4.2f;
@@ -99,7 +114,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native String nativeGetRenderLabState(long handle);
     private static native void nativeSetCamera(long handle, float yawDeg, float pitchDeg, float distance);
     private static native boolean nativeUploadModelFirstPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, float[] baseColorFactor);
+    private static native boolean nativeUploadModelMultiPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, int[] rangeData, float[] materialData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, int primitiveTotal, int primitiveSkipped, int unsupportedPrimitiveCount, String reason);
     private static native boolean nativeUploadBaseColorTexture(long handle, int[] rgbaPixels, int width, int height, String textureName, String textureSource, String mimeType);
+    private static native boolean nativeUploadBaseColorTextureSlot(long handle, int slot, int[] rgbaPixels, int width, int height, String textureName, String textureSource, String mimeType);
+    private static native void nativeUpdateUiDiagnostics(long handle, float fpsCurrent, float frameTimeMs, String debugZipStatus, String debugZipPath, String debugZipIncludedFiles, String debugZipReason);
     private static native void nativeSetModelFallback(long handle, String modelName, String modelPath, String reason);
 
     private TextView panelText(float sizeSp, int maxLines) {
@@ -118,11 +136,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         Button button = new Button(this);
         button.setText(label);
         button.setAllCaps(false);
-        button.setTextSize(10f);
+        button.setTextSize(11f);
         button.setTextColor(Color.rgb(218, 248, 255));
-        button.setMinHeight(44);
-        button.setMinimumHeight(44);
-        button.setPadding(10, 4, 10, 4);
+        button.setMinHeight(52);
+        button.setMinimumHeight(52);
+        button.setMinWidth(132);
+        button.setPadding(14, 6, 14, 6);
         button.setBackground(panelBackground(190));
         return button;
     }
@@ -210,10 +229,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         assetsPanel.addView(scanModelsButton);
         dock.addView(assetsPanel);
         cameraPanel = new LinearLayout(this);
-        cameraPanel.setOrientation(LinearLayout.HORIZONTAL);
-        Button zoomInButton = compactButton("Zoom In");
+        cameraPanel.setOrientation(LinearLayout.VERTICAL);
+        Button zoomInButton = compactButton("Camera +");
         zoomInButton.setOnClickListener(v -> applyCamera(cameraYawDeg, cameraPitchDeg, cameraDistance - 0.35f));
-        Button zoomOutButton = compactButton("Zoom Out");
+        Button zoomOutButton = compactButton("Camera -");
         zoomOutButton.setOnClickListener(v -> applyCamera(cameraYawDeg, cameraPitchDeg, cameraDistance + 0.35f));
         cameraPanel.addView(zoomInButton);
         cameraPanel.addView(zoomOutButton);
@@ -224,9 +243,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         chooseFolderButton.setOnClickListener(v -> chooseDiagnosticsFolder());
         exportButton = compactButton("Export Diagnostics");
         exportButton.setOnClickListener(v -> exportEngineDiagnosticsFromButton());
+        debugZipButton = compactButton("Export Debug ZIP");
+        debugZipButton.setOnClickListener(v -> exportDebugZipFromButton());
         diagnosticsStatusView.setBackgroundColor(Color.TRANSPARENT);
         debugPanel.addView(chooseFolderButton);
         debugPanel.addView(exportButton);
+        debugPanel.addView(debugZipButton);
         debugPanel.addView(diagnosticsStatusView);
         dock.addView(debugPanel);
         FrameLayout.LayoutParams dockParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
@@ -319,6 +341,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private String compactStatus(String full) {
+        updateFpsFromUiPulse();
         String gpu = pickValue(full, "GPU: ");
         String status = "running";
         String importStatus = modelState.importStatus;
@@ -342,22 +365,46 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (fallback.isEmpty()) fallback = modelState.fallbackCubeVisible ? "on" : "off";
         if (counts.isEmpty()) counts = modelState.uploadedVertexCount + " / " + modelState.uploadedIndexCount;
         if (topHudView != null) {
-            topHudView.setText("SOLUM Engine / SOLUM V2  |  Frames " + jsonNumberField(getRenderLabStateForExport(), "framesRendered", "0")
-                + "  |  GPU " + gpu + "  |  Vulkan  |  Scene04 Texture Binding Lab  |  " + upload);
+            topHudView.setText("FPS " + oneDecimal(fpsCurrent) + "  |  " + oneDecimal(frameTimeMs) + " ms  |  GPU " + gpu + "  |  Vulkan  |  Scene05 Multi Primitive Render Lab");
         }
-        return "Render Lab: Scene04 Texture Binding Lab"
+        int rendered = intJsonField("primitiveCountRendered", modelState.primitiveCountRendered);
+        int skipped = intJsonField("primitiveCountSkipped", modelState.primitiveCountSkipped);
+        int total = intJsonField("primitiveCountTotal", modelState.primitiveCountTotal);
+        return "Render Lab: Scene05 Multi Primitive Render Lab"
             + "\nImport: " + importStatus
             + "\nActive model: " + (activeName.isEmpty() ? "none" : shorten(activeName, 34))
-            + "\nGPU Upload: " + upload
-            + "\nDraw Model: " + draw
-            + "\nBaseColor Texture: " + modelState.baseColorTextureStatus
-            + "\nTexture size: " + (modelState.textureWidth > 0 ? modelState.textureWidth + "x" + modelState.textureHeight : "none")
-            + "\nFallback texture: " + (modelState.textureFallbackUsed ? "yes" : "no")
+            + "\nModel render: " + draw
+            + "\nPrimitives rendered/skipped/total: " + rendered + " / " + skipped + " / " + total
+            + "\nMaterials used: " + intJsonField("materialSlotCountRendered", modelState.materialSlotCountRendered)
+            + "\nTextures uploaded/fallback/skipped: " + intJsonField("uploadedTextureCount", modelState.uploadedTextureCount) + " / " + intJsonField("textureFallbackCount", modelState.textureFallbackCount) + " / " + intJsonField("skippedTextureCount", modelState.skippedTextureCount)
+            + "\nFPS/frameMs: " + oneDecimal(fpsCurrent) + " / " + oneDecimal(frameTimeMs)
+            + "\nDebug ZIP: " + debugZipStatus
             + "\nVertices / indices: " + counts
             + "\nFallback cube: " + fallback
             + "\nMesh meta: " + p.meshCount + " / " + p.primitiveCount + " / " + p.materialCount + " / " + p.textureCount
             + "\nStatus: " + status
             + "\nNext: PBR Material Maps Foundation";
+    }
+
+    private void updateFpsFromUiPulse() {
+        long now = System.nanoTime();
+        if (fpsWindowStartNs == 0L) fpsWindowStartNs = now;
+        fpsWindowFrames++;
+        long elapsed = now - fpsWindowStartNs;
+        if (elapsed >= 500_000_000L) {
+            fpsCurrent = (float)(fpsWindowFrames * 1_000_000_000.0 / elapsed);
+            frameTimeMs = fpsCurrent > 0.001f ? 1000.0f / fpsCurrent : 0.0f;
+            fpsWindowStartNs = now;
+            fpsWindowFrames = 0L;
+            try { if (nativeLoaded && nativeHandle != 0L) nativeUpdateUiDiagnostics(nativeHandle, fpsCurrent, frameTimeMs, debugZipStatus, debugZipPath, debugZipIncludedFiles, debugZipReason); } catch (Throwable ignored) { }
+        }
+    }
+
+    private String oneDecimal(float v) { return String.format(Locale.US, "%.1f", v); }
+
+    private int intJsonField(String key, int fallback) {
+        try { return Integer.parseInt(jsonNumberField(getRenderLabStateForExport(), key, String.valueOf(fallback))); }
+        catch (Throwable ignored) { return fallback; }
     }
 
     private boolean handleCameraTouch(MotionEvent event) {
@@ -454,33 +501,46 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
         try {
             if (modelState.parse == null || !modelState.parse.glbValid || modelState.parse.binChunk == null) modelState.parse = GlbParser.parse(active);
-            GlbPrimitiveMesh mesh = GlbParser.extractFirstPrimitive(modelState.parse);
-            boolean ok = nativeUploadModelFirstPrimitive(
+            GlbPrimitiveMesh mesh = GlbParser.extractMultiPrimitive(modelState.parse);
+            boolean ok = nativeUploadModelMultiPrimitive(
                 nativeHandle,
                 modelState.activeModelName(),
                 modelState.activeModelPath,
                 mesh.vertexData,
                 mesh.indexData,
+                mesh.rangeData,
+                mesh.materialData,
                 mesh.boundsMin,
                 mesh.boundsMax,
                 mesh.boundsCenter,
                 mesh.modelScale,
-                mesh.baseColorFactor
+                mesh.primitiveCountTotal,
+                mesh.primitiveCountSkipped,
+                mesh.unsupportedPrimitiveCount,
+                mesh.reason
             );
             if (ok) {
                 modelState.gpuUploadStatus = "ok";
-                modelState.drawStatus = "ok";
-                modelState.meshDrawStatus = "ok";
+                modelState.drawStatus = mesh.primitiveCountSkipped > 0 ? "partial_ok" : "ok";
+                modelState.meshDrawStatus = modelState.drawStatus;
                 modelState.uploadedVertexCount = mesh.vertexCount;
                 modelState.uploadedIndexCount = mesh.indexCount;
+                modelState.primitiveCountTotal = mesh.primitiveCountTotal;
+                modelState.primitiveCountRendered = mesh.primitiveCountRendered;
+                modelState.primitiveCountSkipped = mesh.primitiveCountSkipped;
+                modelState.unsupportedPrimitiveCount = mesh.unsupportedPrimitiveCount;
+                modelState.materialSlotCount = mesh.materialSlotCount;
+                modelState.materialSlotCountRendered = mesh.materialSlotCount;
+                modelState.textureSlotCount = mesh.textureSlotCount;
+                modelState.textureSlotLimit = mesh.textureSlotLimit;
                 modelState.fallbackCubeVisible = false;
                 modelState.fallbackCubeStatus = "off";
-                modelState.reason = trigger + ": first primitive uploaded";
+                modelState.reason = trigger + ": multi primitive static upload rendered=" + mesh.primitiveCountRendered + " skipped=" + mesh.primitiveCountSkipped + " reason=" + mesh.reason;
                 modelState.parse.gpuUploadStatus = "ok";
-                modelState.parse.drawStatus = "ok";
+                modelState.parse.drawStatus = modelState.drawStatus;
                 modelState.parse.uploadedVertexCount = mesh.vertexCount;
                 modelState.parse.uploadedIndexCount = mesh.indexCount;
-                applyBaseColorTexture(mesh, trigger);
+                applyBaseColorTextures(mesh, trigger);
             } else {
                 setModelFallbackState(trigger + ": native model upload/draw failed");
             }
@@ -489,6 +549,40 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             nativeSetModelFallback(nativeHandle, modelState.activeModelName(), modelState.activeModelPath, modelState.reason);
         }
         writeModelDiagnostics("gpu_upload_" + trigger);
+    }
+
+    private void applyBaseColorTextures(GlbPrimitiveMesh mesh, String trigger) {
+        if (mesh == null || mesh.textures == null || mesh.textures.isEmpty()) {
+            setTextureState("missing", "missing", "none", "none", "none", 0, 0, 0, true, trigger + ": baseColorTexture missing");
+            modelState.textureSlotCount = mesh == null ? 0 : mesh.textureSlotCount;
+            return;
+        }
+        int uploaded = 0;
+        int fallback = 0;
+        int skipped = Math.max(0, mesh.skippedTextureCount);
+        for (BaseColorTexture texture : mesh.textures) {
+            if (texture == null) continue;
+            if (!"ok".equals(texture.status)) {
+                if ("missing".equals(texture.status)) skipped++; else fallback++;
+                continue;
+            }
+            try {
+                boolean ok = nativeUploadBaseColorTextureSlot(nativeHandle, texture.slot, texture.pixels, texture.width, texture.height, texture.name, texture.source, texture.mimeType);
+                if (ok) uploaded++; else fallback++;
+            } catch (Throwable t) {
+                fallback++;
+            }
+        }
+        modelState.uploadedTextureCount = uploaded;
+        modelState.textureFallbackCount = fallback;
+        modelState.skippedTextureCount = skipped;
+        modelState.textureSlotCount = mesh.textureSlotCount;
+        if (uploaded > 0) {
+            BaseColorTexture first = mesh.textures.get(0);
+            setTextureState("ok", "ok", first.name, first.source, first.mimeType, first.width, first.height, first.pixels == null ? 0 : first.pixels.length * 4, false, trigger + ": texture slots uploaded=" + uploaded);
+        } else {
+            setTextureState("missing", fallback > 0 ? "failed" : "missing", "none", "none", "none", 0, 0, 0, true, trigger + ": no texture slots uploaded");
+        }
     }
 
     private void applyBaseColorTexture(GlbPrimitiveMesh mesh, String trigger) {
@@ -547,6 +641,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             modelState.parse.uploadedVertexCount = 0;
             modelState.parse.uploadedIndexCount = 0;
         }
+        modelState.primitiveCountRendered = 0;
+        modelState.primitiveCountSkipped = modelState.parse == null ? 0 : modelState.parse.primitiveCount;
+        modelState.primitiveCountTotal = modelState.parse == null ? 0 : modelState.parse.primitiveCount;
     }
 
     private void chooseGlbForImport() {
@@ -786,6 +883,106 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         });
     }
 
+    private void exportDebugZipFromButton() {
+        Log.i(TAG_DIAG, "debug_zip_clicked");
+        debugZipStatus = "running";
+        debugZipReason = "export in progress";
+        debugZipPath = "";
+        debugZipIncludedFiles = "";
+        if (debugZipButton != null) {
+            debugZipButton.setEnabled(false);
+            debugZipButton.setText("ZIP...");
+        }
+        updateDiagnosticsStatusPanel();
+        View poster = debugZipButton != null ? debugZipButton : statusView;
+        poster.post(() -> {
+            try {
+                exportEngineDiagnostics("debug_zip");
+                writeModelDiagnostics("debug_zip");
+                DebugZipResult result = exportDebugZip();
+                debugZipStatus = result.ok ? "ok" : "failed";
+                debugZipPath = result.path;
+                debugZipReason = result.reason;
+                debugZipIncludedFiles = result.includedFiles;
+            } catch (Throwable t) {
+                debugZipStatus = "failed";
+                debugZipReason = shortThrowable(t);
+                writeCrashReport("debug_zip_export_failed", t);
+            }
+            try { if (nativeLoaded && nativeHandle != 0L) nativeUpdateUiDiagnostics(nativeHandle, fpsCurrent, frameTimeMs, debugZipStatus, debugZipPath, debugZipIncludedFiles, debugZipReason); } catch (Throwable ignored) { }
+            if (debugZipButton != null) {
+                debugZipButton.setText("ok".equals(debugZipStatus) ? "Debug ZIP OK" : "Debug ZIP Failed");
+                debugZipButton.setEnabled(true);
+            }
+            updateDiagnosticsStatusPanel();
+            updateStatus();
+        });
+    }
+
+    private DebugZipResult exportDebugZip() throws Exception {
+        String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+        String fileName = "SOLUM_DEBUG_" + stamp + ".zip";
+        List<File> files = new ArrayList<>();
+        File reportDir = getReportDir();
+        addIfExists(files, new File(reportDir, "engine_runtime_state.json"));
+        addIfExists(files, new File(reportDir, "engine_diagnostics_manifest.json"));
+        addIfExists(files, new File(reportDir, "model_import_state.json"));
+        addIfExists(files, new File(reportDir, "asset_report.json"));
+        File note = new File(reportDir, "debug_zip_runtime_note.txt");
+        try (FileWriter w = new FileWriter(note, false)) {
+            w.write("SOLUM P08 debug zip\n");
+            w.write("Scene05 Multi Primitive Render Lab\n");
+            w.write("debugZipStatus=running\n");
+        }
+        addIfExists(files, note);
+        File summary = new File(reportDir, "glb_model_summary.json");
+        try (FileWriter w = new FileWriter(summary, false)) { w.write(modelState.toJson("solum.glb_model_summary", timestampUtc(), "debug_zip_summary")); }
+        addIfExists(files, summary);
+
+        DebugZipResult result = new DebugZipResult();
+        if (Build.VERSION.SDK_INT >= 29) {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
+            values.put(MediaStore.Downloads.MIME_TYPE, "application/zip");
+            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/SOLUM_EXPORTS");
+            Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri != null) {
+                try (OutputStream out = getContentResolver().openOutputStream(uri, "w")) {
+                    if (out == null) throw new IllegalStateException("mediastore_open_output_failed");
+                    result.includedFiles = writeZip(out, files);
+                }
+                result.ok = true;
+                result.path = "/storage/emulated/0/Download/SOLUM_EXPORTS/" + fileName;
+                result.reason = "mediastore_downloads_ok";
+                return result;
+            }
+        }
+        File dir = new File("/storage/emulated/0/Download/SOLUM_EXPORTS");
+        if (!canWriteDirectory(dir)) throw new IllegalStateException("debug_zip_download_route_not_writable");
+        File outFile = new File(dir, fileName);
+        try (OutputStream out = new java.io.FileOutputStream(outFile, false)) { result.includedFiles = writeZip(out, files); }
+        result.ok = true;
+        result.path = outFile.getAbsolutePath();
+        result.reason = "direct_downloads_fallback_ok";
+        return result;
+    }
+
+    private void addIfExists(List<File> files, File file) { if (file != null && file.exists() && file.isFile()) files.add(file); }
+
+    private String writeZip(OutputStream out, List<File> files) throws Exception {
+        List<String> names = new ArrayList<>();
+        try (ZipOutputStream zip = new ZipOutputStream(out)) {
+            for (File file : files) {
+                String name = file.getName();
+                names.add(name);
+                zip.putNextEntry(new ZipEntry(name));
+                try (InputStream in = new java.io.FileInputStream(file)) { copyStream(in, zip); }
+                zip.closeEntry();
+            }
+        }
+        return names.toString();
+    }
+
     private File getReportDir() {
         if (cachedReportDir != null && cachedReportDir.exists()) return cachedReportDir;
         File solumCreative = new File("/storage/emulated/0/SOLUMCreative/diagnostics/latest");
@@ -873,7 +1070,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"diagnosticsRootStatus\": \"" + escape(result.reason) + "\",\n"
             + "  \"build\": { \"versionName\": \"" + escape(versionName) + "\", \"versionCode\": " + versionCode + " },\n"
             + "  \"backend\": { \"rendererPath\": \"Android Native Vulkan\", \"statusText\": \"" + escape(nativeStatus) + "\" },\n"
-            + "  \"currentScene\": \"scene04_texture_binding_lab\",\n"
+            + "  \"currentScene\": \"scene05_multi_primitive_render_lab\",\n"
             + "  \"assetImportStatus\": \"" + escape(modelState.importStatus) + "\",\n"
             + "  \"activeModelName\": \"" + escape(modelState.activeModelName()) + "\",\n"
             + "  \"activeModelPath\": \"" + escape(modelState.activeModelPath) + "\",\n"
@@ -898,7 +1095,25 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"modelBoundsMax\": " + jsonArrayField(renderLab, "modelBoundsMax", "[0,0,0]") + ",\n"
             + "  \"modelBoundsCenter\": " + jsonArrayField(renderLab, "modelBoundsCenter", "[0,0,0]") + ",\n"
             + "  \"modelScale\": " + jsonNumberField(renderLab, "modelScale", "1") + ",\n"
-            + "  \"modelRenderMode\": \"" + escape(jsonStringField(renderLab, "modelRenderMode", "first_primitive")) + "\",\n"
+            + "  \"modelRenderMode\": \"" + escape(jsonStringField(renderLab, "modelRenderMode", "multi_primitive_static")) + "\",\n"
+            + "  \"primitiveCountTotal\": " + jsonNumberField(renderLab, "primitiveCountTotal", String.valueOf(modelState.primitiveCountTotal)) + ",\n"
+            + "  \"primitiveCountRendered\": " + jsonNumberField(renderLab, "primitiveCountRendered", String.valueOf(modelState.primitiveCountRendered)) + ",\n"
+            + "  \"primitiveCountSkipped\": " + jsonNumberField(renderLab, "primitiveCountSkipped", String.valueOf(modelState.primitiveCountSkipped)) + ",\n"
+            + "  \"unsupportedPrimitiveCount\": " + jsonNumberField(renderLab, "unsupportedPrimitiveCount", String.valueOf(modelState.unsupportedPrimitiveCount)) + ",\n"
+            + "  \"materialSlotCount\": " + jsonNumberField(renderLab, "materialSlotCount", String.valueOf(modelState.materialSlotCount)) + ",\n"
+            + "  \"materialSlotCountRendered\": " + jsonNumberField(renderLab, "materialSlotCountRendered", String.valueOf(modelState.materialSlotCountRendered)) + ",\n"
+            + "  \"textureSlotCount\": " + jsonNumberField(renderLab, "textureSlotCount", String.valueOf(modelState.textureSlotCount)) + ",\n"
+            + "  \"uploadedTextureCount\": " + jsonNumberField(renderLab, "uploadedTextureCount", String.valueOf(modelState.uploadedTextureCount)) + ",\n"
+            + "  \"textureFallbackCount\": " + jsonNumberField(renderLab, "textureFallbackCount", String.valueOf(modelState.textureFallbackCount)) + ",\n"
+            + "  \"skippedTextureCount\": " + jsonNumberField(renderLab, "skippedTextureCount", String.valueOf(modelState.skippedTextureCount)) + ",\n"
+            + "  \"textureSlotLimit\": " + jsonNumberField(renderLab, "textureSlotLimit", String.valueOf(modelState.textureSlotLimit)) + ",\n"
+            + "  \"fpsCurrent\": " + jsonNumberField(renderLab, "fpsCurrent", String.valueOf(fpsCurrent)) + ",\n"
+            + "  \"frameTimeMs\": " + jsonNumberField(renderLab, "frameTimeMs", String.valueOf(frameTimeMs)) + ",\n"
+            + "  \"fpsSource\": \"" + escape(jsonStringField(renderLab, "fpsSource", "java_ui_frame_delta")) + "\",\n"
+            + "  \"debugZipStatus\": \"" + escape(jsonStringField(renderLab, "debugZipStatus", debugZipStatus)) + "\",\n"
+            + "  \"debugZipPath\": \"" + escape(jsonStringField(renderLab, "debugZipPath", debugZipPath)) + "\",\n"
+            + "  \"debugZipIncludedFiles\": \"" + escape(jsonStringField(renderLab, "debugZipIncludedFiles", debugZipIncludedFiles)) + "\",\n"
+            + "  \"debugZipReason\": \"" + escape(jsonStringField(renderLab, "debugZipReason", debugZipReason)) + "\",\n"
             + "  \"fallbackCubeVisible\": " + jsonBooleanField(renderLab, "fallbackCubeVisible", modelState.fallbackCubeVisible ? "true" : "false") + ",\n"
             + "  \"fallbackCubeStatus\": \"" + escape(jsonStringField(renderLab, "fallbackCubeStatus", modelState.fallbackCubeStatus)) + "\",\n"
             + "  \"cubeStatus\": \"" + escape(jsonStringField(renderLab, "cubeStatus", "unknown")) + "\",\n"
@@ -1155,12 +1370,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     + "Last export: " + lastExportStatus + "\n"
                     + "Last export route: " + lastExportRoute + "\n"
                     + "Last export reason/path: " + shorten((lastExportReason + " " + lastExportPath).trim(), 72) + "\n"
+                    + "Debug ZIP: " + debugZipStatus + " " + shorten((debugZipReason + " " + debugZipPath).trim(), 72) + "\n"
                     + "Last export timestamp: " + (lastExportTimestamp.isEmpty() ? "not run" : lastExportTimestamp) + "\n"
                     + "Import GLB: " + modelState.importStatus + " route=" + modelState.importRoute + "\n"
                     + "GPU Upload / Draw: " + modelState.gpuUploadStatus + " / " + modelState.drawStatus + "\n"
                     + "BaseColor Texture: " + modelState.baseColorTextureStatus + " upload=" + modelState.textureUploadStatus + "\n"
                     + "Texture size/fallback: " + modelState.textureWidth + "x" + modelState.textureHeight + " / " + (modelState.textureFallbackUsed ? "yes" : "no") + "\n"
                     + "Uploaded vertices/indices: " + modelState.uploadedVertexCount + " / " + modelState.uploadedIndexCount + "\n"
+                    + "Primitives rendered/skipped/total: " + modelState.primitiveCountRendered + " / " + modelState.primitiveCountSkipped + " / " + modelState.primitiveCountTotal + "\n"
                     + "Source: " + shorten(modelState.sourceDisplayName.isEmpty() ? "none" : modelState.sourceDisplayName, 48) + "\n"
                     + "Imported: " + shorten(modelState.importedPath.isEmpty() ? "none" : modelState.importedPath, 72) + "\n"
                     + "Models found: " + modelState.modelsFoundCount + " active=" + (modelState.activeModelName().isEmpty() ? "none" : shorten(modelState.activeModelName(), 40)) + "\n"
@@ -1176,10 +1393,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private String getRenderLabStateForExport() {
         if (!nativeLoaded || nativeHandle == 0L) {
-            return "{\"currentLabScene\":\"scene04_texture_binding_lab\",\"currentLabSceneName\":\"Scene04 Texture Binding Lab\",\"status\":\"native_not_loaded\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"first_primitive\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\"}";
+            return "{\"currentLabScene\":\"scene05_multi_primitive_render_lab\",\"currentLabSceneName\":\"Scene05 Multi Primitive Render Lab\",\"status\":\"native_not_loaded\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"java_ui_frame_delta\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\"}";
         }
         try { return nativeGetRenderLabState(nativeHandle); }
-        catch (Throwable t) { return "{\"currentLabScene\":\"scene04_texture_binding_lab\",\"currentLabSceneName\":\"Scene04 Texture Binding Lab\",\"status\":\"native_render_lab_state_failed\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"failed\",\"baseColorTextureStatus\":\"failed\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(shortThrowable(t)) + "\"}"; }
+        catch (Throwable t) { return "{\"currentLabScene\":\"scene05_multi_primitive_render_lab\",\"currentLabSceneName\":\"Scene05 Multi Primitive Render Lab\",\"status\":\"native_render_lab_state_failed\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"failed\",\"baseColorTextureStatus\":\"failed\",\"textureFallbackUsed\":true,\"modelRenderMode\":\"multi_primitive_static\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(shortThrowable(t)) + "\"}"; }
     }
 
     private String timestampUtc() {
@@ -1228,6 +1445,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String meshDrawStatus = "fallback";
         int uploadedVertexCount = 0;
         int uploadedIndexCount = 0;
+        int primitiveCountTotal = 0;
+        int primitiveCountRendered = 0;
+        int primitiveCountSkipped = 0;
+        int unsupportedPrimitiveCount = 0;
+        int materialSlotCount = 0;
+        int materialSlotCountRendered = 0;
+        int textureSlotCount = 0;
+        int uploadedTextureCount = 0;
+        int textureFallbackCount = 0;
+        int skippedTextureCount = 0;
+        int textureSlotLimit = 8;
         boolean fallbackCubeVisible = true;
         String fallbackCubeStatus = "on";
         String textureUploadStatus = "missing";
@@ -1288,6 +1516,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"textureFallbackUsed\": " + textureFallbackUsed + ",\n"
                 + "  \"uploadedVertexCount\": " + uploadedVertexCount + ",\n"
                 + "  \"uploadedIndexCount\": " + uploadedIndexCount + ",\n"
+                + "  \"modelRenderMode\": \"multi_primitive_static\",\n"
+                + "  \"primitiveCountTotal\": " + primitiveCountTotal + ",\n"
+                + "  \"primitiveCountRendered\": " + primitiveCountRendered + ",\n"
+                + "  \"primitiveCountSkipped\": " + primitiveCountSkipped + ",\n"
+                + "  \"unsupportedPrimitiveCount\": " + unsupportedPrimitiveCount + ",\n"
+                + "  \"materialSlotCount\": " + materialSlotCount + ",\n"
+                + "  \"materialSlotCountRendered\": " + materialSlotCountRendered + ",\n"
+                + "  \"textureSlotCount\": " + textureSlotCount + ",\n"
+                + "  \"uploadedTextureCount\": " + uploadedTextureCount + ",\n"
+                + "  \"textureFallbackCount\": " + textureFallbackCount + ",\n"
+                + "  \"skippedTextureCount\": " + skippedTextureCount + ",\n"
+                + "  \"textureSlotLimit\": " + textureSlotLimit + ",\n"
                 + "  \"fallbackCubeVisible\": " + fallbackCubeVisible + ",\n"
                 + "  \"fallbackCubeStatus\": \"" + esc(fallbackCubeStatus) + "\",\n"
                 + parse.toJsonFields()
@@ -1493,6 +1733,227 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             return out;
         }
 
+        static GlbPrimitiveMesh extractMultiPrimitive(GlbParseResult parsed) throws Exception {
+            if (parsed == null || !parsed.glbValid) throw new IllegalStateException("glb_not_valid: " + (parsed == null ? "null" : parsed.reason));
+            if (parsed.jsonText == null || parsed.jsonText.isEmpty()) throw new IllegalStateException("missing_cached_glb_json");
+            if (parsed.binChunk == null || parsed.binChunk.length == 0) throw new IllegalStateException("missing_glb_bin_chunk");
+            JSONObject root = new JSONObject(parsed.jsonText);
+            JSONArray meshes = root.optJSONArray("meshes");
+            JSONArray accessors = root.optJSONArray("accessors");
+            JSONArray bufferViews = root.optJSONArray("bufferViews");
+            if (meshes == null || meshes.length() == 0) throw new IllegalStateException("no_meshes_in_glb");
+
+            List<PrimitiveSource> sources = new ArrayList<>();
+            List<String> skipped = new ArrayList<>();
+            float minX = Float.POSITIVE_INFINITY, minY = Float.POSITIVE_INFINITY, minZ = Float.POSITIVE_INFINITY;
+            float maxX = Float.NEGATIVE_INFINITY, maxY = Float.NEGATIVE_INFINITY, maxZ = Float.NEGATIVE_INFINITY;
+            int primitiveTotal = 0;
+            for (int meshIndex = 0; meshIndex < meshes.length(); meshIndex++) {
+                JSONObject mesh = meshes.optJSONObject(meshIndex);
+                JSONArray primitives = mesh == null ? null : mesh.optJSONArray("primitives");
+                if (primitives == null) continue;
+                for (int primitiveIndex = 0; primitiveIndex < primitives.length(); primitiveIndex++) {
+                    primitiveTotal++;
+                    JSONObject primitive = primitives.optJSONObject(primitiveIndex);
+                    try {
+                        if (primitive == null) throw new IllegalStateException("primitive_not_object");
+                        int mode = primitive.optInt("mode", 4);
+                        if (mode != 4) throw new IllegalStateException("unsupported_primitive_mode_" + mode + "_expected_TRIANGLES");
+                        JSONObject attrs = primitive.optJSONObject("attributes");
+                        if (attrs == null || !attrs.has("POSITION")) throw new IllegalStateException("POSITION_attribute_missing");
+                        int positionAccessor = attrs.optInt("POSITION", -1);
+                        int normalAccessor = attrs.optInt("NORMAL", -1);
+                        int texcoordAccessor = attrs.optInt("TEXCOORD_0", -1);
+                        int colorAccessor = attrs.optInt("COLOR_0", -1);
+                        AccessorReader positions = AccessorReader.create(accessors, bufferViews, parsed.binChunk, positionAccessor, 5126, "VEC3", "POSITION");
+                        AccessorReader normals = normalAccessor >= 0 ? AccessorReader.create(accessors, bufferViews, parsed.binChunk, normalAccessor, 5126, "VEC3", "NORMAL") : null;
+                        AccessorReader texcoords = texcoordAccessor >= 0 ? AccessorReader.create(accessors, bufferViews, parsed.binChunk, texcoordAccessor, 5126, "VEC2", "TEXCOORD_0") : null;
+                        AccessorReader colors = colorAccessor >= 0 ? AccessorReader.createColor(accessors, bufferViews, parsed.binChunk, colorAccessor) : null;
+                        PrimitiveSource src = new PrimitiveSource();
+                        src.primitive = primitive;
+                        src.positions = positions;
+                        src.normals = normals;
+                        src.texcoords = texcoords;
+                        src.colors = colors;
+                        src.vertexCount = positions.count;
+                        if (primitive.has("indices")) src.indices = IndexReader.create(accessors, bufferViews, parsed.binChunk, primitive.optInt("indices", -1));
+                        src.materialIndex = primitive.optInt("material", -1);
+                        for (int i = 0; i < src.vertexCount; i++) {
+                            float x = positions.floatAt(i, 0);
+                            float y = positions.floatAt(i, 1);
+                            float z = positions.floatAt(i, 2);
+                            minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
+                            maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
+                        }
+                        sources.add(src);
+                    } catch (Throwable t) {
+                        skipped.add("mesh[" + meshIndex + "].primitive[" + primitiveIndex + "]: " + t.getMessage());
+                    }
+                }
+            }
+            if (sources.isEmpty()) throw new IllegalStateException("all primitives unsupported: " + joinReasons(skipped));
+            float cx = (minX + maxX) * 0.5f;
+            float cy = (minY + maxY) * 0.5f;
+            float cz = (minZ + maxZ) * 0.5f;
+            float extent = Math.max(Math.max(maxX - minX, maxY - minY), maxZ - minZ);
+            float scale = extent > 0.00001f ? 1.8f / extent : 1.0f;
+            List<Float> vertexFloats = new ArrayList<>();
+            List<Integer> indices = new ArrayList<>();
+            List<Integer> ranges = new ArrayList<>();
+            int firstVertex = 0;
+            int textureSlotLimit = 8;
+            List<MaterialInfo> materials = readMaterials(root, parsed.binChunk, textureSlotLimit);
+            List<BaseColorTexture> textures = new ArrayList<>();
+            for (MaterialInfo mi : materials) if (mi.texture != null && mi.texture.slot >= 0 && textures.size() < textureSlotLimit) textures.add(mi.texture);
+            for (PrimitiveSource src : sources) {
+                int materialSlot = src.materialIndex >= 0 && src.materialIndex < materials.size() ? src.materialIndex : 0;
+                int textureSlot = materialSlot < materials.size() ? materials.get(materialSlot).textureSlot : -1;
+                int rangeFirstIndex = indices.size();
+                for (int i = 0; i < src.vertexCount; i++) {
+                    vertexFloats.add((src.positions.floatAt(i, 0) - cx) * scale);
+                    vertexFloats.add((src.positions.floatAt(i, 1) - cy) * scale);
+                    vertexFloats.add((src.positions.floatAt(i, 2) - cz) * scale);
+                    vertexFloats.add(src.normals != null ? src.normals.floatAt(i, 0) : 0.0f);
+                    vertexFloats.add(src.normals != null ? src.normals.floatAt(i, 1) : 1.0f);
+                    vertexFloats.add(src.normals != null ? src.normals.floatAt(i, 2) : 0.0f);
+                    vertexFloats.add(src.texcoords != null ? src.texcoords.floatAt(i, 0) : 0.0f);
+                    vertexFloats.add(src.texcoords != null ? src.texcoords.floatAt(i, 1) : 0.0f);
+                    vertexFloats.add(src.colors != null ? src.colors.floatAt(i, 0) : 1.0f);
+                    vertexFloats.add(src.colors != null ? src.colors.floatAt(i, 1) : 1.0f);
+                    vertexFloats.add(src.colors != null ? src.colors.floatAt(i, 2) : 1.0f);
+                }
+                if (src.indices != null) {
+                    for (int i = 0; i < src.indices.count; i++) indices.add(firstVertex + src.indices.indexAt(i));
+                } else {
+                    for (int i = 0; i < src.vertexCount; i++) indices.add(firstVertex + i);
+                }
+                ranges.add(rangeFirstIndex);
+                ranges.add(indices.size() - rangeFirstIndex);
+                ranges.add(firstVertex);
+                ranges.add(src.vertexCount);
+                ranges.add(materialSlot);
+                ranges.add(textureSlot);
+                firstVertex += src.vertexCount;
+            }
+            GlbPrimitiveMesh out = new GlbPrimitiveMesh();
+            out.vertexData = toFloatArray(vertexFloats);
+            out.indexData = toIntArray(indices);
+            out.rangeData = toIntArray(ranges);
+            out.materialData = materialData(materials);
+            out.vertexCount = out.vertexData.length / 11;
+            out.indexCount = out.indexData.length;
+            out.boundsMin = new float[] { minX, minY, minZ };
+            out.boundsMax = new float[] { maxX, maxY, maxZ };
+            out.boundsCenter = new float[] { cx, cy, cz };
+            out.modelScale = scale;
+            out.primitiveCountTotal = primitiveTotal;
+            out.primitiveCountRendered = sources.size();
+            out.primitiveCountSkipped = Math.max(0, primitiveTotal - sources.size());
+            out.unsupportedPrimitiveCount = skipped.size();
+            out.materialSlotCount = materials.size();
+            out.textureSlotCount = textures.size();
+            out.textureSlotLimit = textureSlotLimit;
+            out.skippedTextureCount = Math.max(0, textureReferences(root) - textures.size());
+            out.textures = textures;
+            out.texture = textures.isEmpty() ? BaseColorTexture.missing("baseColorTexture missing") : textures.get(0);
+            out.baseColorFactor = materials.isEmpty() ? new float[] {1f,1f,1f,1f} : materials.get(0).baseColorFactor;
+            out.reason = skipped.isEmpty() ? "all supported primitives uploaded" : joinReasons(skipped);
+            return out;
+        }
+
+        private static List<MaterialInfo> readMaterials(JSONObject root, byte[] bin, int textureSlotLimit) {
+            List<MaterialInfo> out = new ArrayList<>();
+            JSONArray materials = root.optJSONArray("materials");
+            int count = materials == null ? 1 : Math.max(1, materials.length());
+            for (int i = 0; i < count; i++) {
+                JSONObject material = materials == null ? null : materials.optJSONObject(i);
+                MaterialInfo info = new MaterialInfo();
+                info.baseColorFactor = readBaseColorFactor(root, i);
+                String alpha = material == null ? "OPAQUE" : material.optString("alphaMode", "OPAQUE");
+                info.alphaMode = "MASK".equals(alpha) ? 1 : ("BLEND".equals(alpha) ? 2 : 0);
+                info.alphaCutoff = material == null ? 0.5f : (float)material.optDouble("alphaCutoff", 0.5);
+                info.doubleSided = material != null && material.optBoolean("doubleSided", false);
+                if (i < textureSlotLimit) {
+                    BaseColorTexture texture = readBaseColorTexture(root, i, bin);
+                    if ("ok".equals(texture.status)) {
+                        texture.slot = i;
+                        info.textureSlot = i;
+                        info.texture = texture;
+                    }
+                }
+                out.add(info);
+            }
+            return out;
+        }
+
+        private static float[] readBaseColorFactor(JSONObject root, int materialIndex) {
+            float[] out = new float[] { 1f, 1f, 1f, 1f };
+            JSONArray materials = root.optJSONArray("materials");
+            JSONObject material = materials != null && materialIndex >= 0 && materialIndex < materials.length() ? materials.optJSONObject(materialIndex) : null;
+            JSONObject pbr = material == null ? null : material.optJSONObject("pbrMetallicRoughness");
+            JSONArray factor = pbr == null ? null : pbr.optJSONArray("baseColorFactor");
+            if (factor != null && factor.length() >= 4) for (int i = 0; i < 4; i++) out[i] = (float)factor.optDouble(i, 1.0);
+            return out;
+        }
+
+        private static BaseColorTexture readBaseColorTexture(JSONObject root, int materialIndex, byte[] bin) {
+            JSONObject primitive = new JSONObject();
+            try { primitive.put("material", materialIndex); } catch (Throwable ignored) { }
+            return readBaseColorTexture(root, primitive, bin);
+        }
+
+        private static int textureReferences(JSONObject root) {
+            int out = 0;
+            JSONArray materials = root.optJSONArray("materials");
+            if (materials == null) return 0;
+            for (int i = 0; i < materials.length(); i++) {
+                JSONObject material = materials.optJSONObject(i);
+                JSONObject pbr = material == null ? null : material.optJSONObject("pbrMetallicRoughness");
+                if (pbr != null && pbr.optJSONObject("baseColorTexture") != null) out++;
+            }
+            return out;
+        }
+
+        private static float[] materialData(List<MaterialInfo> materials) {
+            float[] out = new float[Math.max(1, materials.size()) * 8];
+            if (materials.isEmpty()) materials.add(new MaterialInfo());
+            for (int i = 0; i < materials.size(); i++) {
+                MaterialInfo m = materials.get(i);
+                out[i * 8] = m.baseColorFactor[0];
+                out[i * 8 + 1] = m.baseColorFactor[1];
+                out[i * 8 + 2] = m.baseColorFactor[2];
+                out[i * 8 + 3] = m.baseColorFactor[3];
+                out[i * 8 + 4] = m.alphaMode;
+                out[i * 8 + 5] = m.alphaCutoff;
+                out[i * 8 + 6] = m.doubleSided ? 1f : 0f;
+                out[i * 8 + 7] = m.textureSlot;
+            }
+            return out;
+        }
+
+        private static float[] toFloatArray(List<Float> values) {
+            float[] out = new float[values.size()];
+            for (int i = 0; i < values.size(); i++) out[i] = values.get(i);
+            return out;
+        }
+
+        private static int[] toIntArray(List<Integer> values) {
+            int[] out = new int[values.size()];
+            for (int i = 0; i < values.size(); i++) out[i] = values.get(i);
+            return out;
+        }
+
+        private static String joinReasons(List<String> reasons) {
+            if (reasons == null || reasons.isEmpty()) return "none";
+            StringBuilder b = new StringBuilder();
+            for (int i = 0; i < reasons.size(); i++) {
+                if (i > 0) b.append("; ");
+                b.append(reasons.get(i));
+                if (b.length() > 900) break;
+            }
+            return b.toString();
+        }
+
         private static float[] readBaseColorFactor(JSONObject root, JSONObject primitive) {
             float[] out = new float[] { 1f, 1f, 1f, 1f };
             JSONArray materials = root.optJSONArray("materials");
@@ -1673,14 +2134,46 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static final class GlbPrimitiveMesh {
         float[] vertexData;
         int[] indexData;
+        int[] rangeData;
+        float[] materialData;
         float[] boundsMin;
         float[] boundsMax;
         float[] boundsCenter;
         float[] baseColorFactor;
         BaseColorTexture texture;
+        List<BaseColorTexture> textures = new ArrayList<>();
         float modelScale;
         int vertexCount;
         int indexCount;
+        int primitiveCountTotal = 0;
+        int primitiveCountRendered = 0;
+        int primitiveCountSkipped = 0;
+        int unsupportedPrimitiveCount = 0;
+        int materialSlotCount = 0;
+        int textureSlotCount = 0;
+        int textureSlotLimit = 8;
+        int skippedTextureCount = 0;
+        String reason = "not_run";
+    }
+
+    private static final class PrimitiveSource {
+        JSONObject primitive;
+        AccessorReader positions;
+        AccessorReader normals;
+        AccessorReader texcoords;
+        AccessorReader colors;
+        IndexReader indices;
+        int vertexCount = 0;
+        int materialIndex = -1;
+    }
+
+    private static final class MaterialInfo {
+        float[] baseColorFactor = new float[] {1f, 1f, 1f, 1f};
+        int alphaMode = 0;
+        float alphaCutoff = 0.5f;
+        boolean doubleSided = false;
+        int textureSlot = -1;
+        BaseColorTexture texture;
     }
 
     private static final class BaseColorTexture {
@@ -1689,6 +2182,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String name = "none";
         String source = "none";
         String mimeType = "none";
+        int slot = -1;
         int width = 0;
         int height = 0;
         int[] pixels = null;
@@ -1821,6 +2315,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String timestamp = "";
         Writer runtimeWriter;
         Writer manifestWriter;
+    }
+
+    private static final class DebugZipResult {
+        boolean ok = false;
+        String path = "";
+        String reason = "not_started";
+        String includedFiles = "";
     }
 
     private void writeCrashReport(String stage, Throwable throwable) {

@@ -2,6 +2,52 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene05 Multi Primitive Render Lab
+
+P08 scene id:
+
+```text
+scene05_multi_primitive_render_lab
+```
+
+Runtime status text:
+
+```text
+Render Lab: Scene05 Multi Primitive Render Lab
+modelRenderMode: multi_primitive_static
+Next: PBR Material Maps Foundation
+```
+
+Scene05 validates active imported GLB rendering across all supported static primitives, material slots with baseColorFactor, baseColor texture slots, skipped primitive diagnostics, fallback cube if all primitives are unsupported, FPS/frameMs HUD, and debug ZIP export status.
+
+Required diagnostics:
+
+```text
+modelRenderMode = multi_primitive_static
+primitiveCountTotal
+primitiveCountRendered
+primitiveCountSkipped
+unsupportedPrimitiveCount
+materialSlotCount
+materialSlotCountRendered
+textureSlotCount
+uploadedTextureCount
+textureFallbackCount
+skippedTextureCount
+textureSlotLimit
+fpsCurrent
+frameTimeMs
+fpsSource
+debugZipStatus
+debugZipPath
+debugZipIncludedFiles
+debugZipReason
+fallbackCubeStatus
+fallbackCubeVisible
+drawStatus
+gpuUploadStatus
+```
+
 Current status:
 
 ```text

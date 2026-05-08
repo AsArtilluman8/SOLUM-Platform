@@ -9,12 +9,12 @@ enum class RenderLabScene {
     Scene03GlbMeshRenderLab,
     Scene04TextureBindingLab,
     Scene04LightShadowLab,
-    Scene05ImportLab,
+    Scene05MultiPrimitiveRenderLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene04TextureBindingLab;
+    RenderLabScene currentScene = RenderLabScene::Scene05MultiPrimitiveRenderLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -44,7 +44,7 @@ struct RenderLabState {
             case RenderLabScene::Scene03GlbMeshRenderLab: return "scene03_glb_mesh_render_lab";
             case RenderLabScene::Scene04TextureBindingLab: return "scene04_texture_binding_lab";
             case RenderLabScene::Scene04LightShadowLab: return "scene04_light_shadow_lab";
-            case RenderLabScene::Scene05ImportLab: return "scene05_import_lab";
+            case RenderLabScene::Scene05MultiPrimitiveRenderLab: return "scene05_multi_primitive_render_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -57,7 +57,7 @@ struct RenderLabState {
             case RenderLabScene::Scene03GlbMeshRenderLab: return "Scene03 GLB Mesh Render Lab";
             case RenderLabScene::Scene04TextureBindingLab: return "Scene04 Texture Binding Lab";
             case RenderLabScene::Scene04LightShadowLab: return "Scene04 Light/Shadow Lab";
-            case RenderLabScene::Scene05ImportLab: return "Scene05 Import Lab";
+            case RenderLabScene::Scene05MultiPrimitiveRenderLab: return "Scene05 Multi Primitive Render Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }
@@ -69,7 +69,7 @@ struct RenderLabState {
         f << indent << "  \"schemaVersion\": 1,\n";
         f << indent << "  \"currentLabScene\": \"" << sceneId() << "\",\n";
         f << indent << "  \"currentLabSceneName\": \"" << sceneName() << "\",\n";
-        f << indent << "  \"renderingStatus\": \"" << (model.modelReady() ? "model_first_primitive" : "fallback_cube") << "\",\n";
+        f << indent << "  \"renderingStatus\": \"" << (model.modelReady() ? "multi_primitive_static" : "fallback_cube") << "\",\n";
         f << indent << "  \"assetImportStatus\": \"" << (model.activeModelName == "none" ? "no active model" : "active model") << "\",\n";
         f << indent << "  \"activeModelName\": \"" << escapeJson(model.activeModelName) << "\",\n";
         f << indent << "  \"activeModelPath\": \"" << escapeJson(model.activeModelPath) << "\",\n";
@@ -94,6 +94,24 @@ struct RenderLabState {
         f << indent << "  \"modelBoundsCenter\": [" << model.boundsCenter[0] << ", " << model.boundsCenter[1] << ", " << model.boundsCenter[2] << "],\n";
         f << indent << "  \"modelScale\": " << model.modelScale << ",\n";
         f << indent << "  \"modelRenderMode\": \"" << model.modelRenderMode << "\",\n";
+        f << indent << "  \"primitiveCountTotal\": " << model.primitiveCountTotal << ",\n";
+        f << indent << "  \"primitiveCountRendered\": " << model.primitiveCountRendered << ",\n";
+        f << indent << "  \"primitiveCountSkipped\": " << model.primitiveCountSkipped << ",\n";
+        f << indent << "  \"unsupportedPrimitiveCount\": " << model.unsupportedPrimitiveCount << ",\n";
+        f << indent << "  \"materialSlotCount\": " << model.materialSlotCount << ",\n";
+        f << indent << "  \"materialSlotCountRendered\": " << model.materialSlotCountRendered << ",\n";
+        f << indent << "  \"textureSlotCount\": " << model.textureSlotCount << ",\n";
+        f << indent << "  \"uploadedTextureCount\": " << model.uploadedTextureCount << ",\n";
+        f << indent << "  \"textureFallbackCount\": " << model.textureFallbackCount << ",\n";
+        f << indent << "  \"skippedTextureCount\": " << model.skippedTextureCount << ",\n";
+        f << indent << "  \"textureSlotLimit\": " << model.textureSlotLimit << ",\n";
+        f << indent << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
+        f << indent << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";
+        f << indent << "  \"fpsSource\": \"" << model.fpsSource << "\",\n";
+        f << indent << "  \"debugZipStatus\": \"" << escapeJson(model.debugZipStatus) << "\",\n";
+        f << indent << "  \"debugZipPath\": \"" << escapeJson(model.debugZipPath) << "\",\n";
+        f << indent << "  \"debugZipIncludedFiles\": \"" << escapeJson(model.debugZipIncludedFiles) << "\",\n";
+        f << indent << "  \"debugZipReason\": \"" << escapeJson(model.debugZipReason) << "\",\n";
         f << indent << "  \"fallbackCubeVisible\": " << (model.fallbackCubeVisible ? "true" : "false") << ",\n";
         f << indent << "  \"fallbackCubeStatus\": \"" << escapeJson(model.fallbackCubeStatus) << "\",\n";
         f << indent << "  \"reason\": \"" << escapeJson(model.reason) << "\",\n";

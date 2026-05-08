@@ -2,6 +2,32 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P08 — Multi Primitive + Material Slots + FPS + Debug ZIP Export + UI Buttons Cleanup
+
+Scope:
+
+- Scene05 Multi Primitive Render Lab.
+- Static multi-primitive GLB extraction and Vulkan upload/draw.
+- Per-primitive material slot metadata and baseColorFactor.
+- BaseColor texture slot upload with P08 `textureSlotLimit = 8`.
+- FPS/frameMs HUD fields from Java/UI-side frame pulse.
+- Export Debug ZIP to `/storage/emulated/0/Download/SOLUM_EXPORTS/`.
+- Collapsible Assets / Camera / Debug panels with larger touch buttons.
+- Future roadmap docs for glTF compatibility, engine roadmap, and UI/product roadmap.
+
+Out of scope:
+
+- skeletal animation;
+- full PBR lighting;
+- metallicRoughness/normal/AO sampling;
+- full product UI rewrite.
+
+Next:
+
+```text
+P09 PBR Material Maps Foundation: metallicRoughness + normal + AO.
+```
+
 ## Формат записи
 
 ```markdown

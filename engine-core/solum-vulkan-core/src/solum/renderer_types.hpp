@@ -42,6 +42,23 @@ struct MaterialConstants {
     int baseColorTextureReady = 0;
 };
 
+struct PrimitiveDrawRange {
+    uint32_t firstIndex = 0;
+    uint32_t indexCount = 0;
+    uint32_t firstVertex = 0;
+    uint32_t vertexCount = 0;
+    int materialSlot = 0;
+    int textureSlot = -1;
+};
+
+struct MaterialSlotState {
+    float baseColorFactor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    int alphaMode = 0;
+    float alphaCutoff = 0.5f;
+    bool doubleSided = false;
+    int baseColorTextureSlot = -1;
+};
+
 struct ModelRenderState {
     std::string activeModelName = "none";
     std::string activeModelPath;
@@ -55,7 +72,25 @@ struct ModelRenderState {
     float boundsMax[3] = { 0.0f, 0.0f, 0.0f };
     float boundsCenter[3] = { 0.0f, 0.0f, 0.0f };
     float modelScale = 1.0f;
-    const char* modelRenderMode = "first_primitive";
+    const char* modelRenderMode = "multi_primitive_static";
+    uint32_t primitiveCountTotal = 0;
+    uint32_t primitiveCountRendered = 0;
+    uint32_t primitiveCountSkipped = 0;
+    uint32_t unsupportedPrimitiveCount = 0;
+    uint32_t materialSlotCount = 0;
+    uint32_t materialSlotCountRendered = 0;
+    uint32_t textureSlotCount = 0;
+    uint32_t uploadedTextureCount = 0;
+    uint32_t textureFallbackCount = 0;
+    uint32_t skippedTextureCount = 0;
+    uint32_t textureSlotLimit = 8;
+    float fpsCurrent = 0.0f;
+    float frameTimeMs = 0.0f;
+    const char* fpsSource = "java_ui_frame_delta";
+    std::string debugZipStatus = "not_run";
+    std::string debugZipPath = "";
+    std::string debugZipIncludedFiles = "";
+    std::string debugZipReason = "not_run";
     bool fallbackCubeVisible = true;
     std::string meshDrawStatus = "fallback";
     std::string fallbackCubeStatus = "on";
@@ -71,7 +106,7 @@ struct ModelRenderState {
     std::string reason = "no active model";
 
     bool modelReady() const {
-        return gpuUploadStatus == "ok" && drawStatus == "ok" && uploadedVertexCount > 0;
+        return gpuUploadStatus == "ok" && (drawStatus == "ok" || drawStatus == "partial_ok") && uploadedVertexCount > 0 && primitiveCountRendered > 0;
     }
 };
 

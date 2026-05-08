@@ -2,6 +2,7 @@
 #include "pipeline_bundle.hpp"
 #include "runtime_diagnostics.hpp"
 #include "texture_resource.hpp"
+#include <algorithm>
 
 namespace solum {
 
@@ -37,9 +38,12 @@ struct RendererCore {
     MeshResource validationMesh;
     MeshResource modelMesh;
     TextureResource baseColorTexture;
+    std::vector<PrimitiveDrawRange> modelDrawRanges;
+    std::vector<MaterialSlotState> modelMaterialSlots;
+    std::vector<TextureResource> baseColorTextureSlots;
     PipelineBundle trianglePipeline;
     VkDescriptorPool textureDescriptorPool = VK_NULL_HANDLE;
-    VkDescriptorSet textureDescriptorSet = VK_NULL_HANDLE;
+    std::vector<VkDescriptorSet> textureDescriptorSets;
     uint64_t framesRendered = 0;
     bool firstFrameRendered = false;
     bool triangleDrawn = false;
@@ -102,7 +106,7 @@ struct RendererCore {
     }
 
     void syncTextureMaterialState() {
-        material.baseColorTextureReady = (baseColorTexture.ready && model.baseColorTextureStatus == "ok" && model.textureUploadStatus == "ok") ? 1 : 0;
+        material.baseColorTextureReady = (!baseColorTextureSlots.empty() && baseColorTextureSlots[0].ready && model.textureUploadStatus == "ok") ? 1 : 0;
     }
 
     void fail(const std::string& reason) {
@@ -115,9 +119,13 @@ struct RendererCore {
         if (device == VK_NULL_HANDLE) return;
         vkDeviceWaitIdle(device);
         if (textureDescriptorPool != VK_NULL_HANDLE) { vkDestroyDescriptorPool(device, textureDescriptorPool, nullptr); textureDescriptorPool = VK_NULL_HANDLE; }
-        textureDescriptorSet = VK_NULL_HANDLE;
+        textureDescriptorSets.clear();
+        for (auto& texture : baseColorTextureSlots) texture.destroy();
+        baseColorTextureSlots.clear();
         baseColorTexture.destroy();
         modelMesh.destroy();
+        modelDrawRanges.clear();
+        modelMaterialSlots.clear();
         validationMesh.destroy();
         trianglePipeline.destroy();
         if (inFlight != VK_NULL_HANDLE) { vkDestroyFence(device, inFlight, nullptr); inFlight = VK_NULL_HANDLE; }
@@ -432,7 +440,7 @@ struct RendererCore {
     }
 
     void updateReadyStatus() {
-        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene04 Texture Binding Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nBaseColor Texture: " + model.baseColorTextureStatus + "\nTexture size: " + std::to_string(model.textureWidth) + "x" + std::to_string(model.textureHeight) + "\nFallback texture: " + std::string(model.textureFallbackUsed ? "yes" : "no") + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: PBR Material Maps Foundation";
+        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene05 Multi Primitive Render Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nModel render: " + model.drawStatus + "\nPrimitives rendered/skipped/total: " + std::to_string(model.primitiveCountRendered) + " / " + std::to_string(model.primitiveCountSkipped) + " / " + std::to_string(model.primitiveCountTotal) + "\nMaterials used: " + std::to_string(model.materialSlotCountRendered) + "\nTextures uploaded/fallback/skipped: " + std::to_string(model.uploadedTextureCount) + " / " + std::to_string(model.textureFallbackCount) + " / " + std::to_string(model.skippedTextureCount) + "\nFPS/frameMs: " + std::to_string(model.fpsCurrent) + " / " + std::to_string(model.frameTimeMs) + "\nDebug ZIP: " + model.debugZipStatus + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nBaseColor Texture: " + model.baseColorTextureStatus + "\nTexture size: " + std::to_string(model.textureWidth) + "x" + std::to_string(model.textureHeight) + "\nFallback texture: " + std::string(model.textureFallbackUsed ? "yes" : "no") + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: PBR Material Maps Foundation";
     }
 
     bool setCamera(float yawDeg, float pitchDeg, float distance, bool controlsActive) {
@@ -491,24 +499,43 @@ struct RendererCore {
         rp.pClearValues = clear;
         vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.pipeline);
-        if (textureDescriptorSet != VK_NULL_HANDLE) vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.layout, 0, 1, &textureDescriptorSet, 0, nullptr);
         PushConstants pc{};
-        syncTextureMaterialState();
         pc.mvp = buildMvp();
         pc.material = material;
-        vkCmdPushConstants(cmd, trianglePipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pc);
         pushConstantsReady = true;
         materialConstantsReady = true;
         meshAttributeLayoutReady = sizeof(Vertex3D) == 44;
-        if (model.modelReady() && modelMesh.ready()) {
+        if (model.modelReady() && modelMesh.ready() && !modelDrawRanges.empty()) {
             modelMesh.bind(cmd);
-            if (modelMesh.indexedReady()) {
-                vkCmdBindIndexBuffer(cmd, modelMesh.indexBuffer.buffer, 0, modelMesh.indexType);
-                vkCmdDrawIndexed(cmd, modelMesh.indexCount, 1, 0, 0, 0);
-            } else {
-                vkCmdDraw(cmd, modelMesh.vertexCount, 1, 0, 0);
+            if (modelMesh.indexedReady()) vkCmdBindIndexBuffer(cmd, modelMesh.indexBuffer.buffer, 0, modelMesh.indexType);
+            for (const auto& range : modelDrawRanges) {
+                if (range.materialSlot >= 0 && (size_t)range.materialSlot < modelMaterialSlots.size()) {
+                    const auto& slot = modelMaterialSlots[(size_t)range.materialSlot];
+                    for (int i = 0; i < 4; ++i) pc.material.baseColorFactor[i] = slot.baseColorFactor[i];
+                    pc.material.alphaMode = slot.alphaMode;
+                    pc.material.materialId = range.materialSlot;
+                    pc.material.baseColorTextureReady = (range.textureSlot >= 0 && (size_t)range.textureSlot < textureDescriptorSets.size()) ? 1 : 0;
+                } else {
+                    pc.material = material;
+                    pc.material.baseColorTextureReady = 0;
+                }
+                if (pc.material.baseColorTextureReady) {
+                    VkDescriptorSet set = textureDescriptorSets[(size_t)range.textureSlot];
+                    if (set != VK_NULL_HANDLE) vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.layout, 0, 1, &set, 0, nullptr);
+                } else if (!textureDescriptorSets.empty() && textureDescriptorSets[0] != VK_NULL_HANDLE) {
+                    VkDescriptorSet set = textureDescriptorSets[0];
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.layout, 0, 1, &set, 0, nullptr);
+                }
+                vkCmdPushConstants(cmd, trianglePipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pc);
+                if (modelMesh.indexedReady() && range.indexCount > 0) vkCmdDrawIndexed(cmd, range.indexCount, 1, range.firstIndex, 0, 0);
+                else if (range.vertexCount > 0) vkCmdDraw(cmd, range.vertexCount, 1, range.firstVertex, 0);
             }
         } else {
+            if (!textureDescriptorSets.empty() && textureDescriptorSets[0] != VK_NULL_HANDLE) {
+                VkDescriptorSet set = textureDescriptorSets[0];
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.layout, 0, 1, &set, 0, nullptr);
+            }
+            vkCmdPushConstants(cmd, trianglePipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pc);
             validationMesh.bindIndexed(cmd);
             vkCmdDrawIndexed(cmd, validationMesh.indexCount, 1, 0, 0, 0);
         }
@@ -562,10 +589,12 @@ struct RendererCore {
         model.meshDrawStatus = "fallback";
         model.uploadedVertexCount = 0;
         model.uploadedIndexCount = 0;
+        model.primitiveCountRendered = 0;
         model.fallbackCubeVisible = true;
         model.fallbackCubeStatus = "on";
         model.reason = reason.empty() ? "no active model" : reason;
         if (device != VK_NULL_HANDLE) modelMesh.destroy();
+        modelDrawRanges.clear();
         renderOneFrame();
         syncDiagnostics();
         diagnostics.write("valid", model.reason);
@@ -639,48 +668,148 @@ struct RendererCore {
         return true;
     }
 
+    bool uploadModelMultiPrimitive(
+        const std::string& name,
+        const std::string& path,
+        const Vertex3D* vertices,
+        uint32_t vertexCount,
+        const uint32_t* indices,
+        uint32_t indexCount,
+        const PrimitiveDrawRange* ranges,
+        uint32_t rangeCount,
+        const MaterialSlotState* slots,
+        uint32_t slotCount,
+        const float* boundsMin,
+        const float* boundsMax,
+        const float* boundsCenter,
+        float scale,
+        uint32_t primitiveTotal,
+        uint32_t primitiveSkipped,
+        uint32_t unsupportedPrimitiveCount,
+        const std::string& reason,
+        std::string& error
+    ) {
+        if (device == VK_NULL_HANDLE || physicalDevice == VK_NULL_HANDLE) {
+            error = "renderer not initialized";
+            return false;
+        }
+        if (!vertices || vertexCount == 0 || !ranges || rangeCount == 0) {
+            error = "all primitives unsupported: no drawable primitive ranges";
+            setModelFallback(name, path, error);
+            return false;
+        }
+        if (!modelMesh.createFromInterleaved(physicalDevice, device, vertices, vertexCount, indices, indexCount, name, error)) {
+            setModelFallback(name, path, error);
+            return false;
+        }
+        modelDrawRanges.assign(ranges, ranges + rangeCount);
+        modelMaterialSlots.assign(slots, slots + slotCount);
+        if (modelMaterialSlots.empty()) modelMaterialSlots.push_back(MaterialSlotState{});
+        model.activeModelName = name.empty() ? "imported.glb" : name;
+        model.activeModelPath = path;
+        model.activePrimitiveIndex = 0;
+        model.gpuUploadStatus = "ok";
+        model.drawStatus = primitiveSkipped > 0 ? "partial_ok" : "ok";
+        model.meshDrawStatus = model.drawStatus;
+        model.uploadedVertexCount = vertexCount;
+        model.uploadedIndexCount = indexCount;
+        model.primitiveCountTotal = primitiveTotal;
+        model.primitiveCountRendered = rangeCount;
+        model.primitiveCountSkipped = primitiveSkipped;
+        model.unsupportedPrimitiveCount = unsupportedPrimitiveCount;
+        model.materialSlotCount = slotCount;
+        model.materialSlotCountRendered = slotCount;
+        model.textureSlotCount = 0;
+        for (const auto& slot : modelMaterialSlots) if (slot.baseColorTextureSlot >= 0) model.textureSlotCount += 1;
+        if (model.textureSlotCount > model.textureSlotLimit) model.textureSlotCount = model.textureSlotLimit;
+        model.fallbackCubeVisible = false;
+        model.fallbackCubeStatus = "off";
+        model.reason = reason.empty() ? "multi primitive static model uploaded to Vulkan buffers" : reason;
+        for (int i = 0; i < 3; ++i) {
+            model.boundsMin[i] = boundsMin ? boundsMin[i] : 0.0f;
+            model.boundsMax[i] = boundsMax ? boundsMax[i] : 0.0f;
+            model.boundsCenter[i] = boundsCenter ? boundsCenter[i] : 0.0f;
+        }
+        model.modelScale = scale;
+        if (!modelMaterialSlots.empty()) {
+            for (int i = 0; i < 4; ++i) material.baseColorFactor[i] = modelMaterialSlots[0].baseColorFactor[i];
+            material.alphaMode = modelMaterialSlots[0].alphaMode;
+            material.materialId = 0;
+        }
+        float extentX = model.boundsMax[0] - model.boundsMin[0];
+        float extentY = model.boundsMax[1] - model.boundsMin[1];
+        float extentZ = model.boundsMax[2] - model.boundsMin[2];
+        float maxExtent = std::max(extentX, std::max(extentY, extentZ));
+        camera.distance = clampFloat(maxExtent > 0.0f ? 3.4f : 3.6f, 2.0f, 8.0f);
+        cameraControlsReady = true;
+        bool ok = renderOneFrame();
+        if (!ok) {
+            model.drawStatus = "fallback";
+            model.meshDrawStatus = "fallback";
+            model.fallbackCubeVisible = true;
+            model.fallbackCubeStatus = "on";
+            model.reason = diagnostics.reason.empty() ? "multi primitive draw failed" : diagnostics.reason;
+            error = model.reason;
+            renderOneFrame();
+            syncDiagnostics();
+            diagnostics.write("valid", model.reason);
+            updateReadyStatus();
+            return false;
+        }
+        syncDiagnostics();
+        diagnostics.write("valid", "Scene05 Multi Primitive Render Lab uploaded and drew supported primitives.");
+        updateReadyStatus();
+        return true;
+    }
+
     bool recreateTextureDescriptor(std::string& error) {
-        if (!baseColorTexture.ready || trianglePipeline.textureSetLayout == VK_NULL_HANDLE) {
+        if (baseColorTextureSlots.empty() || trianglePipeline.textureSetLayout == VK_NULL_HANDLE) {
             error = "texture descriptor missing texture or layout";
             return false;
         }
         if (textureDescriptorPool != VK_NULL_HANDLE) {
             vkDestroyDescriptorPool(device, textureDescriptorPool, nullptr);
             textureDescriptorPool = VK_NULL_HANDLE;
-            textureDescriptorSet = VK_NULL_HANDLE;
+            textureDescriptorSets.clear();
         }
         VkDescriptorPoolSize poolSize{};
         poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSize.descriptorCount = 1;
+        poolSize.descriptorCount = (uint32_t)baseColorTextureSlots.size();
         VkDescriptorPoolCreateInfo pool{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
-        pool.maxSets = 1;
+        pool.maxSets = (uint32_t)baseColorTextureSlots.size();
         pool.poolSizeCount = 1;
         pool.pPoolSizes = &poolSize;
         VkResult r = vkCreateDescriptorPool(device, &pool, nullptr, &textureDescriptorPool);
         if (r != VK_SUCCESS) { error = "texture descriptor pool failed: " + vkResultName(r); return false; }
+        std::vector<VkDescriptorSetLayout> layouts(baseColorTextureSlots.size(), trianglePipeline.textureSetLayout);
+        textureDescriptorSets.assign(baseColorTextureSlots.size(), VK_NULL_HANDLE);
         VkDescriptorSetAllocateInfo alloc{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
         alloc.descriptorPool = textureDescriptorPool;
-        alloc.descriptorSetCount = 1;
-        alloc.pSetLayouts = &trianglePipeline.textureSetLayout;
-        r = vkAllocateDescriptorSets(device, &alloc, &textureDescriptorSet);
+        alloc.descriptorSetCount = (uint32_t)layouts.size();
+        alloc.pSetLayouts = layouts.data();
+        r = vkAllocateDescriptorSets(device, &alloc, textureDescriptorSets.data());
         if (r != VK_SUCCESS) { error = "texture descriptor set failed: " + vkResultName(r); return false; }
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.sampler = baseColorTexture.sampler;
-        imageInfo.imageView = baseColorTexture.view;
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        VkWriteDescriptorSet write{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-        write.dstSet = textureDescriptorSet;
-        write.dstBinding = 0;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.pImageInfo = &imageInfo;
-        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+        std::vector<VkDescriptorImageInfo> imageInfos(baseColorTextureSlots.size());
+        std::vector<VkWriteDescriptorSet> writes(baseColorTextureSlots.size());
+        for (size_t i = 0; i < baseColorTextureSlots.size(); ++i) {
+            imageInfos[i].sampler = baseColorTextureSlots[i].sampler;
+            imageInfos[i].imageView = baseColorTextureSlots[i].view;
+            imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            writes[i] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+            writes[i].dstSet = textureDescriptorSets[i];
+            writes[i].dstBinding = 0;
+            writes[i].descriptorCount = 1;
+            writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[i].pImageInfo = &imageInfos[i];
+        }
+        vkUpdateDescriptorSets(device, (uint32_t)writes.size(), writes.data(), 0, nullptr);
         return true;
     }
 
     bool createFallbackBaseColorTexture(std::string& error) {
         const uint8_t white[] = { 255, 255, 255, 255 };
-        if (!baseColorTexture.createRgba8(physicalDevice, device, graphicsQueue, commandPool, white, 1, 1, error)) return false;
+        baseColorTextureSlots.resize(1);
+        if (!baseColorTextureSlots[0].createRgba8(physicalDevice, device, graphicsQueue, commandPool, white, 1, 1, error)) return false;
         return recreateTextureDescriptor(error);
     }
 
@@ -720,7 +849,8 @@ struct RendererCore {
             return false;
         }
         vkWaitForFences(device, 1, &inFlight, VK_TRUE, UINT64_MAX);
-        if (!baseColorTexture.createRgba8(physicalDevice, device, graphicsQueue, commandPool, rgba, width, height, error)) {
+        if (baseColorTextureSlots.empty()) baseColorTextureSlots.resize(1);
+        if (!baseColorTextureSlots[0].createRgba8(physicalDevice, device, graphicsQueue, commandPool, rgba, width, height, error)) {
             model.textureUploadStatus = "failed";
             model.baseColorTextureStatus = "failed";
             model.textureFallbackUsed = true;
@@ -749,6 +879,39 @@ struct RendererCore {
         bool ok = renderOneFrame();
         syncDiagnostics();
         diagnostics.write("valid", ok ? "baseColor texture uploaded and sampled" : "baseColor texture uploaded; draw retry failed");
+        updateReadyStatus();
+        return ok;
+    }
+
+    bool uploadBaseColorTextureSlot(int slot, const uint8_t* rgba, uint32_t width, uint32_t height, const std::string& name, const std::string& source, const std::string& mimeType, std::string& error) {
+        if (slot < 0 || slot >= (int)model.textureSlotLimit) { error = "texture slot outside limit"; model.skippedTextureCount += 1; return false; }
+        if (device == VK_NULL_HANDLE || physicalDevice == VK_NULL_HANDLE || commandPool == VK_NULL_HANDLE) { error = "renderer not initialized for texture slot upload"; return false; }
+        if (!rgba || width == 0 || height == 0) { error = "decoded texture slot pixels empty"; model.textureFallbackCount += 1; return false; }
+        vkWaitForFences(device, 1, &inFlight, VK_TRUE, UINT64_MAX);
+        if ((size_t)(slot + 1) > baseColorTextureSlots.size()) baseColorTextureSlots.resize((size_t)slot + 1);
+        if (!baseColorTextureSlots[(size_t)slot].createRgba8(physicalDevice, device, graphicsQueue, commandPool, rgba, width, height, error)) {
+            model.textureFallbackCount += 1;
+            return false;
+        }
+        if (!recreateTextureDescriptor(error)) {
+            model.textureFallbackCount += 1;
+            return false;
+        }
+        model.textureUploadStatus = "ok";
+        model.baseColorTextureStatus = "ok";
+        model.baseColorTextureName = name.empty() ? "baseColorTexture" : name;
+        model.baseColorTextureSource = source.empty() ? "glb.bufferView" : source;
+        model.baseColorTextureMimeType = mimeType.empty() ? "unknown" : mimeType;
+        model.textureWidth = width;
+        model.textureHeight = height;
+        model.textureBytes = width * height * 4u;
+        model.textureFallbackUsed = false;
+        model.uploadedTextureCount = 0;
+        for (const auto& texture : baseColorTextureSlots) if (texture.ready && texture.width > 1 && texture.height > 1) model.uploadedTextureCount += 1;
+        syncTextureMaterialState();
+        bool ok = renderOneFrame();
+        syncDiagnostics();
+        diagnostics.write("valid", ok ? "baseColor texture slot uploaded and sampled" : "baseColor texture slot uploaded; draw retry failed");
         updateReadyStatus();
         return ok;
     }
@@ -790,7 +953,7 @@ struct RendererCore {
         model.textureFallbackUsed = true;
         model.reason = "no active model";
         syncDiagnostics();
-        diagnostics.write("valid", "Scene04 Texture Binding Lab initialized with cube fallback while waiting for active model upload.");
+        diagnostics.write("valid", "Scene05 Multi Primitive Render Lab initialized with cube fallback while waiting for active model upload.");
         updateReadyStatus();
         return true;
     }

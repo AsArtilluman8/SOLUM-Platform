@@ -1,5 +1,30 @@
 # GLB_IMPORT_PIPELINE — GLB import and first primitive render
 
+## P08 Multi Primitive Static Import
+
+P08 runtime path:
+
+```text
+modelRenderMode = multi_primitive_static
+Render Lab: Scene05 Multi Primitive Render Lab
+```
+
+Importer behavior:
+
+- scans all meshes and primitives in the active GLB;
+- supports TRIANGLES primitives with FLOAT VEC3 POSITION/NORMAL, FLOAT VEC2 TEXCOORD_0, FLOAT VEC3/VEC4 COLOR_0, UNSIGNED_SHORT/UNSIGNED_INT indices;
+- applies accessor `byteOffset`, bufferView `byteOffset`, and `byteStride`;
+- normalizes the full model bounding box, not only primitive 0;
+- skips unsupported primitives without crashing;
+- uses fallback cube only when every primitive is unsupported.
+
+Material behavior:
+
+- material slot per primitive;
+- baseColorFactor per material;
+- baseColor texture slot per material up to `textureSlotLimit`;
+- alphaMode, alphaCutoff, and doubleSided are metadata only in P08.
+
 ## Scope
 
 P05 added the first real model import path for SOLUM Engine.

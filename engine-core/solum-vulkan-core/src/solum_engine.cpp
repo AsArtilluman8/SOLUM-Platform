@@ -4,6 +4,7 @@
 #include <android/native_window_jni.h>
 #include <android/native_window.h>
 #include <string>
+#include <vector>
 
 #include "solum/renderer_core.hpp"
 
@@ -63,14 +64,44 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetCa
     renderer->setCamera(yawDeg, pitchDeg, distance, true);
 }
 
+extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdateUiDiagnostics(
+    JNIEnv* env,
+    jclass,
+    jlong handle,
+    jfloat fpsCurrent,
+    jfloat frameTimeMs,
+    jstring debugZipStatus,
+    jstring debugZipPath,
+    jstring debugZipIncludedFiles,
+    jstring debugZipReason
+) {
+    auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
+    if (!renderer) return;
+    const char* statusChars = env->GetStringUTFChars(debugZipStatus, nullptr);
+    const char* pathChars = env->GetStringUTFChars(debugZipPath, nullptr);
+    const char* filesChars = env->GetStringUTFChars(debugZipIncludedFiles, nullptr);
+    const char* reasonChars = env->GetStringUTFChars(debugZipReason, nullptr);
+    renderer->model.fpsCurrent = fpsCurrent;
+    renderer->model.frameTimeMs = frameTimeMs;
+    renderer->model.debugZipStatus = statusChars ? statusChars : "not_run";
+    renderer->model.debugZipPath = pathChars ? pathChars : "";
+    renderer->model.debugZipIncludedFiles = filesChars ? filesChars : "";
+    renderer->model.debugZipReason = reasonChars ? reasonChars : "";
+    renderer->syncDiagnostics();
+    if (statusChars) env->ReleaseStringUTFChars(debugZipStatus, statusChars);
+    if (pathChars) env->ReleaseStringUTFChars(debugZipPath, pathChars);
+    if (filesChars) env->ReleaseStringUTFChars(debugZipIncludedFiles, filesChars);
+    if (reasonChars) env->ReleaseStringUTFChars(debugZipReason, reasonChars);
+}
+
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) {
-        return env->NewStringUTF("{\"currentLabScene\":\"scene04_texture_binding_lab\",\"currentLabSceneName\":\"Scene04 Texture Binding Lab\",\"status\":\"native_handle_missing\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\"}");
+        return env->NewStringUTF("{\"currentLabScene\":\"scene05_multi_primitive_render_lab\",\"currentLabSceneName\":\"Scene05 Multi Primitive Render Lab\",\"status\":\"native_handle_missing\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
     }
     std::string json = std::string("{\"currentLabScene\":\"") + renderer->diagnostics.renderLab.sceneId()
         + "\",\"currentLabSceneName\":\"" + renderer->diagnostics.renderLab.sceneName()
-        + "\",\"renderingStatus\":\"" + (renderer->model.modelReady() ? "model_first_primitive" : "fallback_cube") + "\""
+        + "\",\"renderingStatus\":\"" + (renderer->model.modelReady() ? "multi_primitive_static" : "fallback_cube") + "\""
         + ",\"assetImportStatus\":\"" + (renderer->model.activeModelName == "none" ? "no active model" : "active model") + "\""
         + ",\"activeModelName\":\"" + solum::escapeJson(renderer->model.activeModelName) + "\""
         + ",\"activeModelPath\":\"" + solum::escapeJson(renderer->model.activeModelPath) + "\""
@@ -94,7 +125,25 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"modelBoundsMax\":[" + std::to_string(renderer->model.boundsMax[0]) + "," + std::to_string(renderer->model.boundsMax[1]) + "," + std::to_string(renderer->model.boundsMax[2]) + "]"
         + ",\"modelBoundsCenter\":[" + std::to_string(renderer->model.boundsCenter[0]) + "," + std::to_string(renderer->model.boundsCenter[1]) + "," + std::to_string(renderer->model.boundsCenter[2]) + "]"
         + ",\"modelScale\":" + std::to_string(renderer->model.modelScale)
-        + ",\"modelRenderMode\":\"first_primitive\""
+        + ",\"modelRenderMode\":\"" + renderer->model.modelRenderMode + "\""
+        + ",\"primitiveCountTotal\":" + std::to_string(renderer->model.primitiveCountTotal)
+        + ",\"primitiveCountRendered\":" + std::to_string(renderer->model.primitiveCountRendered)
+        + ",\"primitiveCountSkipped\":" + std::to_string(renderer->model.primitiveCountSkipped)
+        + ",\"unsupportedPrimitiveCount\":" + std::to_string(renderer->model.unsupportedPrimitiveCount)
+        + ",\"materialSlotCount\":" + std::to_string(renderer->model.materialSlotCount)
+        + ",\"materialSlotCountRendered\":" + std::to_string(renderer->model.materialSlotCountRendered)
+        + ",\"textureSlotCount\":" + std::to_string(renderer->model.textureSlotCount)
+        + ",\"uploadedTextureCount\":" + std::to_string(renderer->model.uploadedTextureCount)
+        + ",\"textureFallbackCount\":" + std::to_string(renderer->model.textureFallbackCount)
+        + ",\"skippedTextureCount\":" + std::to_string(renderer->model.skippedTextureCount)
+        + ",\"textureSlotLimit\":" + std::to_string(renderer->model.textureSlotLimit)
+        + ",\"fpsCurrent\":" + std::to_string(renderer->model.fpsCurrent)
+        + ",\"frameTimeMs\":" + std::to_string(renderer->model.frameTimeMs)
+        + ",\"fpsSource\":\"" + renderer->model.fpsSource + "\""
+        + ",\"debugZipStatus\":\"" + solum::escapeJson(renderer->model.debugZipStatus) + "\""
+        + ",\"debugZipPath\":\"" + solum::escapeJson(renderer->model.debugZipPath) + "\""
+        + ",\"debugZipIncludedFiles\":\"" + solum::escapeJson(renderer->model.debugZipIncludedFiles) + "\""
+        + ",\"debugZipReason\":\"" + solum::escapeJson(renderer->model.debugZipReason) + "\""
         + ",\"fallbackCubeVisible\":" + (renderer->model.fallbackCubeVisible ? "true" : "false")
         + ",\"fallbackCubeStatus\":\"" + solum::escapeJson(renderer->model.fallbackCubeStatus) + "\""
         + ",\"reason\":\"" + solum::escapeJson(renderer->model.reason) + "\""
@@ -192,6 +241,116 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
     return ok ? JNI_TRUE : JNI_FALSE;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeUploadModelMultiPrimitive(
+    JNIEnv* env,
+    jclass,
+    jlong handle,
+    jstring modelName,
+    jstring modelPath,
+    jfloatArray vertexData,
+    jintArray indexData,
+    jintArray rangeData,
+    jfloatArray materialData,
+    jfloatArray boundsMinArray,
+    jfloatArray boundsMaxArray,
+    jfloatArray boundsCenterArray,
+    jfloat modelScale,
+    jint primitiveTotal,
+    jint primitiveSkipped,
+    jint unsupportedPrimitiveCount,
+    jstring reasonText
+) {
+    auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
+    if (!renderer || !vertexData || !rangeData) return JNI_FALSE;
+    const char* nameChars = env->GetStringUTFChars(modelName, nullptr);
+    const char* pathChars = env->GetStringUTFChars(modelPath, nullptr);
+    const char* reasonChars = env->GetStringUTFChars(reasonText, nullptr);
+    std::string name = nameChars ? nameChars : "imported.glb";
+    std::string path = pathChars ? pathChars : "";
+    std::string reason = reasonChars ? reasonChars : "";
+    jsize vertexFloatCount = env->GetArrayLength(vertexData);
+    jsize rangeIntCount = env->GetArrayLength(rangeData);
+    if (vertexFloatCount <= 0 || (vertexFloatCount % 11) != 0 || rangeIntCount <= 0 || (rangeIntCount % 6) != 0) {
+        renderer->setModelFallback(name, path, "multi primitive data has invalid vertex/range stride");
+        if (nameChars) env->ReleaseStringUTFChars(modelName, nameChars);
+        if (pathChars) env->ReleaseStringUTFChars(modelPath, pathChars);
+        if (reasonChars) env->ReleaseStringUTFChars(reasonText, reasonChars);
+        return JNI_FALSE;
+    }
+    jfloat* vertices = env->GetFloatArrayElements(vertexData, nullptr);
+    jint* indices = indexData ? env->GetIntArrayElements(indexData, nullptr) : nullptr;
+    jint* ranges = env->GetIntArrayElements(rangeData, nullptr);
+    jfloat* materials = materialData ? env->GetFloatArrayElements(materialData, nullptr) : nullptr;
+    jsize indexCount = indexData ? env->GetArrayLength(indexData) : 0;
+    jsize materialFloatCount = materialData ? env->GetArrayLength(materialData) : 0;
+    std::vector<uint32_t> index32;
+    if (indices && indexCount > 0) {
+        index32.resize((size_t)indexCount);
+        for (jsize i = 0; i < indexCount; ++i) index32[(size_t)i] = (uint32_t)indices[i];
+    }
+    std::vector<solum::PrimitiveDrawRange> drawRanges((size_t)rangeIntCount / 6u);
+    for (size_t i = 0; i < drawRanges.size(); ++i) {
+        drawRanges[i].firstIndex = (uint32_t)ranges[i * 6u];
+        drawRanges[i].indexCount = (uint32_t)ranges[i * 6u + 1u];
+        drawRanges[i].firstVertex = (uint32_t)ranges[i * 6u + 2u];
+        drawRanges[i].vertexCount = (uint32_t)ranges[i * 6u + 3u];
+        drawRanges[i].materialSlot = ranges[i * 6u + 4u];
+        drawRanges[i].textureSlot = ranges[i * 6u + 5u];
+    }
+    std::vector<solum::MaterialSlotState> slots;
+    if (materials && materialFloatCount >= 8 && (materialFloatCount % 8) == 0) {
+        slots.resize((size_t)materialFloatCount / 8u);
+        for (size_t i = 0; i < slots.size(); ++i) {
+            slots[i].baseColorFactor[0] = materials[i * 8u];
+            slots[i].baseColorFactor[1] = materials[i * 8u + 1u];
+            slots[i].baseColorFactor[2] = materials[i * 8u + 2u];
+            slots[i].baseColorFactor[3] = materials[i * 8u + 3u];
+            slots[i].alphaMode = (int)materials[i * 8u + 4u];
+            slots[i].alphaCutoff = materials[i * 8u + 5u];
+            slots[i].doubleSided = materials[i * 8u + 6u] != 0.0f;
+            slots[i].baseColorTextureSlot = (int)materials[i * 8u + 7u];
+        }
+    } else {
+        slots.resize(1);
+    }
+    float boundsMin[3] = {0.0f, 0.0f, 0.0f};
+    float boundsMax[3] = {0.0f, 0.0f, 0.0f};
+    float boundsCenter[3] = {0.0f, 0.0f, 0.0f};
+    if (boundsMinArray && env->GetArrayLength(boundsMinArray) >= 3) env->GetFloatArrayRegion(boundsMinArray, 0, 3, boundsMin);
+    if (boundsMaxArray && env->GetArrayLength(boundsMaxArray) >= 3) env->GetFloatArrayRegion(boundsMaxArray, 0, 3, boundsMax);
+    if (boundsCenterArray && env->GetArrayLength(boundsCenterArray) >= 3) env->GetFloatArrayRegion(boundsCenterArray, 0, 3, boundsCenter);
+    std::string error;
+    bool ok = renderer->uploadModelMultiPrimitive(
+        name,
+        path,
+        reinterpret_cast<const solum::Vertex3D*>(vertices),
+        (uint32_t)(vertexFloatCount / 11),
+        index32.empty() ? nullptr : index32.data(),
+        (uint32_t)index32.size(),
+        drawRanges.data(),
+        (uint32_t)drawRanges.size(),
+        slots.data(),
+        (uint32_t)slots.size(),
+        boundsMin,
+        boundsMax,
+        boundsCenter,
+        modelScale,
+        (uint32_t)primitiveTotal,
+        (uint32_t)primitiveSkipped,
+        (uint32_t)unsupportedPrimitiveCount,
+        reason,
+        error
+    );
+    env->ReleaseFloatArrayElements(vertexData, vertices, JNI_ABORT);
+    if (indices) env->ReleaseIntArrayElements(indexData, indices, JNI_ABORT);
+    env->ReleaseIntArrayElements(rangeData, ranges, JNI_ABORT);
+    if (materials) env->ReleaseFloatArrayElements(materialData, materials, JNI_ABORT);
+    if (nameChars) env->ReleaseStringUTFChars(modelName, nameChars);
+    if (pathChars) env->ReleaseStringUTFChars(modelPath, pathChars);
+    if (reasonChars) env->ReleaseStringUTFChars(reasonText, reasonChars);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetModelFallback(
     JNIEnv* env,
     jclass,
@@ -263,6 +422,61 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
         error
     );
     if (!ok) renderer->model.reason = error.empty() ? "texture upload failed" : error;
+    env->ReleaseIntArrayElements(rgbaPixels, pixels, JNI_ABORT);
+    if (nameChars) env->ReleaseStringUTFChars(textureName, nameChars);
+    if (sourceChars) env->ReleaseStringUTFChars(textureSource, sourceChars);
+    if (mimeChars) env->ReleaseStringUTFChars(mimeType, mimeChars);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeUploadBaseColorTextureSlot(
+    JNIEnv* env,
+    jclass,
+    jlong handle,
+    jint slot,
+    jintArray rgbaPixels,
+    jint width,
+    jint height,
+    jstring textureName,
+    jstring textureSource,
+    jstring mimeType
+) {
+    auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
+    if (!renderer || !rgbaPixels || width <= 0 || height <= 0) return JNI_FALSE;
+    const char* nameChars = env->GetStringUTFChars(textureName, nullptr);
+    const char* sourceChars = env->GetStringUTFChars(textureSource, nullptr);
+    const char* mimeChars = env->GetStringUTFChars(mimeType, nullptr);
+    jsize pixelCount = env->GetArrayLength(rgbaPixels);
+    const int64_t expected = (int64_t)width * (int64_t)height;
+    if (expected <= 0 || pixelCount < expected) {
+        renderer->model.textureFallbackCount += 1;
+        renderer->model.reason = "texture slot pixel count mismatch";
+        if (nameChars) env->ReleaseStringUTFChars(textureName, nameChars);
+        if (sourceChars) env->ReleaseStringUTFChars(textureSource, sourceChars);
+        if (mimeChars) env->ReleaseStringUTFChars(mimeType, mimeChars);
+        return JNI_FALSE;
+    }
+    jint* pixels = env->GetIntArrayElements(rgbaPixels, nullptr);
+    std::vector<uint8_t> rgba((size_t)expected * 4u);
+    for (int64_t i = 0; i < expected; ++i) {
+        uint32_t argb = (uint32_t)pixels[i];
+        rgba[(size_t)i * 4u] = (uint8_t)((argb >> 16) & 0xffu);
+        rgba[(size_t)i * 4u + 1u] = (uint8_t)((argb >> 8) & 0xffu);
+        rgba[(size_t)i * 4u + 2u] = (uint8_t)(argb & 0xffu);
+        rgba[(size_t)i * 4u + 3u] = (uint8_t)((argb >> 24) & 0xffu);
+    }
+    std::string error;
+    bool ok = renderer->uploadBaseColorTextureSlot(
+        slot,
+        rgba.data(),
+        (uint32_t)width,
+        (uint32_t)height,
+        nameChars ? nameChars : "baseColorTexture",
+        sourceChars ? sourceChars : "glb.bufferView",
+        mimeChars ? mimeChars : "unknown",
+        error
+    );
+    if (!ok) renderer->model.reason = error.empty() ? "texture slot upload failed" : error;
     env->ReleaseIntArrayElements(rgbaPixels, pixels, JNI_ABORT);
     if (nameChars) env->ReleaseStringUTFChars(textureName, nameChars);
     if (sourceChars) env->ReleaseStringUTFChars(textureSource, sourceChars);

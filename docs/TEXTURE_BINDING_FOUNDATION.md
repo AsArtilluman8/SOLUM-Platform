@@ -1,5 +1,28 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P08 texture slots
+
+P08 extends P07 single baseColor texture binding into a small texture slot system for multi-primitive static GLB rendering.
+
+Rules:
+
+- baseColor texture is resolved per material slot;
+- native renderer can bind a texture descriptor per primitive draw range;
+- `textureSlotLimit` is 8 in P08;
+- overflow or unsupported texture decode increments skipped/fallback texture diagnostics;
+- shader remains simple: `baseColorTexture * baseColorFactor * vertexColor/default`;
+- metallicRoughness, normal, AO and emissive sampling are deferred to P09+.
+
+Diagnostics:
+
+```text
+textureSlotCount
+uploadedTextureCount
+textureFallbackCount
+skippedTextureCount
+textureSlotLimit
+```
+
 ## Supported now
 
 - Active imported GLB, mesh 0 / primitive 0.

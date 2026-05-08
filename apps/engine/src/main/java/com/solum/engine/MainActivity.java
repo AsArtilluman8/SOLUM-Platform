@@ -96,6 +96,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private long fpsWindowFrames = 0L;
     private float fpsCurrent = 0.0f;
     private float frameTimeMs = 0.0f;
+    private float fpsLastStable = 0.0f;
+    private float frameTimeLastStableMs = 0.0f;
+    private String fpsSource = "not_ready";
     private float cameraYawDeg = 28.0f;
     private float cameraPitchDeg = -18.0f;
     private float cameraDistance = 4.2f;
@@ -392,11 +395,55 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         fpsWindowFrames++;
         long elapsed = now - fpsWindowStartNs;
         if (elapsed >= 500_000_000L) {
-            fpsCurrent = (float)(fpsWindowFrames * 1_000_000_000.0 / elapsed);
-            frameTimeMs = fpsCurrent > 0.001f ? 1000.0f / fpsCurrent : 0.0f;
+            float measuredFps = (float)(fpsWindowFrames * 1_000_000_000.0 / elapsed);
+            float measuredFrameMs = measuredFps > 0.001f ? 1000.0f / measuredFps : 0.0f;
+            if (isStableFpsSample(measuredFps, measuredFrameMs)) {
+                fpsCurrent = measuredFps;
+                frameTimeMs = measuredFrameMs;
+                fpsLastStable = measuredFps;
+                frameTimeLastStableMs = measuredFrameMs;
+                fpsSource = "java_ui_frame_delta_stable";
+            } else if (fpsLastStable > 0.001f) {
+                fpsCurrent = fpsLastStable;
+                frameTimeMs = frameTimeLastStableMs;
+                fpsSource = "java_ui_frame_delta_last_stable";
+            } else {
+                fpsCurrent = 0.0f;
+                frameTimeMs = 0.0f;
+                fpsSource = "not_ready";
+            }
             fpsWindowStartNs = now;
             fpsWindowFrames = 0L;
             try { if (nativeLoaded && nativeHandle != 0L) nativeUpdateUiDiagnostics(nativeHandle, fpsCurrent, frameTimeMs, debugZipStatus, debugZipPath, debugZipIncludedFiles, debugZipReason); } catch (Throwable ignored) { }
+        }
+    }
+
+    private boolean isStableFpsSample(float fps, float frameMs) {
+        return fps >= 1.0f && fps <= 240.0f && frameMs >= 4.0f && frameMs <= 1000.0f;
+    }
+
+    private FpsSnapshot fpsSnapshotForExport(String renderLab) {
+        float nativeFps = parseFloatOr(jsonNumberField(renderLab, "fpsCurrent", ""), 0.0f);
+        float nativeFrameMs = parseFloatOr(jsonNumberField(renderLab, "frameTimeMs", ""), 0.0f);
+        String nativeSource = jsonStringField(renderLab, "fpsSource", "");
+        if (isStableFpsSample(fpsCurrent, frameTimeMs)) {
+            return new FpsSnapshot(fpsCurrent, frameTimeMs, fpsSource);
+        }
+        if (isStableFpsSample(fpsLastStable, frameTimeLastStableMs)) {
+            return new FpsSnapshot(fpsLastStable, frameTimeLastStableMs, "java_ui_frame_delta_last_stable");
+        }
+        if (isStableFpsSample(nativeFps, nativeFrameMs)) {
+            return new FpsSnapshot(nativeFps, nativeFrameMs, nativeSource.isEmpty() ? "native_render_lab_state" : nativeSource);
+        }
+        return new FpsSnapshot(0.0f, 0.0f, "not_ready");
+    }
+
+    private float parseFloatOr(String raw, float fallback) {
+        try {
+            if (raw == null || raw.isEmpty()) return fallback;
+            return Float.parseFloat(raw);
+        } catch (Throwable ignored) {
+            return fallback;
         }
     }
 
@@ -904,6 +951,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 debugZipPath = result.path;
                 debugZipReason = result.reason;
                 debugZipIncludedFiles = result.includedFiles;
+                exportEngineDiagnostics("debug_zip_final");
             } catch (Throwable t) {
                 debugZipStatus = "failed";
                 debugZipReason = shortThrowable(t);
@@ -922,22 +970,30 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private DebugZipResult exportDebugZip() throws Exception {
         String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
         String fileName = "SOLUM_DEBUG_" + stamp + ".zip";
-        List<File> files = new ArrayList<>();
+        List<DebugZipEntry> entries = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
         File reportDir = getReportDir();
-        addIfExists(files, new File(reportDir, "engine_runtime_state.json"));
-        addIfExists(files, new File(reportDir, "engine_diagnostics_manifest.json"));
-        addIfExists(files, new File(reportDir, "model_import_state.json"));
-        addIfExists(files, new File(reportDir, "asset_report.json"));
+        writeDebugZipDiagnosticsFiles(reportDir, "debug_zip_package");
+        addDebugZipEntry(entries, missing, new File(reportDir, "engine_runtime_state.json"), true);
+        addDebugZipEntry(entries, missing, new File(reportDir, "engine_diagnostics_manifest.json"), true);
+        addDebugZipEntry(entries, missing, new File(reportDir, "model_import_state.json"), true);
+        addDebugZipEntry(entries, missing, new File(reportDir, "asset_report.json"), true);
         File note = new File(reportDir, "debug_zip_runtime_note.txt");
         try (FileWriter w = new FileWriter(note, false)) {
             w.write("SOLUM P08 debug zip\n");
             w.write("Scene05 Multi Primitive Render Lab\n");
             w.write("debugZipStatus=running\n");
+            w.write("requiredFiles=engine_runtime_state.json,engine_diagnostics_manifest.json,model_import_state.json,asset_report.json\n");
+            if (missing.isEmpty()) {
+                w.write("missingFiles=none\n");
+            } else {
+                for (String item : missing) w.write("missingFile=" + item + "\n");
+            }
         }
-        addIfExists(files, note);
+        addDebugZipEntry(entries, missing, note, true);
         File summary = new File(reportDir, "glb_model_summary.json");
         try (FileWriter w = new FileWriter(summary, false)) { w.write(modelState.toJson("solum.glb_model_summary", timestampUtc(), "debug_zip_summary")); }
-        addIfExists(files, summary);
+        addDebugZipEntry(entries, missing, summary, false);
 
         DebugZipResult result = new DebugZipResult();
         if (Build.VERSION.SDK_INT >= 29) {
@@ -949,30 +1005,64 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (uri != null) {
                 try (OutputStream out = getContentResolver().openOutputStream(uri, "w")) {
                     if (out == null) throw new IllegalStateException("mediastore_open_output_failed");
-                    result.includedFiles = writeZip(out, files);
+                    result.includedFiles = writeZip(out, entries);
                 }
                 result.ok = true;
                 result.path = "/storage/emulated/0/Download/SOLUM_EXPORTS/" + fileName;
-                result.reason = "mediastore_downloads_ok";
+                result.missingFiles = missing.toString();
+                result.reason = missing.isEmpty() ? "mediastore_downloads_ok" : "mediastore_downloads_ok_missing:" + missing.toString();
                 return result;
             }
         }
         File dir = new File("/storage/emulated/0/Download/SOLUM_EXPORTS");
         if (!canWriteDirectory(dir)) throw new IllegalStateException("debug_zip_download_route_not_writable");
         File outFile = new File(dir, fileName);
-        try (OutputStream out = new java.io.FileOutputStream(outFile, false)) { result.includedFiles = writeZip(out, files); }
+        try (OutputStream out = new java.io.FileOutputStream(outFile, false)) { result.includedFiles = writeZip(out, entries); }
         result.ok = true;
         result.path = outFile.getAbsolutePath();
-        result.reason = "direct_downloads_fallback_ok";
+        result.missingFiles = missing.toString();
+        result.reason = missing.isEmpty() ? "direct_downloads_fallback_ok" : "direct_downloads_fallback_ok_missing:" + missing.toString();
         return result;
     }
 
-    private void addIfExists(List<File> files, File file) { if (file != null && file.exists() && file.isFile()) files.add(file); }
+    private void writeDebugZipDiagnosticsFiles(File reportDir, String trigger) {
+        try {
+            if (reportDir == null) return;
+            canWriteDirectory(reportDir);
+            String timestamp = timestampUtc();
+            String nativeStatus = getNativeStatusForExport();
+            String renderLab = getRenderLabStateForExport();
+            ExportResult result = new ExportResult();
+            result.ok = true;
+            result.route = "debug_zip_report_dir";
+            result.reason = cachedReportDirReason;
+            result.actualRoot = reportDir.getAbsolutePath();
+            result.timestamp = timestamp;
+            String runtimeJson = buildRuntimeStateJson(timestamp, trigger, result, getVersionName(), getVersionCode(), nativeStatus, renderLab);
+            String manifestJson = buildDiagnosticsManifestJson(timestamp, result, renderLab);
+            writeText(new FileWriter(new File(reportDir, "engine_runtime_state.json"), false), runtimeJson);
+            writeText(new FileWriter(new File(reportDir, "engine_diagnostics_manifest.json"), false), manifestJson);
+            writeText(new FileWriter(new File(reportDir, "model_import_state.json"), false), modelState.toJson("solum.model_import_state", timestamp, trigger));
+            writeText(new FileWriter(new File(reportDir, "asset_report.json"), false), modelState.toJson("solum.asset_report", timestamp, trigger));
+        } catch (Throwable t) {
+            Log.e(TAG_DIAG, "debug_zip_prepare_files_failed reason=" + shortThrowable(t));
+        }
+    }
 
-    private String writeZip(OutputStream out, List<File> files) throws Exception {
+    private void addDebugZipEntry(List<DebugZipEntry> entries, List<String> missing, File file, boolean required) {
+        if (file != null && file.exists() && file.isFile()) {
+            entries.add(new DebugZipEntry(file));
+            return;
+        }
+        String name = file == null ? "unknown" : file.getName();
+        missing.add((required ? "required:" : "optional:") + name);
+    }
+
+    private String writeZip(OutputStream out, List<DebugZipEntry> entries) throws Exception {
         List<String> names = new ArrayList<>();
         try (ZipOutputStream zip = new ZipOutputStream(out)) {
-            for (File file : files) {
+            for (DebugZipEntry entry : entries) {
+                File file = entry.file;
                 String name = file.getName();
                 names.add(name);
                 zip.putNextEntry(new ZipEntry(name));
@@ -1055,6 +1145,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private String buildRuntimeStateJson(String timestamp, String trigger, ExportResult result, String versionName, int versionCode, String nativeStatus, String renderLab) {
+        FpsSnapshot fps = fpsSnapshotForExport(renderLab);
         return "{\n"
             + "  \"schema\": \"solum.engine_runtime_state\",\n"
             + "  \"schemaVersion\": 1,\n"
@@ -1107,13 +1198,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"textureFallbackCount\": " + jsonNumberField(renderLab, "textureFallbackCount", String.valueOf(modelState.textureFallbackCount)) + ",\n"
             + "  \"skippedTextureCount\": " + jsonNumberField(renderLab, "skippedTextureCount", String.valueOf(modelState.skippedTextureCount)) + ",\n"
             + "  \"textureSlotLimit\": " + jsonNumberField(renderLab, "textureSlotLimit", String.valueOf(modelState.textureSlotLimit)) + ",\n"
-            + "  \"fpsCurrent\": " + jsonNumberField(renderLab, "fpsCurrent", String.valueOf(fpsCurrent)) + ",\n"
-            + "  \"frameTimeMs\": " + jsonNumberField(renderLab, "frameTimeMs", String.valueOf(frameTimeMs)) + ",\n"
-            + "  \"fpsSource\": \"" + escape(jsonStringField(renderLab, "fpsSource", "java_ui_frame_delta")) + "\",\n"
-            + "  \"debugZipStatus\": \"" + escape(jsonStringField(renderLab, "debugZipStatus", debugZipStatus)) + "\",\n"
-            + "  \"debugZipPath\": \"" + escape(jsonStringField(renderLab, "debugZipPath", debugZipPath)) + "\",\n"
-            + "  \"debugZipIncludedFiles\": \"" + escape(jsonStringField(renderLab, "debugZipIncludedFiles", debugZipIncludedFiles)) + "\",\n"
-            + "  \"debugZipReason\": \"" + escape(jsonStringField(renderLab, "debugZipReason", debugZipReason)) + "\",\n"
+            + "  \"fpsCurrent\": " + jsonFloat(fps.fpsCurrent) + ",\n"
+            + "  \"frameTimeMs\": " + jsonFloat(fps.frameTimeMs) + ",\n"
+            + "  \"fpsSource\": \"" + escape(fps.source) + "\",\n"
+            + "  \"fpsLastStable\": " + jsonFloat(fpsLastStable) + ",\n"
+            + "  \"frameTimeLastStableMs\": " + jsonFloat(frameTimeLastStableMs) + ",\n"
+            + "  \"debugZipStatus\": \"" + escape(debugZipStatus) + "\",\n"
+            + "  \"debugZipPath\": \"" + escape(debugZipPath) + "\",\n"
+            + "  \"debugZipIncludedFiles\": \"" + escape(debugZipIncludedFiles) + "\",\n"
+            + "  \"debugZipReason\": \"" + escape(debugZipReason) + "\",\n"
             + "  \"fallbackCubeVisible\": " + jsonBooleanField(renderLab, "fallbackCubeVisible", modelState.fallbackCubeVisible ? "true" : "false") + ",\n"
             + "  \"fallbackCubeStatus\": \"" + escape(jsonStringField(renderLab, "fallbackCubeStatus", modelState.fallbackCubeStatus)) + "\",\n"
             + "  \"cubeStatus\": \"" + escape(jsonStringField(renderLab, "cubeStatus", "unknown")) + "\",\n"
@@ -1154,6 +1247,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "    \"reason\": \"" + escape(result.reason) + "\"\n"
             + "  },\n"
             + "  \"files\": [\"engine_runtime_state.json\", \"engine_diagnostics_manifest.json\", \"model_import_state.json\", \"asset_report.json\"],\n"
+            + "  \"debugZipStatus\": \"" + escape(debugZipStatus) + "\",\n"
+            + "  \"debugZipPath\": \"" + escape(debugZipPath) + "\",\n"
+            + "  \"debugZipIncludedFiles\": \"" + escape(debugZipIncludedFiles) + "\",\n"
+            + "  \"debugZipReason\": \"" + escape(debugZipReason) + "\",\n"
+            + "  \"debugZipRequiredFiles\": [\"engine_runtime_state.json\", \"engine_diagnostics_manifest.json\", \"model_import_state.json\", \"asset_report.json\", \"debug_zip_runtime_note.txt\"],\n"
+            + "  \"debugZipOptionalFiles\": [\"glb_model_summary.json\"],\n"
+            + "  \"debugZipRequiredFileStatus\": {\n"
+            + "    \"engine_runtime_state.json\": \"" + fileStatusForDebugZip("engine_runtime_state.json", debugZipIncludedFiles, true) + "\",\n"
+            + "    \"engine_diagnostics_manifest.json\": \"" + fileStatusForDebugZip("engine_diagnostics_manifest.json", debugZipIncludedFiles, true) + "\",\n"
+            + "    \"model_import_state.json\": \"" + fileStatusForDebugZip("model_import_state.json", debugZipIncludedFiles, true) + "\",\n"
+            + "    \"asset_report.json\": \"" + fileStatusForDebugZip("asset_report.json", debugZipIncludedFiles, true) + "\",\n"
+            + "    \"debug_zip_runtime_note.txt\": \"" + fileStatusForDebugZip("debug_zip_runtime_note.txt", debugZipIncludedFiles, true) + "\"\n"
+            + "  },\n"
+            + "  \"debugZipOptionalFileStatus\": {\n"
+            + "    \"glb_model_summary.json\": \"" + fileStatusForDebugZip("glb_model_summary.json", debugZipIncludedFiles, false) + "\"\n"
+            + "  },\n"
             + "  \"screenshot\": { \"status\": \"not_available\", \"reason\": \"renderer_readback_not_implemented\" },\n"
             + "  \"camera\": {\n"
             + "    \"cameraMvpStatus\": \"" + escape(jsonStringField(renderLab, "cameraMvpStatus", "unknown")) + "\",\n"
@@ -1393,7 +1502,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private String getRenderLabStateForExport() {
         if (!nativeLoaded || nativeHandle == 0L) {
-            return "{\"currentLabScene\":\"scene05_multi_primitive_render_lab\",\"currentLabSceneName\":\"Scene05 Multi Primitive Render Lab\",\"status\":\"native_not_loaded\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"java_ui_frame_delta\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\"}";
+            return "{\"currentLabScene\":\"scene05_multi_primitive_render_lab\",\"currentLabSceneName\":\"Scene05 Multi Primitive Render Lab\",\"status\":\"native_not_loaded\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"not_ready\",\"fpsLastStable\":0,\"frameTimeLastStableMs\":0,\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\"}";
         }
         try { return nativeGetRenderLabState(nativeHandle); }
         catch (Throwable t) { return "{\"currentLabScene\":\"scene05_multi_primitive_render_lab\",\"currentLabSceneName\":\"Scene05 Multi Primitive Render Lab\",\"status\":\"native_render_lab_state_failed\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"failed\",\"baseColorTextureStatus\":\"failed\",\"textureFallbackUsed\":true,\"modelRenderMode\":\"multi_primitive_static\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(shortThrowable(t)) + "\"}"; }
@@ -2322,6 +2431,35 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String path = "";
         String reason = "not_started";
         String includedFiles = "";
+        String missingFiles = "[]";
+    }
+
+    private static final class DebugZipEntry {
+        final File file;
+
+        DebugZipEntry(File file) {
+            this.file = file;
+        }
+    }
+
+    private static final class FpsSnapshot {
+        final float fpsCurrent;
+        final float frameTimeMs;
+        final String source;
+
+        FpsSnapshot(float fpsCurrent, float frameTimeMs, String source) {
+            this.fpsCurrent = fpsCurrent;
+            this.frameTimeMs = frameTimeMs;
+            this.source = source == null || source.isEmpty() ? "not_ready" : source;
+        }
+    }
+
+    private String jsonFloat(float value) { return String.format(Locale.US, "%.3f", value); }
+
+    private String fileStatusForDebugZip(String name, String includedFiles, boolean required) {
+        if (includedFiles != null && includedFiles.contains(name)) return "included";
+        if ("not_run".equals(debugZipStatus) || "running".equals(debugZipStatus)) return "not_checked";
+        return required ? "missing_required" : "missing_optional";
     }
 
     private void writeCrashReport(String stage, Throwable throwable) {

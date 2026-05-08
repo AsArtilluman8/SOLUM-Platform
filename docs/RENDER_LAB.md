@@ -38,6 +38,8 @@ textureSlotLimit
 fpsCurrent
 frameTimeMs
 fpsSource
+fpsLastStable
+frameTimeLastStableMs
 debugZipStatus
 debugZipPath
 debugZipIncludedFiles

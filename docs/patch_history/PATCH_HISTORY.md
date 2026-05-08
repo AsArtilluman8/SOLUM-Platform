@@ -2,6 +2,29 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P08B — Diagnostics FPS + Debug ZIP Completeness Fix
+
+Scope:
+
+- Engine diagnostics now export FPS from the same stable Java/UI HUD source.
+- `engine_runtime_state.json` uses `fpsSource = java_ui_frame_delta_stable`, `java_ui_frame_delta_last_stable`, or `not_ready`.
+- Added stable FPS fields: `fpsLastStable`, `frameTimeLastStableMs`.
+- Debug ZIP packaging writes/collects required files from one report directory:
+  - `engine_runtime_state.json`;
+  - `engine_diagnostics_manifest.json`;
+  - `model_import_state.json`;
+  - `asset_report.json`;
+  - `debug_zip_runtime_note.txt`.
+- `glb_model_summary.json` remains optional when available.
+- After successful Debug ZIP export, diagnostics are written again with final `debugZipStatus`, `debugZipPath`, `debugZipIncludedFiles`, and `debugZipReason`.
+
+Out of scope:
+
+- renderer behavior;
+- model upload/texture slots;
+- P09/PBR features;
+- storage permission expansion.
+
 ## Patch P08 — Multi Primitive + Material Slots + FPS + Debug ZIP Export + UI Buttons Cleanup
 
 Scope:

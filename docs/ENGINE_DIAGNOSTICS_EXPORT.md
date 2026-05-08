@@ -45,6 +45,54 @@ Export OK
 Export Failed
 ```
 
+## FPS truth
+
+`engine_runtime_state.json` must use the stable HUD FPS source:
+
+```text
+fpsCurrent
+frameTimeMs
+fpsSource
+fpsLastStable
+frameTimeLastStableMs
+```
+
+If FPS is not measured yet, `fpsCurrent = 0` is valid only with `fpsSource = not_ready`.
+Import/export pauses must not replace the last stable HUD FPS with a near-zero FPS or huge frame time.
+
+## Debug ZIP
+
+`Export Debug ZIP` writes:
+
+```text
+/storage/emulated/0/Download/SOLUM_EXPORTS/SOLUM_DEBUG_YYYYMMDD_HHMMSS.zip
+```
+
+Required ZIP entries:
+
+```text
+engine_runtime_state.json
+engine_diagnostics_manifest.json
+model_import_state.json
+asset_report.json
+debug_zip_runtime_note.txt
+```
+
+Optional entry:
+
+```text
+glb_model_summary.json
+```
+
+After ZIP creation, final diagnostics must report:
+
+```text
+debugZipStatus = ok
+debugZipPath
+debugZipIncludedFiles
+debugZipReason
+```
+
 ## Manifest truth
 
 `engine_diagnostics_manifest.json` must include:
@@ -54,6 +102,12 @@ exportStatus
 exportRoute
 actualRoot
 reason
+debugZipStatus
+debugZipPath
+debugZipIncludedFiles
+debugZipReason
+debugZipRequiredFileStatus
+debugZipOptionalFileStatus
 screenshot.status = not_available
 screenshot.reason = renderer_readback_not_implemented
 ```

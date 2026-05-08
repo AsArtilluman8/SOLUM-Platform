@@ -25,6 +25,26 @@ Out of scope:
 - P09/PBR features;
 - storage permission expansion.
 
+## Patch P09 — PBR Material Maps Foundation
+
+Scope:
+
+- Scene06 PBR Material Maps Lab.
+- GLB material extraction for metallicFactor, roughnessFactor, metallicRoughnessTexture, normalTexture scale, occlusionTexture strength, emissive metadata, alphaMode, and doubleSided.
+- Embedded GLB PNG/JPEG image decode through bufferView for PBR texture maps.
+- Vulkan texture slots extended for baseColor, metallicRoughness, normal, and occlusion per material slot.
+- Shader foundation samples metallicRoughness, normal, and occlusion while preserving baseColor draw.
+- AO can darken baseColor; normal map is blocked when tangents are absent.
+- Diagnostics add `pbrMapsStatus`, `metallicRoughnessStatus`, `normalMapStatus`, `occlusionMapStatus`, `uploadedPbrTextureCount`, and `materialSlotDiagnostics`.
+
+Out of scope:
+
+- full PBR lighting;
+- shadows;
+- IBL/reflections;
+- alpha/glass/clearcoat/transmission;
+- skeletal animation.
+
 ## Patch P08 — Multi Primitive + Material Slots + FPS + Debug ZIP Export + UI Buttons Cleanup
 
 Scope:

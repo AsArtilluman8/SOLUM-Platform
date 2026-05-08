@@ -82,6 +82,19 @@ struct RuntimeDiagnostics {
         f << "  \"textureFallbackCount\": " << model.textureFallbackCount << ",\n";
         f << "  \"skippedTextureCount\": " << model.skippedTextureCount << ",\n";
         f << "  \"textureSlotLimit\": " << model.textureSlotLimit << ",\n";
+        f << "  \"pbrMapsStatus\": \"" << escapeJson(model.pbrMapsStatus) << "\",\n";
+        f << "  \"metallicRoughnessStatus\": \"" << escapeJson(model.metallicRoughnessStatus) << "\",\n";
+        f << "  \"normalMapStatus\": \"" << escapeJson(model.normalMapStatus) << "\",\n";
+        f << "  \"occlusionMapStatus\": \"" << escapeJson(model.occlusionMapStatus) << "\",\n";
+        f << "  \"metallicFactor\": " << model.metallicFactor << ",\n";
+        f << "  \"roughnessFactor\": " << model.roughnessFactor << ",\n";
+        f << "  \"normalScale\": " << model.normalScale << ",\n";
+        f << "  \"occlusionStrength\": " << model.occlusionStrength << ",\n";
+        f << "  \"pbrTextureSlotCount\": " << model.pbrTextureSlotCount << ",\n";
+        f << "  \"uploadedPbrTextureCount\": " << model.uploadedPbrTextureCount << ",\n";
+        f << "  \"skippedPbrTextureCount\": " << model.skippedPbrTextureCount << ",\n";
+        f << "  \"pbrTextureFallbackCount\": " << model.pbrTextureFallbackCount << ",\n";
+        f << "  \"materialSlotDiagnostics\": " << (model.materialSlotDiagnostics.empty() ? "[]" : model.materialSlotDiagnostics) << ",\n";
         f << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";
         f << "  \"fpsSource\": \"" << model.fpsSource << "\",\n";
@@ -119,6 +132,8 @@ struct RuntimeDiagnostics {
         f << "    \"baseColorFactor\": [" << material.baseColorFactor[0] << ", " << material.baseColorFactor[1] << ", " << material.baseColorFactor[2] << ", " << material.baseColorFactor[3] << "],\n";
         f << "    \"metallicFactor\": " << material.metallicFactor << ",\n";
         f << "    \"roughnessFactor\": " << material.roughnessFactor << ",\n";
+        f << "    \"normalScale\": " << material.normalScale << ",\n";
+        f << "    \"occlusionStrength\": " << material.occlusionStrength << ",\n";
         f << "    \"emissiveFactor\": [" << material.emissiveFactor[0] << ", " << material.emissiveFactor[1] << ", " << material.emissiveFactor[2] << "],\n";
         f << "    \"alphaMode\": \"OPAQUE\"\n";
         f << "  },\n";

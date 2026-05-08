@@ -97,7 +97,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdat
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) {
-        return env->NewStringUTF("{\"currentLabScene\":\"scene05_multi_primitive_render_lab\",\"currentLabSceneName\":\"Scene05 Multi Primitive Render Lab\",\"status\":\"native_handle_missing\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
+        return env->NewStringUTF("{\"currentLabScene\":\"scene06_pbr_material_maps_lab\",\"currentLabSceneName\":\"Scene06 PBR Material Maps Lab\",\"status\":\"native_handle_missing\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
     }
     std::string json = std::string("{\"currentLabScene\":\"") + renderer->diagnostics.renderLab.sceneId()
         + "\",\"currentLabSceneName\":\"" + renderer->diagnostics.renderLab.sceneName()
@@ -137,6 +137,19 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"textureFallbackCount\":" + std::to_string(renderer->model.textureFallbackCount)
         + ",\"skippedTextureCount\":" + std::to_string(renderer->model.skippedTextureCount)
         + ",\"textureSlotLimit\":" + std::to_string(renderer->model.textureSlotLimit)
+        + ",\"pbrMapsStatus\":\"" + solum::escapeJson(renderer->model.pbrMapsStatus) + "\""
+        + ",\"metallicRoughnessStatus\":\"" + solum::escapeJson(renderer->model.metallicRoughnessStatus) + "\""
+        + ",\"normalMapStatus\":\"" + solum::escapeJson(renderer->model.normalMapStatus) + "\""
+        + ",\"occlusionMapStatus\":\"" + solum::escapeJson(renderer->model.occlusionMapStatus) + "\""
+        + ",\"metallicFactor\":" + std::to_string(renderer->model.metallicFactor)
+        + ",\"roughnessFactor\":" + std::to_string(renderer->model.roughnessFactor)
+        + ",\"normalScale\":" + std::to_string(renderer->model.normalScale)
+        + ",\"occlusionStrength\":" + std::to_string(renderer->model.occlusionStrength)
+        + ",\"pbrTextureSlotCount\":" + std::to_string(renderer->model.pbrTextureSlotCount)
+        + ",\"uploadedPbrTextureCount\":" + std::to_string(renderer->model.uploadedPbrTextureCount)
+        + ",\"skippedPbrTextureCount\":" + std::to_string(renderer->model.skippedPbrTextureCount)
+        + ",\"pbrTextureFallbackCount\":" + std::to_string(renderer->model.pbrTextureFallbackCount)
+        + ",\"materialSlotDiagnostics\":" + (renderer->model.materialSlotDiagnostics.empty() ? "[]" : renderer->model.materialSlotDiagnostics)
         + ",\"fpsCurrent\":" + std::to_string(renderer->model.fpsCurrent)
         + ",\"frameTimeMs\":" + std::to_string(renderer->model.frameTimeMs)
         + ",\"fpsSource\":\"" + renderer->model.fpsSource + "\""
@@ -165,6 +178,8 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"baseColorFactor\":[" + std::to_string(renderer->diagnostics.material.baseColorFactor[0]) + "," + std::to_string(renderer->diagnostics.material.baseColorFactor[1]) + "," + std::to_string(renderer->diagnostics.material.baseColorFactor[2]) + "," + std::to_string(renderer->diagnostics.material.baseColorFactor[3]) + "]"
         + ",\"metallicFactor\":" + std::to_string(renderer->diagnostics.material.metallicFactor)
         + ",\"roughnessFactor\":" + std::to_string(renderer->diagnostics.material.roughnessFactor)
+        + ",\"normalScale\":" + std::to_string(renderer->diagnostics.material.normalScale)
+        + ",\"occlusionStrength\":" + std::to_string(renderer->diagnostics.material.occlusionStrength)
         + ",\"emissiveFactor\":[" + std::to_string(renderer->diagnostics.material.emissiveFactor[0]) + "," + std::to_string(renderer->diagnostics.material.emissiveFactor[1]) + "," + std::to_string(renderer->diagnostics.material.emissiveFactor[2]) + "]"
         + ",\"alphaMode\":\"OPAQUE\"}"
         + ",\"vertexCount\":" + std::to_string(renderer->diagnostics.vertexCount)
@@ -298,7 +313,26 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
         drawRanges[i].textureSlot = ranges[i * 6u + 5u];
     }
     std::vector<solum::MaterialSlotState> slots;
-    if (materials && materialFloatCount >= 8 && (materialFloatCount % 8) == 0) {
+    if (materials && materialFloatCount >= 16 && (materialFloatCount % 16) == 0) {
+        slots.resize((size_t)materialFloatCount / 16u);
+        for (size_t i = 0; i < slots.size(); ++i) {
+            slots[i].baseColorFactor[0] = materials[i * 16u];
+            slots[i].baseColorFactor[1] = materials[i * 16u + 1u];
+            slots[i].baseColorFactor[2] = materials[i * 16u + 2u];
+            slots[i].baseColorFactor[3] = materials[i * 16u + 3u];
+            slots[i].alphaMode = (int)materials[i * 16u + 4u];
+            slots[i].alphaCutoff = materials[i * 16u + 5u];
+            slots[i].doubleSided = materials[i * 16u + 6u] != 0.0f;
+            slots[i].baseColorTextureSlot = (int)materials[i * 16u + 7u];
+            slots[i].metallicFactor = materials[i * 16u + 8u];
+            slots[i].roughnessFactor = materials[i * 16u + 9u];
+            slots[i].metallicRoughnessTextureSlot = (int)materials[i * 16u + 10u];
+            slots[i].normalTextureSlot = (int)materials[i * 16u + 11u];
+            slots[i].occlusionTextureSlot = (int)materials[i * 16u + 12u];
+            slots[i].normalScale = materials[i * 16u + 13u];
+            slots[i].occlusionStrength = materials[i * 16u + 14u];
+        }
+    } else if (materials && materialFloatCount >= 8 && (materialFloatCount % 8) == 0) {
         slots.resize((size_t)materialFloatCount / 8u);
         for (size_t i = 0; i < slots.size(); ++i) {
             slots[i].baseColorFactor[0] = materials[i * 8u];
@@ -482,4 +516,108 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
     if (sourceChars) env->ReleaseStringUTFChars(textureSource, sourceChars);
     if (mimeChars) env->ReleaseStringUTFChars(mimeType, mimeChars);
     return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeUploadPbrTextureSlot(
+    JNIEnv* env,
+    jclass,
+    jlong handle,
+    jint materialSlot,
+    jint textureKind,
+    jintArray rgbaPixels,
+    jint width,
+    jint height,
+    jstring textureName,
+    jstring textureSource,
+    jstring mimeType
+) {
+    auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
+    if (!renderer || !rgbaPixels || width <= 0 || height <= 0) return JNI_FALSE;
+    const char* nameChars = env->GetStringUTFChars(textureName, nullptr);
+    const char* sourceChars = env->GetStringUTFChars(textureSource, nullptr);
+    const char* mimeChars = env->GetStringUTFChars(mimeType, nullptr);
+    jsize pixelCount = env->GetArrayLength(rgbaPixels);
+    const int64_t expected = (int64_t)width * (int64_t)height;
+    if (expected <= 0 || pixelCount < expected) {
+        renderer->model.pbrTextureFallbackCount += 1;
+        renderer->model.reason = "pbr texture slot pixel count mismatch";
+        if (nameChars) env->ReleaseStringUTFChars(textureName, nameChars);
+        if (sourceChars) env->ReleaseStringUTFChars(textureSource, sourceChars);
+        if (mimeChars) env->ReleaseStringUTFChars(mimeType, mimeChars);
+        return JNI_FALSE;
+    }
+    jint* pixels = env->GetIntArrayElements(rgbaPixels, nullptr);
+    std::vector<uint8_t> rgba((size_t)expected * 4u);
+    for (int64_t i = 0; i < expected; ++i) {
+        uint32_t argb = (uint32_t)pixels[i];
+        rgba[(size_t)i * 4u] = (uint8_t)((argb >> 16) & 0xffu);
+        rgba[(size_t)i * 4u + 1u] = (uint8_t)((argb >> 8) & 0xffu);
+        rgba[(size_t)i * 4u + 2u] = (uint8_t)(argb & 0xffu);
+        rgba[(size_t)i * 4u + 3u] = (uint8_t)((argb >> 24) & 0xffu);
+    }
+    std::string error;
+    bool ok = renderer->uploadPbrTextureSlot(
+        materialSlot,
+        textureKind,
+        rgba.data(),
+        (uint32_t)width,
+        (uint32_t)height,
+        nameChars ? nameChars : "pbrTexture",
+        sourceChars ? sourceChars : "glb.bufferView",
+        mimeChars ? mimeChars : "unknown",
+        error
+    );
+    if (!ok) renderer->model.reason = error.empty() ? "pbr texture slot upload failed" : error;
+    env->ReleaseIntArrayElements(rgbaPixels, pixels, JNI_ABORT);
+    if (nameChars) env->ReleaseStringUTFChars(textureName, nameChars);
+    if (sourceChars) env->ReleaseStringUTFChars(textureSource, sourceChars);
+    if (mimeChars) env->ReleaseStringUTFChars(mimeType, mimeChars);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetPbrDiagnostics(
+    JNIEnv* env,
+    jclass,
+    jlong handle,
+    jstring pbrMapsStatus,
+    jstring metallicRoughnessStatus,
+    jstring normalMapStatus,
+    jstring occlusionMapStatus,
+    jfloat metallicFactor,
+    jfloat roughnessFactor,
+    jfloat normalScale,
+    jfloat occlusionStrength,
+    jint pbrTextureSlotCount,
+    jint uploadedPbrTextureCount,
+    jint skippedPbrTextureCount,
+    jint pbrTextureFallbackCount,
+    jstring materialSlotDiagnostics
+) {
+    auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
+    if (!renderer) return;
+    const char* pbrChars = env->GetStringUTFChars(pbrMapsStatus, nullptr);
+    const char* mrChars = env->GetStringUTFChars(metallicRoughnessStatus, nullptr);
+    const char* normalChars = env->GetStringUTFChars(normalMapStatus, nullptr);
+    const char* aoChars = env->GetStringUTFChars(occlusionMapStatus, nullptr);
+    const char* diagChars = env->GetStringUTFChars(materialSlotDiagnostics, nullptr);
+    renderer->model.pbrMapsStatus = pbrChars ? pbrChars : "missing";
+    renderer->model.metallicRoughnessStatus = mrChars ? mrChars : "missing";
+    renderer->model.normalMapStatus = normalChars ? normalChars : "missing";
+    renderer->model.occlusionMapStatus = aoChars ? aoChars : "missing";
+    renderer->model.metallicFactor = metallicFactor;
+    renderer->model.roughnessFactor = roughnessFactor;
+    renderer->model.normalScale = normalScale;
+    renderer->model.occlusionStrength = occlusionStrength;
+    renderer->model.pbrTextureSlotCount = (uint32_t)std::max(0, (int)pbrTextureSlotCount);
+    renderer->model.uploadedPbrTextureCount = (uint32_t)std::max(0, (int)uploadedPbrTextureCount);
+    renderer->model.skippedPbrTextureCount = (uint32_t)std::max(0, (int)skippedPbrTextureCount);
+    renderer->model.pbrTextureFallbackCount = (uint32_t)std::max(0, (int)pbrTextureFallbackCount);
+    renderer->model.materialSlotDiagnostics = diagChars ? diagChars : "[]";
+    renderer->syncDiagnostics();
+    renderer->updateReadyStatus();
+    if (pbrChars) env->ReleaseStringUTFChars(pbrMapsStatus, pbrChars);
+    if (mrChars) env->ReleaseStringUTFChars(metallicRoughnessStatus, mrChars);
+    if (normalChars) env->ReleaseStringUTFChars(normalMapStatus, normalChars);
+    if (aoChars) env->ReleaseStringUTFChars(occlusionMapStatus, aoChars);
+    if (diagChars) env->ReleaseStringUTFChars(materialSlotDiagnostics, diagChars);
 }

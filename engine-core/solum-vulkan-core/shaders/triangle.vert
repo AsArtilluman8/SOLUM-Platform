@@ -5,9 +5,15 @@ layout(push_constant) uniform PushConstants {
     vec4 baseColorFactor;
     layout(offset = 80) float metallicFactor;
     layout(offset = 84) float roughnessFactor;
+    layout(offset = 88) float normalScale;
+    layout(offset = 92) float occlusionStrength;
     layout(offset = 96) vec3 emissiveFactor;
     layout(offset = 108) int alphaMode;
     layout(offset = 112) int materialId;
+    layout(offset = 116) int baseColorTextureReady;
+    layout(offset = 120) int metallicRoughnessTextureReady;
+    layout(offset = 124) int normalTextureReady;
+    layout(offset = 128) int occlusionTextureReady;
 } pc;
 
 layout(location = 0) in vec3 inPosition;

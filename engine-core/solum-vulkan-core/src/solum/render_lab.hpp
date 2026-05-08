@@ -10,11 +10,12 @@ enum class RenderLabScene {
     Scene04TextureBindingLab,
     Scene04LightShadowLab,
     Scene05MultiPrimitiveRenderLab,
+    Scene06PbrMaterialMapsLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene05MultiPrimitiveRenderLab;
+    RenderLabScene currentScene = RenderLabScene::Scene06PbrMaterialMapsLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -45,6 +46,7 @@ struct RenderLabState {
             case RenderLabScene::Scene04TextureBindingLab: return "scene04_texture_binding_lab";
             case RenderLabScene::Scene04LightShadowLab: return "scene04_light_shadow_lab";
             case RenderLabScene::Scene05MultiPrimitiveRenderLab: return "scene05_multi_primitive_render_lab";
+            case RenderLabScene::Scene06PbrMaterialMapsLab: return "scene06_pbr_material_maps_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -58,6 +60,7 @@ struct RenderLabState {
             case RenderLabScene::Scene04TextureBindingLab: return "Scene04 Texture Binding Lab";
             case RenderLabScene::Scene04LightShadowLab: return "Scene04 Light/Shadow Lab";
             case RenderLabScene::Scene05MultiPrimitiveRenderLab: return "Scene05 Multi Primitive Render Lab";
+            case RenderLabScene::Scene06PbrMaterialMapsLab: return "Scene06 PBR Material Maps Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }
@@ -105,6 +108,19 @@ struct RenderLabState {
         f << indent << "  \"textureFallbackCount\": " << model.textureFallbackCount << ",\n";
         f << indent << "  \"skippedTextureCount\": " << model.skippedTextureCount << ",\n";
         f << indent << "  \"textureSlotLimit\": " << model.textureSlotLimit << ",\n";
+        f << indent << "  \"pbrMapsStatus\": \"" << escapeJson(model.pbrMapsStatus) << "\",\n";
+        f << indent << "  \"metallicRoughnessStatus\": \"" << escapeJson(model.metallicRoughnessStatus) << "\",\n";
+        f << indent << "  \"normalMapStatus\": \"" << escapeJson(model.normalMapStatus) << "\",\n";
+        f << indent << "  \"occlusionMapStatus\": \"" << escapeJson(model.occlusionMapStatus) << "\",\n";
+        f << indent << "  \"metallicFactor\": " << model.metallicFactor << ",\n";
+        f << indent << "  \"roughnessFactor\": " << model.roughnessFactor << ",\n";
+        f << indent << "  \"normalScale\": " << model.normalScale << ",\n";
+        f << indent << "  \"occlusionStrength\": " << model.occlusionStrength << ",\n";
+        f << indent << "  \"pbrTextureSlotCount\": " << model.pbrTextureSlotCount << ",\n";
+        f << indent << "  \"uploadedPbrTextureCount\": " << model.uploadedPbrTextureCount << ",\n";
+        f << indent << "  \"skippedPbrTextureCount\": " << model.skippedPbrTextureCount << ",\n";
+        f << indent << "  \"pbrTextureFallbackCount\": " << model.pbrTextureFallbackCount << ",\n";
+        f << indent << "  \"materialSlotDiagnostics\": " << (model.materialSlotDiagnostics.empty() ? "[]" : model.materialSlotDiagnostics) << ",\n";
         f << indent << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << indent << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";
         f << indent << "  \"fpsSource\": \"" << model.fpsSource << "\",\n";
@@ -134,6 +150,8 @@ struct RenderLabState {
         f << indent << "    \"baseColorFactor\": [" << material.baseColorFactor[0] << ", " << material.baseColorFactor[1] << ", " << material.baseColorFactor[2] << ", " << material.baseColorFactor[3] << "],\n";
         f << indent << "    \"metallicFactor\": " << material.metallicFactor << ",\n";
         f << indent << "    \"roughnessFactor\": " << material.roughnessFactor << ",\n";
+        f << indent << "    \"normalScale\": " << material.normalScale << ",\n";
+        f << indent << "    \"occlusionStrength\": " << material.occlusionStrength << ",\n";
         f << indent << "    \"emissiveFactor\": [" << material.emissiveFactor[0] << ", " << material.emissiveFactor[1] << ", " << material.emissiveFactor[2] << "],\n";
         f << indent << "    \"alphaMode\": \"OPAQUE\"\n";
         f << indent << "  },\n";

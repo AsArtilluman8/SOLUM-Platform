@@ -35,11 +35,15 @@ struct MaterialConstants {
     float baseColorFactor[4] = { 0.92f, 0.78f, 1.0f, 1.0f };
     float metallicFactor = 0.0f;
     float roughnessFactor = 0.65f;
-    float padding0[2] = { 0.0f, 0.0f };
+    float normalScale = 1.0f;
+    float occlusionStrength = 1.0f;
     float emissiveFactor[3] = { 0.0f, 0.0f, 0.0f };
     int alphaMode = 0;
     int materialId = 1;
     int baseColorTextureReady = 0;
+    int metallicRoughnessTextureReady = 0;
+    int normalTextureReady = 0;
+    int occlusionTextureReady = 0;
 };
 
 struct PrimitiveDrawRange {
@@ -53,10 +57,17 @@ struct PrimitiveDrawRange {
 
 struct MaterialSlotState {
     float baseColorFactor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    float metallicFactor = 0.0f;
+    float roughnessFactor = 1.0f;
+    float normalScale = 1.0f;
+    float occlusionStrength = 1.0f;
     int alphaMode = 0;
     float alphaCutoff = 0.5f;
     bool doubleSided = false;
     int baseColorTextureSlot = -1;
+    int metallicRoughnessTextureSlot = -1;
+    int normalTextureSlot = -1;
+    int occlusionTextureSlot = -1;
 };
 
 struct ModelRenderState {
@@ -84,6 +95,19 @@ struct ModelRenderState {
     uint32_t textureFallbackCount = 0;
     uint32_t skippedTextureCount = 0;
     uint32_t textureSlotLimit = 8;
+    std::string pbrMapsStatus = "missing";
+    std::string metallicRoughnessStatus = "missing";
+    std::string normalMapStatus = "missing";
+    std::string occlusionMapStatus = "missing";
+    float metallicFactor = 0.0f;
+    float roughnessFactor = 1.0f;
+    float normalScale = 1.0f;
+    float occlusionStrength = 1.0f;
+    uint32_t pbrTextureSlotCount = 0;
+    uint32_t uploadedPbrTextureCount = 0;
+    uint32_t skippedPbrTextureCount = 0;
+    uint32_t pbrTextureFallbackCount = 0;
+    std::string materialSlotDiagnostics = "[]";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;
     const char* fpsSource = "java_ui_frame_delta";

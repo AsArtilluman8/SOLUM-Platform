@@ -2,6 +2,61 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene06 PBR Material Maps Lab
+
+P09 scene id:
+
+```text
+scene06_pbr_material_maps_lab
+```
+
+Runtime status text:
+
+```text
+Render Lab: Scene06 PBR Material Maps Lab
+modelRenderMode: multi_primitive_static
+Next: Lighting Foundation
+```
+
+Scene06 preserves Scene05 multi-primitive/baseColor drawing and adds PBR material map foundation without full lighting.
+
+Required PBR diagnostics:
+
+```text
+pbrMapsStatus
+metallicRoughnessStatus
+normalMapStatus
+occlusionMapStatus
+metallicFactor
+roughnessFactor
+normalScale
+occlusionStrength
+pbrTextureSlotCount
+uploadedPbrTextureCount
+skippedPbrTextureCount
+pbrTextureFallbackCount
+materialSlotDiagnostics
+currentScene = scene06_pbr_material_maps_lab
+renderLab.currentLabScene = scene06_pbr_material_maps_lab
+renderLab.currentLabSceneName = Scene06 PBR Material Maps Lab
+```
+
+Supported P09 map foundation:
+
+- embedded GLB `image.bufferView` PNG/JPEG decode for baseColor, metallicRoughness, normal, and occlusion textures;
+- external URI and data URI are reported as unsupported, not as success;
+- metallic/roughness factors and map status are reported per material slot;
+- AO can darken baseColor in the current shader;
+- normal map is blocked with `normalMapStatus=blocked_no_tangent` when `TANGENT` is absent;
+- failed PBR texture upload falls back without failing mesh draw.
+
+Out of scope:
+
+- full PBR lighting;
+- shadows;
+- IBL/reflections;
+- alpha/glass/clearcoat/transmission.
+
 ## Scene05 Multi Primitive Render Lab
 
 P08 scene id:

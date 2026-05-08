@@ -1,5 +1,56 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P09 PBR texture slots
+
+P09 extends the existing texture slot system. It does not create a new renderer.
+
+Per material slot, the renderer may bind:
+
+- `baseColorTexture`;
+- `metallicRoughnessTexture`;
+- `normalTexture`;
+- `occlusionTexture`.
+
+Supported image storage:
+
+- embedded GLB `image.bufferView`;
+- `image/png`;
+- `image/jpeg`.
+
+Unsupported sources are explicit:
+
+```text
+unsupported_external_uri
+unsupported_data_uri
+missing
+failed + reason
+```
+
+P09 diagnostics:
+
+```text
+pbrMapsStatus
+metallicRoughnessStatus
+normalMapStatus
+occlusionMapStatus
+metallicFactor
+roughnessFactor
+normalScale
+occlusionStrength
+pbrTextureSlotCount
+uploadedPbrTextureCount
+skippedPbrTextureCount
+pbrTextureFallbackCount
+materialSlotDiagnostics
+```
+
+Shader foundation:
+
+- baseColor path is preserved;
+- metallic/roughness maps are sampled and values are available for diagnostics/future lighting;
+- AO may darken baseColor;
+- normal map upload/sampling is allowed only when safe, otherwise `normalMapStatus=blocked_no_tangent`.
+
 ## P08 texture slots
 
 P08 extends P07 single baseColor texture binding into a small texture slot system for multi-primitive static GLB rendering.
@@ -11,7 +62,8 @@ Rules:
 - `textureSlotLimit` is 8 in P08;
 - overflow or unsupported texture decode increments skipped/fallback texture diagnostics;
 - shader remains simple: `baseColorTexture * baseColorFactor * vertexColor/default`;
-- metallicRoughness, normal, AO and emissive sampling are deferred to P09+.
+- metallicRoughness, normal, AO are handled by P09 foundation;
+- emissive texture remains metadata only.
 
 Diagnostics:
 

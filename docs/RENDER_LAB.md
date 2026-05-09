@@ -2,6 +2,67 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene08 Tangent Normal Exposure Lab
+
+P11 scene id:
+
+```text
+scene08_tangent_normal_exposure_lab
+```
+
+Runtime status text:
+
+```text
+Render Lab: Scene08 Tangent Normal Exposure Lab
+Tangent status: from_gltf / generated / missing_or_blocked
+Normal status: ok / blocked_no_tangent / missing
+Exposure: Low / Normal / Bright / Preview
+Active debug view: Final Shaded / BaseColor / AO / Metallic / Roughness / Normal / NdotL / PBR Status
+```
+
+Scene08 preserves Scene07 lighting and Scene05/P09 multi-primitive GLB draw while adding real tangent-space normal map response when tangent data is available or generated.
+
+Required P11 diagnostics:
+
+```text
+currentScene = scene08_tangent_normal_exposure_lab
+renderLab.currentLabScene = scene08_tangent_normal_exposure_lab
+renderLab.currentLabSceneName = Scene08 Tangent Normal Exposure Lab
+tangentStatus
+tangentSource
+tangentGeneratedCount
+tangentMissingCount
+tangentFallbackReason
+normalMapStatus
+normalMapAppliedStatus
+exposureStatus
+exposureValue
+ambientFloor
+brightnessPreset
+activeDebugView
+debugViewStatus
+normalDebugViewStatus
+ndotlDebugViewStatus
+vertexLayout = POSITION,NORMAL,TEXCOORD_0,COLOR_0,TANGENT
+vertexStrideBytes = 60
+```
+
+Supported P11 foundation:
+
+- GLB `TANGENT` attribute is read when present;
+- CPU tangent generation runs for primitives with POSITION, NORMAL, and TEXCOORD_0;
+- generated tangents accumulate indexed triangle data per vertex and store handedness;
+- normal textures are sampled only when tangent data is ready;
+- exposure and ambient floor defaults make ToyCar clearer without flattening all lighting contrast;
+- Normal and NdotL debug views expose normal-map and lighting direction checks.
+
+Out of scope:
+
+- shadows / CSM;
+- IBL/reflections;
+- glass/clearcoat/transmission;
+- skeletal animation.
+
 ## Scene07 Lighting Foundation Lab
 
 P10 scene id:

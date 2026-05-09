@@ -20,13 +20,16 @@ layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inTexcoord0;
 layout(location = 3) in vec3 inColor;
+layout(location = 4) in vec4 inTangent;
 layout(location = 0) out vec3 outColor;
 layout(location = 1) out vec2 outTexcoord0;
 layout(location = 2) out vec3 outNormal;
+layout(location = 3) out vec4 outTangent;
 
 void main() {
     outColor = inColor;
     outTexcoord0 = inTexcoord0;
     outNormal = normalize(inNormal);
+    outTangent = vec4(normalize(inTangent.xyz), inTangent.w);
     gl_Position = pc.mvp * vec4(inPosition, 1.0);
 }

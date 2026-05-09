@@ -12,11 +12,12 @@ enum class RenderLabScene {
     Scene05MultiPrimitiveRenderLab,
     Scene06PbrMaterialMapsLab,
     Scene07LightingFoundationLab,
+    Scene08TangentNormalExposureLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene07LightingFoundationLab;
+    RenderLabScene currentScene = RenderLabScene::Scene08TangentNormalExposureLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -34,7 +35,7 @@ struct RenderLabState {
     float cameraYawDeg = 0.0f;
     float cameraPitchDeg = 0.0f;
     float cameraDistance = 0.0f;
-    const char* vertexLayout = "POSITION,NORMAL,TEXCOORD_0,COLOR_0";
+    const char* vertexLayout = "POSITION,NORMAL,TEXCOORD_0,COLOR_0,TANGENT";
     MaterialConstants material;
     uint64_t framesRendered = 0;
     ModelRenderState model;
@@ -49,6 +50,7 @@ struct RenderLabState {
             case RenderLabScene::Scene05MultiPrimitiveRenderLab: return "scene05_multi_primitive_render_lab";
             case RenderLabScene::Scene06PbrMaterialMapsLab: return "scene06_pbr_material_maps_lab";
             case RenderLabScene::Scene07LightingFoundationLab: return "scene07_lighting_foundation_lab";
+            case RenderLabScene::Scene08TangentNormalExposureLab: return "scene08_tangent_normal_exposure_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -64,6 +66,7 @@ struct RenderLabState {
             case RenderLabScene::Scene05MultiPrimitiveRenderLab: return "Scene05 Multi Primitive Render Lab";
             case RenderLabScene::Scene06PbrMaterialMapsLab: return "Scene06 PBR Material Maps Lab";
             case RenderLabScene::Scene07LightingFoundationLab: return "Scene07 Lighting Foundation Lab";
+            case RenderLabScene::Scene08TangentNormalExposureLab: return "Scene08 Tangent Normal Exposure Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }
@@ -114,7 +117,13 @@ struct RenderLabState {
         f << indent << "  \"pbrMapsStatus\": \"" << escapeJson(model.pbrMapsStatus) << "\",\n";
         f << indent << "  \"metallicRoughnessStatus\": \"" << escapeJson(model.metallicRoughnessStatus) << "\",\n";
         f << indent << "  \"normalMapStatus\": \"" << escapeJson(model.normalMapStatus) << "\",\n";
+        f << indent << "  \"normalMapAppliedStatus\": \"" << escapeJson(model.normalMapAppliedStatus) << "\",\n";
         f << indent << "  \"occlusionMapStatus\": \"" << escapeJson(model.occlusionMapStatus) << "\",\n";
+        f << indent << "  \"tangentStatus\": \"" << escapeJson(model.tangentStatus) << "\",\n";
+        f << indent << "  \"tangentSource\": \"" << escapeJson(model.tangentSource) << "\",\n";
+        f << indent << "  \"tangentGeneratedCount\": " << model.tangentGeneratedCount << ",\n";
+        f << indent << "  \"tangentMissingCount\": " << model.tangentMissingCount << ",\n";
+        f << indent << "  \"tangentFallbackReason\": \"" << escapeJson(model.tangentFallbackReason) << "\",\n";
         f << indent << "  \"metallicFactor\": " << model.metallicFactor << ",\n";
         f << indent << "  \"roughnessFactor\": " << model.roughnessFactor << ",\n";
         f << indent << "  \"normalScale\": " << model.normalScale << ",\n";
@@ -134,8 +143,14 @@ struct RenderLabState {
         f << indent << "  \"materialResponseStatus\": \"" << escapeJson(model.materialResponseStatus) << "\",\n";
         f << indent << "  \"toneMappingStatus\": \"" << escapeJson(model.toneMappingStatus) << "\",\n";
         f << indent << "  \"toneMappingMode\": \"" << escapeJson(model.toneMappingMode) << "\",\n";
+        f << indent << "  \"exposureStatus\": \"" << escapeJson(model.exposureStatus) << "\",\n";
+        f << indent << "  \"exposureValue\": " << model.exposureValue << ",\n";
+        f << indent << "  \"ambientFloor\": " << model.ambientFloor << ",\n";
+        f << indent << "  \"brightnessPreset\": \"" << escapeJson(model.brightnessPreset) << "\",\n";
         f << indent << "  \"activeDebugView\": \"" << escapeJson(model.activeDebugView) << "\",\n";
         f << indent << "  \"debugViewStatus\": \"" << escapeJson(model.debugViewStatus) << "\",\n";
+        f << indent << "  \"normalDebugViewStatus\": \"" << escapeJson(model.normalDebugViewStatus) << "\",\n";
+        f << indent << "  \"ndotlDebugViewStatus\": \"" << escapeJson(model.ndotlDebugViewStatus) << "\",\n";
         f << indent << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << indent << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";
         f << indent << "  \"fpsSource\": \"" << model.fpsSource << "\",\n";

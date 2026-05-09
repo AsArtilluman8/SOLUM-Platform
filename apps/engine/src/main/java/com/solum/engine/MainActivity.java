@@ -80,6 +80,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button lightPresetButton;
     private Button sunIntensityButton;
     private Button ambientIntensityButton;
+    private Button exposureButton;
     private Button materialViewButton;
     private LinearLayout assetsPanel;
     private LinearLayout cameraPanel;
@@ -90,8 +91,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private boolean cameraPanelVisible = false;
     private boolean debugPanelVisible = false;
     private int lightPresetIndex = 0;
-    private float sunIntensity = 1.35f;
-    private float ambientIntensity = 0.34f;
+    private float sunIntensity = 1.55f;
+    private float ambientIntensity = 0.46f;
+    private float exposureValue = 1.18f;
+    private float ambientFloor = 0.10f;
+    private int brightnessPresetIndex = 1;
     private int activeDebugViewIndex = 0;
     private int toneMappingModeIndex = 1;
     private File cachedReportDir = null;
@@ -129,13 +133,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native String nativeGetStatus(long handle);
     private static native String nativeGetRenderLabState(long handle);
     private static native void nativeSetCamera(long handle, float yawDeg, float pitchDeg, float distance);
-    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode);
+    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset);
     private static native boolean nativeUploadModelFirstPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, float[] baseColorFactor);
     private static native boolean nativeUploadModelMultiPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, int[] rangeData, float[] materialData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, int primitiveTotal, int primitiveSkipped, int unsupportedPrimitiveCount, String reason);
     private static native boolean nativeUploadBaseColorTexture(long handle, int[] rgbaPixels, int width, int height, String textureName, String textureSource, String mimeType);
     private static native boolean nativeUploadBaseColorTextureSlot(long handle, int slot, int[] rgbaPixels, int width, int height, String textureName, String textureSource, String mimeType);
     private static native boolean nativeUploadPbrTextureSlot(long handle, int materialSlot, int textureKind, int[] rgbaPixels, int width, int height, String textureName, String textureSource, String mimeType);
-    private static native void nativeSetPbrDiagnostics(long handle, String pbrMapsStatus, String metallicRoughnessStatus, String normalMapStatus, String occlusionMapStatus, float metallicFactor, float roughnessFactor, float normalScale, float occlusionStrength, int pbrTextureSlotCount, int uploadedPbrTextureCount, int skippedPbrTextureCount, int pbrTextureFallbackCount, String materialSlotDiagnostics);
+    private static native void nativeSetPbrDiagnostics(long handle, String pbrMapsStatus, String metallicRoughnessStatus, String normalMapStatus, String normalMapAppliedStatus, String occlusionMapStatus, String tangentStatus, String tangentSource, int tangentGeneratedCount, int tangentMissingCount, String tangentFallbackReason, float metallicFactor, float roughnessFactor, float normalScale, float occlusionStrength, int pbrTextureSlotCount, int uploadedPbrTextureCount, int skippedPbrTextureCount, int pbrTextureFallbackCount, String materialSlotDiagnostics);
     private static native void nativeUpdateUiDiagnostics(long handle, float fpsCurrent, float frameTimeMs, String debugZipStatus, String debugZipPath, String debugZipIncludedFiles, String debugZipReason);
     private static native void nativeSetModelFallback(long handle, String modelName, String modelPath, String reason);
 
@@ -248,15 +252,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         assetsPanel.addView(scanModelsButton);
         lightPresetButton = compactButton("Light: Studio");
         lightPresetButton.setOnClickListener(v -> cycleLightPreset());
-        sunIntensityButton = compactButton("Sun: 1.35");
+        sunIntensityButton = compactButton("Sun: 1.55");
         sunIntensityButton.setOnClickListener(v -> cycleSunIntensity());
-        ambientIntensityButton = compactButton("Ambient: 0.34");
+        ambientIntensityButton = compactButton("Ambient: 0.46");
         ambientIntensityButton.setOnClickListener(v -> cycleAmbientIntensity());
+        exposureButton = compactButton("Exposure: Normal");
+        exposureButton.setOnClickListener(v -> cycleExposurePreset());
         materialViewButton = compactButton("Material: Final Shaded");
         materialViewButton.setOnClickListener(v -> cycleMaterialView());
         assetsPanel.addView(lightPresetButton);
         assetsPanel.addView(sunIntensityButton);
         assetsPanel.addView(ambientIntensityButton);
+        assetsPanel.addView(exposureButton);
         assetsPanel.addView(materialViewButton);
         dock.addView(assetsPanel);
         cameraPanel = new LinearLayout(this);
@@ -396,12 +403,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (fallback.isEmpty()) fallback = modelState.fallbackCubeVisible ? "on" : "off";
         if (counts.isEmpty()) counts = modelState.uploadedVertexCount + " / " + modelState.uploadedIndexCount;
         if (topHudView != null) {
-            topHudView.setText("FPS " + oneDecimal(fpsCurrent) + "  |  " + oneDecimal(frameTimeMs) + " ms  |  GPU " + gpu + "  |  Vulkan  |  Scene07 Lighting Foundation Lab");
+            topHudView.setText("FPS " + oneDecimal(fpsCurrent) + "  |  " + oneDecimal(frameTimeMs) + " ms  |  GPU " + gpu + "  |  Vulkan  |  Scene08 Tangent Normal Exposure Lab");
         }
         int rendered = intJsonField("primitiveCountRendered", modelState.primitiveCountRendered);
         int skipped = intJsonField("primitiveCountSkipped", modelState.primitiveCountSkipped);
         int total = intJsonField("primitiveCountTotal", modelState.primitiveCountTotal);
-        return "Render Lab: Scene07 Lighting Foundation Lab"
+        return "Render Lab: Scene08 Tangent Normal Exposure Lab"
             + "\nImport: " + importStatus
             + "\nActive model: " + (activeName.isEmpty() ? "none" : shorten(activeName, 34))
             + "\nModel render: " + draw
@@ -411,11 +418,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "\nLight preset: " + lightPresetName(lightPresetIndex)
             + "\nSun intensity: " + oneDecimal(sunIntensity)
             + "\nAmbient intensity: " + oneDecimal(ambientIntensity)
+            + "\nExposure: " + oneDecimal(exposureValue) + " " + brightnessPresetName(brightnessPresetIndex)
             + "\nMaterial response status: " + jsonStringField(getRenderLabStateForExport(), "materialResponseStatus", modelState.materialResponseStatus)
             + "\nActive debug view: " + materialDebugViewName(activeDebugViewIndex)
             + "\nBaseColor status: " + modelState.baseColorTextureStatus
             + "\nMetallicRoughness status: " + modelState.metallicRoughnessStatus
-            + "\nNormal status: " + modelState.normalMapStatus
+            + "\nTangent status: " + modelState.tangentStatus
+            + "\nNormal status: " + modelState.normalMapStatus + " applied=" + modelState.normalMapAppliedStatus
             + "\nAO status: " + modelState.occlusionMapStatus
             + "\nFPS/frameMs: " + oneDecimal(fpsCurrent) + " / " + oneDecimal(frameTimeMs)
             + "\nDebug ZIP: " + debugZipStatus
@@ -423,7 +432,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "\nFallback cube: " + fallback
             + "\nMesh meta: " + p.meshCount + " / " + p.primitiveCount + " / " + p.materialCount + " / " + p.textureCount
             + "\nStatus: " + status
-            + "\nNext: Tangent Generation + Normal Map Real Support";
+            + "\nNext: PBR lighting refinement";
     }
 
     private void cycleLightPreset() {
@@ -434,25 +443,32 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleSunIntensity() {
-        if (sunIntensity < 0.8f) sunIntensity = 1.35f;
+        if (sunIntensity < 0.8f) sunIntensity = 1.55f;
         else if (sunIntensity < 1.4f) sunIntensity = 1.85f;
         else if (sunIntensity < 2.0f) sunIntensity = 0.45f;
-        else sunIntensity = 1.35f;
+        else sunIntensity = 1.55f;
         applyLightingControls();
         updateStatus();
     }
 
     private void cycleAmbientIntensity() {
-        if (ambientIntensity < 0.25f) ambientIntensity = 0.34f;
+        if (ambientIntensity < 0.25f) ambientIntensity = 0.46f;
         else if (ambientIntensity < 0.4f) ambientIntensity = 0.56f;
         else if (ambientIntensity < 0.7f) ambientIntensity = 0.16f;
-        else ambientIntensity = 0.34f;
+        else ambientIntensity = 0.46f;
+        applyLightingControls();
+        updateStatus();
+    }
+
+    private void cycleExposurePreset() {
+        brightnessPresetIndex = (brightnessPresetIndex + 1) % 4;
+        applyExposureDefaults();
         applyLightingControls();
         updateStatus();
     }
 
     private void cycleMaterialView() {
-        activeDebugViewIndex = (activeDebugViewIndex + 1) % 6;
+        activeDebugViewIndex = (activeDebugViewIndex + 1) % 8;
         applyLightingControls();
         updateStatus();
     }
@@ -460,13 +476,30 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private void applyPresetDefaults() {
         if (lightPresetIndex == 1) {
             sunIntensity = 1.65f;
-            ambientIntensity = 0.28f;
+            ambientIntensity = 0.38f;
         } else if (lightPresetIndex == 2) {
-            sunIntensity = 0.86f;
-            ambientIntensity = 0.48f;
+            sunIntensity = 1.05f;
+            ambientIntensity = 0.58f;
         } else {
-            sunIntensity = 1.35f;
-            ambientIntensity = 0.34f;
+            sunIntensity = 1.55f;
+            ambientIntensity = 0.46f;
+        }
+        applyExposureDefaults();
+    }
+
+    private void applyExposureDefaults() {
+        if (brightnessPresetIndex == 0) {
+            exposureValue = 0.85f;
+            ambientFloor = 0.05f;
+        } else if (brightnessPresetIndex == 2) {
+            exposureValue = 1.36f;
+            ambientFloor = 0.14f;
+        } else if (brightnessPresetIndex == 3) {
+            exposureValue = 1.55f;
+            ambientFloor = 0.18f;
+        } else {
+            exposureValue = 1.18f;
+            ambientFloor = 0.10f;
         }
     }
 
@@ -478,15 +511,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.materialResponseStatus = "foundation_simple_lit";
         modelState.toneMappingStatus = "ok";
         modelState.toneMappingMode = toneMappingModeName(toneMappingModeIndex);
+        modelState.exposureStatus = "ok";
+        modelState.exposureValue = exposureValue;
+        modelState.ambientFloor = ambientFloor;
+        modelState.brightnessPreset = brightnessPresetName(brightnessPresetIndex);
         modelState.activeDebugView = materialDebugViewName(activeDebugViewIndex);
         modelState.debugViewStatus = "shader_applied";
+        modelState.normalDebugViewStatus = "shader_applied";
+        modelState.ndotlDebugViewStatus = "shader_applied";
         if (lightPresetButton != null) lightPresetButton.setText("Light: " + modelState.lightPreset);
         if (sunIntensityButton != null) sunIntensityButton.setText("Sun: " + oneDecimal(sunIntensity));
         if (ambientIntensityButton != null) ambientIntensityButton.setText("Ambient: " + oneDecimal(ambientIntensity));
+        if (exposureButton != null) exposureButton.setText("Exposure: " + modelState.brightnessPreset);
         if (materialViewButton != null) materialViewButton.setText("Material: " + modelState.activeDebugView);
         try {
             if (nativeLoaded && nativeHandle != 0L) {
-                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex);
+                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex);
             }
         } catch (Throwable t) {
             modelState.debugViewStatus = "native_control_failed";
@@ -505,8 +545,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 2) return "AO";
         if (index == 3) return "Metallic";
         if (index == 4) return "Roughness";
-        if (index == 5) return "PBR Status";
+        if (index == 5) return "Normal";
+        if (index == 6) return "NdotL";
+        if (index == 7) return "PBR Status";
         return "Final Shaded";
+    }
+
+    private String brightnessPresetName(int index) {
+        if (index == 0) return "Low";
+        if (index == 2) return "Bright";
+        if (index == 3) return "Preview";
+        return "Normal";
     }
 
     private String toneMappingModeName(int index) {
@@ -709,7 +758,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 modelState.pbrMapsStatus = mesh.pbrMapsStatus;
                 modelState.metallicRoughnessStatus = mesh.metallicRoughnessStatus;
                 modelState.normalMapStatus = mesh.normalMapStatus;
+                modelState.normalMapAppliedStatus = mesh.normalMapAppliedStatus;
                 modelState.occlusionMapStatus = mesh.occlusionMapStatus;
+                modelState.tangentStatus = mesh.tangentStatus;
+                modelState.tangentSource = mesh.tangentSource;
+                modelState.tangentGeneratedCount = mesh.tangentGeneratedCount;
+                modelState.tangentMissingCount = mesh.tangentMissingCount;
+                modelState.tangentFallbackReason = mesh.tangentFallbackReason;
                 modelState.pbrTextureSlotCount = mesh.pbrTextureSlotCount;
                 modelState.materialSlotDiagnostics = mesh.materialSlotDiagnostics;
                 if (mesh.materials != null && !mesh.materials.isEmpty()) {
@@ -804,10 +859,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.pbrMapsStatus = uploaded > 0 ? (fallback > 0 || skipped > 0 ? "partial_ok" : "ok") : (fallback > 0 ? "failed" : "missing");
         modelState.metallicRoughnessStatus = mesh.metallicRoughnessStatus;
         modelState.normalMapStatus = mesh.normalMapStatus;
+        modelState.normalMapAppliedStatus = "ok".equals(mesh.normalMapStatus) || "partial_ok".equals(mesh.normalMapStatus) ? "ok" : ("blocked_no_tangent".equals(mesh.normalMapStatus) ? "blocked_no_tangent" : "missing");
         modelState.occlusionMapStatus = mesh.occlusionMapStatus;
         modelState.reason = trigger + ": pbr texture slots uploaded=" + uploaded + " fallback=" + fallback + " skipped=" + skipped;
         try {
-            nativeSetPbrDiagnostics(nativeHandle, modelState.pbrMapsStatus, modelState.metallicRoughnessStatus, modelState.normalMapStatus, modelState.occlusionMapStatus, modelState.metallicFactor, modelState.roughnessFactor, modelState.normalScale, modelState.occlusionStrength, modelState.pbrTextureSlotCount, modelState.uploadedPbrTextureCount, modelState.skippedPbrTextureCount, modelState.pbrTextureFallbackCount, modelState.materialSlotDiagnostics);
+            nativeSetPbrDiagnostics(nativeHandle, modelState.pbrMapsStatus, modelState.metallicRoughnessStatus, modelState.normalMapStatus, modelState.normalMapAppliedStatus, modelState.occlusionMapStatus, modelState.tangentStatus, modelState.tangentSource, modelState.tangentGeneratedCount, modelState.tangentMissingCount, modelState.tangentFallbackReason, modelState.metallicFactor, modelState.roughnessFactor, modelState.normalScale, modelState.occlusionStrength, modelState.pbrTextureSlotCount, modelState.uploadedPbrTextureCount, modelState.skippedPbrTextureCount, modelState.pbrTextureFallbackCount, modelState.materialSlotDiagnostics);
         } catch (Throwable ignored) { }
     }
 
@@ -1159,8 +1215,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         addDebugZipEntry(entries, missing, new File(reportDir, "asset_report.json"), true);
         File note = new File(reportDir, "debug_zip_runtime_note.txt");
         try (FileWriter w = new FileWriter(note, false)) {
-            w.write("SOLUM P10 debug zip\n");
-            w.write("Scene07 Lighting Foundation Lab\n");
+            w.write("SOLUM P11 debug zip\n");
+            w.write("Scene08 Tangent Normal Exposure Lab\n");
             w.write("debugZipStatus=running\n");
             w.write("requiredFiles=engine_runtime_state.json,engine_diagnostics_manifest.json,model_import_state.json,asset_report.json\n");
             if (missing.isEmpty()) {
@@ -1340,7 +1396,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"diagnosticsRootStatus\": \"" + escape(result.reason) + "\",\n"
             + "  \"build\": { \"versionName\": \"" + escape(versionName) + "\", \"versionCode\": " + versionCode + " },\n"
             + "  \"backend\": { \"rendererPath\": \"Android Native Vulkan\", \"statusText\": \"" + escape(nativeStatus) + "\" },\n"
-            + "  \"currentScene\": \"scene07_lighting_foundation_lab\",\n"
+            + "  \"currentScene\": \"scene08_tangent_normal_exposure_lab\",\n"
             + "  \"assetImportStatus\": \"" + escape(modelState.importStatus) + "\",\n"
             + "  \"activeModelName\": \"" + escape(modelState.activeModelName()) + "\",\n"
             + "  \"activeModelPath\": \"" + escape(modelState.activeModelPath) + "\",\n"
@@ -1360,7 +1416,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"textureFallbackUsed\": " + jsonBooleanField(renderLab, "textureFallbackUsed", modelState.textureFallbackUsed ? "true" : "false") + ",\n"
             + "  \"uploadedVertexCount\": " + jsonNumberField(renderLab, "uploadedVertexCount", String.valueOf(modelState.uploadedVertexCount)) + ",\n"
             + "  \"uploadedIndexCount\": " + jsonNumberField(renderLab, "uploadedIndexCount", String.valueOf(modelState.uploadedIndexCount)) + ",\n"
-            + "  \"modelVertexLayout\": \"" + escape(jsonStringField(renderLab, "modelVertexLayout", "POSITION,NORMAL,TEXCOORD_0,COLOR_0")) + "\",\n"
+            + "  \"modelVertexLayout\": \"" + escape(jsonStringField(renderLab, "modelVertexLayout", "POSITION,NORMAL,TEXCOORD_0,COLOR_0,TANGENT")) + "\",\n"
             + "  \"modelBoundsMin\": " + jsonArrayField(renderLab, "modelBoundsMin", "[0,0,0]") + ",\n"
             + "  \"modelBoundsMax\": " + jsonArrayField(renderLab, "modelBoundsMax", "[0,0,0]") + ",\n"
             + "  \"modelBoundsCenter\": " + jsonArrayField(renderLab, "modelBoundsCenter", "[0,0,0]") + ",\n"
@@ -1380,7 +1436,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"pbrMapsStatus\": \"" + escape(jsonStringField(renderLab, "pbrMapsStatus", modelState.pbrMapsStatus)) + "\",\n"
             + "  \"metallicRoughnessStatus\": \"" + escape(jsonStringField(renderLab, "metallicRoughnessStatus", modelState.metallicRoughnessStatus)) + "\",\n"
             + "  \"normalMapStatus\": \"" + escape(jsonStringField(renderLab, "normalMapStatus", modelState.normalMapStatus)) + "\",\n"
+            + "  \"normalMapAppliedStatus\": \"" + escape(jsonStringField(renderLab, "normalMapAppliedStatus", modelState.normalMapAppliedStatus)) + "\",\n"
             + "  \"occlusionMapStatus\": \"" + escape(jsonStringField(renderLab, "occlusionMapStatus", modelState.occlusionMapStatus)) + "\",\n"
+            + "  \"tangentStatus\": \"" + escape(jsonStringField(renderLab, "tangentStatus", modelState.tangentStatus)) + "\",\n"
+            + "  \"tangentSource\": \"" + escape(jsonStringField(renderLab, "tangentSource", modelState.tangentSource)) + "\",\n"
+            + "  \"tangentGeneratedCount\": " + jsonNumberField(renderLab, "tangentGeneratedCount", String.valueOf(modelState.tangentGeneratedCount)) + ",\n"
+            + "  \"tangentMissingCount\": " + jsonNumberField(renderLab, "tangentMissingCount", String.valueOf(modelState.tangentMissingCount)) + ",\n"
+            + "  \"tangentFallbackReason\": \"" + escape(jsonStringField(renderLab, "tangentFallbackReason", modelState.tangentFallbackReason)) + "\",\n"
             + "  \"metallicFactor\": " + jsonNumberField(renderLab, "metallicFactor", jsonFloat(modelState.metallicFactor)) + ",\n"
             + "  \"roughnessFactor\": " + jsonNumberField(renderLab, "roughnessFactor", jsonFloat(modelState.roughnessFactor)) + ",\n"
             + "  \"normalScale\": " + jsonNumberField(renderLab, "normalScale", jsonFloat(modelState.normalScale)) + ",\n"
@@ -1400,8 +1462,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"materialResponseStatus\": \"" + escape(jsonStringField(renderLab, "materialResponseStatus", modelState.materialResponseStatus)) + "\",\n"
             + "  \"toneMappingStatus\": \"" + escape(jsonStringField(renderLab, "toneMappingStatus", modelState.toneMappingStatus)) + "\",\n"
             + "  \"toneMappingMode\": \"" + escape(jsonStringField(renderLab, "toneMappingMode", modelState.toneMappingMode)) + "\",\n"
+            + "  \"exposureStatus\": \"" + escape(jsonStringField(renderLab, "exposureStatus", modelState.exposureStatus)) + "\",\n"
+            + "  \"exposureValue\": " + jsonNumberField(renderLab, "exposureValue", jsonFloat(modelState.exposureValue)) + ",\n"
+            + "  \"ambientFloor\": " + jsonNumberField(renderLab, "ambientFloor", jsonFloat(modelState.ambientFloor)) + ",\n"
+            + "  \"brightnessPreset\": \"" + escape(jsonStringField(renderLab, "brightnessPreset", modelState.brightnessPreset)) + "\",\n"
             + "  \"activeDebugView\": \"" + escape(jsonStringField(renderLab, "activeDebugView", modelState.activeDebugView)) + "\",\n"
             + "  \"debugViewStatus\": \"" + escape(jsonStringField(renderLab, "debugViewStatus", modelState.debugViewStatus)) + "\",\n"
+            + "  \"normalDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "normalDebugViewStatus", modelState.normalDebugViewStatus)) + "\",\n"
+            + "  \"ndotlDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "ndotlDebugViewStatus", modelState.ndotlDebugViewStatus)) + "\",\n"
             + "  \"fpsCurrent\": " + jsonFloat(fps.fpsCurrent) + ",\n"
             + "  \"frameTimeMs\": " + jsonFloat(fps.frameTimeMs) + ",\n"
             + "  \"fpsSource\": \"" + escape(fps.source) + "\",\n"
@@ -1743,10 +1811,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private String getRenderLabStateForExport() {
         if (!nativeLoaded || nativeHandle == 0L) {
-            return "{\"currentLabScene\":\"scene07_lighting_foundation_lab\",\"currentLabSceneName\":\"Scene07 Lighting Foundation Lab\",\"status\":\"native_not_loaded\",\"lightingStatus\":\"ok\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":1.35,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.34,\"lightPreset\":\"Studio\",\"materialResponseStatus\":\"foundation_simple_lit\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"shader_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"not_ready\",\"fpsLastStable\":0,\"frameTimeLastStableMs\":0,\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\"}";
+            return "{\"currentLabScene\":\"scene08_tangent_normal_exposure_lab\",\"currentLabSceneName\":\"Scene08 Tangent Normal Exposure Lab\",\"status\":\"native_not_loaded\",\"lightingStatus\":\"ok\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":1.35,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.34,\"lightPreset\":\"Studio\",\"materialResponseStatus\":\"foundation_simple_lit\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"shader_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"not_ready\",\"fpsLastStable\":0,\"frameTimeLastStableMs\":0,\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\"}";
         }
         try { return nativeGetRenderLabState(nativeHandle); }
-        catch (Throwable t) { return "{\"currentLabScene\":\"scene07_lighting_foundation_lab\",\"currentLabSceneName\":\"Scene07 Lighting Foundation Lab\",\"status\":\"native_render_lab_state_failed\",\"lightingStatus\":\"failed\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":1.35,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.34,\"lightPreset\":\"Studio\",\"materialResponseStatus\":\"failed\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"failed\",\"baseColorTextureStatus\":\"failed\",\"textureFallbackUsed\":true,\"modelRenderMode\":\"multi_primitive_static\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(shortThrowable(t)) + "\"}"; }
+        catch (Throwable t) { return "{\"currentLabScene\":\"scene08_tangent_normal_exposure_lab\",\"currentLabSceneName\":\"Scene08 Tangent Normal Exposure Lab\",\"status\":\"native_render_lab_state_failed\",\"lightingStatus\":\"failed\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":1.35,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.34,\"lightPreset\":\"Studio\",\"materialResponseStatus\":\"failed\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"failed\",\"baseColorTextureStatus\":\"failed\",\"textureFallbackUsed\":true,\"modelRenderMode\":\"multi_primitive_static\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(shortThrowable(t)) + "\"}"; }
     }
 
     private String timestampUtc() {
@@ -1809,7 +1877,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String pbrMapsStatus = "missing";
         String metallicRoughnessStatus = "missing";
         String normalMapStatus = "missing";
+        String normalMapAppliedStatus = "missing";
         String occlusionMapStatus = "missing";
+        String tangentStatus = "missing_or_blocked";
+        String tangentSource = "missing";
+        int tangentGeneratedCount = 0;
+        int tangentMissingCount = 0;
+        String tangentFallbackReason = "not_loaded";
         float metallicFactor = 0.0f;
         float roughnessFactor = 1.0f;
         float normalScale = 1.0f;
@@ -1822,15 +1896,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String lightingStatus = "ok";
         float[] sunDirection = new float[] { -0.35f, -0.82f, -0.45f };
         float[] sunColor = new float[] { 1.0f, 0.96f, 0.88f };
-        float sunIntensity = 1.35f;
+        float sunIntensity = 1.55f;
         float[] ambientColor = new float[] { 0.42f, 0.52f, 0.62f };
-        float ambientIntensity = 0.34f;
+        float ambientIntensity = 0.46f;
         String lightPreset = "Studio";
         String materialResponseStatus = "foundation_simple_lit";
         String toneMappingStatus = "ok";
         String toneMappingMode = "reinhard";
+        String exposureStatus = "ok";
+        float exposureValue = 1.18f;
+        float ambientFloor = 0.10f;
+        String brightnessPreset = "Normal";
         String activeDebugView = "Final Shaded";
         String debugViewStatus = "shader_applied";
+        String normalDebugViewStatus = "shader_applied";
+        String ndotlDebugViewStatus = "shader_applied";
         boolean fallbackCubeVisible = true;
         String fallbackCubeStatus = "on";
         String textureUploadStatus = "missing";
@@ -1906,7 +1986,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"pbrMapsStatus\": \"" + esc(pbrMapsStatus) + "\",\n"
                 + "  \"metallicRoughnessStatus\": \"" + esc(metallicRoughnessStatus) + "\",\n"
                 + "  \"normalMapStatus\": \"" + esc(normalMapStatus) + "\",\n"
+                + "  \"normalMapAppliedStatus\": \"" + esc(normalMapAppliedStatus) + "\",\n"
                 + "  \"occlusionMapStatus\": \"" + esc(occlusionMapStatus) + "\",\n"
+                + "  \"tangentStatus\": \"" + esc(tangentStatus) + "\",\n"
+                + "  \"tangentSource\": \"" + esc(tangentSource) + "\",\n"
+                + "  \"tangentGeneratedCount\": " + tangentGeneratedCount + ",\n"
+                + "  \"tangentMissingCount\": " + tangentMissingCount + ",\n"
+                + "  \"tangentFallbackReason\": \"" + esc(tangentFallbackReason) + "\",\n"
                 + "  \"metallicFactor\": " + jsonFloat(metallicFactor) + ",\n"
                 + "  \"roughnessFactor\": " + jsonFloat(roughnessFactor) + ",\n"
                 + "  \"normalScale\": " + jsonFloat(normalScale) + ",\n"
@@ -1916,7 +2002,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"skippedPbrTextureCount\": " + skippedPbrTextureCount + ",\n"
                 + "  \"pbrTextureFallbackCount\": " + pbrTextureFallbackCount + ",\n"
                 + "  \"materialSlotDiagnostics\": " + materialSlotDiagnostics + ",\n"
-                + "  \"currentScene\": \"scene07_lighting_foundation_lab\",\n"
+                + "  \"currentScene\": \"scene08_tangent_normal_exposure_lab\",\n"
                 + "  \"lightingStatus\": \"" + esc(lightingStatus) + "\",\n"
                 + "  \"sunDirection\": [" + jsonFloat(sunDirection[0]) + ", " + jsonFloat(sunDirection[1]) + ", " + jsonFloat(sunDirection[2]) + "],\n"
                 + "  \"sunColor\": [" + jsonFloat(sunColor[0]) + ", " + jsonFloat(sunColor[1]) + ", " + jsonFloat(sunColor[2]) + "],\n"
@@ -1927,8 +2013,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"materialResponseStatus\": \"" + esc(materialResponseStatus) + "\",\n"
                 + "  \"toneMappingStatus\": \"" + esc(toneMappingStatus) + "\",\n"
                 + "  \"toneMappingMode\": \"" + esc(toneMappingMode) + "\",\n"
+                + "  \"exposureStatus\": \"" + esc(exposureStatus) + "\",\n"
+                + "  \"exposureValue\": " + jsonFloat(exposureValue) + ",\n"
+                + "  \"ambientFloor\": " + jsonFloat(ambientFloor) + ",\n"
+                + "  \"brightnessPreset\": \"" + esc(brightnessPreset) + "\",\n"
                 + "  \"activeDebugView\": \"" + esc(activeDebugView) + "\",\n"
                 + "  \"debugViewStatus\": \"" + esc(debugViewStatus) + "\",\n"
+                + "  \"normalDebugViewStatus\": \"" + esc(normalDebugViewStatus) + "\",\n"
+                + "  \"ndotlDebugViewStatus\": \"" + esc(ndotlDebugViewStatus) + "\",\n"
                 + "  \"fallbackCubeVisible\": " + fallbackCubeVisible + ",\n"
                 + "  \"fallbackCubeStatus\": \"" + esc(fallbackCubeStatus) + "\",\n"
                 + parse.toJsonFields()
@@ -2099,9 +2191,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             float cz = (minZ + maxZ) * 0.5f;
             float extent = Math.max(Math.max(maxX - minX, maxY - minY), maxZ - minZ);
             float scale = extent > 0.00001f ? 1.8f / extent : 1.0f;
-            float[] vertexData = new float[vertexCount * 11];
+            float[] vertexData = new float[vertexCount * 15];
             for (int i = 0; i < vertexCount; i++) {
-                int o = i * 11;
+                int o = i * 15;
                 vertexData[o] = (rawPositions[i * 3] - cx) * scale;
                 vertexData[o + 1] = (rawPositions[i * 3 + 1] - cy) * scale;
                 vertexData[o + 2] = (rawPositions[i * 3 + 2] - cz) * scale;
@@ -2113,6 +2205,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 vertexData[o + 8] = colors != null ? colors.floatAt(i, 0) : 1.0f;
                 vertexData[o + 9] = colors != null ? colors.floatAt(i, 1) : 1.0f;
                 vertexData[o + 10] = colors != null ? colors.floatAt(i, 2) : 1.0f;
+                vertexData[o + 11] = 1.0f;
+                vertexData[o + 12] = 0.0f;
+                vertexData[o + 13] = 0.0f;
+                vertexData[o + 14] = 1.0f;
             }
             int[] indices = new int[0];
             if (primitive.has("indices")) {
@@ -2166,16 +2262,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                         int normalAccessor = attrs.optInt("NORMAL", -1);
                         int texcoordAccessor = attrs.optInt("TEXCOORD_0", -1);
                         int colorAccessor = attrs.optInt("COLOR_0", -1);
+                        int tangentAccessor = attrs.optInt("TANGENT", -1);
                         AccessorReader positions = AccessorReader.create(accessors, bufferViews, parsed.binChunk, positionAccessor, 5126, "VEC3", "POSITION");
                         AccessorReader normals = normalAccessor >= 0 ? AccessorReader.create(accessors, bufferViews, parsed.binChunk, normalAccessor, 5126, "VEC3", "NORMAL") : null;
                         AccessorReader texcoords = texcoordAccessor >= 0 ? AccessorReader.create(accessors, bufferViews, parsed.binChunk, texcoordAccessor, 5126, "VEC2", "TEXCOORD_0") : null;
                         AccessorReader colors = colorAccessor >= 0 ? AccessorReader.createColor(accessors, bufferViews, parsed.binChunk, colorAccessor) : null;
+                        AccessorReader tangents = tangentAccessor >= 0 ? AccessorReader.create(accessors, bufferViews, parsed.binChunk, tangentAccessor, 5126, "VEC4", "TANGENT") : null;
                         PrimitiveSource src = new PrimitiveSource();
                         src.primitive = primitive;
                         src.positions = positions;
                         src.normals = normals;
                         src.texcoords = texcoords;
                         src.colors = colors;
+                        src.tangents = tangents;
                         src.vertexCount = positions.count;
                         if (primitive.has("indices")) src.indices = IndexReader.create(accessors, bufferViews, parsed.binChunk, primitive.optInt("indices", -1));
                         src.materialIndex = primitive.optInt("material", -1);
@@ -2204,15 +2303,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             int firstVertex = 0;
             int textureSlotLimit = 8;
             List<MaterialInfo> materials = readMaterials(root, parsed.binChunk, textureSlotLimit);
-            if (!parsed.hasTangents) {
-                for (MaterialInfo mi : materials) {
-                    if (mi.normalTexture != null && "ok".equals(mi.normalTexture.status)) {
-                        mi.normalTexture.status = "blocked_no_tangent";
-                        mi.normalTexture.reason = "normal map requires TANGENT attribute";
-                    }
-                    mi.normalMapStatus = mi.normalTexture == null ? "missing" : mi.normalTexture.status;
-                }
-            }
+            int tangentGeneratedCount = 0;
+            int tangentMissingCount = 0;
+            String tangentStatus = "missing_or_blocked";
+            String tangentSource = "missing";
+            String tangentFallbackReason = "not_evaluated";
             List<BaseColorTexture> textures = new ArrayList<>();
             for (MaterialInfo mi : materials) if (mi.texture != null && mi.texture.slot >= 0 && textures.size() < textureSlotLimit) textures.add(mi.texture);
             List<BaseColorTexture> pbrTextures = new ArrayList<>();
@@ -2225,6 +2320,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 int materialSlot = src.materialIndex >= 0 && src.materialIndex < materials.size() ? src.materialIndex : 0;
                 int textureSlot = materialSlot < materials.size() ? materials.get(materialSlot).textureSlot : -1;
                 int rangeFirstIndex = indices.size();
+                float[] tangentValues = null;
+                if (src.tangents != null) {
+                    tangentValues = readTangents(src.tangents);
+                    tangentSource = "from_gltf";
+                    tangentStatus = "from_gltf";
+                } else if (src.normals != null && src.texcoords != null) {
+                    int[] localIndices = localIndexArray(src);
+                    tangentValues = generateTangents(src, localIndices);
+                    if (tangentValues != null) {
+                        tangentGeneratedCount += src.vertexCount;
+                        tangentSource = "generated";
+                        tangentStatus = "generated";
+                    } else {
+                        tangentMissingCount += src.vertexCount;
+                        tangentFallbackReason = "degenerate_uv_or_triangle_tangent_basis";
+                    }
+                } else {
+                    tangentMissingCount += src.vertexCount;
+                    tangentFallbackReason = src.normals == null ? "NORMAL_missing" : "TEXCOORD_0_missing";
+                }
                 for (int i = 0; i < src.vertexCount; i++) {
                     vertexFloats.add((src.positions.floatAt(i, 0) - cx) * scale);
                     vertexFloats.add((src.positions.floatAt(i, 1) - cy) * scale);
@@ -2237,6 +2352,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     vertexFloats.add(src.colors != null ? src.colors.floatAt(i, 0) : 1.0f);
                     vertexFloats.add(src.colors != null ? src.colors.floatAt(i, 1) : 1.0f);
                     vertexFloats.add(src.colors != null ? src.colors.floatAt(i, 2) : 1.0f);
+                    vertexFloats.add(tangentValues != null ? tangentValues[i * 4] : 1.0f);
+                    vertexFloats.add(tangentValues != null ? tangentValues[i * 4 + 1] : 0.0f);
+                    vertexFloats.add(tangentValues != null ? tangentValues[i * 4 + 2] : 0.0f);
+                    vertexFloats.add(tangentValues != null ? tangentValues[i * 4 + 3] : 1.0f);
                 }
                 if (src.indices != null) {
                     for (int i = 0; i < src.indices.count; i++) indices.add(firstVertex + src.indices.indexAt(i));
@@ -2256,7 +2375,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             out.indexData = toIntArray(indices);
             out.rangeData = toIntArray(ranges);
             out.materialData = materialData(materials);
-            out.vertexCount = out.vertexData.length / 11;
+            out.vertexCount = out.vertexData.length / 15;
             out.indexCount = out.indexData.length;
             out.boundsMin = new float[] { minX, minY, minZ };
             out.boundsMax = new float[] { maxX, maxY, maxZ };
@@ -2277,8 +2396,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             out.baseColorFactor = materials.isEmpty() ? new float[] {1f,1f,1f,1f} : materials.get(0).baseColorFactor;
             out.pbrTextureSlotCount = pbrTextures.size();
             out.pbrMapsStatus = pbrTextures.isEmpty() ? "missing" : "available";
+            if ("missing_or_blocked".equals(tangentStatus) && tangentMissingCount == 0) {
+                tangentStatus = "missing_or_blocked";
+                tangentFallbackReason = "no_supported_tangent_source";
+            } else if (!"missing_or_blocked".equals(tangentStatus) && tangentMissingCount > 0) {
+                tangentStatus = "partial_" + tangentStatus;
+            }
+            out.tangentStatus = tangentStatus;
+            out.tangentSource = tangentSource;
+            out.tangentGeneratedCount = tangentGeneratedCount;
+            out.tangentMissingCount = tangentMissingCount;
+            out.tangentFallbackReason = tangentMissingCount > 0 ? tangentFallbackReason : "none";
+            if (tangentMissingCount > 0) {
+                for (MaterialInfo mi : materials) {
+                    if (mi.normalTexture != null && "ok".equals(mi.normalTexture.status)) {
+                        mi.normalTexture.status = "blocked_no_tangent";
+                        mi.normalTexture.reason = "normal map requires complete tangent data";
+                    }
+                    mi.normalMapStatus = mi.normalTexture == null ? "missing" : mi.normalTexture.status;
+                }
+            }
             out.metallicRoughnessStatus = aggregateStatus(materials, TEX_METALLIC_ROUGHNESS);
             out.normalMapStatus = aggregateStatus(materials, TEX_NORMAL);
+            out.normalMapAppliedStatus = normalAppliedStatus(out.normalMapStatus, out.tangentStatus);
             out.occlusionMapStatus = aggregateStatus(materials, TEX_OCCLUSION);
             out.materialSlotDiagnostics = materialSlotDiagnostics(materials);
             out.reason = skipped.isEmpty() ? "all supported primitives uploaded" : joinReasons(skipped);
@@ -2330,6 +2470,112 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         private static void addPbrTexture(List<BaseColorTexture> out, BaseColorTexture texture, int limit) {
             if (texture == null || out.size() >= limit) return;
             if ("ok".equals(texture.status)) out.add(texture);
+        }
+
+        private static String normalAppliedStatus(String normalMapStatus, String tangentStatus) {
+            if ("missing".equals(normalMapStatus)) return "missing";
+            if ("ok".equals(normalMapStatus) || "partial_ok".equals(normalMapStatus)) {
+                return tangentStatus != null && (tangentStatus.contains("generated") || tangentStatus.contains("from_gltf")) ? "ok" : "blocked_no_tangent";
+            }
+            if ("blocked_no_tangent".equals(normalMapStatus)) return "blocked_no_tangent";
+            return normalMapStatus == null ? "missing" : normalMapStatus;
+        }
+
+        private static int[] localIndexArray(PrimitiveSource src) {
+            if (src.indices != null && src.indices.count > 0) {
+                int[] out = new int[src.indices.count];
+                for (int i = 0; i < src.indices.count; i++) out[i] = src.indices.indexAt(i);
+                return out;
+            }
+            int[] out = new int[src.vertexCount];
+            for (int i = 0; i < src.vertexCount; i++) out[i] = i;
+            return out;
+        }
+
+        private static float[] readTangents(AccessorReader tangents) {
+            float[] out = new float[tangents.count * 4];
+            for (int i = 0; i < tangents.count; i++) {
+                float x = tangents.floatAt(i, 0);
+                float y = tangents.floatAt(i, 1);
+                float z = tangents.floatAt(i, 2);
+                float invLen = invLength3(x, y, z);
+                out[i * 4] = x * invLen;
+                out[i * 4 + 1] = y * invLen;
+                out[i * 4 + 2] = z * invLen;
+                out[i * 4 + 3] = tangents.floatAt(i, 3) < 0.0f ? -1.0f : 1.0f;
+            }
+            return out;
+        }
+
+        private static float[] generateTangents(PrimitiveSource src, int[] localIndices) {
+            float[] tan1 = new float[src.vertexCount * 3];
+            float[] tan2 = new float[src.vertexCount * 3];
+            int validTriangles = 0;
+            for (int i = 0; i + 2 < localIndices.length; i += 3) {
+                int i1 = localIndices[i];
+                int i2 = localIndices[i + 1];
+                int i3 = localIndices[i + 2];
+                if (i1 < 0 || i2 < 0 || i3 < 0 || i1 >= src.vertexCount || i2 >= src.vertexCount || i3 >= src.vertexCount) continue;
+                float x1 = src.positions.floatAt(i2, 0) - src.positions.floatAt(i1, 0);
+                float y1 = src.positions.floatAt(i2, 1) - src.positions.floatAt(i1, 1);
+                float z1 = src.positions.floatAt(i2, 2) - src.positions.floatAt(i1, 2);
+                float x2 = src.positions.floatAt(i3, 0) - src.positions.floatAt(i1, 0);
+                float y2 = src.positions.floatAt(i3, 1) - src.positions.floatAt(i1, 1);
+                float z2 = src.positions.floatAt(i3, 2) - src.positions.floatAt(i1, 2);
+                float s1 = src.texcoords.floatAt(i2, 0) - src.texcoords.floatAt(i1, 0);
+                float t1 = src.texcoords.floatAt(i2, 1) - src.texcoords.floatAt(i1, 1);
+                float s2 = src.texcoords.floatAt(i3, 0) - src.texcoords.floatAt(i1, 0);
+                float t2 = src.texcoords.floatAt(i3, 1) - src.texcoords.floatAt(i1, 1);
+                float denom = s1 * t2 - s2 * t1;
+                if (Math.abs(denom) < 1.0e-8f) continue;
+                validTriangles++;
+                float r = 1.0f / denom;
+                float sx = (t2 * x1 - t1 * x2) * r;
+                float sy = (t2 * y1 - t1 * y2) * r;
+                float sz = (t2 * z1 - t1 * z2) * r;
+                float bx = (s1 * x2 - s2 * x1) * r;
+                float by = (s1 * y2 - s2 * y1) * r;
+                float bz = (s1 * z2 - s2 * z1) * r;
+                add3(tan1, i1, sx, sy, sz); add3(tan1, i2, sx, sy, sz); add3(tan1, i3, sx, sy, sz);
+                add3(tan2, i1, bx, by, bz); add3(tan2, i2, bx, by, bz); add3(tan2, i3, bx, by, bz);
+            }
+            if (validTriangles == 0) return null;
+            float[] out = new float[src.vertexCount * 4];
+            for (int i = 0; i < src.vertexCount; i++) {
+                float nx = src.normals.floatAt(i, 0);
+                float ny = src.normals.floatAt(i, 1);
+                float nz = src.normals.floatAt(i, 2);
+                float tx = tan1[i * 3];
+                float ty = tan1[i * 3 + 1];
+                float tz = tan1[i * 3 + 2];
+                float ndott = nx * tx + ny * ty + nz * tz;
+                tx -= nx * ndott;
+                ty -= ny * ndott;
+                tz -= nz * ndott;
+                float invLen = invLength3(tx, ty, tz);
+                if (invLen == 0.0f) return null;
+                tx *= invLen; ty *= invLen; tz *= invLen;
+                float cx = ny * tz - nz * ty;
+                float cy = nz * tx - nx * tz;
+                float cz = nx * ty - ny * tx;
+                float handedness = (cx * tan2[i * 3] + cy * tan2[i * 3 + 1] + cz * tan2[i * 3 + 2]) < 0.0f ? -1.0f : 1.0f;
+                out[i * 4] = tx;
+                out[i * 4 + 1] = ty;
+                out[i * 4 + 2] = tz;
+                out[i * 4 + 3] = handedness;
+            }
+            return out;
+        }
+
+        private static void add3(float[] values, int index, float x, float y, float z) {
+            values[index * 3] += x;
+            values[index * 3 + 1] += y;
+            values[index * 3 + 2] += z;
+        }
+
+        private static float invLength3(float x, float y, float z) {
+            float len2 = x * x + y * y + z * z;
+            return len2 > 1.0e-12f ? (float)(1.0 / Math.sqrt(len2)) : 0.0f;
         }
 
         private static float[] readBaseColorFactor(JSONObject root, int materialIndex) {
@@ -2703,7 +2949,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String pbrMapsStatus = "missing";
         String metallicRoughnessStatus = "missing";
         String normalMapStatus = "missing";
+        String normalMapAppliedStatus = "missing";
         String occlusionMapStatus = "missing";
+        String tangentStatus = "missing_or_blocked";
+        String tangentSource = "missing";
+        int tangentGeneratedCount = 0;
+        int tangentMissingCount = 0;
+        String tangentFallbackReason = "not_loaded";
         int pbrTextureSlotCount = 0;
         int uploadedPbrTextureCount = 0;
         int skippedPbrTextureCount = 0;
@@ -2729,6 +2981,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         AccessorReader normals;
         AccessorReader texcoords;
         AccessorReader colors;
+        AccessorReader tangents;
         IndexReader indices;
         int vertexCount = 0;
         int materialIndex = -1;

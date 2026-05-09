@@ -1,5 +1,54 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P11 tangent normal exposure foundation
+
+P11 keeps the P10 lighting/material response and changes normal maps from blocked metadata to real shader input when tangent data exists.
+
+Shader inputs used in Scene08:
+
+- baseColor texture/factor;
+- metallicRoughness texture/factors;
+- occlusion texture and `occlusionStrength`;
+- normal texture and `normalScale`;
+- generated or glTF tangent with handedness;
+- exposure value, ambient floor, and tone mapping.
+
+Debug views:
+
+```text
+Final Shaded
+BaseColor
+AO
+Metallic
+Roughness
+Normal
+NdotL
+PBR Status
+```
+
+Diagnostics added:
+
+```text
+tangentStatus
+tangentSource
+tangentGeneratedCount
+tangentMissingCount
+tangentFallbackReason
+normalMapAppliedStatus
+exposureStatus
+exposureValue
+ambientFloor
+brightnessPreset
+normalDebugViewStatus
+ndotlDebugViewStatus
+```
+
+Limits:
+
+- no fake tangent fallback when POSITION/NORMAL/TEXCOORD_0 are insufficient;
+- no shadows;
+- no IBL/reflections.
+
 ## P10 lighting/material response
 
 P10 keeps the P09 texture slot system and adds a small shader material response layer.

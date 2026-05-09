@@ -22,6 +22,7 @@ struct Vertex3D {
     float nx; float ny; float nz;
     float u; float v;
     float r; float g; float b;
+    float tx; float ty; float tz; float tw;
 };
 
 struct CameraState {
@@ -45,13 +46,16 @@ struct MaterialConstants {
     int normalTextureReady = 0;
     int occlusionTextureReady = 0;
     float sunDirection[3] = { -0.35f, -0.82f, -0.45f };
-    float sunIntensity = 1.35f;
+    float sunIntensity = 1.55f;
     float sunColor[3] = { 1.0f, 0.96f, 0.88f };
-    float ambientIntensity = 0.34f;
+    float ambientIntensity = 0.46f;
     float ambientColor[3] = { 0.42f, 0.52f, 0.62f };
     int lightPreset = 0;
     int activeDebugView = 0;
     int toneMappingMode = 1;
+    float exposureValue = 1.18f;
+    float ambientFloor = 0.10f;
+    int brightnessPreset = 1;
 };
 
 inline const char* lightPresetName(int preset) {
@@ -65,8 +69,17 @@ inline const char* materialDebugViewName(int view) {
     if (view == 2) return "AO";
     if (view == 3) return "Metallic";
     if (view == 4) return "Roughness";
-    if (view == 5) return "PBR Status";
+    if (view == 5) return "Normal";
+    if (view == 6) return "NdotL";
+    if (view == 7) return "PBR Status";
     return "Final Shaded";
+}
+
+inline const char* brightnessPresetName(int preset) {
+    if (preset == 0) return "Low";
+    if (preset == 2) return "Bright";
+    if (preset == 3) return "Preview";
+    return "Normal";
 }
 
 inline const char* toneMappingModeName(int mode) {
@@ -107,7 +120,7 @@ struct ModelRenderState {
     std::string drawStatus = "fallback";
     uint32_t uploadedVertexCount = 0;
     uint32_t uploadedIndexCount = 0;
-    const char* modelVertexLayout = "POSITION,NORMAL,TEXCOORD_0,COLOR_0";
+    const char* modelVertexLayout = "POSITION,NORMAL,TEXCOORD_0,COLOR_0,TANGENT";
     float boundsMin[3] = { 0.0f, 0.0f, 0.0f };
     float boundsMax[3] = { 0.0f, 0.0f, 0.0f };
     float boundsCenter[3] = { 0.0f, 0.0f, 0.0f };
@@ -127,7 +140,13 @@ struct ModelRenderState {
     std::string pbrMapsStatus = "missing";
     std::string metallicRoughnessStatus = "missing";
     std::string normalMapStatus = "missing";
+    std::string normalMapAppliedStatus = "missing";
     std::string occlusionMapStatus = "missing";
+    std::string tangentStatus = "missing_or_blocked";
+    std::string tangentSource = "missing";
+    uint32_t tangentGeneratedCount = 0;
+    uint32_t tangentMissingCount = 0;
+    std::string tangentFallbackReason = "not_loaded";
     float metallicFactor = 0.0f;
     float roughnessFactor = 1.0f;
     float normalScale = 1.0f;
@@ -140,15 +159,21 @@ struct ModelRenderState {
     std::string lightingStatus = "ok";
     float sunDirection[3] = { -0.35f, -0.82f, -0.45f };
     float sunColor[3] = { 1.0f, 0.96f, 0.88f };
-    float sunIntensity = 1.35f;
+    float sunIntensity = 1.55f;
     float ambientColor[3] = { 0.42f, 0.52f, 0.62f };
-    float ambientIntensity = 0.34f;
+    float ambientIntensity = 0.46f;
     std::string lightPreset = "Studio";
     std::string materialResponseStatus = "foundation_simple_lit";
     std::string toneMappingStatus = "ok";
     std::string toneMappingMode = "reinhard";
+    std::string exposureStatus = "ok";
+    float exposureValue = 1.18f;
+    float ambientFloor = 0.10f;
+    std::string brightnessPreset = "Normal";
     std::string activeDebugView = "Final Shaded";
     std::string debugViewStatus = "shader_applied";
+    std::string normalDebugViewStatus = "shader_applied";
+    std::string ndotlDebugViewStatus = "shader_applied";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;
     const char* fpsSource = "java_ui_frame_delta";

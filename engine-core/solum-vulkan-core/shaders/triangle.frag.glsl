@@ -3,6 +3,7 @@
 layout(location = 0) in vec3 inColor;
 layout(location = 1) in vec2 inTexcoord0;
 layout(location = 2) in vec3 inNormal;
+layout(location = 3) in vec4 inTangent;
 layout(location = 0) out vec4 fragColor;
 layout(set = 0, binding = 0) uniform sampler2D baseColorTexture;
 layout(set = 0, binding = 1) uniform sampler2D metallicRoughnessTexture;
@@ -36,6 +37,9 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 176) int lightPreset;
     layout(offset = 180) int activeDebugView;
     layout(offset = 184) int toneMappingMode;
+    layout(offset = 188) float exposureValue;
+    layout(offset = 192) float ambientFloor;
+    layout(offset = 196) int brightnessPreset;
 } pc;
 
 vec3 toneMap(vec3 color) {
@@ -73,23 +77,39 @@ void main() {
         fragColor = vec4(vec3(roughness), pc.baseColorFactor.a * texel.a);
         return;
     }
-    if (pc.activeDebugView == 5) {
-        fragColor = vec4(pc.baseColorTextureReady != 0 ? 0.1 : 0.85, pc.metallicRoughnessTextureReady != 0 ? 0.85 : 0.1, pc.occlusionTextureReady != 0 ? 0.85 : 0.1, 1.0);
-        return;
-    }
     vec3 n = normalize(inNormal);
+    if (pc.normalTextureReady != 0) {
+        vec3 t = normalize(inTangent.xyz - n * dot(n, inTangent.xyz));
+        vec3 b = normalize(cross(n, t) * (inTangent.w < 0.0 ? -1.0 : 1.0));
+        vec3 mapN = texture(normalTexture, inTexcoord0).xyz * 2.0 - 1.0;
+        mapN.xy *= pc.normalScale;
+        n = normalize(mat3(t, b, n) * normalize(mapN));
+    }
     vec3 l = normalize(-vec3(pc.sunDirectionX, pc.sunDirectionY, pc.sunDirectionZ));
     vec3 v = normalize(vec3(0.0, 0.0, 1.0));
     vec3 h = normalize(l + v);
     vec3 sunColor = vec3(pc.sunColorR, pc.sunColorG, pc.sunColorB);
     vec3 ambientColor = vec3(pc.ambientColorR, pc.ambientColorG, pc.ambientColorB);
     float ndotl = max(dot(n, l), 0.0);
+    if (pc.activeDebugView == 5) {
+        fragColor = vec4(n * 0.5 + 0.5, pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 6) {
+        fragColor = vec4(vec3(ndotl), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 7) {
+        fragColor = vec4(pc.baseColorTextureReady != 0 ? 0.1 : 0.85, pc.metallicRoughnessTextureReady != 0 ? 0.85 : 0.1, pc.occlusionTextureReady != 0 ? 0.85 : 0.1, 1.0);
+        return;
+    }
     float specPower = mix(96.0, 10.0, roughness);
     float spec = pow(max(dot(n, h), 0.0), specPower) * mix(0.18, 1.0, metallic) * (1.0 - roughness * 0.55);
     vec3 specColor = mix(vec3(0.04), baseColor, metallic);
     vec3 diffuse = baseColor * (1.0 - metallic * 0.55) * ndotl * sunColor * pc.sunIntensity;
-    vec3 ambient = baseColor * ambientColor * pc.ambientIntensity;
+    vec3 ambient = baseColor * ambientColor * max(pc.ambientIntensity, pc.ambientFloor);
     vec3 rgb = (diffuse + ambient) * ao + specColor * spec * sunColor * pc.sunIntensity + pc.emissiveFactor;
+    rgb *= pc.exposureValue;
     rgb = toneMap(rgb);
     fragColor = vec4(rgb, pc.baseColorFactor.a * texel.a);
 }

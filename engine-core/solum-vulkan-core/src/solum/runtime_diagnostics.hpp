@@ -85,7 +85,13 @@ struct RuntimeDiagnostics {
         f << "  \"pbrMapsStatus\": \"" << escapeJson(model.pbrMapsStatus) << "\",\n";
         f << "  \"metallicRoughnessStatus\": \"" << escapeJson(model.metallicRoughnessStatus) << "\",\n";
         f << "  \"normalMapStatus\": \"" << escapeJson(model.normalMapStatus) << "\",\n";
+        f << "  \"normalMapAppliedStatus\": \"" << escapeJson(model.normalMapAppliedStatus) << "\",\n";
         f << "  \"occlusionMapStatus\": \"" << escapeJson(model.occlusionMapStatus) << "\",\n";
+        f << "  \"tangentStatus\": \"" << escapeJson(model.tangentStatus) << "\",\n";
+        f << "  \"tangentSource\": \"" << escapeJson(model.tangentSource) << "\",\n";
+        f << "  \"tangentGeneratedCount\": " << model.tangentGeneratedCount << ",\n";
+        f << "  \"tangentMissingCount\": " << model.tangentMissingCount << ",\n";
+        f << "  \"tangentFallbackReason\": \"" << escapeJson(model.tangentFallbackReason) << "\",\n";
         f << "  \"metallicFactor\": " << model.metallicFactor << ",\n";
         f << "  \"roughnessFactor\": " << model.roughnessFactor << ",\n";
         f << "  \"normalScale\": " << model.normalScale << ",\n";
@@ -105,8 +111,14 @@ struct RuntimeDiagnostics {
         f << "  \"materialResponseStatus\": \"" << escapeJson(model.materialResponseStatus) << "\",\n";
         f << "  \"toneMappingStatus\": \"" << escapeJson(model.toneMappingStatus) << "\",\n";
         f << "  \"toneMappingMode\": \"" << escapeJson(model.toneMappingMode) << "\",\n";
+        f << "  \"exposureStatus\": \"" << escapeJson(model.exposureStatus) << "\",\n";
+        f << "  \"exposureValue\": " << model.exposureValue << ",\n";
+        f << "  \"ambientFloor\": " << model.ambientFloor << ",\n";
+        f << "  \"brightnessPreset\": \"" << escapeJson(model.brightnessPreset) << "\",\n";
         f << "  \"activeDebugView\": \"" << escapeJson(model.activeDebugView) << "\",\n";
         f << "  \"debugViewStatus\": \"" << escapeJson(model.debugViewStatus) << "\",\n";
+        f << "  \"normalDebugViewStatus\": \"" << escapeJson(model.normalDebugViewStatus) << "\",\n";
+        f << "  \"ndotlDebugViewStatus\": \"" << escapeJson(model.ndotlDebugViewStatus) << "\",\n";
         f << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";
         f << "  \"fpsSource\": \"" << model.fpsSource << "\",\n";
@@ -137,7 +149,7 @@ struct RuntimeDiagnostics {
         f << "  \"cameraDistance\": " << camera.distance << ",\n";
         f << "  \"materialConstantsReady\": " << (materialConstantsReady ? "true" : "false") << ",\n";
         f << "  \"meshAttributeLayoutReady\": " << (meshAttributeLayoutReady ? "true" : "false") << ",\n";
-        f << "  \"vertexLayout\": \"POSITION,NORMAL,TEXCOORD_0,COLOR_0\",\n";
+        f << "  \"vertexLayout\": \"POSITION,NORMAL,TEXCOORD_0,COLOR_0,TANGENT\",\n";
         f << "  \"vertexStrideBytes\": " << vertexStrideBytes << ",\n";
         f << "  \"material\": {\n";
         f << "    \"materialId\": " << material.materialId << ",\n";

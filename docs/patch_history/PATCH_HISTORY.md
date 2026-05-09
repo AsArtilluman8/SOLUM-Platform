@@ -2,6 +2,33 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P11 — Tangent Generation + Real Normal Map Support + Exposure Defaults
+
+Scope:
+
+- Scene08 Tangent Normal Exposure Lab.
+- Vertex layout updated to `POSITION,NORMAL,TEXCOORD_0,COLOR_0,TANGENT`.
+- GLB tangents are read from `TANGENT` when present.
+- CPU tangent generation runs when POSITION, NORMAL, and TEXCOORD_0 exist.
+- Shader builds TBN and applies normal texture with `normalScale`.
+- Exposure, ambient floor, and brightness presets make ToyCar less dark than P10.
+- Material debug views now include Normal and NdotL.
+- Diagnostics add tangent, normal-map-applied, exposure, brightness, Normal, and NdotL status fields.
+
+Out of scope:
+
+- shadows / CSM;
+- IBL/reflections;
+- glass/clearcoat/transmission;
+- skeletal animation;
+- renderer rewrite.
+
+Next:
+
+```text
+Manual runtime verify on device with ToyCar_pbr_test.glb and exported diagnostics/debug ZIP.
+```
+
 ## Patch P10 — Lighting Foundation + Simple Material Response + Debug Views
 
 Scope:

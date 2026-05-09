@@ -72,11 +72,14 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetLi
     jfloat sunIntensity,
     jfloat ambientIntensity,
     jint activeDebugView,
-    jint toneMappingMode
+    jint toneMappingMode,
+    jfloat exposureValue,
+    jfloat ambientFloor,
+    jint brightnessPreset
 ) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) return;
-    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode);
+    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdateUiDiagnostics(
@@ -112,7 +115,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdat
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) {
-        return env->NewStringUTF("{\"currentLabScene\":\"scene07_lighting_foundation_lab\",\"currentLabSceneName\":\"Scene07 Lighting Foundation Lab\",\"status\":\"native_handle_missing\",\"lightingStatus\":\"failed\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":1.35,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.34,\"lightPreset\":\"Studio\",\"materialResponseStatus\":\"missing\",\"toneMappingStatus\":\"missing\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
+        return env->NewStringUTF("{\"currentLabScene\":\"scene08_tangent_normal_exposure_lab\",\"currentLabSceneName\":\"Scene08 Tangent Normal Exposure Lab\",\"status\":\"native_handle_missing\",\"lightingStatus\":\"failed\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":1.35,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.34,\"lightPreset\":\"Studio\",\"materialResponseStatus\":\"missing\",\"toneMappingStatus\":\"missing\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
     }
     std::string json = std::string("{\"currentLabScene\":\"") + renderer->diagnostics.renderLab.sceneId()
         + "\",\"currentLabSceneName\":\"" + renderer->diagnostics.renderLab.sceneName()
@@ -155,7 +158,13 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"pbrMapsStatus\":\"" + solum::escapeJson(renderer->model.pbrMapsStatus) + "\""
         + ",\"metallicRoughnessStatus\":\"" + solum::escapeJson(renderer->model.metallicRoughnessStatus) + "\""
         + ",\"normalMapStatus\":\"" + solum::escapeJson(renderer->model.normalMapStatus) + "\""
+        + ",\"normalMapAppliedStatus\":\"" + solum::escapeJson(renderer->model.normalMapAppliedStatus) + "\""
         + ",\"occlusionMapStatus\":\"" + solum::escapeJson(renderer->model.occlusionMapStatus) + "\""
+        + ",\"tangentStatus\":\"" + solum::escapeJson(renderer->model.tangentStatus) + "\""
+        + ",\"tangentSource\":\"" + solum::escapeJson(renderer->model.tangentSource) + "\""
+        + ",\"tangentGeneratedCount\":" + std::to_string(renderer->model.tangentGeneratedCount)
+        + ",\"tangentMissingCount\":" + std::to_string(renderer->model.tangentMissingCount)
+        + ",\"tangentFallbackReason\":\"" + solum::escapeJson(renderer->model.tangentFallbackReason) + "\""
         + ",\"metallicFactor\":" + std::to_string(renderer->model.metallicFactor)
         + ",\"roughnessFactor\":" + std::to_string(renderer->model.roughnessFactor)
         + ",\"normalScale\":" + std::to_string(renderer->model.normalScale)
@@ -175,8 +184,14 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"materialResponseStatus\":\"" + solum::escapeJson(renderer->model.materialResponseStatus) + "\""
         + ",\"toneMappingStatus\":\"" + solum::escapeJson(renderer->model.toneMappingStatus) + "\""
         + ",\"toneMappingMode\":\"" + solum::escapeJson(renderer->model.toneMappingMode) + "\""
+        + ",\"exposureStatus\":\"" + solum::escapeJson(renderer->model.exposureStatus) + "\""
+        + ",\"exposureValue\":" + std::to_string(renderer->model.exposureValue)
+        + ",\"ambientFloor\":" + std::to_string(renderer->model.ambientFloor)
+        + ",\"brightnessPreset\":\"" + solum::escapeJson(renderer->model.brightnessPreset) + "\""
         + ",\"activeDebugView\":\"" + solum::escapeJson(renderer->model.activeDebugView) + "\""
         + ",\"debugViewStatus\":\"" + solum::escapeJson(renderer->model.debugViewStatus) + "\""
+        + ",\"normalDebugViewStatus\":\"" + solum::escapeJson(renderer->model.normalDebugViewStatus) + "\""
+        + ",\"ndotlDebugViewStatus\":\"" + solum::escapeJson(renderer->model.ndotlDebugViewStatus) + "\""
         + ",\"fpsCurrent\":" + std::to_string(renderer->model.fpsCurrent)
         + ",\"frameTimeMs\":" + std::to_string(renderer->model.frameTimeMs)
         + ",\"fpsSource\":\"" + renderer->model.fpsSource + "\""
@@ -199,7 +214,7 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"uniformOrPushConstantsReady\":" + (renderer->diagnostics.uniformOrPushConstantsReady ? "true" : "false")
         + ",\"materialConstantsReady\":" + (renderer->diagnostics.materialConstantsReady ? "true" : "false")
         + ",\"meshAttributeLayoutReady\":" + (renderer->diagnostics.meshAttributeLayoutReady ? "true" : "false")
-        + ",\"vertexLayout\":\"POSITION,NORMAL,TEXCOORD_0,COLOR_0\""
+        + ",\"vertexLayout\":\"POSITION,NORMAL,TEXCOORD_0,COLOR_0,TANGENT\""
         + ",\"vertexStrideBytes\":" + std::to_string(renderer->diagnostics.vertexStrideBytes)
         + ",\"material\":{\"materialId\":" + std::to_string(renderer->diagnostics.material.materialId)
         + ",\"baseColorFactor\":[" + std::to_string(renderer->diagnostics.material.baseColorFactor[0]) + "," + std::to_string(renderer->diagnostics.material.baseColorFactor[1]) + "," + std::to_string(renderer->diagnostics.material.baseColorFactor[2]) + "," + std::to_string(renderer->diagnostics.material.baseColorFactor[3]) + "]"
@@ -239,8 +254,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
     std::string name = nameChars ? nameChars : "imported.glb";
     std::string path = pathChars ? pathChars : "";
     jsize vertexFloatCount = env->GetArrayLength(vertexData);
-    if (vertexFloatCount <= 0 || (vertexFloatCount % 11) != 0) {
-        renderer->setModelFallback(name, path, "vertex data must use POSITION,NORMAL,TEXCOORD_0,COLOR_0 stride 11 floats");
+    if (vertexFloatCount <= 0 || (vertexFloatCount % 15) != 0) {
+        renderer->setModelFallback(name, path, "vertex data must use POSITION,NORMAL,TEXCOORD_0,COLOR_0,TANGENT stride 15 floats");
         if (nameChars) env->ReleaseStringUTFChars(modelName, nameChars);
         if (pathChars) env->ReleaseStringUTFChars(modelPath, pathChars);
         return JNI_FALSE;
@@ -266,7 +281,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
         name,
         path,
         reinterpret_cast<const solum::Vertex3D*>(vertices),
-        (uint32_t)(vertexFloatCount / 11),
+        (uint32_t)(vertexFloatCount / 15),
         index32.empty() ? nullptr : index32.data(),
         (uint32_t)index32.size(),
         boundsMin,
@@ -312,7 +327,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
     std::string reason = reasonChars ? reasonChars : "";
     jsize vertexFloatCount = env->GetArrayLength(vertexData);
     jsize rangeIntCount = env->GetArrayLength(rangeData);
-    if (vertexFloatCount <= 0 || (vertexFloatCount % 11) != 0 || rangeIntCount <= 0 || (rangeIntCount % 6) != 0) {
+    if (vertexFloatCount <= 0 || (vertexFloatCount % 15) != 0 || rangeIntCount <= 0 || (rangeIntCount % 6) != 0) {
         renderer->setModelFallback(name, path, "multi primitive data has invalid vertex/range stride");
         if (nameChars) env->ReleaseStringUTFChars(modelName, nameChars);
         if (pathChars) env->ReleaseStringUTFChars(modelPath, pathChars);
@@ -385,7 +400,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
         name,
         path,
         reinterpret_cast<const solum::Vertex3D*>(vertices),
-        (uint32_t)(vertexFloatCount / 11),
+        (uint32_t)(vertexFloatCount / 15),
         index32.empty() ? nullptr : index32.data(),
         (uint32_t)index32.size(),
         drawRanges.data(),
@@ -609,7 +624,13 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetPb
     jstring pbrMapsStatus,
     jstring metallicRoughnessStatus,
     jstring normalMapStatus,
+    jstring normalMapAppliedStatus,
     jstring occlusionMapStatus,
+    jstring tangentStatus,
+    jstring tangentSource,
+    jint tangentGeneratedCount,
+    jint tangentMissingCount,
+    jstring tangentFallbackReason,
     jfloat metallicFactor,
     jfloat roughnessFactor,
     jfloat normalScale,
@@ -625,12 +646,22 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetPb
     const char* pbrChars = env->GetStringUTFChars(pbrMapsStatus, nullptr);
     const char* mrChars = env->GetStringUTFChars(metallicRoughnessStatus, nullptr);
     const char* normalChars = env->GetStringUTFChars(normalMapStatus, nullptr);
+    const char* normalAppliedChars = env->GetStringUTFChars(normalMapAppliedStatus, nullptr);
     const char* aoChars = env->GetStringUTFChars(occlusionMapStatus, nullptr);
+    const char* tangentStatusChars = env->GetStringUTFChars(tangentStatus, nullptr);
+    const char* tangentSourceChars = env->GetStringUTFChars(tangentSource, nullptr);
+    const char* tangentFallbackChars = env->GetStringUTFChars(tangentFallbackReason, nullptr);
     const char* diagChars = env->GetStringUTFChars(materialSlotDiagnostics, nullptr);
     renderer->model.pbrMapsStatus = pbrChars ? pbrChars : "missing";
     renderer->model.metallicRoughnessStatus = mrChars ? mrChars : "missing";
     renderer->model.normalMapStatus = normalChars ? normalChars : "missing";
+    renderer->model.normalMapAppliedStatus = normalAppliedChars ? normalAppliedChars : "missing";
     renderer->model.occlusionMapStatus = aoChars ? aoChars : "missing";
+    renderer->model.tangentStatus = tangentStatusChars ? tangentStatusChars : "missing_or_blocked";
+    renderer->model.tangentSource = tangentSourceChars ? tangentSourceChars : "missing";
+    renderer->model.tangentGeneratedCount = (uint32_t)std::max(0, (int)tangentGeneratedCount);
+    renderer->model.tangentMissingCount = (uint32_t)std::max(0, (int)tangentMissingCount);
+    renderer->model.tangentFallbackReason = tangentFallbackChars ? tangentFallbackChars : "not_loaded";
     renderer->model.metallicFactor = metallicFactor;
     renderer->model.roughnessFactor = roughnessFactor;
     renderer->model.normalScale = normalScale;
@@ -645,6 +676,10 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetPb
     if (pbrChars) env->ReleaseStringUTFChars(pbrMapsStatus, pbrChars);
     if (mrChars) env->ReleaseStringUTFChars(metallicRoughnessStatus, mrChars);
     if (normalChars) env->ReleaseStringUTFChars(normalMapStatus, normalChars);
+    if (normalAppliedChars) env->ReleaseStringUTFChars(normalMapAppliedStatus, normalAppliedChars);
     if (aoChars) env->ReleaseStringUTFChars(occlusionMapStatus, aoChars);
+    if (tangentStatusChars) env->ReleaseStringUTFChars(tangentStatus, tangentStatusChars);
+    if (tangentSourceChars) env->ReleaseStringUTFChars(tangentSource, tangentSourceChars);
+    if (tangentFallbackChars) env->ReleaseStringUTFChars(tangentFallbackReason, tangentFallbackChars);
     if (diagChars) env->ReleaseStringUTFChars(materialSlotDiagnostics, diagChars);
 }

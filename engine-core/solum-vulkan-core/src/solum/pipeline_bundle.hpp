@@ -58,7 +58,7 @@ struct PipelineBundle {
         binding.binding = 0;
         binding.stride = sizeof(Vertex3D);
         binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        VkVertexInputAttributeDescription attrs[4]{};
+        VkVertexInputAttributeDescription attrs[5]{};
         attrs[0].location = 0;
         attrs[0].binding = 0;
         attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -75,10 +75,14 @@ struct PipelineBundle {
         attrs[3].binding = 0;
         attrs[3].format = VK_FORMAT_R32G32B32_SFLOAT;
         attrs[3].offset = offsetof(Vertex3D, r);
+        attrs[4].location = 4;
+        attrs[4].binding = 0;
+        attrs[4].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        attrs[4].offset = offsetof(Vertex3D, tx);
         VkPipelineVertexInputStateCreateInfo vertexInput{ VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
         vertexInput.vertexBindingDescriptionCount = 1;
         vertexInput.pVertexBindingDescriptions = &binding;
-        vertexInput.vertexAttributeDescriptionCount = 4;
+        vertexInput.vertexAttributeDescriptionCount = 5;
         vertexInput.pVertexAttributeDescriptions = attrs;
 
         VkPipelineInputAssemblyStateCreateInfo assembly{ VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };

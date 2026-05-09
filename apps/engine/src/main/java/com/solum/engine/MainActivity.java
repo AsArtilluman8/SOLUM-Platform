@@ -1013,13 +1013,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 debugZipPath = result.path;
                 debugZipReason = result.reason;
                 debugZipIncludedFiles = result.includedFiles;
-                exportEngineDiagnostics("debug_zip_final");
             } catch (Throwable t) {
                 debugZipStatus = "failed";
                 debugZipReason = shortThrowable(t);
                 writeCrashReport("debug_zip_export_failed", t);
             }
             try { if (nativeLoaded && nativeHandle != 0L) nativeUpdateUiDiagnostics(nativeHandle, fpsCurrent, frameTimeMs, debugZipStatus, debugZipPath, debugZipIncludedFiles, debugZipReason); } catch (Throwable ignored) { }
+            exportEngineDiagnostics("debug_zip_final");
             if (debugZipButton != null) {
                 debugZipButton.setText("ok".equals(debugZipStatus) ? "Debug ZIP OK" : "Debug ZIP Failed");
                 debugZipButton.setEnabled(true);
@@ -1388,12 +1388,46 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private String jsonArrayField(String json, String key, String fallback) {
-        String marker = "\"" + key + "\":[";
+        String marker = "\"" + key + "\":";
         int start = json.indexOf(marker);
         if (start < 0) return fallback;
-        start += marker.length() - 1;
-        int end = json.indexOf(']', start);
+        start += marker.length();
+        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
+        if (start >= json.length() || json.charAt(start) != '[') return fallback;
+        int end = findJsonArrayEnd(json, start);
         return end > start ? json.substring(start, end + 1) : fallback;
+    }
+
+    private int findJsonArrayEnd(String json, int start) {
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+        for (int i = start; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (c == '"') {
+                inString = true;
+                continue;
+            }
+            if (c == '[') {
+                depth++;
+                continue;
+            }
+            if (c == ']') {
+                depth--;
+                if (depth == 0) return i;
+            }
+        }
+        return -1;
     }
 
     private ExportResult openDiagnosticsWriters() throws Exception {

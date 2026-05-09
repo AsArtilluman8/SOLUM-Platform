@@ -2,6 +2,33 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P10 — Lighting Foundation + Simple Material Response + Debug Views
+
+Scope:
+
+- Scene07 Lighting Foundation Lab.
+- Directional sun light and ambient light foundation.
+- Light presets: Studio, Outdoor, Soft Preview.
+- Simple shader material response using baseColor, AO, metallic, roughness, diffuse, and specular approximation.
+- Material debug views: Final Shaded, BaseColor, AO, Metallic, Roughness, PBR Status.
+- Tone mapping foundation with `none`, `reinhard`, and `aces_lite`.
+- Diagnostics add lighting, material response, debug view, tone mapping, PBR map, FPS/frame time, and Debug ZIP fields.
+- Scene06 ToyCar multi-primitive/PBR map foundation is preserved.
+
+Out of scope:
+
+- shadows;
+- IBL/reflections;
+- tangent generation / real normal map response;
+- alpha/glass/clearcoat/transmission;
+- skeletal animation.
+
+Next:
+
+```text
+P11 — Tangent Generation + Normal Map Real Support
+```
+
 ## Patch P08B — Diagnostics FPS + Debug ZIP Completeness Fix
 
 Scope:

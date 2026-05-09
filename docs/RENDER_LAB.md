@@ -2,6 +2,73 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene07 Lighting Foundation Lab
+
+P10 scene id:
+
+```text
+scene07_lighting_foundation_lab
+```
+
+Runtime status text:
+
+```text
+Render Lab: Scene07 Lighting Foundation Lab
+Lighting status: ok
+Light preset: Studio / Outdoor / Soft Preview
+Material response status: foundation_simple_lit
+Active debug view: Final Shaded / BaseColor / AO / Metallic / Roughness / PBR Status
+Next: Tangent Generation + Normal Map Real Support
+```
+
+Scene07 preserves Scene06 multi-primitive/PBR map foundation and adds a simple, honest lighting/material response layer. It is not full PBR.
+
+Required P10 diagnostics:
+
+```text
+currentScene = scene07_lighting_foundation_lab
+renderLab.currentLabScene = scene07_lighting_foundation_lab
+renderLab.currentLabSceneName = Scene07 Lighting Foundation Lab
+lightingStatus
+sunDirection
+sunColor
+sunIntensity
+ambientColor
+ambientIntensity
+lightPreset
+materialResponseStatus
+toneMappingStatus
+toneMappingMode
+activeDebugView
+debugViewStatus
+pbrMapsStatus
+metallicRoughnessStatus
+normalMapStatus
+occlusionMapStatus
+drawStatus
+gpuUploadStatus
+fpsCurrent
+frameTimeMs
+debugZipStatus
+debugZipPath
+```
+
+Supported P10 foundation:
+
+- directional sun light and ambient light;
+- Studio, Outdoor, and Soft Preview presets;
+- simple diffuse plus simple specular approximation;
+- baseColor, AO, metallic, and roughness influence final shaded output;
+- material debug views for final shaded, baseColor, AO, metallic, roughness, and PBR status;
+- tone mapping foundation with `none`, `reinhard`, and `aces_lite` modes.
+
+Out of scope:
+
+- shadow maps;
+- IBL/reflections;
+- tangent-space normal map response when `TANGENT` is absent;
+- alpha/glass/clearcoat/transmission.
+
 ## Scene06 PBR Material Maps Lab
 
 P09 scene id:

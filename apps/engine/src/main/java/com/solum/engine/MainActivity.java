@@ -77,6 +77,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button assetsToggleButton;
     private Button cameraToggleButton;
     private Button debugToggleButton;
+    private Button lightPresetButton;
+    private Button sunIntensityButton;
+    private Button ambientIntensityButton;
+    private Button materialViewButton;
     private LinearLayout assetsPanel;
     private LinearLayout cameraPanel;
     private LinearLayout debugPanel;
@@ -85,6 +89,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private boolean assetsPanelVisible = true;
     private boolean cameraPanelVisible = false;
     private boolean debugPanelVisible = false;
+    private int lightPresetIndex = 0;
+    private float sunIntensity = 1.35f;
+    private float ambientIntensity = 0.34f;
+    private int activeDebugViewIndex = 0;
+    private int toneMappingModeIndex = 1;
     private File cachedReportDir = null;
     private String cachedReportDirReason = "not_resolved";
     private String lastExportStatus = "not run";
@@ -120,6 +129,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native String nativeGetStatus(long handle);
     private static native String nativeGetRenderLabState(long handle);
     private static native void nativeSetCamera(long handle, float yawDeg, float pitchDeg, float distance);
+    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode);
     private static native boolean nativeUploadModelFirstPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, float[] baseColorFactor);
     private static native boolean nativeUploadModelMultiPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, int[] rangeData, float[] materialData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, int primitiveTotal, int primitiveSkipped, int unsupportedPrimitiveCount, String reason);
     private static native boolean nativeUploadBaseColorTexture(long handle, int[] rgbaPixels, int width, int height, String textureName, String textureSource, String mimeType);
@@ -236,6 +246,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         scanModelsButton.setOnClickListener(v -> scanModelsFromButton());
         assetsPanel.addView(importGlbButton);
         assetsPanel.addView(scanModelsButton);
+        lightPresetButton = compactButton("Light: Studio");
+        lightPresetButton.setOnClickListener(v -> cycleLightPreset());
+        sunIntensityButton = compactButton("Sun: 1.35");
+        sunIntensityButton.setOnClickListener(v -> cycleSunIntensity());
+        ambientIntensityButton = compactButton("Ambient: 0.34");
+        ambientIntensityButton.setOnClickListener(v -> cycleAmbientIntensity());
+        materialViewButton = compactButton("Material: Final Shaded");
+        materialViewButton.setOnClickListener(v -> cycleMaterialView());
+        assetsPanel.addView(lightPresetButton);
+        assetsPanel.addView(sunIntensityButton);
+        assetsPanel.addView(ambientIntensityButton);
+        assetsPanel.addView(materialViewButton);
         dock.addView(assetsPanel);
         cameraPanel = new LinearLayout(this);
         cameraPanel.setOrientation(LinearLayout.VERTICAL);
@@ -325,13 +347,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override public void surfaceCreated(SurfaceHolder holder) {
         if (!nativeLoaded || nativeHandle == 0L) return;
-        try { nativeSurfaceCreated(nativeHandle, holder.getSurface(), getRuntimeReportDirPath()); attemptActiveModelGpuUpload("surface_created"); updateStatus(); exportEngineDiagnostics("surface_created"); }
+        try { nativeSurfaceCreated(nativeHandle, holder.getSurface(), getRuntimeReportDirPath()); applyLightingControls(); attemptActiveModelGpuUpload("surface_created"); updateStatus(); exportEngineDiagnostics("surface_created"); }
         catch (Throwable t) { writeCrashReport("surface_created_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: surface init failed\n" + shortThrowable(t)); }
     }
 
     @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         if (!nativeLoaded || nativeHandle == 0L) return;
-        try { nativeSurfaceChanged(nativeHandle, holder.getSurface(), width, height); attemptActiveModelGpuUpload("surface_changed"); updateStatus(); exportEngineDiagnostics("surface_changed"); }
+        try { nativeSurfaceChanged(nativeHandle, holder.getSurface(), width, height); applyLightingControls(); attemptActiveModelGpuUpload("surface_changed"); updateStatus(); exportEngineDiagnostics("surface_changed"); }
         catch (Throwable t) { writeCrashReport("surface_changed_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: surface resize failed\n" + shortThrowable(t)); }
     }
 
@@ -374,17 +396,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (fallback.isEmpty()) fallback = modelState.fallbackCubeVisible ? "on" : "off";
         if (counts.isEmpty()) counts = modelState.uploadedVertexCount + " / " + modelState.uploadedIndexCount;
         if (topHudView != null) {
-            topHudView.setText("FPS " + oneDecimal(fpsCurrent) + "  |  " + oneDecimal(frameTimeMs) + " ms  |  GPU " + gpu + "  |  Vulkan  |  Scene06 PBR Material Maps Lab");
+            topHudView.setText("FPS " + oneDecimal(fpsCurrent) + "  |  " + oneDecimal(frameTimeMs) + " ms  |  GPU " + gpu + "  |  Vulkan  |  Scene07 Lighting Foundation Lab");
         }
         int rendered = intJsonField("primitiveCountRendered", modelState.primitiveCountRendered);
         int skipped = intJsonField("primitiveCountSkipped", modelState.primitiveCountSkipped);
         int total = intJsonField("primitiveCountTotal", modelState.primitiveCountTotal);
-        return "Render Lab: Scene06 PBR Material Maps Lab"
+        return "Render Lab: Scene07 Lighting Foundation Lab"
             + "\nImport: " + importStatus
             + "\nActive model: " + (activeName.isEmpty() ? "none" : shorten(activeName, 34))
             + "\nModel render: " + draw
             + "\nPrimitives rendered/skipped/total: " + rendered + " / " + skipped + " / " + total
             + "\nMaterials used: " + intJsonField("materialSlotCountRendered", modelState.materialSlotCountRendered)
+            + "\nLighting status: " + jsonStringField(getRenderLabStateForExport(), "lightingStatus", modelState.lightingStatus)
+            + "\nLight preset: " + lightPresetName(lightPresetIndex)
+            + "\nSun intensity: " + oneDecimal(sunIntensity)
+            + "\nAmbient intensity: " + oneDecimal(ambientIntensity)
+            + "\nMaterial response status: " + jsonStringField(getRenderLabStateForExport(), "materialResponseStatus", modelState.materialResponseStatus)
+            + "\nActive debug view: " + materialDebugViewName(activeDebugViewIndex)
             + "\nBaseColor status: " + modelState.baseColorTextureStatus
             + "\nMetallicRoughness status: " + modelState.metallicRoughnessStatus
             + "\nNormal status: " + modelState.normalMapStatus
@@ -395,7 +423,96 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "\nFallback cube: " + fallback
             + "\nMesh meta: " + p.meshCount + " / " + p.primitiveCount + " / " + p.materialCount + " / " + p.textureCount
             + "\nStatus: " + status
-            + "\nNext: Lighting Foundation";
+            + "\nNext: Tangent Generation + Normal Map Real Support";
+    }
+
+    private void cycleLightPreset() {
+        lightPresetIndex = (lightPresetIndex + 1) % 3;
+        applyPresetDefaults();
+        applyLightingControls();
+        updateStatus();
+    }
+
+    private void cycleSunIntensity() {
+        if (sunIntensity < 0.8f) sunIntensity = 1.35f;
+        else if (sunIntensity < 1.4f) sunIntensity = 1.85f;
+        else if (sunIntensity < 2.0f) sunIntensity = 0.45f;
+        else sunIntensity = 1.35f;
+        applyLightingControls();
+        updateStatus();
+    }
+
+    private void cycleAmbientIntensity() {
+        if (ambientIntensity < 0.25f) ambientIntensity = 0.34f;
+        else if (ambientIntensity < 0.4f) ambientIntensity = 0.56f;
+        else if (ambientIntensity < 0.7f) ambientIntensity = 0.16f;
+        else ambientIntensity = 0.34f;
+        applyLightingControls();
+        updateStatus();
+    }
+
+    private void cycleMaterialView() {
+        activeDebugViewIndex = (activeDebugViewIndex + 1) % 6;
+        applyLightingControls();
+        updateStatus();
+    }
+
+    private void applyPresetDefaults() {
+        if (lightPresetIndex == 1) {
+            sunIntensity = 1.65f;
+            ambientIntensity = 0.28f;
+        } else if (lightPresetIndex == 2) {
+            sunIntensity = 0.86f;
+            ambientIntensity = 0.48f;
+        } else {
+            sunIntensity = 1.35f;
+            ambientIntensity = 0.34f;
+        }
+    }
+
+    private void applyLightingControls() {
+        modelState.lightingStatus = "ok";
+        modelState.lightPreset = lightPresetName(lightPresetIndex);
+        modelState.sunIntensity = sunIntensity;
+        modelState.ambientIntensity = ambientIntensity;
+        modelState.materialResponseStatus = "foundation_simple_lit";
+        modelState.toneMappingStatus = "ok";
+        modelState.toneMappingMode = toneMappingModeName(toneMappingModeIndex);
+        modelState.activeDebugView = materialDebugViewName(activeDebugViewIndex);
+        modelState.debugViewStatus = "shader_applied";
+        if (lightPresetButton != null) lightPresetButton.setText("Light: " + modelState.lightPreset);
+        if (sunIntensityButton != null) sunIntensityButton.setText("Sun: " + oneDecimal(sunIntensity));
+        if (ambientIntensityButton != null) ambientIntensityButton.setText("Ambient: " + oneDecimal(ambientIntensity));
+        if (materialViewButton != null) materialViewButton.setText("Material: " + modelState.activeDebugView);
+        try {
+            if (nativeLoaded && nativeHandle != 0L) {
+                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex);
+            }
+        } catch (Throwable t) {
+            modelState.debugViewStatus = "native_control_failed";
+            writeCrashReport("lighting_controls_failed", t);
+        }
+    }
+
+    private String lightPresetName(int index) {
+        if (index == 1) return "Outdoor";
+        if (index == 2) return "Soft Preview";
+        return "Studio";
+    }
+
+    private String materialDebugViewName(int index) {
+        if (index == 1) return "BaseColor";
+        if (index == 2) return "AO";
+        if (index == 3) return "Metallic";
+        if (index == 4) return "Roughness";
+        if (index == 5) return "PBR Status";
+        return "Final Shaded";
+    }
+
+    private String toneMappingModeName(int index) {
+        if (index == 2) return "aces_lite";
+        if (index == 0) return "none";
+        return "reinhard";
     }
 
     private void updateFpsFromUiPulse() {
@@ -1042,8 +1159,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         addDebugZipEntry(entries, missing, new File(reportDir, "asset_report.json"), true);
         File note = new File(reportDir, "debug_zip_runtime_note.txt");
         try (FileWriter w = new FileWriter(note, false)) {
-            w.write("SOLUM P09 debug zip\n");
-            w.write("Scene06 PBR Material Maps Lab\n");
+            w.write("SOLUM P10 debug zip\n");
+            w.write("Scene07 Lighting Foundation Lab\n");
             w.write("debugZipStatus=running\n");
             w.write("requiredFiles=engine_runtime_state.json,engine_diagnostics_manifest.json,model_import_state.json,asset_report.json\n");
             if (missing.isEmpty()) {
@@ -1223,7 +1340,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"diagnosticsRootStatus\": \"" + escape(result.reason) + "\",\n"
             + "  \"build\": { \"versionName\": \"" + escape(versionName) + "\", \"versionCode\": " + versionCode + " },\n"
             + "  \"backend\": { \"rendererPath\": \"Android Native Vulkan\", \"statusText\": \"" + escape(nativeStatus) + "\" },\n"
-            + "  \"currentScene\": \"scene06_pbr_material_maps_lab\",\n"
+            + "  \"currentScene\": \"scene07_lighting_foundation_lab\",\n"
             + "  \"assetImportStatus\": \"" + escape(modelState.importStatus) + "\",\n"
             + "  \"activeModelName\": \"" + escape(modelState.activeModelName()) + "\",\n"
             + "  \"activeModelPath\": \"" + escape(modelState.activeModelPath) + "\",\n"
@@ -1273,6 +1390,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"skippedPbrTextureCount\": " + jsonNumberField(renderLab, "skippedPbrTextureCount", String.valueOf(modelState.skippedPbrTextureCount)) + ",\n"
             + "  \"pbrTextureFallbackCount\": " + jsonNumberField(renderLab, "pbrTextureFallbackCount", String.valueOf(modelState.pbrTextureFallbackCount)) + ",\n"
             + "  \"materialSlotDiagnostics\": " + jsonArrayField(renderLab, "materialSlotDiagnostics", modelState.materialSlotDiagnostics) + ",\n"
+            + "  \"lightingStatus\": \"" + escape(jsonStringField(renderLab, "lightingStatus", modelState.lightingStatus)) + "\",\n"
+            + "  \"sunDirection\": " + jsonArrayField(renderLab, "sunDirection", "[" + jsonFloat(modelState.sunDirection[0]) + "," + jsonFloat(modelState.sunDirection[1]) + "," + jsonFloat(modelState.sunDirection[2]) + "]") + ",\n"
+            + "  \"sunColor\": " + jsonArrayField(renderLab, "sunColor", "[" + jsonFloat(modelState.sunColor[0]) + "," + jsonFloat(modelState.sunColor[1]) + "," + jsonFloat(modelState.sunColor[2]) + "]") + ",\n"
+            + "  \"sunIntensity\": " + jsonNumberField(renderLab, "sunIntensity", jsonFloat(modelState.sunIntensity)) + ",\n"
+            + "  \"ambientColor\": " + jsonArrayField(renderLab, "ambientColor", "[" + jsonFloat(modelState.ambientColor[0]) + "," + jsonFloat(modelState.ambientColor[1]) + "," + jsonFloat(modelState.ambientColor[2]) + "]") + ",\n"
+            + "  \"ambientIntensity\": " + jsonNumberField(renderLab, "ambientIntensity", jsonFloat(modelState.ambientIntensity)) + ",\n"
+            + "  \"lightPreset\": \"" + escape(jsonStringField(renderLab, "lightPreset", modelState.lightPreset)) + "\",\n"
+            + "  \"materialResponseStatus\": \"" + escape(jsonStringField(renderLab, "materialResponseStatus", modelState.materialResponseStatus)) + "\",\n"
+            + "  \"toneMappingStatus\": \"" + escape(jsonStringField(renderLab, "toneMappingStatus", modelState.toneMappingStatus)) + "\",\n"
+            + "  \"toneMappingMode\": \"" + escape(jsonStringField(renderLab, "toneMappingMode", modelState.toneMappingMode)) + "\",\n"
+            + "  \"activeDebugView\": \"" + escape(jsonStringField(renderLab, "activeDebugView", modelState.activeDebugView)) + "\",\n"
+            + "  \"debugViewStatus\": \"" + escape(jsonStringField(renderLab, "debugViewStatus", modelState.debugViewStatus)) + "\",\n"
             + "  \"fpsCurrent\": " + jsonFloat(fps.fpsCurrent) + ",\n"
             + "  \"frameTimeMs\": " + jsonFloat(fps.frameTimeMs) + ",\n"
             + "  \"fpsSource\": \"" + escape(fps.source) + "\",\n"
@@ -1594,6 +1723,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     + "GPU Upload / Draw: " + modelState.gpuUploadStatus + " / " + modelState.drawStatus + "\n"
                     + "BaseColor Texture: " + modelState.baseColorTextureStatus + " upload=" + modelState.textureUploadStatus + "\n"
                     + "PBR maps: " + modelState.pbrMapsStatus + " MR=" + modelState.metallicRoughnessStatus + " N=" + modelState.normalMapStatus + " AO=" + modelState.occlusionMapStatus + "\n"
+                    + "Lighting: " + modelState.lightingStatus + " preset=" + modelState.lightPreset + " sun=" + oneDecimal(modelState.sunIntensity) + " ambient=" + oneDecimal(modelState.ambientIntensity) + "\n"
+                    + "Material View: " + modelState.activeDebugView + " response=" + modelState.materialResponseStatus + "\n"
                     + "Texture size/fallback: " + modelState.textureWidth + "x" + modelState.textureHeight + " / " + (modelState.textureFallbackUsed ? "yes" : "no") + "\n"
                     + "Uploaded vertices/indices: " + modelState.uploadedVertexCount + " / " + modelState.uploadedIndexCount + "\n"
                     + "Primitives rendered/skipped/total: " + modelState.primitiveCountRendered + " / " + modelState.primitiveCountSkipped + " / " + modelState.primitiveCountTotal + "\n"
@@ -1612,10 +1743,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private String getRenderLabStateForExport() {
         if (!nativeLoaded || nativeHandle == 0L) {
-            return "{\"currentLabScene\":\"scene06_pbr_material_maps_lab\",\"currentLabSceneName\":\"Scene06 PBR Material Maps Lab\",\"status\":\"native_not_loaded\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"not_ready\",\"fpsLastStable\":0,\"frameTimeLastStableMs\":0,\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\"}";
+            return "{\"currentLabScene\":\"scene07_lighting_foundation_lab\",\"currentLabSceneName\":\"Scene07 Lighting Foundation Lab\",\"status\":\"native_not_loaded\",\"lightingStatus\":\"ok\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":1.35,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.34,\"lightPreset\":\"Studio\",\"materialResponseStatus\":\"foundation_simple_lit\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"shader_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"not_ready\",\"fpsLastStable\":0,\"frameTimeLastStableMs\":0,\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\"}";
         }
         try { return nativeGetRenderLabState(nativeHandle); }
-        catch (Throwable t) { return "{\"currentLabScene\":\"scene06_pbr_material_maps_lab\",\"currentLabSceneName\":\"Scene06 PBR Material Maps Lab\",\"status\":\"native_render_lab_state_failed\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"failed\",\"baseColorTextureStatus\":\"failed\",\"textureFallbackUsed\":true,\"modelRenderMode\":\"multi_primitive_static\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(shortThrowable(t)) + "\"}"; }
+        catch (Throwable t) { return "{\"currentLabScene\":\"scene07_lighting_foundation_lab\",\"currentLabSceneName\":\"Scene07 Lighting Foundation Lab\",\"status\":\"native_render_lab_state_failed\",\"lightingStatus\":\"failed\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":1.35,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.34,\"lightPreset\":\"Studio\",\"materialResponseStatus\":\"failed\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"failed\",\"baseColorTextureStatus\":\"failed\",\"textureFallbackUsed\":true,\"modelRenderMode\":\"multi_primitive_static\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(shortThrowable(t)) + "\"}"; }
     }
 
     private String timestampUtc() {
@@ -1688,6 +1819,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         int skippedPbrTextureCount = 0;
         int pbrTextureFallbackCount = 0;
         String materialSlotDiagnostics = "[]";
+        String lightingStatus = "ok";
+        float[] sunDirection = new float[] { -0.35f, -0.82f, -0.45f };
+        float[] sunColor = new float[] { 1.0f, 0.96f, 0.88f };
+        float sunIntensity = 1.35f;
+        float[] ambientColor = new float[] { 0.42f, 0.52f, 0.62f };
+        float ambientIntensity = 0.34f;
+        String lightPreset = "Studio";
+        String materialResponseStatus = "foundation_simple_lit";
+        String toneMappingStatus = "ok";
+        String toneMappingMode = "reinhard";
+        String activeDebugView = "Final Shaded";
+        String debugViewStatus = "shader_applied";
         boolean fallbackCubeVisible = true;
         String fallbackCubeStatus = "on";
         String textureUploadStatus = "missing";
@@ -1773,6 +1916,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"skippedPbrTextureCount\": " + skippedPbrTextureCount + ",\n"
                 + "  \"pbrTextureFallbackCount\": " + pbrTextureFallbackCount + ",\n"
                 + "  \"materialSlotDiagnostics\": " + materialSlotDiagnostics + ",\n"
+                + "  \"currentScene\": \"scene07_lighting_foundation_lab\",\n"
+                + "  \"lightingStatus\": \"" + esc(lightingStatus) + "\",\n"
+                + "  \"sunDirection\": [" + jsonFloat(sunDirection[0]) + ", " + jsonFloat(sunDirection[1]) + ", " + jsonFloat(sunDirection[2]) + "],\n"
+                + "  \"sunColor\": [" + jsonFloat(sunColor[0]) + ", " + jsonFloat(sunColor[1]) + ", " + jsonFloat(sunColor[2]) + "],\n"
+                + "  \"sunIntensity\": " + jsonFloat(sunIntensity) + ",\n"
+                + "  \"ambientColor\": [" + jsonFloat(ambientColor[0]) + ", " + jsonFloat(ambientColor[1]) + ", " + jsonFloat(ambientColor[2]) + "],\n"
+                + "  \"ambientIntensity\": " + jsonFloat(ambientIntensity) + ",\n"
+                + "  \"lightPreset\": \"" + esc(lightPreset) + "\",\n"
+                + "  \"materialResponseStatus\": \"" + esc(materialResponseStatus) + "\",\n"
+                + "  \"toneMappingStatus\": \"" + esc(toneMappingStatus) + "\",\n"
+                + "  \"toneMappingMode\": \"" + esc(toneMappingMode) + "\",\n"
+                + "  \"activeDebugView\": \"" + esc(activeDebugView) + "\",\n"
+                + "  \"debugViewStatus\": \"" + esc(debugViewStatus) + "\",\n"
                 + "  \"fallbackCubeVisible\": " + fallbackCubeVisible + ",\n"
                 + "  \"fallbackCubeStatus\": \"" + esc(fallbackCubeStatus) + "\",\n"
                 + parse.toJsonFields()

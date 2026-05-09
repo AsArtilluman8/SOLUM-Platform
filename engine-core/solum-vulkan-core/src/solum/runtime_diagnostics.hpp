@@ -95,6 +95,18 @@ struct RuntimeDiagnostics {
         f << "  \"skippedPbrTextureCount\": " << model.skippedPbrTextureCount << ",\n";
         f << "  \"pbrTextureFallbackCount\": " << model.pbrTextureFallbackCount << ",\n";
         f << "  \"materialSlotDiagnostics\": " << (model.materialSlotDiagnostics.empty() ? "[]" : model.materialSlotDiagnostics) << ",\n";
+        f << "  \"lightingStatus\": \"" << escapeJson(model.lightingStatus) << "\",\n";
+        f << "  \"sunDirection\": [" << model.sunDirection[0] << ", " << model.sunDirection[1] << ", " << model.sunDirection[2] << "],\n";
+        f << "  \"sunColor\": [" << model.sunColor[0] << ", " << model.sunColor[1] << ", " << model.sunColor[2] << "],\n";
+        f << "  \"sunIntensity\": " << model.sunIntensity << ",\n";
+        f << "  \"ambientColor\": [" << model.ambientColor[0] << ", " << model.ambientColor[1] << ", " << model.ambientColor[2] << "],\n";
+        f << "  \"ambientIntensity\": " << model.ambientIntensity << ",\n";
+        f << "  \"lightPreset\": \"" << escapeJson(model.lightPreset) << "\",\n";
+        f << "  \"materialResponseStatus\": \"" << escapeJson(model.materialResponseStatus) << "\",\n";
+        f << "  \"toneMappingStatus\": \"" << escapeJson(model.toneMappingStatus) << "\",\n";
+        f << "  \"toneMappingMode\": \"" << escapeJson(model.toneMappingMode) << "\",\n";
+        f << "  \"activeDebugView\": \"" << escapeJson(model.activeDebugView) << "\",\n";
+        f << "  \"debugViewStatus\": \"" << escapeJson(model.debugViewStatus) << "\",\n";
         f << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";
         f << "  \"fpsSource\": \"" << model.fpsSource << "\",\n";

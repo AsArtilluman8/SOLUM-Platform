@@ -1,5 +1,53 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P10 lighting/material response
+
+P10 keeps the P09 texture slot system and adds a small shader material response layer.
+
+Shader inputs used in Scene07:
+
+- baseColor texture/factor;
+- occlusion texture and `occlusionStrength`;
+- `metallicFactor`;
+- `roughnessFactor`;
+- vertex normal for simple lighting;
+- directional sun and ambient light controls.
+
+Debug views:
+
+```text
+Final Shaded
+BaseColor
+AO
+Metallic
+Roughness
+PBR Status
+```
+
+Diagnostics added:
+
+```text
+lightingStatus
+sunDirection
+sunColor
+sunIntensity
+ambientColor
+ambientIntensity
+lightPreset
+materialResponseStatus
+toneMappingStatus
+toneMappingMode
+activeDebugView
+debugViewStatus
+```
+
+Limits:
+
+- no shadows;
+- no IBL/reflections;
+- no real tangent-space normal response until tangent generation exists;
+- `normalMapStatus=blocked_no_tangent` remains the honest status for ToyCar without `TANGENT`.
+
 ## P09 PBR texture slots
 
 P09 extends the existing texture slot system. It does not create a new renderer.

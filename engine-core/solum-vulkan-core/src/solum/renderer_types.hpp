@@ -44,7 +44,36 @@ struct MaterialConstants {
     int metallicRoughnessTextureReady = 0;
     int normalTextureReady = 0;
     int occlusionTextureReady = 0;
+    float sunDirection[3] = { -0.35f, -0.82f, -0.45f };
+    float sunIntensity = 1.35f;
+    float sunColor[3] = { 1.0f, 0.96f, 0.88f };
+    float ambientIntensity = 0.34f;
+    float ambientColor[3] = { 0.42f, 0.52f, 0.62f };
+    int lightPreset = 0;
+    int activeDebugView = 0;
+    int toneMappingMode = 1;
 };
+
+inline const char* lightPresetName(int preset) {
+    if (preset == 1) return "Outdoor";
+    if (preset == 2) return "Soft Preview";
+    return "Studio";
+}
+
+inline const char* materialDebugViewName(int view) {
+    if (view == 1) return "BaseColor";
+    if (view == 2) return "AO";
+    if (view == 3) return "Metallic";
+    if (view == 4) return "Roughness";
+    if (view == 5) return "PBR Status";
+    return "Final Shaded";
+}
+
+inline const char* toneMappingModeName(int mode) {
+    if (mode == 2) return "aces_lite";
+    if (mode == 0) return "none";
+    return "reinhard";
+}
 
 struct PrimitiveDrawRange {
     uint32_t firstIndex = 0;
@@ -108,6 +137,18 @@ struct ModelRenderState {
     uint32_t skippedPbrTextureCount = 0;
     uint32_t pbrTextureFallbackCount = 0;
     std::string materialSlotDiagnostics = "[]";
+    std::string lightingStatus = "ok";
+    float sunDirection[3] = { -0.35f, -0.82f, -0.45f };
+    float sunColor[3] = { 1.0f, 0.96f, 0.88f };
+    float sunIntensity = 1.35f;
+    float ambientColor[3] = { 0.42f, 0.52f, 0.62f };
+    float ambientIntensity = 0.34f;
+    std::string lightPreset = "Studio";
+    std::string materialResponseStatus = "foundation_simple_lit";
+    std::string toneMappingStatus = "ok";
+    std::string toneMappingMode = "reinhard";
+    std::string activeDebugView = "Final Shaded";
+    std::string debugViewStatus = "shader_applied";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;
     const char* fpsSource = "java_ui_frame_delta";

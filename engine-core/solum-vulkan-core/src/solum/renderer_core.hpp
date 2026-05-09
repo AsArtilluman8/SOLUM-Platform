@@ -112,6 +112,23 @@ struct RendererCore {
 
     void setOutputRoot(const std::string& root) { outputRoot = root; diagnostics.outputRoot = root; }
 
+    void syncLightingModelState() {
+        for (int i = 0; i < 3; ++i) {
+            model.sunDirection[i] = material.sunDirection[i];
+            model.sunColor[i] = material.sunColor[i];
+            model.ambientColor[i] = material.ambientColor[i];
+        }
+        model.sunIntensity = material.sunIntensity;
+        model.ambientIntensity = material.ambientIntensity;
+        model.lightPreset = lightPresetName(material.lightPreset);
+        model.toneMappingMode = toneMappingModeName(material.toneMappingMode);
+        model.activeDebugView = materialDebugViewName(material.activeDebugView);
+        model.lightingStatus = "ok";
+        model.materialResponseStatus = "foundation_simple_lit";
+        model.toneMappingStatus = "ok";
+        model.debugViewStatus = "shader_applied";
+    }
+
     void syncDiagnostics() {
         diagnostics.gpuName = diagnostics.gpuName.empty() ? "unknown" : diagnostics.gpuName;
         diagnostics.swapchainFormat = swapchainFormat;
@@ -160,6 +177,44 @@ struct RendererCore {
         material.metallicRoughnessTextureReady = (!materialTextureSets.empty() && materialTextureSets[0].metallicRoughnessUploaded) ? 1 : 0;
         material.normalTextureReady = (!materialTextureSets.empty() && materialTextureSets[0].normalUploaded) ? 1 : 0;
         material.occlusionTextureReady = (!materialTextureSets.empty() && materialTextureSets[0].occlusionUploaded) ? 1 : 0;
+    }
+
+    void applyLightPreset(int preset) {
+        material.lightPreset = ((preset % 3) + 3) % 3;
+        if (material.lightPreset == 1) {
+            material.sunDirection[0] = -0.42f; material.sunDirection[1] = -0.72f; material.sunDirection[2] = -0.55f;
+            material.sunColor[0] = 1.0f; material.sunColor[1] = 0.92f; material.sunColor[2] = 0.78f;
+            material.sunIntensity = 1.65f;
+            material.ambientColor[0] = 0.44f; material.ambientColor[1] = 0.55f; material.ambientColor[2] = 0.72f;
+            material.ambientIntensity = 0.28f;
+        } else if (material.lightPreset == 2) {
+            material.sunDirection[0] = -0.25f; material.sunDirection[1] = -0.88f; material.sunDirection[2] = -0.32f;
+            material.sunColor[0] = 0.92f; material.sunColor[1] = 0.96f; material.sunColor[2] = 1.0f;
+            material.sunIntensity = 0.86f;
+            material.ambientColor[0] = 0.62f; material.ambientColor[1] = 0.68f; material.ambientColor[2] = 0.76f;
+            material.ambientIntensity = 0.48f;
+        } else {
+            material.sunDirection[0] = -0.35f; material.sunDirection[1] = -0.82f; material.sunDirection[2] = -0.45f;
+            material.sunColor[0] = 1.0f; material.sunColor[1] = 0.96f; material.sunColor[2] = 0.88f;
+            material.sunIntensity = 1.35f;
+            material.ambientColor[0] = 0.42f; material.ambientColor[1] = 0.52f; material.ambientColor[2] = 0.62f;
+            material.ambientIntensity = 0.34f;
+        }
+        syncLightingModelState();
+    }
+
+    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode) {
+        applyLightPreset(lightPreset);
+        material.sunIntensity = clampFloat(sunIntensity, 0.0f, 3.0f);
+        material.ambientIntensity = clampFloat(ambientIntensity, 0.0f, 1.5f);
+        material.activeDebugView = ((activeDebugView % 6) + 6) % 6;
+        material.toneMappingMode = ((toneMappingMode % 3) + 3) % 3;
+        syncLightingModelState();
+        const bool ok = renderOneFrame();
+        syncDiagnostics();
+        diagnostics.write(ok ? "valid" : diagnostics.status, ok ? "Scene07 lighting/material controls updated." : diagnostics.reason);
+        updateReadyStatus();
+        return ok;
     }
 
     void fail(const std::string& reason) {
@@ -493,7 +548,8 @@ struct RendererCore {
     }
 
     void updateReadyStatus() {
-        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene06 PBR Material Maps Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nModel render: " + model.drawStatus + "\nPrimitives rendered/skipped/total: " + std::to_string(model.primitiveCountRendered) + " / " + std::to_string(model.primitiveCountSkipped) + " / " + std::to_string(model.primitiveCountTotal) + "\nMaterials used: " + std::to_string(model.materialSlotCountRendered) + "\nBaseColor status: " + model.baseColorTextureStatus + "\nMetallicRoughness status: " + model.metallicRoughnessStatus + "\nNormal status: " + model.normalMapStatus + "\nAO status: " + model.occlusionMapStatus + "\nPBR textures uploaded/fallback/skipped: " + std::to_string(model.uploadedPbrTextureCount) + " / " + std::to_string(model.pbrTextureFallbackCount) + " / " + std::to_string(model.skippedPbrTextureCount) + "\nFPS/frameMs: " + std::to_string(model.fpsCurrent) + " / " + std::to_string(model.frameTimeMs) + "\nDebug ZIP: " + model.debugZipStatus + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nTexture size: " + std::to_string(model.textureWidth) + "x" + std::to_string(model.textureHeight) + "\nFallback texture: " + std::string(model.textureFallbackUsed ? "yes" : "no") + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: Lighting Foundation";
+        syncLightingModelState();
+        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene07 Lighting Foundation Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nModel render: " + model.drawStatus + "\nPrimitives rendered/skipped/total: " + std::to_string(model.primitiveCountRendered) + " / " + std::to_string(model.primitiveCountSkipped) + " / " + std::to_string(model.primitiveCountTotal) + "\nMaterials used: " + std::to_string(model.materialSlotCountRendered) + "\nLighting status: " + model.lightingStatus + "\nLight preset: " + model.lightPreset + "\nSun intensity: " + std::to_string(model.sunIntensity) + "\nAmbient intensity: " + std::to_string(model.ambientIntensity) + "\nMaterial response status: " + model.materialResponseStatus + "\nActive debug view: " + model.activeDebugView + "\nBaseColor status: " + model.baseColorTextureStatus + "\nMetallicRoughness status: " + model.metallicRoughnessStatus + "\nNormal status: " + model.normalMapStatus + "\nAO status: " + model.occlusionMapStatus + "\nPBR textures uploaded/fallback/skipped: " + std::to_string(model.uploadedPbrTextureCount) + " / " + std::to_string(model.pbrTextureFallbackCount) + " / " + std::to_string(model.skippedPbrTextureCount) + "\nFPS/frameMs: " + std::to_string(model.fpsCurrent) + " / " + std::to_string(model.frameTimeMs) + "\nDebug ZIP: " + model.debugZipStatus + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nTexture size: " + std::to_string(model.textureWidth) + "x" + std::to_string(model.textureHeight) + "\nFallback texture: " + std::string(model.textureFallbackUsed ? "yes" : "no") + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: Tangent Generation + Normal Map Real Support";
     }
 
     bool setCamera(float yawDeg, float pitchDeg, float distance, bool controlsActive) {
@@ -555,6 +611,7 @@ struct RendererCore {
         PushConstants pc{};
         pc.mvp = buildMvp();
         pc.material = material;
+        syncLightingModelState();
         pushConstantsReady = true;
         materialConstantsReady = true;
         meshAttributeLayoutReady = sizeof(Vertex3D) == 44;
@@ -727,7 +784,7 @@ struct RendererCore {
             return false;
         }
         syncDiagnostics();
-        diagnostics.write("valid", "Scene04 Texture Binding Lab uploaded and drew first primitive.");
+        diagnostics.write("valid", "Scene07 Lighting Foundation Lab uploaded and drew first primitive.");
         updateReadyStatus();
         return true;
     }
@@ -829,7 +886,7 @@ struct RendererCore {
             return false;
         }
         syncDiagnostics();
-        diagnostics.write("valid", "Scene05 Multi Primitive Render Lab uploaded and drew supported primitives.");
+        diagnostics.write("valid", "Scene07 Lighting Foundation Lab uploaded and drew supported primitives.");
         updateReadyStatus();
         return true;
     }
@@ -1065,6 +1122,7 @@ struct RendererCore {
         if (!createDevice()) return false;
         if (!createSwapchain(width, height)) return false;
         if (!createRendererResources()) return false;
+        applyLightPreset(0);
         if (!renderOneFrame()) return false;
         cameraControlsReady = true;
         rendererCoreReady = true;
@@ -1078,7 +1136,7 @@ struct RendererCore {
         model.textureFallbackUsed = true;
         model.reason = "no active model";
         syncDiagnostics();
-        diagnostics.write("valid", "Scene05 Multi Primitive Render Lab initialized with cube fallback while waiting for active model upload.");
+        diagnostics.write("valid", "Scene07 Lighting Foundation Lab initialized with cube fallback while waiting for active model upload.");
         updateReadyStatus();
         return true;
     }

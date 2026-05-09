@@ -64,6 +64,21 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetCa
     renderer->setCamera(yawDeg, pitchDeg, distance, true);
 }
 
+extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetLightingControls(
+    JNIEnv*,
+    jclass,
+    jlong handle,
+    jint lightPreset,
+    jfloat sunIntensity,
+    jfloat ambientIntensity,
+    jint activeDebugView,
+    jint toneMappingMode
+) {
+    auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
+    if (!renderer) return;
+    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode);
+}
+
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdateUiDiagnostics(
     JNIEnv* env,
     jclass,
@@ -97,7 +112,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdat
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) {
-        return env->NewStringUTF("{\"currentLabScene\":\"scene06_pbr_material_maps_lab\",\"currentLabSceneName\":\"Scene06 PBR Material Maps Lab\",\"status\":\"native_handle_missing\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
+        return env->NewStringUTF("{\"currentLabScene\":\"scene07_lighting_foundation_lab\",\"currentLabSceneName\":\"Scene07 Lighting Foundation Lab\",\"status\":\"native_handle_missing\",\"lightingStatus\":\"failed\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":1.35,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.34,\"lightPreset\":\"Studio\",\"materialResponseStatus\":\"missing\",\"toneMappingStatus\":\"missing\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
     }
     std::string json = std::string("{\"currentLabScene\":\"") + renderer->diagnostics.renderLab.sceneId()
         + "\",\"currentLabSceneName\":\"" + renderer->diagnostics.renderLab.sceneName()
@@ -150,6 +165,18 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"skippedPbrTextureCount\":" + std::to_string(renderer->model.skippedPbrTextureCount)
         + ",\"pbrTextureFallbackCount\":" + std::to_string(renderer->model.pbrTextureFallbackCount)
         + ",\"materialSlotDiagnostics\":" + (renderer->model.materialSlotDiagnostics.empty() ? "[]" : renderer->model.materialSlotDiagnostics)
+        + ",\"lightingStatus\":\"" + solum::escapeJson(renderer->model.lightingStatus) + "\""
+        + ",\"sunDirection\":[" + std::to_string(renderer->model.sunDirection[0]) + "," + std::to_string(renderer->model.sunDirection[1]) + "," + std::to_string(renderer->model.sunDirection[2]) + "]"
+        + ",\"sunColor\":[" + std::to_string(renderer->model.sunColor[0]) + "," + std::to_string(renderer->model.sunColor[1]) + "," + std::to_string(renderer->model.sunColor[2]) + "]"
+        + ",\"sunIntensity\":" + std::to_string(renderer->model.sunIntensity)
+        + ",\"ambientColor\":[" + std::to_string(renderer->model.ambientColor[0]) + "," + std::to_string(renderer->model.ambientColor[1]) + "," + std::to_string(renderer->model.ambientColor[2]) + "]"
+        + ",\"ambientIntensity\":" + std::to_string(renderer->model.ambientIntensity)
+        + ",\"lightPreset\":\"" + solum::escapeJson(renderer->model.lightPreset) + "\""
+        + ",\"materialResponseStatus\":\"" + solum::escapeJson(renderer->model.materialResponseStatus) + "\""
+        + ",\"toneMappingStatus\":\"" + solum::escapeJson(renderer->model.toneMappingStatus) + "\""
+        + ",\"toneMappingMode\":\"" + solum::escapeJson(renderer->model.toneMappingMode) + "\""
+        + ",\"activeDebugView\":\"" + solum::escapeJson(renderer->model.activeDebugView) + "\""
+        + ",\"debugViewStatus\":\"" + solum::escapeJson(renderer->model.debugViewStatus) + "\""
         + ",\"fpsCurrent\":" + std::to_string(renderer->model.fpsCurrent)
         + ",\"frameTimeMs\":" + std::to_string(renderer->model.frameTimeMs)
         + ",\"fpsSource\":\"" + renderer->model.fpsSource + "\""

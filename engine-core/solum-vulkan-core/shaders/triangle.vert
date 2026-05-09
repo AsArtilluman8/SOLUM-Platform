@@ -22,9 +22,11 @@ layout(location = 2) in vec2 inTexcoord0;
 layout(location = 3) in vec3 inColor;
 layout(location = 0) out vec3 outColor;
 layout(location = 1) out vec2 outTexcoord0;
+layout(location = 2) out vec3 outNormal;
 
 void main() {
     outColor = inColor;
     outTexcoord0 = inTexcoord0;
+    outNormal = normalize(inNormal);
     gl_Position = pc.mvp * vec4(inPosition, 1.0);
 }

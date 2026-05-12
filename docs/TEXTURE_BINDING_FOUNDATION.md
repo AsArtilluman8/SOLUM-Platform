@@ -1,5 +1,61 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P12 BRDF material response foundation
+
+P12 keeps the P11 texture/tangent foundation and upgrades direct material response before IBL/reflections.
+
+Shader inputs used in Scene09:
+
+- baseColor texture/factor;
+- metallicRoughness texture/factors;
+- occlusion texture and `occlusionStrength`;
+- normal texture and `normalScale` when tangent data is available;
+- direct sun, ambient floor, exposure, and tone mapping;
+- Fresnel Schlick with dielectric `F0 = 0.04` and metallic `F0 = baseColor`.
+
+Debug views:
+
+```text
+Final Shaded
+BaseColor
+AO
+Metallic
+Roughness
+Normal
+NdotL
+Diffuse
+Specular
+F0
+BRDF Status
+```
+
+Diagnostics added:
+
+```text
+brdfStatus
+brdfMode
+diffuseStatus
+specularStatus
+fresnelStatus
+f0Status
+metallicResponseStatus
+roughnessResponseStatus
+directLightingStatus
+pbrQualityTier
+brdfPerformanceStatus
+diffuseDebugViewStatus
+specularDebugViewStatus
+f0DebugViewStatus
+brdfStatusDebugViewStatus
+```
+
+Limits:
+
+- no shadows;
+- no IBL/reflections;
+- no glass/clearcoat/transmission;
+- no skeletal animation.
+
 ## P11 tangent normal exposure foundation
 
 P11 keeps the P10 lighting/material response and changes normal maps from blocked metadata to real shader input when tangent data exists.

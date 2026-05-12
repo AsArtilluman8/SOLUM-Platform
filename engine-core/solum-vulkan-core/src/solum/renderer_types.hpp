@@ -71,7 +71,10 @@ inline const char* materialDebugViewName(int view) {
     if (view == 4) return "Roughness";
     if (view == 5) return "Normal";
     if (view == 6) return "NdotL";
-    if (view == 7) return "PBR Status";
+    if (view == 7) return "Diffuse";
+    if (view == 8) return "Specular";
+    if (view == 9) return "F0";
+    if (view == 10) return "BRDF Status";
     return "Final Shaded";
 }
 
@@ -166,7 +169,18 @@ struct ModelRenderState {
     float ambientColor[3] = { 0.42f, 0.52f, 0.62f };
     float ambientIntensity = 0.46f;
     std::string lightPreset = "Studio";
-    std::string materialResponseStatus = "foundation_simple_lit";
+    std::string brdfStatus = "ok";
+    std::string brdfMode = "direct_lighting_schlick_mobile";
+    std::string diffuseStatus = "ok_non_metal_diffuse";
+    std::string specularStatus = "ok_roughness_controlled";
+    std::string fresnelStatus = "ok_schlick";
+    std::string f0Status = "ok_dielectric_0_04_metal_base_color";
+    std::string metallicResponseStatus = "ok_diffuse_reduced_f0_tinted";
+    std::string roughnessResponseStatus = "ok_highlight_width_intensity";
+    std::string directLightingStatus = "ok_single_sun_direct";
+    std::string materialResponseStatus = "brdf_direct_lit";
+    std::string pbrQualityTier = "mobile_direct_lighting";
+    std::string brdfPerformanceStatus = "ok_mobile_friendly_direct_lighting";
     std::string toneMappingStatus = "ok";
     std::string toneMappingMode = "reinhard";
     std::string exposureStatus = "ok";
@@ -177,6 +191,10 @@ struct ModelRenderState {
     std::string debugViewStatus = "shader_applied";
     std::string normalDebugViewStatus = "shader_applied";
     std::string ndotlDebugViewStatus = "shader_applied";
+    std::string diffuseDebugViewStatus = "shader_applied";
+    std::string specularDebugViewStatus = "shader_applied";
+    std::string f0DebugViewStatus = "shader_applied";
+    std::string brdfStatusDebugViewStatus = "shader_applied";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;
     float fpsLastStable = 0.0f;

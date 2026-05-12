@@ -127,12 +127,27 @@ struct RendererCore {
         model.ambientFloor = material.ambientFloor;
         model.brightnessPreset = brightnessPresetName(material.brightnessPreset);
         model.lightingStatus = "ok";
-        model.materialResponseStatus = "foundation_simple_lit";
+        model.brdfStatus = "ok";
+        model.brdfMode = "direct_lighting_schlick_mobile";
+        model.diffuseStatus = "ok_non_metal_diffuse";
+        model.specularStatus = "ok_roughness_controlled";
+        model.fresnelStatus = "ok_schlick";
+        model.f0Status = "ok_dielectric_0_04_metal_base_color";
+        model.metallicResponseStatus = "ok_diffuse_reduced_f0_tinted";
+        model.roughnessResponseStatus = "ok_highlight_width_intensity";
+        model.directLightingStatus = "ok_single_sun_direct";
+        model.materialResponseStatus = "brdf_direct_lit";
+        model.pbrQualityTier = "mobile_direct_lighting";
+        model.brdfPerformanceStatus = "ok_mobile_friendly_direct_lighting";
         model.toneMappingStatus = "ok";
         model.debugViewStatus = "shader_applied";
         model.exposureStatus = "ok";
         model.normalDebugViewStatus = "shader_applied";
         model.ndotlDebugViewStatus = "shader_applied";
+        model.diffuseDebugViewStatus = "shader_applied";
+        model.specularDebugViewStatus = "shader_applied";
+        model.f0DebugViewStatus = "shader_applied";
+        model.brdfStatusDebugViewStatus = "shader_applied";
     }
 
     void syncDiagnostics() {
@@ -222,7 +237,7 @@ struct RendererCore {
         applyLightPreset(lightPreset);
         material.sunIntensity = clampFloat(sunIntensity, 0.0f, 3.0f);
         material.ambientIntensity = clampFloat(ambientIntensity, 0.0f, 1.5f);
-        material.activeDebugView = ((activeDebugView % 8) + 8) % 8;
+        material.activeDebugView = ((activeDebugView % 11) + 11) % 11;
         material.toneMappingMode = ((toneMappingMode % 3) + 3) % 3;
         material.exposureValue = clampFloat(exposureValue, 0.45f, 2.2f);
         material.ambientFloor = clampFloat(ambientFloor, 0.0f, 0.35f);
@@ -230,7 +245,7 @@ struct RendererCore {
         syncLightingModelState();
         const bool ok = renderOneFrame();
         syncDiagnostics();
-        diagnostics.write(ok ? "valid" : diagnostics.status, ok ? "Scene08 lighting/material controls updated." : diagnostics.reason);
+        diagnostics.write(ok ? "valid" : diagnostics.status, ok ? "Scene09 BRDF lighting/material controls updated." : diagnostics.reason);
         updateReadyStatus();
         return ok;
     }
@@ -567,7 +582,7 @@ struct RendererCore {
 
     void updateReadyStatus() {
         syncLightingModelState();
-        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene08 Tangent Normal Exposure Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nModel render: " + model.drawStatus + "\nPrimitives rendered/skipped/total: " + std::to_string(model.primitiveCountRendered) + " / " + std::to_string(model.primitiveCountSkipped) + " / " + std::to_string(model.primitiveCountTotal) + "\nMaterials used: " + std::to_string(model.materialSlotCountRendered) + "\nLighting status: " + model.lightingStatus + "\nLight preset: " + model.lightPreset + "\nSun intensity: " + std::to_string(model.sunIntensity) + "\nAmbient intensity: " + std::to_string(model.ambientIntensity) + "\nExposure: " + std::to_string(model.exposureValue) + " " + model.brightnessPreset + "\nMaterial response status: " + model.materialResponseStatus + "\nActive debug view: " + model.activeDebugView + "\nBaseColor status: " + model.baseColorTextureStatus + "\nMetallicRoughness status: " + model.metallicRoughnessStatus + "\nTangent status: " + model.tangentStatus + "\nNormal status: " + model.normalMapStatus + " applied=" + model.normalMapAppliedStatus + "\nAO status: " + model.occlusionMapStatus + "\nPBR textures uploaded/fallback/skipped: " + std::to_string(model.uploadedPbrTextureCount) + " / " + std::to_string(model.pbrTextureFallbackCount) + " / " + std::to_string(model.skippedPbrTextureCount) + "\nFPS/frameMs: " + std::to_string(model.fpsCurrent) + " / " + std::to_string(model.frameTimeMs) + "\nDebug ZIP: " + model.debugZipStatus + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nTexture size: " + std::to_string(model.textureWidth) + "x" + std::to_string(model.textureHeight) + "\nFallback texture: " + std::string(model.textureFallbackUsed ? "yes" : "no") + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: PBR lighting refinement";
+        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene09 BRDF Material Response Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nModel render: " + model.drawStatus + "\nPrimitives rendered/skipped/total: " + std::to_string(model.primitiveCountRendered) + " / " + std::to_string(model.primitiveCountSkipped) + " / " + std::to_string(model.primitiveCountTotal) + "\nMaterials used: " + std::to_string(model.materialSlotCountRendered) + "\nLighting status: " + model.lightingStatus + "\nBRDF status: " + model.brdfStatus + "\nSpecular status: " + model.specularStatus + "\nFresnel status: " + model.fresnelStatus + "\nF0 status: " + model.f0Status + "\nLight preset: " + model.lightPreset + "\nSun intensity: " + std::to_string(model.sunIntensity) + "\nAmbient intensity: " + std::to_string(model.ambientIntensity) + "\nExposure: " + std::to_string(model.exposureValue) + " " + model.brightnessPreset + "\nMaterial response status: " + model.materialResponseStatus + "\nActive debug view: " + model.activeDebugView + "\nBaseColor status: " + model.baseColorTextureStatus + "\nMetallicRoughness status: " + model.metallicRoughnessStatus + "\nTangent status: " + model.tangentStatus + "\nNormal status: " + model.normalMapStatus + " applied=" + model.normalMapAppliedStatus + "\nAO status: " + model.occlusionMapStatus + "\nPBR textures uploaded/fallback/skipped: " + std::to_string(model.uploadedPbrTextureCount) + " / " + std::to_string(model.pbrTextureFallbackCount) + " / " + std::to_string(model.skippedPbrTextureCount) + "\nFPS/frameMs: " + std::to_string(model.fpsCurrent) + " / " + std::to_string(model.frameTimeMs) + "\nDebug ZIP: " + model.debugZipStatus + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nTexture size: " + std::to_string(model.textureWidth) + "x" + std::to_string(model.textureHeight) + "\nFallback texture: " + std::string(model.textureFallbackUsed ? "yes" : "no") + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: IBL/reflections later";
     }
 
     bool setCamera(float yawDeg, float pitchDeg, float distance, bool controlsActive) {
@@ -802,7 +817,7 @@ struct RendererCore {
             return false;
         }
         syncDiagnostics();
-        diagnostics.write("valid", "Scene08 Tangent Normal Exposure Lab uploaded and drew first primitive.");
+        diagnostics.write("valid", "Scene09 BRDF Material Response Lab uploaded and drew first primitive.");
         updateReadyStatus();
         return true;
     }
@@ -904,7 +919,7 @@ struct RendererCore {
             return false;
         }
         syncDiagnostics();
-        diagnostics.write("valid", "Scene08 Tangent Normal Exposure Lab uploaded and drew supported primitives.");
+        diagnostics.write("valid", "Scene09 BRDF Material Response Lab uploaded and drew supported primitives.");
         updateReadyStatus();
         return true;
     }
@@ -1155,7 +1170,7 @@ struct RendererCore {
         model.textureFallbackUsed = true;
         model.reason = "no active model";
         syncDiagnostics();
-        diagnostics.write("valid", "Scene08 Tangent Normal Exposure Lab initialized with cube fallback while waiting for active model upload.");
+        diagnostics.write("valid", "Scene09 BRDF Material Response Lab initialized with cube fallback while waiting for active model upload.");
         updateReadyStatus();
         return true;
     }

@@ -2,6 +2,73 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene09 BRDF Material Response Lab
+
+P12 scene id:
+
+```text
+scene09_brdf_material_response_lab
+```
+
+Runtime status text:
+
+```text
+Render Lab: Scene09 BRDF Material Response Lab
+Material response status: brdf_direct_lit
+BRDF status: ok
+Active debug view: Final Shaded / BaseColor / AO / Metallic / Roughness / Normal / NdotL / Diffuse / Specular / F0 / BRDF Status
+```
+
+Scene09 preserves Scene08 model draw, multi-primitive materials, normal-map support, camera controls, Debug ZIP, and live FPS while upgrading direct material response before IBL/reflections.
+
+Required P12 diagnostics:
+
+```text
+currentScene = scene09_brdf_material_response_lab
+renderLab.currentLabScene = scene09_brdf_material_response_lab
+renderLab.currentLabSceneName = Scene09 BRDF Material Response Lab
+brdfStatus
+brdfMode
+diffuseStatus
+specularStatus
+fresnelStatus
+f0Status
+metallicResponseStatus
+roughnessResponseStatus
+directLightingStatus
+materialResponseStatus = brdf_direct_lit
+pbrQualityTier = mobile_direct_lighting
+brdfPerformanceStatus
+activeDebugView
+debugViewStatus
+diffuseDebugViewStatus
+specularDebugViewStatus
+f0DebugViewStatus
+brdfStatusDebugViewStatus
+fpsStatus
+fpsUpdateMode
+framesRenderedLive
+tangentStatus
+normalMapAppliedStatus
+debugZipStatus
+debugZipPath
+```
+
+Supported P12 foundation:
+
+- direct mobile BRDF uses baseColor, AO, metallic, roughness, normal/normal map, exposure, and tone mapping;
+- Fresnel Schlick is used with `F0 = mix(0.04, baseColor, metallic)`;
+- non-metal diffuse is reduced by metallic and specular is controlled by roughness;
+- debug views expose diffuse, specular, F0, and BRDF status terms;
+- no GLB parse/upload or tangent rebuild is added to the render loop.
+
+Out of scope:
+
+- shadows / CSM;
+- IBL/reflections;
+- glass/clearcoat/transmission;
+- skeletal animation.
+
 ## Scene08 Tangent Normal Exposure Lab
 
 P11 scene id:

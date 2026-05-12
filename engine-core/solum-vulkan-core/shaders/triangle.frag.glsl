@@ -54,6 +54,11 @@ vec3 toneMap(vec3 color) {
     return clamp(color, 0.0, 1.0);
 }
 
+vec3 fresnelSchlick(float cosTheta, vec3 f0) {
+    float f = pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+    return f0 + (1.0 - f0) * f;
+}
+
 void main() {
     vec4 texel = pc.baseColorTextureReady != 0 ? texture(baseColorTexture, inTexcoord0) : vec4(1.0);
     vec4 mr = pc.metallicRoughnessTextureReady != 0 ? texture(metallicRoughnessTexture, inTexcoord0) : vec4(1.0);
@@ -99,16 +104,33 @@ void main() {
         fragColor = vec4(vec3(ndotl), pc.baseColorFactor.a * texel.a);
         return;
     }
+    vec3 specColor = mix(vec3(0.04), baseColor, metallic);
+    vec3 f0 = specColor;
+    vec3 fresnel = fresnelSchlick(max(dot(h, v), 0.0), f0);
+    vec3 diffuseTerm = baseColor * (1.0 - metallic) * (vec3(1.0) - fresnel);
+    vec3 diffuseLight = diffuseTerm * ndotl * sunColor * pc.sunIntensity;
+    float specPower = mix(96.0, 8.0, roughness);
+    float specWidth = pow(max(dot(n, h), 0.0), specPower);
+    float specEnergy = mix(1.0, 0.28, roughness);
+    vec3 specularLight = fresnel * specWidth * specEnergy * ndotl * sunColor * pc.sunIntensity;
     if (pc.activeDebugView == 7) {
-        fragColor = vec4(pc.baseColorTextureReady != 0 ? 0.1 : 0.85, pc.metallicRoughnessTextureReady != 0 ? 0.85 : 0.1, pc.occlusionTextureReady != 0 ? 0.85 : 0.1, 1.0);
+        fragColor = vec4(toneMap(diffuseLight * pc.exposureValue), pc.baseColorFactor.a * texel.a);
         return;
     }
-    float specPower = mix(96.0, 10.0, roughness);
-    float spec = pow(max(dot(n, h), 0.0), specPower) * mix(0.18, 1.0, metallic) * (1.0 - roughness * 0.55);
-    vec3 specColor = mix(vec3(0.04), baseColor, metallic);
-    vec3 diffuse = baseColor * (1.0 - metallic * 0.55) * ndotl * sunColor * pc.sunIntensity;
-    vec3 ambient = baseColor * ambientColor * max(pc.ambientIntensity, pc.ambientFloor);
-    vec3 rgb = (diffuse + ambient) * ao + specColor * spec * sunColor * pc.sunIntensity + pc.emissiveFactor;
+    if (pc.activeDebugView == 8) {
+        fragColor = vec4(toneMap(specularLight * pc.exposureValue * 3.0), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 9) {
+        fragColor = vec4(f0, pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 10) {
+        fragColor = vec4(pc.baseColorTextureReady != 0 ? 0.1 : 0.85, pc.metallicRoughnessTextureReady != 0 ? 0.85 : 0.1, pc.normalTextureReady != 0 ? 0.85 : 0.1, 1.0);
+        return;
+    }
+    vec3 ambient = baseColor * (1.0 - metallic * 0.65) * ambientColor * max(pc.ambientIntensity, pc.ambientFloor);
+    vec3 rgb = (diffuseLight + ambient) * ao + specularLight + pc.emissiveFactor;
     rgb *= pc.exposureValue;
     rgb = toneMap(rgb);
     fragColor = vec4(rgb, pc.baseColorFactor.a * texel.a);

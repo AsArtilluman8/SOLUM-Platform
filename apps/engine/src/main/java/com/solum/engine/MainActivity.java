@@ -442,12 +442,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (fallback.isEmpty()) fallback = modelState.fallbackCubeVisible ? "on" : "off";
         if (counts.isEmpty()) counts = modelState.uploadedVertexCount + " / " + modelState.uploadedIndexCount;
         if (topHudView != null) {
-            topHudView.setText("FPS " + oneDecimal(fpsCurrent) + "  |  " + oneDecimal(frameTimeMs) + " ms  |  GPU " + gpu + "  |  Vulkan  |  Scene08 Tangent Normal Exposure Lab");
+            topHudView.setText("FPS " + oneDecimal(fpsCurrent) + "  |  " + oneDecimal(frameTimeMs) + " ms  |  GPU " + gpu + "  |  Vulkan  |  Scene09 BRDF Material Response Lab");
         }
         int rendered = intJsonField("primitiveCountRendered", modelState.primitiveCountRendered);
         int skipped = intJsonField("primitiveCountSkipped", modelState.primitiveCountSkipped);
         int total = intJsonField("primitiveCountTotal", modelState.primitiveCountTotal);
-        return "Render Lab: Scene08 Tangent Normal Exposure Lab"
+        return "Render Lab: Scene09 BRDF Material Response Lab"
             + "\nImport: " + importStatus
             + "\nActive model: " + (activeName.isEmpty() ? "none" : shorten(activeName, 34))
             + "\nModel render: " + draw
@@ -459,6 +459,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "\nAmbient intensity: " + oneDecimal(ambientIntensity)
             + "\nExposure: " + oneDecimal(exposureValue) + " " + brightnessPresetName(brightnessPresetIndex)
             + "\nMaterial response status: " + jsonStringField(getRenderLabStateForExport(), "materialResponseStatus", modelState.materialResponseStatus)
+            + "\nBRDF status: " + jsonStringField(getRenderLabStateForExport(), "brdfStatus", modelState.brdfStatus)
+            + "\nSpecular status: " + jsonStringField(getRenderLabStateForExport(), "specularStatus", modelState.specularStatus)
             + "\nActive debug view: " + materialDebugViewName(activeDebugViewIndex)
             + "\nBaseColor status: " + modelState.baseColorTextureStatus
             + "\nMetallicRoughness status: " + modelState.metallicRoughnessStatus
@@ -471,7 +473,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "\nFallback cube: " + fallback
             + "\nMesh meta: " + p.meshCount + " / " + p.primitiveCount + " / " + p.materialCount + " / " + p.textureCount
             + "\nStatus: " + status
-            + "\nNext: PBR lighting refinement";
+            + "\nNext: IBL/reflections later";
     }
 
     private void cycleLightPreset() {
@@ -507,7 +509,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleMaterialView() {
-        activeDebugViewIndex = (activeDebugViewIndex + 1) % 8;
+        activeDebugViewIndex = (activeDebugViewIndex + 1) % 11;
         applyLightingControls();
         updateStatus();
     }
@@ -547,7 +549,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.lightPreset = lightPresetName(lightPresetIndex);
         modelState.sunIntensity = sunIntensity;
         modelState.ambientIntensity = ambientIntensity;
-        modelState.materialResponseStatus = "foundation_simple_lit";
+        modelState.brdfStatus = "ok";
+        modelState.brdfMode = "direct_lighting_schlick_mobile";
+        modelState.diffuseStatus = "ok_non_metal_diffuse";
+        modelState.specularStatus = "ok_roughness_controlled";
+        modelState.fresnelStatus = "ok_schlick";
+        modelState.f0Status = "ok_dielectric_0_04_metal_base_color";
+        modelState.metallicResponseStatus = "ok_diffuse_reduced_f0_tinted";
+        modelState.roughnessResponseStatus = "ok_highlight_width_intensity";
+        modelState.directLightingStatus = "ok_single_sun_direct";
+        modelState.materialResponseStatus = "brdf_direct_lit";
+        modelState.pbrQualityTier = "mobile_direct_lighting";
+        modelState.brdfPerformanceStatus = "ok_mobile_friendly_direct_lighting";
         modelState.toneMappingStatus = "ok";
         modelState.toneMappingMode = toneMappingModeName(toneMappingModeIndex);
         modelState.exposureStatus = "ok";
@@ -558,6 +571,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.debugViewStatus = "shader_applied";
         modelState.normalDebugViewStatus = "shader_applied";
         modelState.ndotlDebugViewStatus = "shader_applied";
+        modelState.diffuseDebugViewStatus = "shader_applied";
+        modelState.specularDebugViewStatus = "shader_applied";
+        modelState.f0DebugViewStatus = "shader_applied";
+        modelState.brdfStatusDebugViewStatus = "shader_applied";
         if (lightPresetButton != null) lightPresetButton.setText("Light: " + modelState.lightPreset);
         if (sunIntensityButton != null) sunIntensityButton.setText("Sun: " + oneDecimal(sunIntensity));
         if (ambientIntensityButton != null) ambientIntensityButton.setText("Ambient: " + oneDecimal(ambientIntensity));
@@ -586,7 +603,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 4) return "Roughness";
         if (index == 5) return "Normal";
         if (index == 6) return "NdotL";
-        if (index == 7) return "PBR Status";
+        if (index == 7) return "Diffuse";
+        if (index == 8) return "Specular";
+        if (index == 9) return "F0";
+        if (index == 10) return "BRDF Status";
         return "Final Shaded";
     }
 
@@ -647,7 +667,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private void updateTopHudOnly() {
         if (topHudView == null) return;
-        topHudView.setText("FPS " + oneDecimal(fpsCurrent) + "  |  " + oneDecimal(frameTimeMs) + " ms  |  Vulkan  |  Scene08 Tangent Normal Exposure Lab");
+        topHudView.setText("FPS " + oneDecimal(fpsCurrent) + "  |  " + oneDecimal(frameTimeMs) + " ms  |  Vulkan  |  Scene09 BRDF Material Response Lab");
     }
 
     private boolean isStableFpsSample(float fps, float frameMs) {
@@ -1284,7 +1304,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         File note = new File(reportDir, "debug_zip_runtime_note.txt");
         try (FileWriter w = new FileWriter(note, false)) {
             w.write("SOLUM P11 debug zip\n");
-            w.write("Scene08 Tangent Normal Exposure Lab\n");
+            w.write("Scene09 BRDF Material Response Lab\n");
             w.write("debugZipStatus=running\n");
             w.write("requiredFiles=engine_runtime_state.json,engine_diagnostics_manifest.json,model_import_state.json,asset_report.json\n");
             if (missing.isEmpty()) {
@@ -1464,7 +1484,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"diagnosticsRootStatus\": \"" + escape(result.reason) + "\",\n"
             + "  \"build\": { \"versionName\": \"" + escape(versionName) + "\", \"versionCode\": " + versionCode + " },\n"
             + "  \"backend\": { \"rendererPath\": \"Android Native Vulkan\", \"statusText\": \"" + escape(nativeStatus) + "\" },\n"
-            + "  \"currentScene\": \"scene08_tangent_normal_exposure_lab\",\n"
+            + "  \"currentScene\": \"scene09_brdf_material_response_lab\",\n"
             + "  \"assetImportStatus\": \"" + escape(modelState.importStatus) + "\",\n"
             + "  \"activeModelName\": \"" + escape(modelState.activeModelName()) + "\",\n"
             + "  \"activeModelPath\": \"" + escape(modelState.activeModelPath) + "\",\n"
@@ -1530,7 +1550,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"ambientColor\": " + jsonArrayField(renderLab, "ambientColor", "[" + jsonFloat(modelState.ambientColor[0]) + "," + jsonFloat(modelState.ambientColor[1]) + "," + jsonFloat(modelState.ambientColor[2]) + "]") + ",\n"
             + "  \"ambientIntensity\": " + jsonNumberField(renderLab, "ambientIntensity", jsonFloat(modelState.ambientIntensity)) + ",\n"
             + "  \"lightPreset\": \"" + escape(jsonStringField(renderLab, "lightPreset", modelState.lightPreset)) + "\",\n"
+            + "  \"brdfStatus\": \"" + escape(jsonStringField(renderLab, "brdfStatus", modelState.brdfStatus)) + "\",\n"
+            + "  \"brdfMode\": \"" + escape(jsonStringField(renderLab, "brdfMode", modelState.brdfMode)) + "\",\n"
+            + "  \"diffuseStatus\": \"" + escape(jsonStringField(renderLab, "diffuseStatus", modelState.diffuseStatus)) + "\",\n"
+            + "  \"specularStatus\": \"" + escape(jsonStringField(renderLab, "specularStatus", modelState.specularStatus)) + "\",\n"
+            + "  \"fresnelStatus\": \"" + escape(jsonStringField(renderLab, "fresnelStatus", modelState.fresnelStatus)) + "\",\n"
+            + "  \"f0Status\": \"" + escape(jsonStringField(renderLab, "f0Status", modelState.f0Status)) + "\",\n"
+            + "  \"metallicResponseStatus\": \"" + escape(jsonStringField(renderLab, "metallicResponseStatus", modelState.metallicResponseStatus)) + "\",\n"
+            + "  \"roughnessResponseStatus\": \"" + escape(jsonStringField(renderLab, "roughnessResponseStatus", modelState.roughnessResponseStatus)) + "\",\n"
+            + "  \"directLightingStatus\": \"" + escape(jsonStringField(renderLab, "directLightingStatus", modelState.directLightingStatus)) + "\",\n"
             + "  \"materialResponseStatus\": \"" + escape(jsonStringField(renderLab, "materialResponseStatus", modelState.materialResponseStatus)) + "\",\n"
+            + "  \"pbrQualityTier\": \"" + escape(jsonStringField(renderLab, "pbrQualityTier", modelState.pbrQualityTier)) + "\",\n"
+            + "  \"brdfPerformanceStatus\": \"" + escape(jsonStringField(renderLab, "brdfPerformanceStatus", modelState.brdfPerformanceStatus)) + "\",\n"
             + "  \"toneMappingStatus\": \"" + escape(jsonStringField(renderLab, "toneMappingStatus", modelState.toneMappingStatus)) + "\",\n"
             + "  \"toneMappingMode\": \"" + escape(jsonStringField(renderLab, "toneMappingMode", modelState.toneMappingMode)) + "\",\n"
             + "  \"exposureStatus\": \"" + escape(jsonStringField(renderLab, "exposureStatus", modelState.exposureStatus)) + "\",\n"
@@ -1541,6 +1572,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"debugViewStatus\": \"" + escape(jsonStringField(renderLab, "debugViewStatus", modelState.debugViewStatus)) + "\",\n"
             + "  \"normalDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "normalDebugViewStatus", modelState.normalDebugViewStatus)) + "\",\n"
             + "  \"ndotlDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "ndotlDebugViewStatus", modelState.ndotlDebugViewStatus)) + "\",\n"
+            + "  \"diffuseDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "diffuseDebugViewStatus", modelState.diffuseDebugViewStatus)) + "\",\n"
+            + "  \"specularDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "specularDebugViewStatus", modelState.specularDebugViewStatus)) + "\",\n"
+            + "  \"f0DebugViewStatus\": \"" + escape(jsonStringField(renderLab, "f0DebugViewStatus", modelState.f0DebugViewStatus)) + "\",\n"
+            + "  \"brdfStatusDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "brdfStatusDebugViewStatus", modelState.brdfStatusDebugViewStatus)) + "\",\n"
             + "  \"fpsCurrent\": " + jsonFloat(fps.fpsCurrent) + ",\n"
             + "  \"frameTimeMs\": " + jsonFloat(fps.frameTimeMs) + ",\n"
             + "  \"fpsSource\": \"" + escape(fps.source) + "\",\n"
@@ -1623,6 +1658,25 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  },\n"
             + "  \"materialConstantsReady\": " + jsonBooleanField(renderLab, "materialConstantsReady", "false") + ",\n"
             + "  \"meshAttributeLayoutReady\": " + jsonBooleanField(renderLab, "meshAttributeLayoutReady", "false") + ",\n"
+            + "  \"currentScene\": \"scene09_brdf_material_response_lab\",\n"
+            + "  \"brdfStatus\": \"" + escape(jsonStringField(renderLab, "brdfStatus", modelState.brdfStatus)) + "\",\n"
+            + "  \"brdfMode\": \"" + escape(jsonStringField(renderLab, "brdfMode", modelState.brdfMode)) + "\",\n"
+            + "  \"diffuseStatus\": \"" + escape(jsonStringField(renderLab, "diffuseStatus", modelState.diffuseStatus)) + "\",\n"
+            + "  \"specularStatus\": \"" + escape(jsonStringField(renderLab, "specularStatus", modelState.specularStatus)) + "\",\n"
+            + "  \"fresnelStatus\": \"" + escape(jsonStringField(renderLab, "fresnelStatus", modelState.fresnelStatus)) + "\",\n"
+            + "  \"f0Status\": \"" + escape(jsonStringField(renderLab, "f0Status", modelState.f0Status)) + "\",\n"
+            + "  \"metallicResponseStatus\": \"" + escape(jsonStringField(renderLab, "metallicResponseStatus", modelState.metallicResponseStatus)) + "\",\n"
+            + "  \"roughnessResponseStatus\": \"" + escape(jsonStringField(renderLab, "roughnessResponseStatus", modelState.roughnessResponseStatus)) + "\",\n"
+            + "  \"directLightingStatus\": \"" + escape(jsonStringField(renderLab, "directLightingStatus", modelState.directLightingStatus)) + "\",\n"
+            + "  \"materialResponseStatus\": \"" + escape(jsonStringField(renderLab, "materialResponseStatus", modelState.materialResponseStatus)) + "\",\n"
+            + "  \"pbrQualityTier\": \"" + escape(jsonStringField(renderLab, "pbrQualityTier", modelState.pbrQualityTier)) + "\",\n"
+            + "  \"brdfPerformanceStatus\": \"" + escape(jsonStringField(renderLab, "brdfPerformanceStatus", modelState.brdfPerformanceStatus)) + "\",\n"
+            + "  \"activeDebugView\": \"" + escape(jsonStringField(renderLab, "activeDebugView", modelState.activeDebugView)) + "\",\n"
+            + "  \"debugViewStatus\": \"" + escape(jsonStringField(renderLab, "debugViewStatus", modelState.debugViewStatus)) + "\",\n"
+            + "  \"diffuseDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "diffuseDebugViewStatus", modelState.diffuseDebugViewStatus)) + "\",\n"
+            + "  \"specularDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "specularDebugViewStatus", modelState.specularDebugViewStatus)) + "\",\n"
+            + "  \"f0DebugViewStatus\": \"" + escape(jsonStringField(renderLab, "f0DebugViewStatus", modelState.f0DebugViewStatus)) + "\",\n"
+            + "  \"brdfStatusDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "brdfStatusDebugViewStatus", modelState.brdfStatusDebugViewStatus)) + "\",\n"
             + "  \"vertexLayout\": \"" + escape(jsonStringField(renderLab, "vertexLayout", "unknown")) + "\",\n"
             + "  \"vertexStrideBytes\": " + jsonNumberField(renderLab, "vertexStrideBytes", "0") + ",\n"
             + "  \"renderLab\": " + renderLab + "\n"
@@ -1889,10 +1943,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private String getRenderLabStateForExport() {
         if (!nativeLoaded || nativeHandle == 0L) {
-            return "{\"currentLabScene\":\"scene08_tangent_normal_exposure_lab\",\"currentLabSceneName\":\"Scene08 Tangent Normal Exposure Lab\",\"status\":\"native_not_loaded\",\"lightingStatus\":\"ok\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":1.35,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.34,\"lightPreset\":\"Studio\",\"materialResponseStatus\":\"foundation_simple_lit\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"shader_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"tangentFallbackGeneratedCount\":0,\"tangentDegenerateTriangleCount\":0,\"tangentBuildMode\":\"once_on_upload\",\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"not_ready\",\"fpsLastStable\":0,\"frameTimeLastStableMs\":0,\"fpsStatus\":\"not_ready\",\"fpsUpdateMode\":\"java_choreographer_live\",\"fpsSampleWindowMs\":1000,\"framesRenderedLive\":0,\"modelUploadRepeatCount\":0,\"uploadGenerationId\":0,\"renderLoopAllocationGuardStatus\":\"ok_no_java_glb_parse_or_upload_in_frame_callback\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\"}";
+            return "{\"currentScene\":\"scene09_brdf_material_response_lab\",\"currentLabScene\":\"scene09_brdf_material_response_lab\",\"currentLabSceneName\":\"Scene09 BRDF Material Response Lab\",\"status\":\"native_not_loaded\",\"lightingStatus\":\"ok\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":1.35,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.34,\"lightPreset\":\"Studio\",\"brdfStatus\":\"ok\",\"brdfMode\":\"direct_lighting_schlick_mobile\",\"diffuseStatus\":\"ok_non_metal_diffuse\",\"specularStatus\":\"ok_roughness_controlled\",\"fresnelStatus\":\"ok_schlick\",\"f0Status\":\"ok_dielectric_0_04_metal_base_color\",\"metallicResponseStatus\":\"ok_diffuse_reduced_f0_tinted\",\"roughnessResponseStatus\":\"ok_highlight_width_intensity\",\"directLightingStatus\":\"ok_single_sun_direct\",\"materialResponseStatus\":\"brdf_direct_lit\",\"pbrQualityTier\":\"mobile_direct_lighting\",\"brdfPerformanceStatus\":\"ok_mobile_friendly_direct_lighting\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"shader_applied\",\"diffuseDebugViewStatus\":\"shader_applied\",\"specularDebugViewStatus\":\"shader_applied\",\"f0DebugViewStatus\":\"shader_applied\",\"brdfStatusDebugViewStatus\":\"shader_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"tangentFallbackGeneratedCount\":0,\"tangentDegenerateTriangleCount\":0,\"tangentBuildMode\":\"once_on_upload\",\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"not_ready\",\"fpsLastStable\":0,\"frameTimeLastStableMs\":0,\"fpsStatus\":\"not_ready\",\"fpsUpdateMode\":\"java_choreographer_live\",\"fpsSampleWindowMs\":1000,\"framesRenderedLive\":0,\"modelUploadRepeatCount\":0,\"uploadGenerationId\":0,\"renderLoopAllocationGuardStatus\":\"ok_no_java_glb_parse_or_upload_in_frame_callback\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\"}";
         }
         try { return nativeGetRenderLabState(nativeHandle); }
-        catch (Throwable t) { return "{\"currentLabScene\":\"scene08_tangent_normal_exposure_lab\",\"currentLabSceneName\":\"Scene08 Tangent Normal Exposure Lab\",\"status\":\"native_render_lab_state_failed\",\"lightingStatus\":\"failed\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":1.35,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.34,\"lightPreset\":\"Studio\",\"materialResponseStatus\":\"failed\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"failed\",\"baseColorTextureStatus\":\"failed\",\"textureFallbackUsed\":true,\"modelRenderMode\":\"multi_primitive_static\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(shortThrowable(t)) + "\"}"; }
+        catch (Throwable t) { return "{\"currentScene\":\"scene09_brdf_material_response_lab\",\"currentLabScene\":\"scene09_brdf_material_response_lab\",\"currentLabSceneName\":\"Scene09 BRDF Material Response Lab\",\"status\":\"native_render_lab_state_failed\",\"lightingStatus\":\"failed\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":1.35,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.34,\"lightPreset\":\"Studio\",\"brdfStatus\":\"ok\",\"brdfMode\":\"direct_lighting_schlick_mobile\",\"diffuseStatus\":\"ok_non_metal_diffuse\",\"specularStatus\":\"ok_roughness_controlled\",\"fresnelStatus\":\"ok_schlick\",\"f0Status\":\"ok_dielectric_0_04_metal_base_color\",\"metallicResponseStatus\":\"ok_diffuse_reduced_f0_tinted\",\"roughnessResponseStatus\":\"ok_highlight_width_intensity\",\"directLightingStatus\":\"ok_single_sun_direct\",\"materialResponseStatus\":\"failed\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"not_applied\",\"diffuseDebugViewStatus\":\"not_applied\",\"specularDebugViewStatus\":\"not_applied\",\"f0DebugViewStatus\":\"not_applied\",\"brdfStatusDebugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"failed\",\"baseColorTextureStatus\":\"failed\",\"textureFallbackUsed\":true,\"modelRenderMode\":\"multi_primitive_static\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(shortThrowable(t)) + "\"}"; }
     }
 
     private String timestampUtc() {
@@ -1985,7 +2039,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         float[] ambientColor = new float[] { 0.42f, 0.52f, 0.62f };
         float ambientIntensity = 0.46f;
         String lightPreset = "Studio";
-        String materialResponseStatus = "foundation_simple_lit";
+        String brdfStatus = "ok";
+        String brdfMode = "direct_lighting_schlick_mobile";
+        String diffuseStatus = "ok_non_metal_diffuse";
+        String specularStatus = "ok_roughness_controlled";
+        String fresnelStatus = "ok_schlick";
+        String f0Status = "ok_dielectric_0_04_metal_base_color";
+        String metallicResponseStatus = "ok_diffuse_reduced_f0_tinted";
+        String roughnessResponseStatus = "ok_highlight_width_intensity";
+        String directLightingStatus = "ok_single_sun_direct";
+        String materialResponseStatus = "brdf_direct_lit";
+        String pbrQualityTier = "mobile_direct_lighting";
+        String brdfPerformanceStatus = "ok_mobile_friendly_direct_lighting";
         String toneMappingStatus = "ok";
         String toneMappingMode = "reinhard";
         String exposureStatus = "ok";
@@ -1996,6 +2061,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String debugViewStatus = "shader_applied";
         String normalDebugViewStatus = "shader_applied";
         String ndotlDebugViewStatus = "shader_applied";
+        String diffuseDebugViewStatus = "shader_applied";
+        String specularDebugViewStatus = "shader_applied";
+        String f0DebugViewStatus = "shader_applied";
+        String brdfStatusDebugViewStatus = "shader_applied";
         boolean fallbackCubeVisible = true;
         String fallbackCubeStatus = "on";
         String textureUploadStatus = "missing";
@@ -2093,7 +2162,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"skippedPbrTextureCount\": " + skippedPbrTextureCount + ",\n"
                 + "  \"pbrTextureFallbackCount\": " + pbrTextureFallbackCount + ",\n"
                 + "  \"materialSlotDiagnostics\": " + materialSlotDiagnostics + ",\n"
-                + "  \"currentScene\": \"scene08_tangent_normal_exposure_lab\",\n"
+                + "  \"currentScene\": \"scene09_brdf_material_response_lab\",\n"
                 + "  \"lightingStatus\": \"" + esc(lightingStatus) + "\",\n"
                 + "  \"sunDirection\": [" + jsonFloat(sunDirection[0]) + ", " + jsonFloat(sunDirection[1]) + ", " + jsonFloat(sunDirection[2]) + "],\n"
                 + "  \"sunColor\": [" + jsonFloat(sunColor[0]) + ", " + jsonFloat(sunColor[1]) + ", " + jsonFloat(sunColor[2]) + "],\n"
@@ -2101,7 +2170,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"ambientColor\": [" + jsonFloat(ambientColor[0]) + ", " + jsonFloat(ambientColor[1]) + ", " + jsonFloat(ambientColor[2]) + "],\n"
                 + "  \"ambientIntensity\": " + jsonFloat(ambientIntensity) + ",\n"
                 + "  \"lightPreset\": \"" + esc(lightPreset) + "\",\n"
+                + "  \"brdfStatus\": \"" + esc(brdfStatus) + "\",\n"
+                + "  \"brdfMode\": \"" + esc(brdfMode) + "\",\n"
+                + "  \"diffuseStatus\": \"" + esc(diffuseStatus) + "\",\n"
+                + "  \"specularStatus\": \"" + esc(specularStatus) + "\",\n"
+                + "  \"fresnelStatus\": \"" + esc(fresnelStatus) + "\",\n"
+                + "  \"f0Status\": \"" + esc(f0Status) + "\",\n"
+                + "  \"metallicResponseStatus\": \"" + esc(metallicResponseStatus) + "\",\n"
+                + "  \"roughnessResponseStatus\": \"" + esc(roughnessResponseStatus) + "\",\n"
+                + "  \"directLightingStatus\": \"" + esc(directLightingStatus) + "\",\n"
                 + "  \"materialResponseStatus\": \"" + esc(materialResponseStatus) + "\",\n"
+                + "  \"pbrQualityTier\": \"" + esc(pbrQualityTier) + "\",\n"
+                + "  \"brdfPerformanceStatus\": \"" + esc(brdfPerformanceStatus) + "\",\n"
                 + "  \"toneMappingStatus\": \"" + esc(toneMappingStatus) + "\",\n"
                 + "  \"toneMappingMode\": \"" + esc(toneMappingMode) + "\",\n"
                 + "  \"exposureStatus\": \"" + esc(exposureStatus) + "\",\n"
@@ -2112,6 +2192,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"debugViewStatus\": \"" + esc(debugViewStatus) + "\",\n"
                 + "  \"normalDebugViewStatus\": \"" + esc(normalDebugViewStatus) + "\",\n"
                 + "  \"ndotlDebugViewStatus\": \"" + esc(ndotlDebugViewStatus) + "\",\n"
+                + "  \"diffuseDebugViewStatus\": \"" + esc(diffuseDebugViewStatus) + "\",\n"
+                + "  \"specularDebugViewStatus\": \"" + esc(specularDebugViewStatus) + "\",\n"
+                + "  \"f0DebugViewStatus\": \"" + esc(f0DebugViewStatus) + "\",\n"
+                + "  \"brdfStatusDebugViewStatus\": \"" + esc(brdfStatusDebugViewStatus) + "\",\n"
                 + "  \"fallbackCubeVisible\": " + fallbackCubeVisible + ",\n"
                 + "  \"fallbackCubeStatus\": \"" + esc(fallbackCubeStatus) + "\",\n"
                 + parse.toJsonFields()

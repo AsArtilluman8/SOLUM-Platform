@@ -2,6 +2,26 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P12 — BRDF Material Response Upgrade
+
+Scope:
+
+- Scene09 BRDF Material Response Lab.
+- Direct mobile BRDF foundation with baseColor, normal/normal map, AO, metallic, roughness, exposure, and tone mapping.
+- Fresnel Schlick and F0 foundation: dielectric 0.04, metallic baseColor, `mix(0.04, baseColor, metallic)`.
+- Metallic response reduces diffuse and tints F0; roughness changes specular width/intensity.
+- Material debug views now include Diffuse, Specular, F0, and BRDF Status.
+- Diagnostics add BRDF/material response statuses and debug-view statuses.
+- Live FPS, model draw, multi-primitive draw, texture slots, tangent diagnostics, and Debug ZIP flow are preserved.
+
+Out of scope:
+
+- shadows / CSM;
+- IBL/reflections;
+- glass/clearcoat/transmission;
+- skeletal animation;
+- big UI rewrite.
+
 ## Patch P11 — Tangent Generation + Real Normal Map Support + Exposure Defaults
 
 Scope:

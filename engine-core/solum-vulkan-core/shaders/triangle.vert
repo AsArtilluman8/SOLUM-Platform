@@ -14,6 +14,7 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 120) int metallicRoughnessTextureReady;
     layout(offset = 124) int normalTextureReady;
     layout(offset = 128) int occlusionTextureReady;
+    layout(offset = 208) float contactShadowIntensity;
 } pc;
 
 layout(location = 0) in vec3 inPosition;
@@ -25,11 +26,13 @@ layout(location = 0) out vec3 outColor;
 layout(location = 1) out vec2 outTexcoord0;
 layout(location = 2) out vec3 outNormal;
 layout(location = 3) out vec4 outTangent;
+layout(location = 4) out vec3 outLocalPosition;
 
 void main() {
     outColor = inColor;
     outTexcoord0 = inTexcoord0;
     outNormal = normalize(inNormal);
     outTangent = vec4(normalize(inTangent.xyz), inTangent.w);
+    outLocalPosition = inPosition;
     gl_Position = pc.mvp * vec4(inPosition, 1.0);
 }

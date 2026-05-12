@@ -4,6 +4,7 @@ layout(location = 0) in vec3 inColor;
 layout(location = 1) in vec2 inTexcoord0;
 layout(location = 2) in vec3 inNormal;
 layout(location = 3) in vec4 inTangent;
+layout(location = 4) in vec3 inLocalPosition;
 layout(location = 0) out vec4 fragColor;
 layout(set = 0, binding = 0) uniform sampler2D baseColorTexture;
 layout(set = 0, binding = 1) uniform sampler2D metallicRoughnessTexture;
@@ -42,6 +43,7 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 196) int brightnessPreset;
     layout(offset = 200) float specularBoost;
     layout(offset = 204) float reflectionIntensity;
+    layout(offset = 208) float contactShadowIntensity;
 } pc;
 
 vec3 toneMap(vec3 color) {
@@ -69,6 +71,14 @@ vec3 environmentColor(vec3 dir, float roughness) {
     vec3 sharpColor = mix(mix(groundColor, horizonColor, smoothstep(0.0, 0.55, sky)), skyColor, smoothstep(0.45, 1.0, sky));
     vec3 blurredColor = mix(vec3(0.42, 0.48, 0.52), vec3(0.62, 0.68, 0.74), sky);
     return mix(sharpColor, blurredColor, clamp(roughness, 0.0, 1.0));
+}
+
+float contactGroundingMask(vec3 localPos, vec3 normalDir) {
+    float bottom = smoothstep(-0.92, -0.58, localPos.y);
+    bottom = 1.0 - bottom;
+    float radial = 1.0 - smoothstep(0.15, 1.35, length(localPos.xz));
+    float upward = 1.0 - smoothstep(0.18, 0.78, normalDir.y);
+    return clamp(bottom * mix(0.45, 1.0, radial) * mix(0.55, 1.0, upward), 0.0, 1.0);
 }
 
 void main() {
@@ -160,6 +170,12 @@ void main() {
     }
     vec3 ambient = baseColor * (1.0 - metallic * 0.75) * mix(ambientColor * max(pc.ambientIntensity, pc.ambientFloor), iblDiffuseColor, 0.65);
     vec3 rgb = (diffuseLight + ambient) * ao + specularLight + pc.emissiveFactor;
+    float contactMask = contactGroundingMask(inLocalPosition, n);
+    if (pc.activeDebugView == 13) {
+        fragColor = vec4(vec3(contactMask * clamp(pc.contactShadowIntensity / 1.5, 0.0, 1.0)), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    rgb *= 1.0 - contactMask * clamp(pc.contactShadowIntensity, 0.0, 1.5) * 0.22;
     rgb *= pc.exposureValue;
     rgb = toneMap(rgb);
     fragColor = vec4(rgb, pc.baseColorFactor.a * texel.a);

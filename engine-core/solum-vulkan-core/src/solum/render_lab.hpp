@@ -16,11 +16,12 @@ enum class RenderLabScene {
     Scene09BrdfMaterialResponseLab,
     Scene10LightingControlLab,
     Scene11EnvironmentReflectionLab,
+    Scene12GroundingInspectorLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene11EnvironmentReflectionLab;
+    RenderLabScene currentScene = RenderLabScene::Scene12GroundingInspectorLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -57,6 +58,7 @@ struct RenderLabState {
             case RenderLabScene::Scene09BrdfMaterialResponseLab: return "scene09_brdf_material_response_lab";
             case RenderLabScene::Scene10LightingControlLab: return "scene10_lighting_control_lab";
             case RenderLabScene::Scene11EnvironmentReflectionLab: return "scene11_environment_reflection_lab";
+            case RenderLabScene::Scene12GroundingInspectorLab: return "scene12_grounding_inspector_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -76,6 +78,7 @@ struct RenderLabState {
             case RenderLabScene::Scene09BrdfMaterialResponseLab: return "Scene09 BRDF Material Response Lab";
             case RenderLabScene::Scene10LightingControlLab: return "Scene10 Lighting Control Lab";
             case RenderLabScene::Scene11EnvironmentReflectionLab: return "Scene11 Environment Reflection Lab";
+            case RenderLabScene::Scene12GroundingInspectorLab: return "Scene12 Grounding Inspector Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }
@@ -170,6 +173,23 @@ struct RenderLabState {
         f << indent << "  \"metallicReflectionStatus\": \"" << escapeJson(model.metallicReflectionStatus) << "\",\n";
         f << indent << "  \"dielectricReflectionStatus\": \"" << escapeJson(model.dielectricReflectionStatus) << "\",\n";
         f << indent << "  \"reflectionPerformanceStatus\": \"" << escapeJson(model.reflectionPerformanceStatus) << "\",\n";
+        f << indent << "  \"inspectorUiStatus\": \"" << escapeJson(model.inspectorUiStatus) << "\",\n";
+        f << indent << "  \"inspectorUiMode\": \"" << escapeJson(model.inspectorUiMode) << "\",\n";
+        f << indent << "  \"activeInspectorTab\": \"" << escapeJson(model.activeInspectorTab) << "\",\n";
+        f << indent << "  \"assetsTabStatus\": \"" << escapeJson(model.assetsTabStatus) << "\",\n";
+        f << indent << "  \"cameraTabStatus\": \"" << escapeJson(model.cameraTabStatus) << "\",\n";
+        f << indent << "  \"lightingTabStatus\": \"" << escapeJson(model.lightingTabStatus) << "\",\n";
+        f << indent << "  \"materialTabStatus\": \"" << escapeJson(model.materialTabStatus) << "\",\n";
+        f << indent << "  \"debugTabStatus\": \"" << escapeJson(model.debugTabStatus) << "\",\n";
+        f << indent << "  \"contactGroundingStatus\": \"" << escapeJson(model.contactGroundingStatus) << "\",\n";
+        f << indent << "  \"contactShadowStatus\": \"" << escapeJson(model.contactShadowStatus) << "\",\n";
+        f << indent << "  \"contactShadowMode\": \"" << escapeJson(model.contactShadowMode) << "\",\n";
+        f << indent << "  \"contactShadowIntensity\": " << model.contactShadowIntensity << ",\n";
+        f << indent << "  \"contactShadowPerformanceStatus\": \"" << escapeJson(model.contactShadowPerformanceStatus) << "\",\n";
+        f << indent << "  \"groundingUsesModelBounds\": \"" << escapeJson(model.groundingUsesModelBounds) << "\",\n";
+        f << indent << "  \"groundingUniformUpdateStatus\": \"" << escapeJson(model.groundingUniformUpdateStatus) << "\",\n";
+        f << indent << "  \"groundSliderStatus\": \"" << escapeJson(model.groundSliderStatus) << "\",\n";
+        f << indent << "  \"contactGroundingSliderStatus\": \"" << escapeJson(model.contactGroundingSliderStatus) << "\",\n";
         f << indent << "  \"lightingUniformUpdateStatus\": \"" << escapeJson(model.lightingUniformUpdateStatus) << "\",\n";
         f << indent << "  \"sliderUpdateMode\": \"" << escapeJson(model.sliderUpdateMode) << "\",\n";
         f << indent << "  \"sliderTouchStatus\": \"" << escapeJson(model.sliderTouchStatus) << "\",\n";
@@ -207,6 +227,7 @@ struct RenderLabState {
         f << indent << "  \"iblDiffuseDebugViewStatus\": \"" << escapeJson(model.iblDiffuseDebugViewStatus) << "\",\n";
         f << indent << "  \"iblSpecularDebugViewStatus\": \"" << escapeJson(model.iblSpecularDebugViewStatus) << "\",\n";
         f << indent << "  \"brdfStatusDebugViewStatus\": \"" << escapeJson(model.brdfStatusDebugViewStatus) << "\",\n";
+        f << indent << "  \"groundingDebugViewStatus\": \"" << escapeJson(model.groundingDebugViewStatus) << "\",\n";
         f << indent << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << indent << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";
         f << indent << "  \"fpsSource\": \"" << escapeJson(model.fpsSource) << "\",\n";

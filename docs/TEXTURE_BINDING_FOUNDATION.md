@@ -1,5 +1,51 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P15 contact grounding + inspector
+
+P15 keeps the P14 analytic IBL/reflection foundation and adds `scene12_grounding_inspector_lab`.
+
+New shader/control inputs:
+
+- `contactShadowIntensity` push constant, controlled by the Ground slider in the Lighting inspector tab.
+- `inLocalPosition` varying from the existing model vertex position.
+- analytic contact mask near the normalized model bottom, used as a cheap grounding darken.
+
+This is a foundation approximation only:
+
+- no Vulkan shadow pass;
+- no CSM;
+- no depth shadow map;
+- no mesh rebuild on slider move;
+- no texture rebuild on slider move.
+
+Debug views:
+
+- Existing views are preserved through BRDF Status.
+- New view: Grounding / Contact Shadow.
+
+Diagnostics added:
+
+```text
+inspectorUiStatus
+inspectorUiMode = tabbed_compact_inspector
+activeInspectorTab
+assetsTabStatus
+cameraTabStatus
+lightingTabStatus
+materialTabStatus
+debugTabStatus
+contactGroundingStatus = foundation_analytic
+contactShadowStatus
+contactShadowMode = analytic_blob_or_grounding_approx
+contactShadowIntensity
+contactShadowPerformanceStatus
+groundingUsesModelBounds
+groundingUniformUpdateStatus
+groundSliderStatus
+contactGroundingSliderStatus
+groundingDebugViewStatus
+```
+
 ## P14 analytic environment reflection foundation
 
 P14 keeps the P13 direct BRDF and lighting controls, switches Scene11 to compact sliders, and adds a mobile-friendly analytic environment approximation. It is intentionally named `analytic_environment_approx`, not full cubemap IBL.

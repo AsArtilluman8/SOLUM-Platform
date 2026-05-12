@@ -58,6 +58,7 @@ struct MaterialConstants {
     int brightnessPreset = 3;
     float specularBoost = 1.60f;
     float reflectionIntensity = 1.0f;
+    float contactShadowIntensity = 0.65f;
 };
 
 inline const char* lightPresetName(int preset) {
@@ -81,6 +82,7 @@ inline const char* materialDebugViewName(int view) {
     if (view == 10) return "IBL Diffuse";
     if (view == 11) return "IBL Specular";
     if (view == 12) return "BRDF Status";
+    if (view == 13) return "Grounding / Contact Shadow";
     return "Final Shaded";
 }
 
@@ -191,6 +193,23 @@ struct ModelRenderState {
     std::string metallicReflectionStatus = "ok_stronger_tinted_environment";
     std::string dielectricReflectionStatus = "ok_subtle_f0_environment";
     std::string reflectionPerformanceStatus = "ok_no_texture_rebuild_mobile_friendly";
+    std::string inspectorUiStatus = "ok";
+    std::string inspectorUiMode = "tabbed_compact_inspector";
+    std::string activeInspectorTab = "Assets";
+    std::string assetsTabStatus = "ok_import_scan_export_summary";
+    std::string cameraTabStatus = "ok_camera_info_reset_zoom";
+    std::string lightingTabStatus = "ok_sliders";
+    std::string materialTabStatus = "ok_debug_views";
+    std::string debugTabStatus = "ok_fps_zip_status";
+    std::string contactGroundingStatus = "foundation_analytic";
+    std::string contactShadowStatus = "enabled";
+    std::string contactShadowMode = "analytic_blob_or_grounding_approx";
+    float contactShadowIntensity = 0.65f;
+    std::string contactShadowPerformanceStatus = "ok_uniform_only_no_shadow_pass";
+    std::string groundingUsesModelBounds = "yes_upload_bounds_scaled_local";
+    std::string groundingUniformUpdateStatus = "ok_uniform_only";
+    std::string groundSliderStatus = "ok";
+    std::string contactGroundingSliderStatus = "ok";
     std::string lightingControlStatus = "ok";
     std::string lightingUiMode = "compact_sliders";
     std::string lightingUniformUpdateStatus = "ok_uniform_only";
@@ -230,6 +249,7 @@ struct ModelRenderState {
     std::string iblDiffuseDebugViewStatus = "shader_applied";
     std::string iblSpecularDebugViewStatus = "shader_applied";
     std::string brdfStatusDebugViewStatus = "shader_applied";
+    std::string groundingDebugViewStatus = "shader_applied";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;
     float fpsLastStable = 0.0f;

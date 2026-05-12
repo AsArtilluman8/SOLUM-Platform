@@ -2,6 +2,35 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P15 — Unified Inspector Tabs + Contact Grounding Foundation
+
+Scope:
+
+- Scene12 Grounding Inspector Lab.
+- Unified compact inspector tabs: Assets, Camera, Lighting, Material, Debug.
+- Lighting tab preserves Sun/Amb/Exp/Spec/Refl and adds Ground `0.0..1.5`.
+- Contact grounding foundation uses analytic model-local darkening, not real shadow maps.
+- Grounding / Contact Shadow debug view added after BRDF Status.
+- Scene11 IBL/reflection foundation, import/scan/export, Debug ZIP, and live FPS are preserved.
+
+Diagnostics:
+
+- `currentScene = scene12_grounding_inspector_lab`
+- `inspectorUiMode = tabbed_compact_inspector`
+- `contactGroundingStatus = foundation_analytic`
+- `contactShadowMode = analytic_blob_or_grounding_approx`
+- `groundSliderStatus`
+- `groundingDebugViewStatus`
+- existing IBL, slider, FPS, and Debug ZIP fields preserved.
+
+Out of scope:
+
+- Full CSM shadows.
+- Real-time shadow maps.
+- Glass/clearcoat/transmission.
+- Skeletal animation.
+- Big UI rewrite.
+
 ## Patch P14 — Environment Reflections Foundation + Lighting Sliders
 
 Scope:

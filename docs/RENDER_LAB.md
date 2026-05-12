@@ -2,6 +2,77 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene12 Grounding Inspector Lab
+
+Patch P15 advances the Render Lab to:
+
+```text
+scene12_grounding_inspector_lab
+```
+
+UI title/status:
+
+```text
+Render Lab: Scene12 Grounding Inspector Lab
+Inspector: Assets / Camera / Lighting / Material / Debug
+Active debug view: Final Shaded / BaseColor / Normal / Roughness / Metallic / AO / Diffuse / Specular / F0 / Reflection / IBL Diffuse / IBL Specular / BRDF Status / Grounding / Contact Shadow
+```
+
+Scene12 preserves Scene11 analytic environment reflections, compact Sun/Amb/Exp/Spec/Refl controls, model import/scan/export, Debug ZIP, and live FPS. It replaces separate Assets/Camera/Debug buttons with one tabbed compact inspector and adds a cheap analytic contact grounding foundation. This is not a Vulkan shadow pass, CSM, or real-time shadow map.
+
+Required P15 diagnostics:
+
+```text
+currentScene = scene12_grounding_inspector_lab
+renderLab.currentLabScene = scene12_grounding_inspector_lab
+renderLab.currentLabSceneName = Scene12 Grounding Inspector Lab
+inspectorUiStatus
+inspectorUiMode = tabbed_compact_inspector
+activeInspectorTab
+assetsTabStatus
+cameraTabStatus
+lightingTabStatus
+materialTabStatus
+debugTabStatus
+contactGroundingStatus = foundation_analytic
+contactShadowStatus
+contactShadowMode = analytic_blob_or_grounding_approx
+contactShadowIntensity
+contactShadowPerformanceStatus
+groundingUsesModelBounds
+groundingUniformUpdateStatus
+groundSliderStatus
+contactGroundingSliderStatus
+groundingDebugViewStatus
+iblStatus
+iblMode = analytic_environment_approx
+environmentReflectionStatus
+reflectionIntensity
+lightingUiMode
+sliderUpdateMode = uniform_only
+fpsStatus
+fpsUpdateMode
+debugZipStatus
+debugZipPath
+```
+
+Debug ZIP must include:
+
+```text
+engine_runtime_state.json
+engine_diagnostics_manifest.json
+model_import_state.json
+asset_report.json
+glb_model_summary.json
+debug_zip_runtime_note.txt
+```
+
+Performance guard:
+
+- Ground slider updates uniforms only.
+- Contact grounding uses the existing model-local position and uploaded bounds foundation.
+- No shadow pass, depth shadow map, CSM, mesh rebuild, GLB parse, or texture rebuild is introduced per slider/frame.
+
 ## Scene11 Environment Reflection Lab
 
 P14 scene id:

@@ -2,6 +2,26 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P13 — Lighting UX + Specular Reflection Foundation
+
+Scope:
+
+- Scene10 Lighting Control Lab.
+- Compact lighting controls for Soft / Studio / Outdoor / Bright / Ultra presets.
+- Step controls for sun, ambient, exposure, and specular boost.
+- Bright Preview defaults make the scene more readable without changing debug-view intent.
+- Shader adds `specularBoost` and cheap analytic view-dependent specular fill.
+- Diagnostics add lighting UI/control, specular boost, reflection foundation, and uniform-only update statuses.
+- Live FPS, model import/scan/export, Debug ZIP, and Scene09 BRDF logic are preserved.
+
+Out of scope:
+
+- full IBL cubemap;
+- shadows / CSM;
+- glass/clearcoat/transmission;
+- skeletal animation;
+- big UI rewrite.
+
 ## Patch P12 — BRDF Material Response Upgrade
 
 Scope:

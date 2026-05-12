@@ -1,5 +1,55 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P13 lighting control and specular foundation
+
+P13 keeps the P12 BRDF foundation and adds Scene10 lighting UX plus a cheap analytic specular/reflection foundation without real IBL.
+
+Shader/control inputs used in Scene10:
+
+- sun intensity `0.5..4.0`;
+- ambient intensity `0.1..2.0`;
+- exposure `0.8..3.0`;
+- ambient floor for readable dark areas;
+- `specularBoost` `0.5..3.0`;
+- Schlick Fresnel/F0, roughness width, metallic tinted specular;
+- analytic view-dependent specular fill named `analytic_specular_only`.
+
+Debug views:
+
+```text
+Final Shaded
+BaseColor
+Normal
+Roughness
+Metallic
+AO
+Diffuse
+Specular
+F0
+BRDF Status
+```
+
+Diagnostics added:
+
+```text
+lightingControlStatus
+lightingUiMode
+specularBoost
+specularBoostStatus
+reflectionFoundationStatus
+reflectionMode
+environmentReflectionStatus
+lightingUniformUpdateStatus
+sliderUpdateMode
+```
+
+Limits:
+
+- no full IBL cubemap;
+- no shadows;
+- no glass/clearcoat/transmission;
+- no skeletal animation.
+
 ## P12 BRDF material response foundation
 
 P12 keeps the P11 texture/tangent foundation and upgrades direct material response before IBL/reflections.

@@ -75,11 +75,12 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetLi
     jint toneMappingMode,
     jfloat exposureValue,
     jfloat ambientFloor,
-    jint brightnessPreset
+    jint brightnessPreset,
+    jfloat specularBoost
 ) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) return;
-    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset);
+    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdateUiDiagnostics(
@@ -135,7 +136,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdat
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) {
-        return env->NewStringUTF("{\"currentScene\":\"scene09_brdf_material_response_lab\",\"currentLabScene\":\"scene09_brdf_material_response_lab\",\"currentLabSceneName\":\"Scene09 BRDF Material Response Lab\",\"status\":\"native_handle_missing\",\"lightingStatus\":\"failed\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":1.35,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.34,\"lightPreset\":\"Studio\",\"brdfStatus\":\"missing\",\"brdfMode\":\"direct_lighting_schlick_mobile\",\"diffuseStatus\":\"missing\",\"specularStatus\":\"missing\",\"fresnelStatus\":\"missing\",\"f0Status\":\"missing\",\"metallicResponseStatus\":\"missing\",\"roughnessResponseStatus\":\"missing\",\"directLightingStatus\":\"missing\",\"materialResponseStatus\":\"missing\",\"pbrQualityTier\":\"mobile_direct_lighting\",\"brdfPerformanceStatus\":\"not_ready\",\"toneMappingStatus\":\"missing\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"not_applied\",\"diffuseDebugViewStatus\":\"not_applied\",\"specularDebugViewStatus\":\"not_applied\",\"f0DebugViewStatus\":\"not_applied\",\"brdfStatusDebugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
+        return env->NewStringUTF("{\"currentScene\":\"scene10_lighting_control_lab\",\"currentLabScene\":\"scene10_lighting_control_lab\",\"currentLabSceneName\":\"Scene10 Lighting Control Lab\",\"status\":\"native_handle_missing\",\"lightingStatus\":\"failed\",\"lightingControlStatus\":\"failed\",\"lightingUiMode\":\"compact_step_controls\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":2.0,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.8,\"lightPreset\":\"Bright\",\"specularBoost\":1.6,\"specularBoostStatus\":\"missing\",\"reflectionFoundationStatus\":\"analytic_specular_only\",\"reflectionMode\":\"analytic_view_dependent\",\"environmentReflectionStatus\":\"not_yet_real_ibl\",\"lightingUniformUpdateStatus\":\"missing\",\"sliderUpdateMode\":\"uniform_only\",\"brdfStatus\":\"missing\",\"brdfMode\":\"direct_lighting_schlick_mobile\",\"diffuseStatus\":\"missing\",\"specularStatus\":\"missing\",\"fresnelStatus\":\"missing\",\"f0Status\":\"missing\",\"metallicResponseStatus\":\"missing\",\"roughnessResponseStatus\":\"missing\",\"directLightingStatus\":\"missing\",\"materialResponseStatus\":\"missing\",\"pbrQualityTier\":\"mobile_direct_lighting\",\"brdfPerformanceStatus\":\"not_ready\",\"toneMappingStatus\":\"missing\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"not_applied\",\"diffuseDebugViewStatus\":\"not_applied\",\"specularDebugViewStatus\":\"not_applied\",\"f0DebugViewStatus\":\"not_applied\",\"brdfStatusDebugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
     }
     std::string json = std::string("{\"currentScene\":\"") + renderer->diagnostics.renderLab.sceneId()
         + "\",\"currentLabScene\":\"" + renderer->diagnostics.renderLab.sceneId()
@@ -199,12 +200,21 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"pbrTextureFallbackCount\":" + std::to_string(renderer->model.pbrTextureFallbackCount)
         + ",\"materialSlotDiagnostics\":" + (renderer->model.materialSlotDiagnostics.empty() ? "[]" : renderer->model.materialSlotDiagnostics)
         + ",\"lightingStatus\":\"" + solum::escapeJson(renderer->model.lightingStatus) + "\""
+        + ",\"lightingControlStatus\":\"" + solum::escapeJson(renderer->model.lightingControlStatus) + "\""
+        + ",\"lightingUiMode\":\"" + solum::escapeJson(renderer->model.lightingUiMode) + "\""
         + ",\"sunDirection\":[" + std::to_string(renderer->model.sunDirection[0]) + "," + std::to_string(renderer->model.sunDirection[1]) + "," + std::to_string(renderer->model.sunDirection[2]) + "]"
         + ",\"sunColor\":[" + std::to_string(renderer->model.sunColor[0]) + "," + std::to_string(renderer->model.sunColor[1]) + "," + std::to_string(renderer->model.sunColor[2]) + "]"
         + ",\"sunIntensity\":" + std::to_string(renderer->model.sunIntensity)
         + ",\"ambientColor\":[" + std::to_string(renderer->model.ambientColor[0]) + "," + std::to_string(renderer->model.ambientColor[1]) + "," + std::to_string(renderer->model.ambientColor[2]) + "]"
         + ",\"ambientIntensity\":" + std::to_string(renderer->model.ambientIntensity)
         + ",\"lightPreset\":\"" + solum::escapeJson(renderer->model.lightPreset) + "\""
+        + ",\"specularBoost\":" + std::to_string(renderer->model.specularBoost)
+        + ",\"specularBoostStatus\":\"" + solum::escapeJson(renderer->model.specularBoostStatus) + "\""
+        + ",\"reflectionFoundationStatus\":\"" + solum::escapeJson(renderer->model.reflectionFoundationStatus) + "\""
+        + ",\"reflectionMode\":\"" + solum::escapeJson(renderer->model.reflectionMode) + "\""
+        + ",\"environmentReflectionStatus\":\"" + solum::escapeJson(renderer->model.environmentReflectionStatus) + "\""
+        + ",\"lightingUniformUpdateStatus\":\"" + solum::escapeJson(renderer->model.lightingUniformUpdateStatus) + "\""
+        + ",\"sliderUpdateMode\":\"" + solum::escapeJson(renderer->model.sliderUpdateMode) + "\""
         + ",\"brdfStatus\":\"" + solum::escapeJson(renderer->model.brdfStatus) + "\""
         + ",\"brdfMode\":\"" + solum::escapeJson(renderer->model.brdfMode) + "\""
         + ",\"diffuseStatus\":\"" + solum::escapeJson(renderer->model.diffuseStatus) + "\""

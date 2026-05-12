@@ -126,11 +126,20 @@ struct RendererCore {
         model.exposureValue = material.exposureValue;
         model.ambientFloor = material.ambientFloor;
         model.brightnessPreset = brightnessPresetName(material.brightnessPreset);
+        model.specularBoost = material.specularBoost;
         model.lightingStatus = "ok";
+        model.lightingControlStatus = "ok";
+        model.lightingUiMode = "compact_step_controls";
         model.brdfStatus = "ok";
         model.brdfMode = "direct_lighting_schlick_mobile";
         model.diffuseStatus = "ok_non_metal_diffuse";
-        model.specularStatus = "ok_roughness_controlled";
+        model.specularStatus = "ok_roughness_view_dependent_boosted";
+        model.specularBoostStatus = "ok_uniform_controlled";
+        model.reflectionFoundationStatus = "analytic_specular_only";
+        model.reflectionMode = "analytic_view_dependent";
+        model.environmentReflectionStatus = "not_yet_real_ibl";
+        model.lightingUniformUpdateStatus = "ok_uniform_only";
+        model.sliderUpdateMode = "uniform_only";
         model.fresnelStatus = "ok_schlick";
         model.f0Status = "ok_dielectric_0_04_metal_base_color";
         model.metallicResponseStatus = "ok_diffuse_reduced_f0_tinted";
@@ -201,26 +210,8 @@ struct RendererCore {
     }
 
     void applyLightPreset(int preset) {
-        material.lightPreset = ((preset % 3) + 3) % 3;
+        material.lightPreset = ((preset % 5) + 5) % 5;
         if (material.lightPreset == 1) {
-            material.sunDirection[0] = -0.42f; material.sunDirection[1] = -0.72f; material.sunDirection[2] = -0.55f;
-            material.sunColor[0] = 1.0f; material.sunColor[1] = 0.92f; material.sunColor[2] = 0.78f;
-            material.sunIntensity = 1.65f;
-            material.ambientColor[0] = 0.44f; material.ambientColor[1] = 0.55f; material.ambientColor[2] = 0.72f;
-            material.ambientIntensity = 0.38f;
-            material.exposureValue = 1.10f;
-            material.ambientFloor = 0.08f;
-            material.brightnessPreset = 1;
-        } else if (material.lightPreset == 2) {
-            material.sunDirection[0] = -0.25f; material.sunDirection[1] = -0.88f; material.sunDirection[2] = -0.32f;
-            material.sunColor[0] = 0.92f; material.sunColor[1] = 0.96f; material.sunColor[2] = 1.0f;
-            material.sunIntensity = 1.05f;
-            material.ambientColor[0] = 0.62f; material.ambientColor[1] = 0.68f; material.ambientColor[2] = 0.76f;
-            material.ambientIntensity = 0.58f;
-            material.exposureValue = 1.32f;
-            material.ambientFloor = 0.14f;
-            material.brightnessPreset = 3;
-        } else {
             material.sunDirection[0] = -0.35f; material.sunDirection[1] = -0.82f; material.sunDirection[2] = -0.45f;
             material.sunColor[0] = 1.0f; material.sunColor[1] = 0.96f; material.sunColor[2] = 0.88f;
             material.sunIntensity = 1.55f;
@@ -229,23 +220,65 @@ struct RendererCore {
             material.exposureValue = 1.18f;
             material.ambientFloor = 0.10f;
             material.brightnessPreset = 1;
+            material.specularBoost = 1.20f;
+        } else if (material.lightPreset == 2) {
+            material.sunDirection[0] = -0.42f; material.sunDirection[1] = -0.72f; material.sunDirection[2] = -0.55f;
+            material.sunColor[0] = 1.0f; material.sunColor[1] = 0.92f; material.sunColor[2] = 0.78f;
+            material.sunIntensity = 1.65f;
+            material.ambientColor[0] = 0.44f; material.ambientColor[1] = 0.55f; material.ambientColor[2] = 0.72f;
+            material.ambientIntensity = 0.38f;
+            material.exposureValue = 1.10f;
+            material.ambientFloor = 0.08f;
+            material.brightnessPreset = 1;
+            material.specularBoost = 1.35f;
+        } else if (material.lightPreset == 3) {
+            material.sunDirection[0] = -0.35f; material.sunDirection[1] = -0.82f; material.sunDirection[2] = -0.45f;
+            material.sunColor[0] = 1.0f; material.sunColor[1] = 0.96f; material.sunColor[2] = 0.88f;
+            material.sunIntensity = 2.0f;
+            material.ambientColor[0] = 0.50f; material.ambientColor[1] = 0.58f; material.ambientColor[2] = 0.68f;
+            material.ambientIntensity = 0.80f;
+            material.exposureValue = 1.50f;
+            material.ambientFloor = 0.16f;
+            material.brightnessPreset = 3;
+            material.specularBoost = 1.60f;
+        } else if (material.lightPreset == 4) {
+            material.sunDirection[0] = -0.30f; material.sunDirection[1] = -0.80f; material.sunDirection[2] = -0.42f;
+            material.sunColor[0] = 1.0f; material.sunColor[1] = 0.96f; material.sunColor[2] = 0.88f;
+            material.sunIntensity = 3.35f;
+            material.ambientColor[0] = 0.55f; material.ambientColor[1] = 0.62f; material.ambientColor[2] = 0.72f;
+            material.ambientIntensity = 1.25f;
+            material.exposureValue = 2.25f;
+            material.ambientFloor = 0.22f;
+            material.brightnessPreset = 4;
+            material.specularBoost = 2.35f;
+        } else {
+            material.sunDirection[0] = -0.25f; material.sunDirection[1] = -0.88f; material.sunDirection[2] = -0.32f;
+            material.sunColor[0] = 0.92f; material.sunColor[1] = 0.96f; material.sunColor[2] = 1.0f;
+            material.sunIntensity = 1.05f;
+            material.ambientColor[0] = 0.62f; material.ambientColor[1] = 0.68f; material.ambientColor[2] = 0.76f;
+            material.ambientIntensity = 0.58f;
+            material.exposureValue = 1.32f;
+            material.ambientFloor = 0.14f;
+            material.brightnessPreset = 2;
+            material.specularBoost = 1.10f;
         }
         syncLightingModelState();
     }
 
-    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset) {
+    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost) {
         applyLightPreset(lightPreset);
-        material.sunIntensity = clampFloat(sunIntensity, 0.0f, 3.0f);
-        material.ambientIntensity = clampFloat(ambientIntensity, 0.0f, 1.5f);
-        material.activeDebugView = ((activeDebugView % 11) + 11) % 11;
+        material.sunIntensity = clampFloat(sunIntensity, 0.5f, 4.0f);
+        material.ambientIntensity = clampFloat(ambientIntensity, 0.1f, 2.0f);
+        material.activeDebugView = ((activeDebugView % 10) + 10) % 10;
         material.toneMappingMode = ((toneMappingMode % 3) + 3) % 3;
-        material.exposureValue = clampFloat(exposureValue, 0.45f, 2.2f);
+        material.exposureValue = clampFloat(exposureValue, 0.8f, 3.0f);
         material.ambientFloor = clampFloat(ambientFloor, 0.0f, 0.35f);
-        material.brightnessPreset = ((brightnessPreset % 4) + 4) % 4;
+        material.brightnessPreset = ((brightnessPreset % 5) + 5) % 5;
+        material.specularBoost = clampFloat(specularBoost, 0.5f, 3.0f);
         syncLightingModelState();
         const bool ok = renderOneFrame();
         syncDiagnostics();
-        diagnostics.write(ok ? "valid" : diagnostics.status, ok ? "Scene09 BRDF lighting/material controls updated." : diagnostics.reason);
+        diagnostics.write(ok ? "valid" : diagnostics.status, ok ? "Scene10 lighting controls updated uniforms only." : diagnostics.reason);
         updateReadyStatus();
         return ok;
     }
@@ -582,7 +615,7 @@ struct RendererCore {
 
     void updateReadyStatus() {
         syncLightingModelState();
-        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene09 BRDF Material Response Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nModel render: " + model.drawStatus + "\nPrimitives rendered/skipped/total: " + std::to_string(model.primitiveCountRendered) + " / " + std::to_string(model.primitiveCountSkipped) + " / " + std::to_string(model.primitiveCountTotal) + "\nMaterials used: " + std::to_string(model.materialSlotCountRendered) + "\nLighting status: " + model.lightingStatus + "\nBRDF status: " + model.brdfStatus + "\nSpecular status: " + model.specularStatus + "\nFresnel status: " + model.fresnelStatus + "\nF0 status: " + model.f0Status + "\nLight preset: " + model.lightPreset + "\nSun intensity: " + std::to_string(model.sunIntensity) + "\nAmbient intensity: " + std::to_string(model.ambientIntensity) + "\nExposure: " + std::to_string(model.exposureValue) + " " + model.brightnessPreset + "\nMaterial response status: " + model.materialResponseStatus + "\nActive debug view: " + model.activeDebugView + "\nBaseColor status: " + model.baseColorTextureStatus + "\nMetallicRoughness status: " + model.metallicRoughnessStatus + "\nTangent status: " + model.tangentStatus + "\nNormal status: " + model.normalMapStatus + " applied=" + model.normalMapAppliedStatus + "\nAO status: " + model.occlusionMapStatus + "\nPBR textures uploaded/fallback/skipped: " + std::to_string(model.uploadedPbrTextureCount) + " / " + std::to_string(model.pbrTextureFallbackCount) + " / " + std::to_string(model.skippedPbrTextureCount) + "\nFPS/frameMs: " + std::to_string(model.fpsCurrent) + " / " + std::to_string(model.frameTimeMs) + "\nDebug ZIP: " + model.debugZipStatus + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nTexture size: " + std::to_string(model.textureWidth) + "x" + std::to_string(model.textureHeight) + "\nFallback texture: " + std::string(model.textureFallbackUsed ? "yes" : "no") + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: IBL/reflections later";
+        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene10 Lighting Control Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nModel render: " + model.drawStatus + "\nPrimitives rendered/skipped/total: " + std::to_string(model.primitiveCountRendered) + " / " + std::to_string(model.primitiveCountSkipped) + " / " + std::to_string(model.primitiveCountTotal) + "\nMaterials used: " + std::to_string(model.materialSlotCountRendered) + "\nLighting status: " + model.lightingStatus + "\nBRDF status: " + model.brdfStatus + "\nSpecular status: " + model.specularStatus + "\nSpecular boost: " + std::to_string(model.specularBoost) + "\nReflection foundation: " + model.reflectionFoundationStatus + "\nFresnel status: " + model.fresnelStatus + "\nF0 status: " + model.f0Status + "\nLight preset: " + model.lightPreset + "\nSun intensity: " + std::to_string(model.sunIntensity) + "\nAmbient intensity: " + std::to_string(model.ambientIntensity) + "\nExposure: " + std::to_string(model.exposureValue) + " " + model.brightnessPreset + "\nMaterial response status: " + model.materialResponseStatus + "\nActive debug view: " + model.activeDebugView + "\nBaseColor status: " + model.baseColorTextureStatus + "\nMetallicRoughness status: " + model.metallicRoughnessStatus + "\nTangent status: " + model.tangentStatus + "\nNormal status: " + model.normalMapStatus + " applied=" + model.normalMapAppliedStatus + "\nAO status: " + model.occlusionMapStatus + "\nPBR textures uploaded/fallback/skipped: " + std::to_string(model.uploadedPbrTextureCount) + " / " + std::to_string(model.pbrTextureFallbackCount) + " / " + std::to_string(model.skippedPbrTextureCount) + "\nFPS/frameMs: " + std::to_string(model.fpsCurrent) + " / " + std::to_string(model.frameTimeMs) + "\nDebug ZIP: " + model.debugZipStatus + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nTexture size: " + std::to_string(model.textureWidth) + "x" + std::to_string(model.textureHeight) + "\nFallback texture: " + std::string(model.textureFallbackUsed ? "yes" : "no") + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: IBL/reflections later";
     }
 
     bool setCamera(float yawDeg, float pitchDeg, float distance, bool controlsActive) {
@@ -817,7 +850,7 @@ struct RendererCore {
             return false;
         }
         syncDiagnostics();
-        diagnostics.write("valid", "Scene09 BRDF Material Response Lab uploaded and drew first primitive.");
+        diagnostics.write("valid", "Scene10 Lighting Control Lab uploaded and drew first primitive.");
         updateReadyStatus();
         return true;
     }
@@ -919,7 +952,7 @@ struct RendererCore {
             return false;
         }
         syncDiagnostics();
-        diagnostics.write("valid", "Scene09 BRDF Material Response Lab uploaded and drew supported primitives.");
+        diagnostics.write("valid", "Scene10 Lighting Control Lab uploaded and drew supported primitives.");
         updateReadyStatus();
         return true;
     }
@@ -1170,7 +1203,7 @@ struct RendererCore {
         model.textureFallbackUsed = true;
         model.reason = "no active model";
         syncDiagnostics();
-        diagnostics.write("valid", "Scene09 BRDF Material Response Lab initialized with cube fallback while waiting for active model upload.");
+        diagnostics.write("valid", "Scene10 Lighting Control Lab initialized with cube fallback while waiting for active model upload.");
         updateReadyStatus();
         return true;
     }

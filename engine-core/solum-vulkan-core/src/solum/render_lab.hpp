@@ -14,11 +14,12 @@ enum class RenderLabScene {
     Scene07LightingFoundationLab,
     Scene08TangentNormalExposureLab,
     Scene09BrdfMaterialResponseLab,
+    Scene10LightingControlLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene09BrdfMaterialResponseLab;
+    RenderLabScene currentScene = RenderLabScene::Scene10LightingControlLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -53,6 +54,7 @@ struct RenderLabState {
             case RenderLabScene::Scene07LightingFoundationLab: return "scene07_lighting_foundation_lab";
             case RenderLabScene::Scene08TangentNormalExposureLab: return "scene08_tangent_normal_exposure_lab";
             case RenderLabScene::Scene09BrdfMaterialResponseLab: return "scene09_brdf_material_response_lab";
+            case RenderLabScene::Scene10LightingControlLab: return "scene10_lighting_control_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -70,6 +72,7 @@ struct RenderLabState {
             case RenderLabScene::Scene07LightingFoundationLab: return "Scene07 Lighting Foundation Lab";
             case RenderLabScene::Scene08TangentNormalExposureLab: return "Scene08 Tangent Normal Exposure Lab";
             case RenderLabScene::Scene09BrdfMaterialResponseLab: return "Scene09 BRDF Material Response Lab";
+            case RenderLabScene::Scene10LightingControlLab: return "Scene10 Lighting Control Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }
@@ -141,12 +144,21 @@ struct RenderLabState {
         f << indent << "  \"pbrTextureFallbackCount\": " << model.pbrTextureFallbackCount << ",\n";
         f << indent << "  \"materialSlotDiagnostics\": " << (model.materialSlotDiagnostics.empty() ? "[]" : model.materialSlotDiagnostics) << ",\n";
         f << indent << "  \"lightingStatus\": \"" << escapeJson(model.lightingStatus) << "\",\n";
+        f << indent << "  \"lightingControlStatus\": \"" << escapeJson(model.lightingControlStatus) << "\",\n";
+        f << indent << "  \"lightingUiMode\": \"" << escapeJson(model.lightingUiMode) << "\",\n";
         f << indent << "  \"sunDirection\": [" << model.sunDirection[0] << ", " << model.sunDirection[1] << ", " << model.sunDirection[2] << "],\n";
         f << indent << "  \"sunColor\": [" << model.sunColor[0] << ", " << model.sunColor[1] << ", " << model.sunColor[2] << "],\n";
         f << indent << "  \"sunIntensity\": " << model.sunIntensity << ",\n";
         f << indent << "  \"ambientColor\": [" << model.ambientColor[0] << ", " << model.ambientColor[1] << ", " << model.ambientColor[2] << "],\n";
         f << indent << "  \"ambientIntensity\": " << model.ambientIntensity << ",\n";
         f << indent << "  \"lightPreset\": \"" << escapeJson(model.lightPreset) << "\",\n";
+        f << indent << "  \"specularBoost\": " << model.specularBoost << ",\n";
+        f << indent << "  \"specularBoostStatus\": \"" << escapeJson(model.specularBoostStatus) << "\",\n";
+        f << indent << "  \"reflectionFoundationStatus\": \"" << escapeJson(model.reflectionFoundationStatus) << "\",\n";
+        f << indent << "  \"reflectionMode\": \"" << escapeJson(model.reflectionMode) << "\",\n";
+        f << indent << "  \"environmentReflectionStatus\": \"" << escapeJson(model.environmentReflectionStatus) << "\",\n";
+        f << indent << "  \"lightingUniformUpdateStatus\": \"" << escapeJson(model.lightingUniformUpdateStatus) << "\",\n";
+        f << indent << "  \"sliderUpdateMode\": \"" << escapeJson(model.sliderUpdateMode) << "\",\n";
         f << indent << "  \"brdfStatus\": \"" << escapeJson(model.brdfStatus) << "\",\n";
         f << indent << "  \"brdfMode\": \"" << escapeJson(model.brdfMode) << "\",\n";
         f << indent << "  \"diffuseStatus\": \"" << escapeJson(model.diffuseStatus) << "\",\n";

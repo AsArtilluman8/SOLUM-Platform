@@ -46,42 +46,45 @@ struct MaterialConstants {
     int normalTextureReady = 0;
     int occlusionTextureReady = 0;
     float sunDirection[3] = { -0.35f, -0.82f, -0.45f };
-    float sunIntensity = 1.55f;
+    float sunIntensity = 2.0f;
     float sunColor[3] = { 1.0f, 0.96f, 0.88f };
-    float ambientIntensity = 0.46f;
+    float ambientIntensity = 0.80f;
     float ambientColor[3] = { 0.42f, 0.52f, 0.62f };
-    int lightPreset = 0;
+    int lightPreset = 3;
     int activeDebugView = 0;
     int toneMappingMode = 1;
-    float exposureValue = 1.18f;
-    float ambientFloor = 0.10f;
-    int brightnessPreset = 1;
+    float exposureValue = 1.50f;
+    float ambientFloor = 0.16f;
+    int brightnessPreset = 3;
+    float specularBoost = 1.60f;
 };
 
 inline const char* lightPresetName(int preset) {
-    if (preset == 1) return "Outdoor";
-    if (preset == 2) return "Soft Preview";
-    return "Studio";
+    if (preset == 1) return "Studio";
+    if (preset == 2) return "Outdoor";
+    if (preset == 3) return "Bright";
+    if (preset == 4) return "Ultra";
+    return "Soft";
 }
 
 inline const char* materialDebugViewName(int view) {
     if (view == 1) return "BaseColor";
-    if (view == 2) return "AO";
-    if (view == 3) return "Metallic";
-    if (view == 4) return "Roughness";
-    if (view == 5) return "Normal";
-    if (view == 6) return "NdotL";
-    if (view == 7) return "Diffuse";
-    if (view == 8) return "Specular";
-    if (view == 9) return "F0";
-    if (view == 10) return "BRDF Status";
+    if (view == 2) return "Normal";
+    if (view == 3) return "Roughness";
+    if (view == 4) return "Metallic";
+    if (view == 5) return "AO";
+    if (view == 6) return "Diffuse";
+    if (view == 7) return "Specular";
+    if (view == 8) return "F0";
+    if (view == 9) return "BRDF Status";
     return "Final Shaded";
 }
 
 inline const char* brightnessPresetName(int preset) {
     if (preset == 0) return "Low";
     if (preset == 2) return "Bright";
-    if (preset == 3) return "Preview";
+    if (preset == 3) return "Bright Preview";
+    if (preset == 4) return "Ultra";
     return "Normal";
 }
 
@@ -165,14 +168,23 @@ struct ModelRenderState {
     std::string lightingStatus = "ok";
     float sunDirection[3] = { -0.35f, -0.82f, -0.45f };
     float sunColor[3] = { 1.0f, 0.96f, 0.88f };
-    float sunIntensity = 1.55f;
+    float sunIntensity = 2.0f;
     float ambientColor[3] = { 0.42f, 0.52f, 0.62f };
-    float ambientIntensity = 0.46f;
-    std::string lightPreset = "Studio";
+    float ambientIntensity = 0.80f;
+    std::string lightPreset = "Bright";
+    float specularBoost = 1.60f;
+    std::string specularBoostStatus = "ok_uniform_controlled";
+    std::string reflectionFoundationStatus = "analytic_specular_only";
+    std::string reflectionMode = "analytic_view_dependent";
+    std::string environmentReflectionStatus = "not_yet_real_ibl";
+    std::string lightingControlStatus = "ok";
+    std::string lightingUiMode = "compact_step_controls";
+    std::string lightingUniformUpdateStatus = "ok_uniform_only";
+    std::string sliderUpdateMode = "uniform_only";
     std::string brdfStatus = "ok";
     std::string brdfMode = "direct_lighting_schlick_mobile";
     std::string diffuseStatus = "ok_non_metal_diffuse";
-    std::string specularStatus = "ok_roughness_controlled";
+    std::string specularStatus = "ok_roughness_view_dependent_boosted";
     std::string fresnelStatus = "ok_schlick";
     std::string f0Status = "ok_dielectric_0_04_metal_base_color";
     std::string metallicResponseStatus = "ok_diffuse_reduced_f0_tinted";
@@ -184,9 +196,9 @@ struct ModelRenderState {
     std::string toneMappingStatus = "ok";
     std::string toneMappingMode = "reinhard";
     std::string exposureStatus = "ok";
-    float exposureValue = 1.18f;
-    float ambientFloor = 0.10f;
-    std::string brightnessPreset = "Normal";
+    float exposureValue = 1.50f;
+    float ambientFloor = 0.16f;
+    std::string brightnessPreset = "Bright Preview";
     std::string activeDebugView = "Final Shaded";
     std::string debugViewStatus = "shader_applied";
     std::string normalDebugViewStatus = "shader_applied";

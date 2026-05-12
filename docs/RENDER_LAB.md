@@ -2,6 +2,58 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene10 Lighting Control Lab
+
+P13 scene id:
+
+```text
+scene10_lighting_control_lab
+```
+
+Runtime status text:
+
+```text
+Render Lab: Scene10 Lighting Control Lab
+Lighting: Soft / Studio / Outdoor / Bright / Ultra
+Active debug view: Final Shaded / BaseColor / Normal / Roughness / Metallic / AO / Diffuse / Specular / F0 / BRDF Status
+```
+
+Scene10 preserves Scene09 BRDF material response, model import/scan/export, Debug ZIP, and live FPS while adding compact lighting controls and analytic specular reflection foundation without real IBL.
+
+Required P13 diagnostics:
+
+```text
+currentScene = scene10_lighting_control_lab
+renderLab.currentLabScene = scene10_lighting_control_lab
+renderLab.currentLabSceneName = Scene10 Lighting Control Lab
+lightingControlStatus
+lightingUiMode
+sunIntensity
+ambientIntensity
+exposureValue
+ambientFloor
+specularBoost
+specularBoostStatus
+reflectionFoundationStatus = analytic_specular_only
+reflectionMode
+environmentReflectionStatus = not_yet_real_ibl
+lightingUniformUpdateStatus
+sliderUpdateMode = uniform_only
+materialResponseStatus
+brdfStatus
+fpsStatus
+fpsUpdateMode
+debugZipStatus
+debugZipPath
+```
+
+Supported P13 foundation:
+
+- default Bright Preview uses stronger sun, ambient, exposure, and ambient floor for a less dark ToyCar preview;
+- compact step controls update sun, ambient, exposure, and specular boost as uniforms only;
+- shader keeps Schlick Fresnel/F0 and adds cheap view-dependent analytic specular fill;
+- no cubemap, no shadows, no glass/clearcoat/transmission, no skeletal animation.
+
 ## Scene09 BRDF Material Response Lab
 
 P12 scene id:

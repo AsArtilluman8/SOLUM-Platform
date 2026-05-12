@@ -44,7 +44,40 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 200) float specularBoost;
     layout(offset = 204) float reflectionIntensity;
     layout(offset = 208) float contactShadowIntensity;
+    layout(offset = 212) int calibrationPreset;
+    layout(offset = 216) float calibrationStrength;
+    layout(offset = 220) int materialTypeHint;
 } pc;
+
+float luminance(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+vec3 normalizeAlbedoEnergy(vec3 color, float strength) {
+    float lum = luminance(color);
+    float limit = mix(1.0, 0.82, strength);
+    if (lum > limit) color *= limit / max(lum, 0.001);
+    return clamp(color, vec3(0.0), vec3(mix(1.0, 0.92, strength)));
+}
+
+float remapRoughness(float roughness, float metallic, int hint, float strength) {
+    float target = roughness;
+    if (hint == 0) target = max(roughness, 0.78);
+    else if (hint == 3) target = max(roughness, 0.62);
+    else if (hint == 1) target = clamp(roughness, 0.28, 0.72);
+    else if (hint == 2) target = clamp(roughness, 0.18, 0.64);
+    else target = clamp(roughness, 0.24, 0.88);
+    float presetBias = pc.calibrationPreset == 1 ? 0.08 : (pc.calibrationPreset == 3 ? -0.06 : 0.0);
+    return clamp(mix(roughness, target + presetBias * (1.0 - metallic), strength), 0.06, 1.0);
+}
+
+vec3 materialTypeColor(int hint) {
+    if (hint == 0) return vec3(0.66, 0.55, 0.92);
+    if (hint == 1) return vec3(0.90, 0.42, 0.32);
+    if (hint == 2) return vec3(0.70, 0.78, 0.86);
+    if (hint == 3) return vec3(0.08, 0.10, 0.11);
+    return vec3(0.45, 0.48, 0.50);
+}
 
 vec3 toneMap(vec3 color) {
     if (pc.toneMappingMode == 2) {
@@ -84,12 +117,18 @@ float contactGroundingMask(vec3 localPos, vec3 normalDir) {
 void main() {
     vec4 texel = pc.baseColorTextureReady != 0 ? texture(baseColorTexture, inTexcoord0) : vec4(1.0);
     vec4 mr = pc.metallicRoughnessTextureReady != 0 ? texture(metallicRoughnessTexture, inTexcoord0) : vec4(1.0);
-    float roughness = clamp(pc.roughnessFactor * mr.g, 0.04, 1.0);
+    float calibration = clamp(pc.calibrationStrength, 0.0, 1.0);
+    int hint = pc.materialTypeHint;
+    float roughnessRaw = clamp(pc.roughnessFactor * mr.g, 0.04, 1.0);
     float metallic = clamp(pc.metallicFactor * mr.b, 0.0, 1.0);
-    float ao = pc.occlusionTextureReady != 0 ? mix(1.0, texture(occlusionTexture, inTexcoord0).r, pc.occlusionStrength) : 1.0;
-    vec3 baseColor = inColor * pc.baseColorFactor.rgb * texel.rgb;
+    float roughness = remapRoughness(roughnessRaw, metallic, hint, calibration);
+    float aoRaw = pc.occlusionTextureReady != 0 ? texture(occlusionTexture, inTexcoord0).r : 1.0;
+    float aoStrength = clamp(mix(pc.occlusionStrength, pc.occlusionStrength * 1.25, calibration), 0.0, 1.0);
+    float ao = pc.occlusionTextureReady != 0 ? mix(1.0, aoRaw, aoStrength) : 1.0;
+    vec3 rawBaseColor = inColor * pc.baseColorFactor.rgb * texel.rgb;
+    vec3 baseColor = normalizeAlbedoEnergy(rawBaseColor, calibration);
     if (pc.activeDebugView == 1) {
-        fragColor = vec4(baseColor, pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(rawBaseColor, pc.baseColorFactor.a * texel.a);
         return;
     }
     vec3 n = normalize(inNormal);
@@ -175,7 +214,31 @@ void main() {
         fragColor = vec4(vec3(contactMask * clamp(pc.contactShadowIntensity / 1.5, 0.0, 1.0)), pc.baseColorFactor.a * texel.a);
         return;
     }
+    if (pc.activeDebugView == 14) {
+        fragColor = vec4(baseColor, pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 15) {
+        fragColor = vec4(materialTypeColor(hint), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 16) {
+        fragColor = vec4(vec3(1.0 - ao), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 17) {
+        float rawLum = luminance(rawBaseColor);
+        float clampedLum = luminance(baseColor);
+        fragColor = vec4(clamp(vec3(clampedLum, rawLum - clampedLum, rawLum), 0.0, 1.0), pc.baseColorFactor.a * texel.a);
+        return;
+    }
     rgb *= 1.0 - contactMask * clamp(pc.contactShadowIntensity, 0.0, 1.5) * 0.22;
+    float diffuseLum = luminance(diffuseLight + ambient);
+    float diffuseLimit = mix(2.4, 1.55, calibration);
+    if (diffuseLum > diffuseLimit) rgb *= mix(1.0, diffuseLimit / max(diffuseLum, 0.001), 0.65 * calibration);
+    float litLum = luminance(rgb);
+    float guardLimit = mix(3.2, 2.1, calibration);
+    if (litLum > guardLimit && luminance(pc.emissiveFactor) <= 0.001) rgb *= guardLimit / max(litLum, 0.001);
     rgb *= pc.exposureValue;
     rgb = toneMap(rgb);
     fragColor = vec4(rgb, pc.baseColorFactor.a * texel.a);

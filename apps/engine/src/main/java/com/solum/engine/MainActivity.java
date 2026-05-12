@@ -60,8 +60,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static final String TAG_DIAG = "SOLUM_ENGINE_DIAG";
     private static final String PREFS_NAME = "solum_engine_diagnostics";
     private static final String PREF_TREE_URI = "diagnostics_tree_uri";
-    private static final String SCENE_ID = "scene12_grounding_inspector_lab";
-    private static final String SCENE_NAME = "Scene12 Grounding Inspector Lab";
+    private static final String SCENE_ID = "scene13_material_calibration_lab";
+    private static final String SCENE_NAME = "Scene13 Material Calibration Lab";
     private static final int REQUEST_CHOOSE_DIAGNOSTICS_TREE = 2202;
     private static final int REQUEST_IMPORT_GLB = 2305;
     private static final int TEX_BASE_COLOR = 0;
@@ -94,6 +94,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button specularBoostButton;
     private Button reflectionIntensityButton;
     private Button groundIntensityButton;
+    private Button calibrationPresetButton;
+    private Button calibrationButton;
     private Button materialViewButton;
     private SeekBar sunSlider;
     private SeekBar ambientSlider;
@@ -101,6 +103,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private SeekBar specularSlider;
     private SeekBar reflectionSlider;
     private SeekBar groundSlider;
+    private SeekBar calibrationSlider;
     private LinearLayout inspectorPanel;
     private LinearLayout tabRow;
     private LinearLayout assetsPanel;
@@ -121,6 +124,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private float specularBoost = 1.60f;
     private float reflectionIntensity = 1.0f;
     private float contactShadowIntensity = 0.65f;
+    private int calibrationPresetIndex = 2;
+    private float calibrationSliderValue = 0.65f;
     private int brightnessPresetIndex = 3;
     private int activeDebugViewIndex = 0;
     private int toneMappingModeIndex = 1;
@@ -172,7 +177,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native String nativeGetStatus(long handle);
     private static native String nativeGetRenderLabState(long handle);
     private static native void nativeSetCamera(long handle, float yawDeg, float pitchDeg, float distance);
-    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity);
+    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength);
     private static native boolean nativeUploadModelFirstPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, float[] baseColorFactor);
     private static native boolean nativeUploadModelMultiPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, int[] rangeData, float[] materialData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, int primitiveTotal, int primitiveSkipped, int unsupportedPrimitiveCount, String reason);
     private static native boolean nativeUploadBaseColorTexture(long handle, int[] rgbaPixels, int width, int height, String textureName, String textureSource, String mimeType);
@@ -249,6 +254,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         else if ("Spec".equals(label)) { specularBoostButton = valueButton; specularSlider = slider; }
         else if ("Refl".equals(label)) { reflectionIntensityButton = valueButton; reflectionSlider = slider; }
         else if ("Ground".equals(label)) { groundIntensityButton = valueButton; groundSlider = slider; }
+        else if ("Calib".equals(label)) { calibrationButton = valueButton; calibrationSlider = slider; }
     }
 
     private int sliderProgress(float value, float min, float max) {
@@ -437,10 +443,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
         materialPanel = new LinearLayout(this);
         materialPanel.setOrientation(LinearLayout.VERTICAL);
+        calibrationPresetButton = compactButton("Calib: Balanced");
+        calibrationPresetButton.setOnClickListener(v -> cycleCalibrationPreset());
+        materialPanel.addView(calibrationPresetButton);
+        materialPanel.addView(sliderControl("Calib", 0.0f, 1.0f, calibrationSliderValue, v -> {
+            calibrationSliderValue = clamp(v, 0.0f, 1.0f);
+            applyLightingControls();
+        }));
         materialViewButton = compactButton("Debug: Final Shaded");
         materialViewButton.setOnClickListener(v -> cycleMaterialView());
         materialPanel.addView(materialViewButton);
-        materialPanel.addView(panelText("Views: Final / BaseColor / Normal / Rough / Metal / AO / Diff / Spec / F0 / Refl / IBL / BRDF / Ground", 10f, 3));
+        materialPanel.addView(panelText("Calib: Balanced\nAlbedo clamp: ok\nAO: calibrated\nMaterial hints: ok", 10f, 4));
+        materialPanel.addView(panelText("Views: Final / BaseColor / Normal / Rough / Metal / AO / Diff / Spec / F0 / Refl / IBL / BRDF / Ground / Calib / Type / AO Infl / Guard", 10f, 3));
         inspectorPanel.addView(materialPanel);
 
         debugPanel = new LinearLayout(this);
@@ -626,6 +640,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "\nGround: " + oneDecimal(contactShadowIntensity)
             + "\nIBL mode: " + jsonStringField(getRenderLabStateForExport(), "iblMode", modelState.iblMode)
             + "\nMaterial response status: " + jsonStringField(getRenderLabStateForExport(), "materialResponseStatus", modelState.materialResponseStatus)
+            + "\nCalibration: " + modelState.calibrationPreset + " " + oneDecimal(calibrationSliderValue)
+            + "\nAlbedo clamp: " + jsonStringField(getRenderLabStateForExport(), "albedoClampStatus", modelState.albedoClampStatus)
+            + "\nLuminance guard: " + jsonStringField(getRenderLabStateForExport(), "luminanceGuardStatus", modelState.luminanceGuardStatus)
+            + "\nMaterial hints: " + jsonStringField(getRenderLabStateForExport(), "materialTypeHintStatus", modelState.materialTypeHintStatus)
             + "\nBRDF status: " + jsonStringField(getRenderLabStateForExport(), "brdfStatus", modelState.brdfStatus)
             + "\nSpecular status: " + jsonStringField(getRenderLabStateForExport(), "specularStatus", modelState.specularStatus)
             + "\nActive debug view: " + materialDebugViewName(activeDebugViewIndex)
@@ -676,8 +694,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         updateStatus();
     }
 
+    private void cycleCalibrationPreset() {
+        calibrationPresetIndex = (calibrationPresetIndex + 1) % 4;
+        calibrationSliderValue = calibrationPresetIndex == 1 ? 0.85f : (calibrationPresetIndex == 3 ? 0.45f : (calibrationPresetIndex == 2 ? 0.65f : 0.25f));
+        applyLightingControls();
+        updateStatus();
+    }
+
     private void cycleMaterialView() {
-        activeDebugViewIndex = (activeDebugViewIndex + 1) % 14;
+        activeDebugViewIndex = (activeDebugViewIndex + 1) % 18;
         applyLightingControls();
         updateStatus();
     }
@@ -771,6 +796,31 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.exposureSliderStatus = "ok";
         modelState.specularSliderStatus = "ok";
         modelState.reflectionSliderStatus = "ok";
+        modelState.materialCalibrationStatus = "ok";
+        modelState.materialCalibrationMode = "shader_uniform_upload_lightweight";
+        modelState.albedoEnergyStatus = "ok_normalized";
+        modelState.albedoClampStatus = "ok";
+        modelState.diffuseClampStatus = "ok";
+        modelState.luminanceGuardStatus = "ok";
+        modelState.aoCalibrationStatus = "ok_indirect_weighted";
+        modelState.roughnessRemapStatus = "ok";
+        modelState.metallicRoughnessClampStatus = "ok";
+        modelState.emissiveGuardStatus = "ok_guarded_real_emissive_only";
+        modelState.fabricMattePreserveStatus = "ok_rough_fabric_kept_matte";
+        modelState.paintMaterialCalibrationStatus = "ok_luminance_guard_reflection_readable";
+        modelState.metalMaterialCalibrationStatus = "ok_clamped_metallic_readable";
+        modelState.materialTypeHintStatus = "ok";
+        modelState.materialSlotCalibrationStatus = "ok";
+        modelState.calibrationUiStatus = "ok_compact_material_tab";
+        modelState.calibrationPreset = calibrationPresetName(calibrationPresetIndex);
+        modelState.calibrationSliderStatus = "ok";
+        modelState.calibrationSliderValue = calibrationSliderValue;
+        modelState.calibrationUniformUpdateStatus = "ok_uniform_only";
+        modelState.calibratedAlbedoDebugViewStatus = "shader_applied";
+        modelState.materialTypeDebugViewStatus = "shader_applied";
+        modelState.aoInfluenceDebugViewStatus = "shader_applied";
+        modelState.luminanceGuardDebugViewStatus = "shader_applied";
+        modelState.materialCalibrationPerformanceStatus = "ok_uniform_shader_no_rebuild";
         modelState.brdfStatus = "ok";
         modelState.brdfMode = "direct_lighting_schlick_mobile";
         modelState.diffuseStatus = "ok_non_metal_diffuse";
@@ -808,11 +858,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (specularBoostButton != null) specularBoostButton.setText("Spec " + oneDecimal(specularBoost));
         if (reflectionIntensityButton != null) reflectionIntensityButton.setText("Refl " + oneDecimal(reflectionIntensity));
         if (groundIntensityButton != null) groundIntensityButton.setText("Ground " + oneDecimal(contactShadowIntensity));
+        if (calibrationPresetButton != null) calibrationPresetButton.setText("Calib: " + modelState.calibrationPreset);
+        if (calibrationButton != null) calibrationButton.setText("Calib " + oneDecimal(calibrationSliderValue));
         updateSliderPositionsFromState();
         if (materialViewButton != null) materialViewButton.setText("Debug: " + modelState.activeDebugView);
         try {
             if (nativeLoaded && nativeHandle != 0L) {
-                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity, contactShadowIntensity);
+                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPresetIndex, calibrationSliderValue);
             }
         } catch (Throwable t) {
             modelState.debugViewStatus = "native_control_failed";
@@ -827,7 +879,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.assetsTabStatus = "ok_import_scan_export_summary";
         modelState.cameraTabStatus = "ok_camera_info_reset_zoom";
         modelState.lightingTabStatus = "ok_sliders";
-        modelState.materialTabStatus = "ok_debug_views";
+        modelState.materialTabStatus = "ok_calibration_debug_views";
         modelState.debugTabStatus = "ok_fps_zip_status";
     }
 
@@ -840,6 +892,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (specularSlider != null) specularSlider.setProgress(sliderProgress(specularBoost, 0.5f, 3.0f));
             if (reflectionSlider != null) reflectionSlider.setProgress(sliderProgress(reflectionIntensity, 0.0f, 2.0f));
             if (groundSlider != null) groundSlider.setProgress(sliderProgress(contactShadowIntensity, 0.0f, 1.5f));
+            if (calibrationSlider != null) calibrationSlider.setProgress(sliderProgress(calibrationSliderValue, 0.0f, 1.0f));
         } finally {
             updatingSlidersFromState = false;
         }
@@ -867,7 +920,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 11) return "IBL Specular";
         if (index == 12) return "BRDF Status";
         if (index == 13) return "Grounding / Contact Shadow";
+        if (index == 14) return "Calibrated Albedo";
+        if (index == 15) return "Material Type";
+        if (index == 16) return "AO Influence";
+        if (index == 17) return "Luminance Guard";
         return "Final Shaded";
+    }
+
+    private String calibrationPresetName(int index) {
+        if (index == 1) return "Matte Safe";
+        if (index == 2) return "Balanced";
+        if (index == 3) return "Punchy";
+        return "Neutral";
     }
 
     private String brightnessPresetName(int index) {
@@ -1806,6 +1870,31 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"skippedPbrTextureCount\": " + jsonNumberField(renderLab, "skippedPbrTextureCount", String.valueOf(modelState.skippedPbrTextureCount)) + ",\n"
             + "  \"pbrTextureFallbackCount\": " + jsonNumberField(renderLab, "pbrTextureFallbackCount", String.valueOf(modelState.pbrTextureFallbackCount)) + ",\n"
             + "  \"materialSlotDiagnostics\": " + jsonArrayField(renderLab, "materialSlotDiagnostics", modelState.materialSlotDiagnostics) + ",\n"
+            + "  \"materialCalibrationStatus\": \"" + escape(jsonStringField(renderLab, "materialCalibrationStatus", modelState.materialCalibrationStatus)) + "\",\n"
+            + "  \"materialCalibrationMode\": \"" + escape(jsonStringField(renderLab, "materialCalibrationMode", modelState.materialCalibrationMode)) + "\",\n"
+            + "  \"albedoEnergyStatus\": \"" + escape(jsonStringField(renderLab, "albedoEnergyStatus", modelState.albedoEnergyStatus)) + "\",\n"
+            + "  \"albedoClampStatus\": \"" + escape(jsonStringField(renderLab, "albedoClampStatus", modelState.albedoClampStatus)) + "\",\n"
+            + "  \"diffuseClampStatus\": \"" + escape(jsonStringField(renderLab, "diffuseClampStatus", modelState.diffuseClampStatus)) + "\",\n"
+            + "  \"luminanceGuardStatus\": \"" + escape(jsonStringField(renderLab, "luminanceGuardStatus", modelState.luminanceGuardStatus)) + "\",\n"
+            + "  \"aoCalibrationStatus\": \"" + escape(jsonStringField(renderLab, "aoCalibrationStatus", modelState.aoCalibrationStatus)) + "\",\n"
+            + "  \"roughnessRemapStatus\": \"" + escape(jsonStringField(renderLab, "roughnessRemapStatus", modelState.roughnessRemapStatus)) + "\",\n"
+            + "  \"metallicRoughnessClampStatus\": \"" + escape(jsonStringField(renderLab, "metallicRoughnessClampStatus", modelState.metallicRoughnessClampStatus)) + "\",\n"
+            + "  \"emissiveGuardStatus\": \"" + escape(jsonStringField(renderLab, "emissiveGuardStatus", modelState.emissiveGuardStatus)) + "\",\n"
+            + "  \"fabricMattePreserveStatus\": \"" + escape(jsonStringField(renderLab, "fabricMattePreserveStatus", modelState.fabricMattePreserveStatus)) + "\",\n"
+            + "  \"paintMaterialCalibrationStatus\": \"" + escape(jsonStringField(renderLab, "paintMaterialCalibrationStatus", modelState.paintMaterialCalibrationStatus)) + "\",\n"
+            + "  \"metalMaterialCalibrationStatus\": \"" + escape(jsonStringField(renderLab, "metalMaterialCalibrationStatus", modelState.metalMaterialCalibrationStatus)) + "\",\n"
+            + "  \"materialTypeHintStatus\": \"" + escape(jsonStringField(renderLab, "materialTypeHintStatus", modelState.materialTypeHintStatus)) + "\",\n"
+            + "  \"materialSlotCalibrationStatus\": \"" + escape(jsonStringField(renderLab, "materialSlotCalibrationStatus", modelState.materialSlotCalibrationStatus)) + "\",\n"
+            + "  \"calibrationUiStatus\": \"" + escape(jsonStringField(renderLab, "calibrationUiStatus", modelState.calibrationUiStatus)) + "\",\n"
+            + "  \"calibrationPreset\": \"" + escape(jsonStringField(renderLab, "calibrationPreset", modelState.calibrationPreset)) + "\",\n"
+            + "  \"calibrationSliderStatus\": \"" + escape(jsonStringField(renderLab, "calibrationSliderStatus", modelState.calibrationSliderStatus)) + "\",\n"
+            + "  \"calibrationSliderValue\": " + jsonNumberField(renderLab, "calibrationSliderValue", jsonFloat(modelState.calibrationSliderValue)) + ",\n"
+            + "  \"calibrationUniformUpdateStatus\": \"" + escape(jsonStringField(renderLab, "calibrationUniformUpdateStatus", modelState.calibrationUniformUpdateStatus)) + "\",\n"
+            + "  \"calibratedAlbedoDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "calibratedAlbedoDebugViewStatus", modelState.calibratedAlbedoDebugViewStatus)) + "\",\n"
+            + "  \"materialTypeDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "materialTypeDebugViewStatus", modelState.materialTypeDebugViewStatus)) + "\",\n"
+            + "  \"aoInfluenceDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "aoInfluenceDebugViewStatus", modelState.aoInfluenceDebugViewStatus)) + "\",\n"
+            + "  \"luminanceGuardDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "luminanceGuardDebugViewStatus", modelState.luminanceGuardDebugViewStatus)) + "\",\n"
+            + "  \"materialCalibrationPerformanceStatus\": \"" + escape(jsonStringField(renderLab, "materialCalibrationPerformanceStatus", modelState.materialCalibrationPerformanceStatus)) + "\",\n"
             + "  \"lightingStatus\": \"" + escape(jsonStringField(renderLab, "lightingStatus", modelState.lightingStatus)) + "\",\n"
             + "  \"lightingControlStatus\": \"" + escape(jsonStringField(renderLab, "lightingControlStatus", modelState.lightingControlStatus)) + "\",\n"
             + "  \"lightingUiMode\": \"" + escape(jsonStringField(renderLab, "lightingUiMode", modelState.lightingUiMode)) + "\",\n"
@@ -1970,6 +2059,31 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"currentScene\": \"" + SCENE_ID + "\",\n"
             + "  \"currentLabScene\": \"" + SCENE_ID + "\",\n"
             + "  \"currentLabSceneName\": \"" + SCENE_NAME + "\",\n"
+            + "  \"materialCalibrationStatus\": \"" + escape(jsonStringField(renderLab, "materialCalibrationStatus", modelState.materialCalibrationStatus)) + "\",\n"
+            + "  \"materialCalibrationMode\": \"" + escape(jsonStringField(renderLab, "materialCalibrationMode", modelState.materialCalibrationMode)) + "\",\n"
+            + "  \"albedoEnergyStatus\": \"" + escape(jsonStringField(renderLab, "albedoEnergyStatus", modelState.albedoEnergyStatus)) + "\",\n"
+            + "  \"albedoClampStatus\": \"" + escape(jsonStringField(renderLab, "albedoClampStatus", modelState.albedoClampStatus)) + "\",\n"
+            + "  \"diffuseClampStatus\": \"" + escape(jsonStringField(renderLab, "diffuseClampStatus", modelState.diffuseClampStatus)) + "\",\n"
+            + "  \"luminanceGuardStatus\": \"" + escape(jsonStringField(renderLab, "luminanceGuardStatus", modelState.luminanceGuardStatus)) + "\",\n"
+            + "  \"aoCalibrationStatus\": \"" + escape(jsonStringField(renderLab, "aoCalibrationStatus", modelState.aoCalibrationStatus)) + "\",\n"
+            + "  \"roughnessRemapStatus\": \"" + escape(jsonStringField(renderLab, "roughnessRemapStatus", modelState.roughnessRemapStatus)) + "\",\n"
+            + "  \"metallicRoughnessClampStatus\": \"" + escape(jsonStringField(renderLab, "metallicRoughnessClampStatus", modelState.metallicRoughnessClampStatus)) + "\",\n"
+            + "  \"emissiveGuardStatus\": \"" + escape(jsonStringField(renderLab, "emissiveGuardStatus", modelState.emissiveGuardStatus)) + "\",\n"
+            + "  \"fabricMattePreserveStatus\": \"" + escape(jsonStringField(renderLab, "fabricMattePreserveStatus", modelState.fabricMattePreserveStatus)) + "\",\n"
+            + "  \"paintMaterialCalibrationStatus\": \"" + escape(jsonStringField(renderLab, "paintMaterialCalibrationStatus", modelState.paintMaterialCalibrationStatus)) + "\",\n"
+            + "  \"metalMaterialCalibrationStatus\": \"" + escape(jsonStringField(renderLab, "metalMaterialCalibrationStatus", modelState.metalMaterialCalibrationStatus)) + "\",\n"
+            + "  \"materialTypeHintStatus\": \"" + escape(jsonStringField(renderLab, "materialTypeHintStatus", modelState.materialTypeHintStatus)) + "\",\n"
+            + "  \"materialSlotCalibrationStatus\": \"" + escape(jsonStringField(renderLab, "materialSlotCalibrationStatus", modelState.materialSlotCalibrationStatus)) + "\",\n"
+            + "  \"calibrationUiStatus\": \"" + escape(jsonStringField(renderLab, "calibrationUiStatus", modelState.calibrationUiStatus)) + "\",\n"
+            + "  \"calibrationPreset\": \"" + escape(jsonStringField(renderLab, "calibrationPreset", modelState.calibrationPreset)) + "\",\n"
+            + "  \"calibrationSliderStatus\": \"" + escape(jsonStringField(renderLab, "calibrationSliderStatus", modelState.calibrationSliderStatus)) + "\",\n"
+            + "  \"calibrationSliderValue\": " + jsonNumberField(renderLab, "calibrationSliderValue", jsonFloat(modelState.calibrationSliderValue)) + ",\n"
+            + "  \"calibrationUniformUpdateStatus\": \"" + escape(jsonStringField(renderLab, "calibrationUniformUpdateStatus", modelState.calibrationUniformUpdateStatus)) + "\",\n"
+            + "  \"calibratedAlbedoDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "calibratedAlbedoDebugViewStatus", modelState.calibratedAlbedoDebugViewStatus)) + "\",\n"
+            + "  \"materialTypeDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "materialTypeDebugViewStatus", modelState.materialTypeDebugViewStatus)) + "\",\n"
+            + "  \"aoInfluenceDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "aoInfluenceDebugViewStatus", modelState.aoInfluenceDebugViewStatus)) + "\",\n"
+            + "  \"luminanceGuardDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "luminanceGuardDebugViewStatus", modelState.luminanceGuardDebugViewStatus)) + "\",\n"
+            + "  \"materialCalibrationPerformanceStatus\": \"" + escape(jsonStringField(renderLab, "materialCalibrationPerformanceStatus", modelState.materialCalibrationPerformanceStatus)) + "\",\n"
             + "  \"sunIntensity\": " + jsonNumberField(renderLab, "sunIntensity", jsonFloat(modelState.sunIntensity)) + ",\n"
             + "  \"ambientIntensity\": " + jsonNumberField(renderLab, "ambientIntensity", jsonFloat(modelState.ambientIntensity)) + ",\n"
             + "  \"exposureValue\": " + jsonNumberField(renderLab, "exposureValue", jsonFloat(modelState.exposureValue)) + ",\n"
@@ -2405,6 +2519,31 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         int skippedPbrTextureCount = 0;
         int pbrTextureFallbackCount = 0;
         String materialSlotDiagnostics = "[]";
+        String materialCalibrationStatus = "ok";
+        String materialCalibrationMode = "shader_uniform_upload_lightweight";
+        String albedoEnergyStatus = "ok_normalized";
+        String albedoClampStatus = "ok";
+        String diffuseClampStatus = "ok";
+        String luminanceGuardStatus = "ok";
+        String aoCalibrationStatus = "ok_indirect_weighted";
+        String roughnessRemapStatus = "ok";
+        String metallicRoughnessClampStatus = "ok";
+        String emissiveGuardStatus = "ok_guarded_real_emissive_only";
+        String fabricMattePreserveStatus = "ok_rough_fabric_kept_matte";
+        String paintMaterialCalibrationStatus = "ok_luminance_guard_reflection_readable";
+        String metalMaterialCalibrationStatus = "ok_clamped_metallic_readable";
+        String materialTypeHintStatus = "ok";
+        String materialSlotCalibrationStatus = "ok";
+        String calibrationUiStatus = "ok_compact_material_tab";
+        String calibrationPreset = "Balanced";
+        String calibrationSliderStatus = "ok";
+        float calibrationSliderValue = 0.65f;
+        String calibrationUniformUpdateStatus = "ok_uniform_only";
+        String calibratedAlbedoDebugViewStatus = "shader_applied";
+        String materialTypeDebugViewStatus = "shader_applied";
+        String aoInfluenceDebugViewStatus = "shader_applied";
+        String luminanceGuardDebugViewStatus = "shader_applied";
+        String materialCalibrationPerformanceStatus = "ok_uniform_shader_no_rebuild";
         String lightingStatus = "ok";
         float[] sunDirection = new float[] { -0.35f, -0.82f, -0.45f };
         float[] sunColor = new float[] { 1.0f, 0.96f, 0.88f };
@@ -2581,6 +2720,31 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"skippedPbrTextureCount\": " + skippedPbrTextureCount + ",\n"
                 + "  \"pbrTextureFallbackCount\": " + pbrTextureFallbackCount + ",\n"
                 + "  \"materialSlotDiagnostics\": " + materialSlotDiagnostics + ",\n"
+                + "  \"materialCalibrationStatus\": \"" + esc(materialCalibrationStatus) + "\",\n"
+                + "  \"materialCalibrationMode\": \"" + esc(materialCalibrationMode) + "\",\n"
+                + "  \"albedoEnergyStatus\": \"" + esc(albedoEnergyStatus) + "\",\n"
+                + "  \"albedoClampStatus\": \"" + esc(albedoClampStatus) + "\",\n"
+                + "  \"diffuseClampStatus\": \"" + esc(diffuseClampStatus) + "\",\n"
+                + "  \"luminanceGuardStatus\": \"" + esc(luminanceGuardStatus) + "\",\n"
+                + "  \"aoCalibrationStatus\": \"" + esc(aoCalibrationStatus) + "\",\n"
+                + "  \"roughnessRemapStatus\": \"" + esc(roughnessRemapStatus) + "\",\n"
+                + "  \"metallicRoughnessClampStatus\": \"" + esc(metallicRoughnessClampStatus) + "\",\n"
+                + "  \"emissiveGuardStatus\": \"" + esc(emissiveGuardStatus) + "\",\n"
+                + "  \"fabricMattePreserveStatus\": \"" + esc(fabricMattePreserveStatus) + "\",\n"
+                + "  \"paintMaterialCalibrationStatus\": \"" + esc(paintMaterialCalibrationStatus) + "\",\n"
+                + "  \"metalMaterialCalibrationStatus\": \"" + esc(metalMaterialCalibrationStatus) + "\",\n"
+                + "  \"materialTypeHintStatus\": \"" + esc(materialTypeHintStatus) + "\",\n"
+                + "  \"materialSlotCalibrationStatus\": \"" + esc(materialSlotCalibrationStatus) + "\",\n"
+                + "  \"calibrationUiStatus\": \"" + esc(calibrationUiStatus) + "\",\n"
+                + "  \"calibrationPreset\": \"" + esc(calibrationPreset) + "\",\n"
+                + "  \"calibrationSliderStatus\": \"" + esc(calibrationSliderStatus) + "\",\n"
+                + "  \"calibrationSliderValue\": " + jsonFloat(calibrationSliderValue) + ",\n"
+                + "  \"calibrationUniformUpdateStatus\": \"" + esc(calibrationUniformUpdateStatus) + "\",\n"
+                + "  \"calibratedAlbedoDebugViewStatus\": \"" + esc(calibratedAlbedoDebugViewStatus) + "\",\n"
+                + "  \"materialTypeDebugViewStatus\": \"" + esc(materialTypeDebugViewStatus) + "\",\n"
+                + "  \"aoInfluenceDebugViewStatus\": \"" + esc(aoInfluenceDebugViewStatus) + "\",\n"
+                + "  \"luminanceGuardDebugViewStatus\": \"" + esc(luminanceGuardDebugViewStatus) + "\",\n"
+                + "  \"materialCalibrationPerformanceStatus\": \"" + esc(materialCalibrationPerformanceStatus) + "\",\n"
                 + "  \"currentScene\": \"" + SCENE_ID + "\",\n"
                 + "  \"currentLabScene\": \"" + SCENE_ID + "\",\n"
                 + "  \"currentLabSceneName\": \"" + SCENE_NAME + "\",\n"
@@ -2663,6 +2827,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"iblSpecularDebugViewStatus\": \"" + esc(iblSpecularDebugViewStatus) + "\",\n"
                 + "  \"brdfStatusDebugViewStatus\": \"" + esc(brdfStatusDebugViewStatus) + "\",\n"
                 + "  \"groundingDebugViewStatus\": \"" + esc(groundingDebugViewStatus) + "\",\n"
+                + "  \"calibratedAlbedoDebugViewStatus\": \"" + esc(calibratedAlbedoDebugViewStatus) + "\",\n"
+                + "  \"materialTypeDebugViewStatus\": \"" + esc(materialTypeDebugViewStatus) + "\",\n"
+                + "  \"aoInfluenceDebugViewStatus\": \"" + esc(aoInfluenceDebugViewStatus) + "\",\n"
+                + "  \"luminanceGuardDebugViewStatus\": \"" + esc(luminanceGuardDebugViewStatus) + "\",\n"
                 + "  \"fallbackCubeVisible\": " + fallbackCubeVisible + ",\n"
                 + "  \"fallbackCubeStatus\": \"" + esc(fallbackCubeStatus) + "\",\n"
                 + parse.toJsonFields()
@@ -3104,6 +3272,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             for (int i = 0; i < count; i++) {
                 JSONObject material = materials == null ? null : materials.optJSONObject(i);
                 MaterialInfo info = new MaterialInfo();
+                info.materialName = material == null ? "" : material.optString("name", "");
                 info.baseColorFactor = readBaseColorFactor(root, i);
                 JSONObject pbr = material == null ? null : material.optJSONObject("pbrMetallicRoughness");
                 info.metallicFactor = pbr == null ? 0.0f : (float)pbr.optDouble("metallicFactor", 1.0);
@@ -3135,9 +3304,52 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 info.normalMapStatus = info.normalTexture == null ? "missing" : info.normalTexture.status;
                 info.normalMapAppliedStatus = "ok".equals(info.normalMapStatus) ? "blocked_no_tangent" : info.normalMapStatus;
                 info.occlusionMapStatus = info.occlusionTexture == null ? "missing" : info.occlusionTexture.status;
+                info.materialTypeHint = materialTypeHint(info);
+                info.albedoLuminance = luminance(info.baseColorFactor);
+                info.calibratedRoughness = calibratedRoughness(info);
+                info.calibratedMetallic = clampUnitRange(info.metallicFactor, 0.0f, 1.0f);
+                info.aoInfluence = "ok".equals(info.occlusionMapStatus) ? clampUnitRange(info.occlusionStrength * 1.25f, 0.0f, 1.0f) : 0.0f;
+                info.emissiveGuardApplied = luminance(info.emissiveFactor) <= 0.001f;
                 out.add(info);
             }
             return out;
+        }
+
+        private static int materialTypeHint(MaterialInfo info) {
+            String name = info.materialName == null ? "" : info.materialName.toLowerCase(Locale.US);
+            boolean hasBase = info.texture != null && "ok".equals(info.texture.status);
+            boolean hasMr = info.metallicRoughnessTexture != null && "ok".equals(info.metallicRoughnessTexture.status);
+            if (info.metallicFactor >= 0.65f || name.contains("metal") || name.contains("chrome") || name.contains("steel")) return 2;
+            if (name.contains("fabric") || name.contains("cloth") || name.contains("seat") || name.contains("carpet") || (info.roughnessFactor >= 0.78f && info.metallicFactor < 0.15f && info.alphaMode == 0)) return 0;
+            if (name.contains("rubber") || name.contains("tire") || name.contains("tyre") || name.contains("black") || (info.roughnessFactor >= 0.55f && info.metallicFactor < 0.08f && !hasBase)) return 3;
+            if (name.contains("paint") || name.contains("body") || name.contains("coat") || (info.metallicFactor < 0.2f && info.roughnessFactor < 0.72f && (hasBase || hasMr))) return 1;
+            return 4;
+        }
+
+        private static String materialTypeHintName(int hint) {
+            if (hint == 0) return "fabric_like";
+            if (hint == 1) return "paint_like";
+            if (hint == 2) return "metal_like";
+            if (hint == 3) return "rubber_like";
+            return "unknown";
+        }
+
+        private static float calibratedRoughness(MaterialInfo info) {
+            float r = clampUnitRange(info.roughnessFactor, 0.04f, 1.0f);
+            if (info.materialTypeHint == 0) return Math.max(r, 0.78f);
+            if (info.materialTypeHint == 3) return Math.max(r, 0.62f);
+            if (info.materialTypeHint == 1) return clampUnitRange(r, 0.28f, 0.72f);
+            if (info.materialTypeHint == 2) return clampUnitRange(r, 0.18f, 0.64f);
+            return clampUnitRange(r, 0.24f, 0.88f);
+        }
+
+        private static float luminance(float[] rgb) {
+            if (rgb == null || rgb.length < 3) return 0.0f;
+            return rgb[0] * 0.2126f + rgb[1] * 0.7152f + rgb[2] * 0.0722f;
+        }
+
+        private static float clampUnitRange(float value, float min, float max) {
+            return Math.max(min, Math.min(max, value));
         }
 
         private static void addPbrTexture(List<BaseColorTexture> out, BaseColorTexture texture, int limit) {
@@ -3397,6 +3609,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 MaterialInfo m = materials.get(i);
                 if (i > 0) b.append(",");
                 b.append("{\"slot\":").append(i)
+                    .append(",\"materialTypeHint\":\"").append(esc(materialTypeHintName(m.materialTypeHint))).append("\"")
+                    .append(",\"calibrationApplied\":true")
+                    .append(",\"albedoLuminance\":").append(jsonFloat(m.albedoLuminance))
+                    .append(",\"calibratedRoughness\":").append(jsonFloat(m.calibratedRoughness))
+                    .append(",\"calibratedMetallic\":").append(jsonFloat(m.calibratedMetallic))
+                    .append(",\"aoInfluence\":").append(jsonFloat(m.aoInfluence))
+                    .append(",\"emissiveGuardApplied\":").append(m.emissiveGuardApplied)
                     .append(",\"metallicFactor\":").append(jsonFloat(m.metallicFactor))
                     .append(",\"roughnessFactor\":").append(jsonFloat(m.roughnessFactor))
                     .append(",\"metallicRoughnessStatus\":\"").append(esc(m.metallicRoughnessStatus)).append("\"")
@@ -3451,7 +3670,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 out[i * 16 + 12] = m.occlusionTexture != null && "ok".equals(m.occlusionTexture.status) ? i : -1f;
                 out[i * 16 + 13] = m.normalScale;
                 out[i * 16 + 14] = m.occlusionStrength;
-                out[i * 16 + 15] = 0f;
+                out[i * 16 + 15] = m.materialTypeHint;
             }
             return out;
         }
@@ -3734,6 +3953,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private static final class MaterialInfo {
+        String materialName = "";
         float[] baseColorFactor = new float[] {1f, 1f, 1f, 1f};
         int alphaMode = 0;
         float alphaCutoff = 0.5f;
@@ -3755,6 +3975,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String normalMapAppliedStatus = "missing";
         String occlusionMapStatus = "missing";
         String tangentStatus = "missing_or_blocked";
+        int materialTypeHint = 4;
+        float albedoLuminance = 1.0f;
+        float calibratedRoughness = 1.0f;
+        float calibratedMetallic = 0.0f;
+        float aoInfluence = 0.0f;
+        boolean emissiveGuardApplied = true;
         int tangentMissingCount = 0;
         int tangentFallbackCount = 0;
         int tangentDegenerateTriangleCount = 0;

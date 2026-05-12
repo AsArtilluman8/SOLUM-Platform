@@ -1,5 +1,57 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P16 material calibration pack
+
+P16 keeps the P15 inspector, analytic IBL, contact grounding, import/export/debug ZIP, and live FPS, then switches the lab to `scene13_material_calibration_lab`.
+
+New shader/control inputs:
+
+- `calibrationPreset` push constant: Neutral, Matte Safe, Balanced, Punchy.
+- `calibrationStrength` push constant from the Material tab Calib slider.
+- `materialTypeHint` per material slot: `fabric_like`, `paint_like`, `metal_like`, `rubber_like`, `unknown`.
+- albedo energy normalization, diffuse brightness clamp, luminance guard, AO indirect weighting, roughness remap, and metallic/roughness clamps.
+
+This is a foundation only:
+
+- no cubemap or prefiltered IBL;
+- no real shadows, shadow maps, or CSM;
+- no clearcoat/glass/transmission;
+- no texture/model rebuild from calibration sliders.
+
+Debug views added:
+
+```text
+Calibrated Albedo
+Material Type
+AO Influence
+Luminance Guard
+```
+
+Diagnostics added:
+
+```text
+materialCalibrationStatus
+materialCalibrationMode
+albedoEnergyStatus
+albedoClampStatus
+diffuseClampStatus
+luminanceGuardStatus
+aoCalibrationStatus
+roughnessRemapStatus
+metallicRoughnessClampStatus
+emissiveGuardStatus
+materialTypeHintStatus
+materialSlotCalibrationStatus
+calibrationPreset
+calibrationSliderValue
+calibrationUniformUpdateStatus
+calibratedAlbedoDebugViewStatus
+materialTypeDebugViewStatus
+aoInfluenceDebugViewStatus
+luminanceGuardDebugViewStatus
+materialCalibrationPerformanceStatus
+```
+
 ## P15 contact grounding + inspector
 
 P15 keeps the P14 analytic IBL/reflection foundation and adds `scene12_grounding_inspector_lab`.

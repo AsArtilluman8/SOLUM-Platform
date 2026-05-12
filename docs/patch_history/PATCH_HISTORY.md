@@ -2,6 +2,38 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P16 — Material Calibration Pack
+
+Scope:
+
+- Scene13 Material Calibration Lab.
+- Shader/runtime material calibration: albedo energy normalization, diffuse/luminance guard, AO indirect weighting, roughness remap, and metallic/roughness clamps.
+- Material type hints foundation per material slot: `fabric_like`, `paint_like`, `metal_like`, `rubber_like`, `unknown`.
+- Material tab adds compact Calibration preset cycle and Calib slider.
+- Debug views add Calibrated Albedo, Material Type, AO Influence, and Luminance Guard.
+- Scene12 inspector tabs, P14/P15 sliders, analytic IBL, contact grounding, Debug ZIP, and live FPS are preserved.
+
+Diagnostics:
+
+- `currentScene = scene13_material_calibration_lab`
+- `materialCalibrationStatus`
+- `albedoEnergyStatus`
+- `luminanceGuardStatus`
+- `aoCalibrationStatus`
+- `roughnessRemapStatus`
+- `materialTypeHintStatus`
+- `calibrationPreset`
+- `calibratedAlbedoDebugViewStatus`
+- `materialCalibrationPerformanceStatus`
+
+Out of scope:
+
+- Real shadows, shadow maps, CSM.
+- Cubemap / prefiltered IBL.
+- Glass/clearcoat/transmission.
+- Skeletal animation.
+- Big UI rewrite.
+
 ## Patch P15 — Unified Inspector Tabs + Contact Grounding Foundation
 
 Scope:

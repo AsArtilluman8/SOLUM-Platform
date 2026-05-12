@@ -2,6 +2,83 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene13 Material Calibration Lab
+
+Patch P16 advances the Render Lab to:
+
+```text
+scene13_material_calibration_lab
+```
+
+UI title/status:
+
+```text
+Render Lab: Scene13 Material Calibration Lab
+Inspector: Assets / Camera / Lighting / Material / Debug
+Active debug view: Final Shaded / BaseColor / Normal / Roughness / Metallic / AO / Diffuse / Specular / F0 / Reflection / IBL Diffuse / IBL Specular / BRDF Status / Grounding / Contact Shadow / Calibrated Albedo / Material Type / AO Influence / Luminance Guard
+```
+
+Scene13 preserves Scene12 inspector tabs, Sun/Amb/Exp/Spec/Refl/Ground sliders, analytic IBL, contact grounding, model import/scan/export, Debug ZIP, and live FPS. It adds a mobile-friendly material calibration stage for albedo energy normalization, diffuse/luminance guarding, AO indirect weighting, roughness remap, metallic/roughness clamps, and material type hints. This is not a cubemap, clearcoat, transmission, CSM, or shadow-map patch.
+
+Required P16 diagnostics:
+
+```text
+currentScene = scene13_material_calibration_lab
+renderLab.currentLabScene = scene13_material_calibration_lab
+renderLab.currentLabSceneName = Scene13 Material Calibration Lab
+materialCalibrationStatus
+materialCalibrationMode
+albedoEnergyStatus
+albedoClampStatus
+diffuseClampStatus
+luminanceGuardStatus
+aoCalibrationStatus
+roughnessRemapStatus
+metallicRoughnessClampStatus
+emissiveGuardStatus
+fabricMattePreserveStatus
+paintMaterialCalibrationStatus
+metalMaterialCalibrationStatus
+materialTypeHintStatus
+materialSlotCalibrationStatus
+calibrationUiStatus
+calibrationPreset
+calibrationSliderStatus
+calibrationSliderValue
+calibrationUniformUpdateStatus
+calibratedAlbedoDebugViewStatus
+materialTypeDebugViewStatus
+aoInfluenceDebugViewStatus
+luminanceGuardDebugViewStatus
+materialCalibrationPerformanceStatus
+inspectorUiStatus
+iblStatus
+environmentReflectionStatus
+contactGroundingStatus
+fpsStatus
+fpsUpdateMode
+debugZipStatus
+debugZipPath
+```
+
+Material slot diagnostics include:
+
+```text
+materialTypeHint = fabric_like / paint_like / metal_like / rubber_like / unknown
+calibrationApplied
+albedoLuminance
+calibratedRoughness
+calibratedMetallic
+aoInfluence
+emissiveGuardApplied
+```
+
+Performance guard:
+
+- Calibration preset and Calib slider update uniforms only.
+- No GLB parse/upload, texture rebuild, tangent rebuild, or allocation-heavy frame callback work is introduced.
+- Debug views are shader branches only.
+
 ## Scene12 Grounding Inspector Lab
 
 Patch P15 advances the Render Lab to:

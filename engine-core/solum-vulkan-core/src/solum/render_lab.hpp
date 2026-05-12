@@ -17,11 +17,12 @@ enum class RenderLabScene {
     Scene10LightingControlLab,
     Scene11EnvironmentReflectionLab,
     Scene12GroundingInspectorLab,
+    Scene13MaterialCalibrationLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene12GroundingInspectorLab;
+    RenderLabScene currentScene = RenderLabScene::Scene13MaterialCalibrationLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -59,6 +60,7 @@ struct RenderLabState {
             case RenderLabScene::Scene10LightingControlLab: return "scene10_lighting_control_lab";
             case RenderLabScene::Scene11EnvironmentReflectionLab: return "scene11_environment_reflection_lab";
             case RenderLabScene::Scene12GroundingInspectorLab: return "scene12_grounding_inspector_lab";
+            case RenderLabScene::Scene13MaterialCalibrationLab: return "scene13_material_calibration_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -79,6 +81,7 @@ struct RenderLabState {
             case RenderLabScene::Scene10LightingControlLab: return "Scene10 Lighting Control Lab";
             case RenderLabScene::Scene11EnvironmentReflectionLab: return "Scene11 Environment Reflection Lab";
             case RenderLabScene::Scene12GroundingInspectorLab: return "Scene12 Grounding Inspector Lab";
+            case RenderLabScene::Scene13MaterialCalibrationLab: return "Scene13 Material Calibration Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }
@@ -228,6 +231,31 @@ struct RenderLabState {
         f << indent << "  \"iblSpecularDebugViewStatus\": \"" << escapeJson(model.iblSpecularDebugViewStatus) << "\",\n";
         f << indent << "  \"brdfStatusDebugViewStatus\": \"" << escapeJson(model.brdfStatusDebugViewStatus) << "\",\n";
         f << indent << "  \"groundingDebugViewStatus\": \"" << escapeJson(model.groundingDebugViewStatus) << "\",\n";
+        f << indent << "  \"materialCalibrationStatus\": \"" << escapeJson(model.materialCalibrationStatus) << "\",\n";
+        f << indent << "  \"materialCalibrationMode\": \"" << escapeJson(model.materialCalibrationMode) << "\",\n";
+        f << indent << "  \"albedoEnergyStatus\": \"" << escapeJson(model.albedoEnergyStatus) << "\",\n";
+        f << indent << "  \"albedoClampStatus\": \"" << escapeJson(model.albedoClampStatus) << "\",\n";
+        f << indent << "  \"diffuseClampStatus\": \"" << escapeJson(model.diffuseClampStatus) << "\",\n";
+        f << indent << "  \"luminanceGuardStatus\": \"" << escapeJson(model.luminanceGuardStatus) << "\",\n";
+        f << indent << "  \"aoCalibrationStatus\": \"" << escapeJson(model.aoCalibrationStatus) << "\",\n";
+        f << indent << "  \"roughnessRemapStatus\": \"" << escapeJson(model.roughnessRemapStatus) << "\",\n";
+        f << indent << "  \"metallicRoughnessClampStatus\": \"" << escapeJson(model.metallicRoughnessClampStatus) << "\",\n";
+        f << indent << "  \"emissiveGuardStatus\": \"" << escapeJson(model.emissiveGuardStatus) << "\",\n";
+        f << indent << "  \"fabricMattePreserveStatus\": \"" << escapeJson(model.fabricMattePreserveStatus) << "\",\n";
+        f << indent << "  \"paintMaterialCalibrationStatus\": \"" << escapeJson(model.paintMaterialCalibrationStatus) << "\",\n";
+        f << indent << "  \"metalMaterialCalibrationStatus\": \"" << escapeJson(model.metalMaterialCalibrationStatus) << "\",\n";
+        f << indent << "  \"materialTypeHintStatus\": \"" << escapeJson(model.materialTypeHintStatus) << "\",\n";
+        f << indent << "  \"materialSlotCalibrationStatus\": \"" << escapeJson(model.materialSlotCalibrationStatus) << "\",\n";
+        f << indent << "  \"calibrationUiStatus\": \"" << escapeJson(model.calibrationUiStatus) << "\",\n";
+        f << indent << "  \"calibrationPreset\": \"" << escapeJson(model.calibrationPreset) << "\",\n";
+        f << indent << "  \"calibrationSliderStatus\": \"" << escapeJson(model.calibrationSliderStatus) << "\",\n";
+        f << indent << "  \"calibrationSliderValue\": " << model.calibrationSliderValue << ",\n";
+        f << indent << "  \"calibrationUniformUpdateStatus\": \"" << escapeJson(model.calibrationUniformUpdateStatus) << "\",\n";
+        f << indent << "  \"calibratedAlbedoDebugViewStatus\": \"" << escapeJson(model.calibratedAlbedoDebugViewStatus) << "\",\n";
+        f << indent << "  \"materialTypeDebugViewStatus\": \"" << escapeJson(model.materialTypeDebugViewStatus) << "\",\n";
+        f << indent << "  \"aoInfluenceDebugViewStatus\": \"" << escapeJson(model.aoInfluenceDebugViewStatus) << "\",\n";
+        f << indent << "  \"luminanceGuardDebugViewStatus\": \"" << escapeJson(model.luminanceGuardDebugViewStatus) << "\",\n";
+        f << indent << "  \"materialCalibrationPerformanceStatus\": \"" << escapeJson(model.materialCalibrationPerformanceStatus) << "\",\n";
         f << indent << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << indent << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";
         f << indent << "  \"fpsSource\": \"" << escapeJson(model.fpsSource) << "\",\n";

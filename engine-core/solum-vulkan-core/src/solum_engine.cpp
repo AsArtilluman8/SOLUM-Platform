@@ -78,11 +78,13 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetLi
     jint brightnessPreset,
     jfloat specularBoost,
     jfloat reflectionIntensity,
-    jfloat contactShadowIntensity
+    jfloat contactShadowIntensity,
+    jint calibrationPreset,
+    jfloat calibrationStrength
 ) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) return;
-    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity);
+    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPreset, calibrationStrength);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdateUiDiagnostics(
@@ -138,7 +140,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdat
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) {
-        return env->NewStringUTF("{\"currentScene\":\"scene12_grounding_inspector_lab\",\"currentLabScene\":\"scene12_grounding_inspector_lab\",\"currentLabSceneName\":\"Scene12 Grounding Inspector Lab\",\"status\":\"native_handle_missing\",\"lightingStatus\":\"failed\",\"lightingControlStatus\":\"failed\",\"lightingUiMode\":\"compact_sliders\",\"inspectorUiStatus\":\"ok\",\"inspectorUiMode\":\"tabbed_compact_inspector\",\"activeInspectorTab\":\"Assets\",\"assetsTabStatus\":\"ok_import_scan_export_summary\",\"cameraTabStatus\":\"ok_camera_info_reset_zoom\",\"lightingTabStatus\":\"ok_sliders\",\"materialTabStatus\":\"ok_debug_views\",\"debugTabStatus\":\"ok_fps_zip_status\",\"reflectionIntensity\":1.0,\"contactGroundingStatus\":\"foundation_analytic\",\"contactShadowStatus\":\"enabled\",\"contactShadowMode\":\"analytic_blob_or_grounding_approx\",\"contactShadowIntensity\":0.65,\"contactShadowPerformanceStatus\":\"ok_uniform_only_no_shadow_pass\",\"groundingUsesModelBounds\":\"yes_upload_bounds_scaled_local\",\"groundingUniformUpdateStatus\":\"ok_uniform_only\",\"groundSliderStatus\":\"ok\",\"contactGroundingSliderStatus\":\"ok\",\"groundingDebugViewStatus\":\"not_applied\",\"iblStatus\":\"missing\",\"iblMode\":\"analytic_environment_approx\",\"environmentReflectionStatus\":\"foundation_approx\",\"environmentReflectionMode\":\"view_dependent_roughness_weighted\",\"environmentSource\":\"procedural_mobile_gradient\",\"reflectionColorStatus\":\"missing\",\"reflectionRoughnessResponseStatus\":\"missing\",\"metallicReflectionStatus\":\"missing\",\"dielectricReflectionStatus\":\"missing\",\"reflectionPerformanceStatus\":\"not_ready\",\"sliderUpdateMode\":\"uniform_only\",\"sliderTouchStatus\":\"ok_touch_targets\",\"sunSliderStatus\":\"ok\",\"ambientSliderStatus\":\"ok\",\"exposureSliderStatus\":\"ok\",\"specularSliderStatus\":\"ok\",\"reflectionSliderStatus\":\"ok\",\"reflectionDebugViewStatus\":\"not_applied\",\"iblDiffuseDebugViewStatus\":\"not_applied\",\"iblSpecularDebugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
+        return env->NewStringUTF("{\"currentScene\":\"scene13_material_calibration_lab\",\"currentLabScene\":\"scene13_material_calibration_lab\",\"currentLabSceneName\":\"Scene13 Material Calibration Lab\",\"status\":\"native_handle_missing\",\"lightingStatus\":\"failed\",\"lightingControlStatus\":\"failed\",\"lightingUiMode\":\"compact_sliders\",\"inspectorUiStatus\":\"ok\",\"inspectorUiMode\":\"tabbed_compact_inspector\",\"activeInspectorTab\":\"Assets\",\"assetsTabStatus\":\"ok_import_scan_export_summary\",\"cameraTabStatus\":\"ok_camera_info_reset_zoom\",\"lightingTabStatus\":\"ok_sliders\",\"materialTabStatus\":\"ok_debug_views\",\"debugTabStatus\":\"ok_fps_zip_status\",\"reflectionIntensity\":1.0,\"contactGroundingStatus\":\"foundation_analytic\",\"contactShadowStatus\":\"enabled\",\"contactShadowMode\":\"analytic_blob_or_grounding_approx\",\"contactShadowIntensity\":0.65,\"contactShadowPerformanceStatus\":\"ok_uniform_only_no_shadow_pass\",\"groundingUsesModelBounds\":\"yes_upload_bounds_scaled_local\",\"groundingUniformUpdateStatus\":\"ok_uniform_only\",\"groundSliderStatus\":\"ok\",\"contactGroundingSliderStatus\":\"ok\",\"groundingDebugViewStatus\":\"not_applied\",\"iblStatus\":\"missing\",\"iblMode\":\"analytic_environment_approx\",\"environmentReflectionStatus\":\"foundation_approx\",\"environmentReflectionMode\":\"view_dependent_roughness_weighted\",\"environmentSource\":\"procedural_mobile_gradient\",\"reflectionColorStatus\":\"missing\",\"reflectionRoughnessResponseStatus\":\"missing\",\"metallicReflectionStatus\":\"missing\",\"dielectricReflectionStatus\":\"missing\",\"reflectionPerformanceStatus\":\"not_ready\",\"sliderUpdateMode\":\"uniform_only\",\"sliderTouchStatus\":\"ok_touch_targets\",\"sunSliderStatus\":\"ok\",\"ambientSliderStatus\":\"ok\",\"exposureSliderStatus\":\"ok\",\"specularSliderStatus\":\"ok\",\"reflectionSliderStatus\":\"ok\",\"reflectionDebugViewStatus\":\"not_applied\",\"iblDiffuseDebugViewStatus\":\"not_applied\",\"iblSpecularDebugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
     }
     std::string json = std::string("{\"currentScene\":\"") + renderer->diagnostics.renderLab.sceneId()
         + "\",\"currentLabScene\":\"" + renderer->diagnostics.renderLab.sceneId()
@@ -201,6 +203,31 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"skippedPbrTextureCount\":" + std::to_string(renderer->model.skippedPbrTextureCount)
         + ",\"pbrTextureFallbackCount\":" + std::to_string(renderer->model.pbrTextureFallbackCount)
         + ",\"materialSlotDiagnostics\":" + (renderer->model.materialSlotDiagnostics.empty() ? "[]" : renderer->model.materialSlotDiagnostics)
+        + ",\"materialCalibrationStatus\":\"" + solum::escapeJson(renderer->model.materialCalibrationStatus) + "\""
+        + ",\"materialCalibrationMode\":\"" + solum::escapeJson(renderer->model.materialCalibrationMode) + "\""
+        + ",\"albedoEnergyStatus\":\"" + solum::escapeJson(renderer->model.albedoEnergyStatus) + "\""
+        + ",\"albedoClampStatus\":\"" + solum::escapeJson(renderer->model.albedoClampStatus) + "\""
+        + ",\"diffuseClampStatus\":\"" + solum::escapeJson(renderer->model.diffuseClampStatus) + "\""
+        + ",\"luminanceGuardStatus\":\"" + solum::escapeJson(renderer->model.luminanceGuardStatus) + "\""
+        + ",\"aoCalibrationStatus\":\"" + solum::escapeJson(renderer->model.aoCalibrationStatus) + "\""
+        + ",\"roughnessRemapStatus\":\"" + solum::escapeJson(renderer->model.roughnessRemapStatus) + "\""
+        + ",\"metallicRoughnessClampStatus\":\"" + solum::escapeJson(renderer->model.metallicRoughnessClampStatus) + "\""
+        + ",\"emissiveGuardStatus\":\"" + solum::escapeJson(renderer->model.emissiveGuardStatus) + "\""
+        + ",\"fabricMattePreserveStatus\":\"" + solum::escapeJson(renderer->model.fabricMattePreserveStatus) + "\""
+        + ",\"paintMaterialCalibrationStatus\":\"" + solum::escapeJson(renderer->model.paintMaterialCalibrationStatus) + "\""
+        + ",\"metalMaterialCalibrationStatus\":\"" + solum::escapeJson(renderer->model.metalMaterialCalibrationStatus) + "\""
+        + ",\"materialTypeHintStatus\":\"" + solum::escapeJson(renderer->model.materialTypeHintStatus) + "\""
+        + ",\"materialSlotCalibrationStatus\":\"" + solum::escapeJson(renderer->model.materialSlotCalibrationStatus) + "\""
+        + ",\"calibrationUiStatus\":\"" + solum::escapeJson(renderer->model.calibrationUiStatus) + "\""
+        + ",\"calibrationPreset\":\"" + solum::escapeJson(renderer->model.calibrationPreset) + "\""
+        + ",\"calibrationSliderStatus\":\"" + solum::escapeJson(renderer->model.calibrationSliderStatus) + "\""
+        + ",\"calibrationSliderValue\":" + std::to_string(renderer->model.calibrationSliderValue)
+        + ",\"calibrationUniformUpdateStatus\":\"" + solum::escapeJson(renderer->model.calibrationUniformUpdateStatus) + "\""
+        + ",\"calibratedAlbedoDebugViewStatus\":\"" + solum::escapeJson(renderer->model.calibratedAlbedoDebugViewStatus) + "\""
+        + ",\"materialTypeDebugViewStatus\":\"" + solum::escapeJson(renderer->model.materialTypeDebugViewStatus) + "\""
+        + ",\"aoInfluenceDebugViewStatus\":\"" + solum::escapeJson(renderer->model.aoInfluenceDebugViewStatus) + "\""
+        + ",\"luminanceGuardDebugViewStatus\":\"" + solum::escapeJson(renderer->model.luminanceGuardDebugViewStatus) + "\""
+        + ",\"materialCalibrationPerformanceStatus\":\"" + solum::escapeJson(renderer->model.materialCalibrationPerformanceStatus) + "\""
         + ",\"lightingStatus\":\"" + solum::escapeJson(renderer->model.lightingStatus) + "\""
         + ",\"lightingControlStatus\":\"" + solum::escapeJson(renderer->model.lightingControlStatus) + "\""
         + ",\"lightingUiMode\":\"" + solum::escapeJson(renderer->model.lightingUiMode) + "\""
@@ -470,6 +497,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
             slots[i].occlusionTextureSlot = (int)materials[i * 16u + 12u];
             slots[i].normalScale = materials[i * 16u + 13u];
             slots[i].occlusionStrength = materials[i * 16u + 14u];
+            slots[i].materialTypeHint = (int)materials[i * 16u + 15u];
         }
     } else if (materials && materialFloatCount >= 8 && (materialFloatCount % 8) == 0) {
         slots.resize((size_t)materialFloatCount / 8u);

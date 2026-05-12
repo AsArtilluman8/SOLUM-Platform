@@ -59,6 +59,9 @@ struct MaterialConstants {
     float specularBoost = 1.60f;
     float reflectionIntensity = 1.0f;
     float contactShadowIntensity = 0.65f;
+    int calibrationPreset = 2;
+    float calibrationStrength = 0.65f;
+    int materialTypeHint = 4;
 };
 
 inline const char* lightPresetName(int preset) {
@@ -83,7 +86,26 @@ inline const char* materialDebugViewName(int view) {
     if (view == 11) return "IBL Specular";
     if (view == 12) return "BRDF Status";
     if (view == 13) return "Grounding / Contact Shadow";
+    if (view == 14) return "Calibrated Albedo";
+    if (view == 15) return "Material Type";
+    if (view == 16) return "AO Influence";
+    if (view == 17) return "Luminance Guard";
     return "Final Shaded";
+}
+
+inline const char* calibrationPresetName(int preset) {
+    if (preset == 1) return "Matte Safe";
+    if (preset == 2) return "Balanced";
+    if (preset == 3) return "Punchy";
+    return "Neutral";
+}
+
+inline const char* materialTypeHintName(int hint) {
+    if (hint == 0) return "fabric_like";
+    if (hint == 1) return "paint_like";
+    if (hint == 2) return "metal_like";
+    if (hint == 3) return "rubber_like";
+    return "unknown";
 }
 
 inline const char* brightnessPresetName(int preset) {
@@ -122,6 +144,7 @@ struct MaterialSlotState {
     int metallicRoughnessTextureSlot = -1;
     int normalTextureSlot = -1;
     int occlusionTextureSlot = -1;
+    int materialTypeHint = 4;
 };
 
 struct ModelRenderState {
@@ -250,6 +273,31 @@ struct ModelRenderState {
     std::string iblSpecularDebugViewStatus = "shader_applied";
     std::string brdfStatusDebugViewStatus = "shader_applied";
     std::string groundingDebugViewStatus = "shader_applied";
+    std::string materialCalibrationStatus = "ok";
+    std::string materialCalibrationMode = "shader_uniform_upload_lightweight";
+    std::string albedoEnergyStatus = "ok_normalized";
+    std::string albedoClampStatus = "ok";
+    std::string diffuseClampStatus = "ok";
+    std::string luminanceGuardStatus = "ok";
+    std::string aoCalibrationStatus = "ok_indirect_weighted";
+    std::string roughnessRemapStatus = "ok";
+    std::string metallicRoughnessClampStatus = "ok";
+    std::string emissiveGuardStatus = "ok";
+    std::string fabricMattePreserveStatus = "ok";
+    std::string paintMaterialCalibrationStatus = "ok";
+    std::string metalMaterialCalibrationStatus = "ok";
+    std::string materialTypeHintStatus = "ok";
+    std::string materialSlotCalibrationStatus = "ok";
+    std::string calibrationUiStatus = "ok_compact_material_tab";
+    std::string calibrationPreset = "Balanced";
+    std::string calibrationSliderStatus = "ok";
+    float calibrationSliderValue = 0.65f;
+    std::string calibrationUniformUpdateStatus = "ok_uniform_only";
+    std::string calibratedAlbedoDebugViewStatus = "shader_applied";
+    std::string materialTypeDebugViewStatus = "shader_applied";
+    std::string aoInfluenceDebugViewStatus = "shader_applied";
+    std::string luminanceGuardDebugViewStatus = "shader_applied";
+    std::string materialCalibrationPerformanceStatus = "ok_uniform_shader_no_rebuild";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;
     float fpsLastStable = 0.0f;

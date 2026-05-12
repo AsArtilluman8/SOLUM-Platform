@@ -31,10 +31,20 @@ renderLab.currentLabSceneName = Scene08 Tangent Normal Exposure Lab
 tangentStatus
 tangentSource
 tangentGeneratedCount
+tangentFallbackGeneratedCount
 tangentMissingCount
+tangentDegenerateTriangleCount
 tangentFallbackReason
+tangentBuildMode
 normalMapStatus
 normalMapAppliedStatus
+fpsStatus
+fpsUpdateMode
+fpsSampleWindowMs
+framesRenderedLive
+modelUploadRepeatCount
+uploadGenerationId
+renderLoopAllocationGuardStatus
 exposureStatus
 exposureValue
 ambientFloor
@@ -52,7 +62,10 @@ Supported P11 foundation:
 - GLB `TANGENT` attribute is read when present;
 - CPU tangent generation runs for primitives with POSITION, NORMAL, and TEXCOORD_0;
 - generated tangents accumulate indexed triangle data per vertex and store handedness;
+- vertices without a valid UV tangent basis can receive a normal-orthogonal safe fallback and are counted separately;
 - normal textures are sampled only when tangent data is ready;
+- FPS diagnostics use a live Java Choreographer sample window instead of input/export event deltas;
+- tangent generation and GLB upload are import/upload-time work, not render-loop work;
 - exposure and ambient floor defaults make ToyCar clearer without flattening all lighting contrast;
 - Normal and NdotL debug views expose normal-map and lighting direction checks.
 

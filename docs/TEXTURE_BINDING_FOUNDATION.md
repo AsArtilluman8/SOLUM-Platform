@@ -32,9 +32,16 @@ Diagnostics added:
 tangentStatus
 tangentSource
 tangentGeneratedCount
+tangentFallbackGeneratedCount
 tangentMissingCount
+tangentDegenerateTriangleCount
 tangentFallbackReason
+tangentBuildMode
 normalMapAppliedStatus
+fpsStatus
+fpsUpdateMode
+fpsSampleWindowMs
+framesRenderedLive
 exposureStatus
 exposureValue
 ambientFloor
@@ -45,7 +52,7 @@ ndotlDebugViewStatus
 
 Limits:
 
-- no fake tangent fallback when POSITION/NORMAL/TEXCOORD_0 are insufficient;
+- safe tangent fallback is allowed only from a valid normal with a stable orthogonal tangent and is reported separately;
 - no shadows;
 - no IBL/reflections.
 

@@ -88,6 +88,13 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdat
     jlong handle,
     jfloat fpsCurrent,
     jfloat frameTimeMs,
+    jfloat fpsLastStable,
+    jfloat frameTimeLastStableMs,
+    jstring fpsSource,
+    jstring fpsStatus,
+    jstring fpsUpdateMode,
+    jint fpsSampleWindowMs,
+    jlong framesRenderedLive,
     jstring debugZipStatus,
     jstring debugZipPath,
     jstring debugZipIncludedFiles,
@@ -95,17 +102,30 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdat
 ) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) return;
+    const char* fpsSourceChars = env->GetStringUTFChars(fpsSource, nullptr);
+    const char* fpsStatusChars = env->GetStringUTFChars(fpsStatus, nullptr);
+    const char* fpsModeChars = env->GetStringUTFChars(fpsUpdateMode, nullptr);
     const char* statusChars = env->GetStringUTFChars(debugZipStatus, nullptr);
     const char* pathChars = env->GetStringUTFChars(debugZipPath, nullptr);
     const char* filesChars = env->GetStringUTFChars(debugZipIncludedFiles, nullptr);
     const char* reasonChars = env->GetStringUTFChars(debugZipReason, nullptr);
     renderer->model.fpsCurrent = fpsCurrent;
     renderer->model.frameTimeMs = frameTimeMs;
+    renderer->model.fpsLastStable = fpsLastStable;
+    renderer->model.frameTimeLastStableMs = frameTimeLastStableMs;
+    renderer->model.fpsSource = fpsSourceChars ? fpsSourceChars : "not_ready";
+    renderer->model.fpsStatus = fpsStatusChars ? fpsStatusChars : "not_ready";
+    renderer->model.fpsUpdateMode = fpsModeChars ? fpsModeChars : "java_choreographer_live";
+    renderer->model.fpsSampleWindowMs = (uint32_t)std::max(0, (int)fpsSampleWindowMs);
+    renderer->model.framesRenderedLive = (uint64_t)std::max((long long)0, (long long)framesRenderedLive);
     renderer->model.debugZipStatus = statusChars ? statusChars : "not_run";
     renderer->model.debugZipPath = pathChars ? pathChars : "";
     renderer->model.debugZipIncludedFiles = filesChars ? filesChars : "";
     renderer->model.debugZipReason = reasonChars ? reasonChars : "";
     renderer->syncDiagnostics();
+    if (fpsSourceChars) env->ReleaseStringUTFChars(fpsSource, fpsSourceChars);
+    if (fpsStatusChars) env->ReleaseStringUTFChars(fpsStatus, fpsStatusChars);
+    if (fpsModeChars) env->ReleaseStringUTFChars(fpsUpdateMode, fpsModeChars);
     if (statusChars) env->ReleaseStringUTFChars(debugZipStatus, statusChars);
     if (pathChars) env->ReleaseStringUTFChars(debugZipPath, pathChars);
     if (filesChars) env->ReleaseStringUTFChars(debugZipIncludedFiles, filesChars);
@@ -163,8 +183,11 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"tangentStatus\":\"" + solum::escapeJson(renderer->model.tangentStatus) + "\""
         + ",\"tangentSource\":\"" + solum::escapeJson(renderer->model.tangentSource) + "\""
         + ",\"tangentGeneratedCount\":" + std::to_string(renderer->model.tangentGeneratedCount)
+        + ",\"tangentFallbackGeneratedCount\":" + std::to_string(renderer->model.tangentFallbackGeneratedCount)
         + ",\"tangentMissingCount\":" + std::to_string(renderer->model.tangentMissingCount)
+        + ",\"tangentDegenerateTriangleCount\":" + std::to_string(renderer->model.tangentDegenerateTriangleCount)
         + ",\"tangentFallbackReason\":\"" + solum::escapeJson(renderer->model.tangentFallbackReason) + "\""
+        + ",\"tangentBuildMode\":\"" + solum::escapeJson(renderer->model.tangentBuildMode) + "\""
         + ",\"metallicFactor\":" + std::to_string(renderer->model.metallicFactor)
         + ",\"roughnessFactor\":" + std::to_string(renderer->model.roughnessFactor)
         + ",\"normalScale\":" + std::to_string(renderer->model.normalScale)
@@ -194,7 +217,16 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"ndotlDebugViewStatus\":\"" + solum::escapeJson(renderer->model.ndotlDebugViewStatus) + "\""
         + ",\"fpsCurrent\":" + std::to_string(renderer->model.fpsCurrent)
         + ",\"frameTimeMs\":" + std::to_string(renderer->model.frameTimeMs)
-        + ",\"fpsSource\":\"" + renderer->model.fpsSource + "\""
+        + ",\"fpsSource\":\"" + solum::escapeJson(renderer->model.fpsSource) + "\""
+        + ",\"fpsLastStable\":" + std::to_string(renderer->model.fpsLastStable)
+        + ",\"frameTimeLastStableMs\":" + std::to_string(renderer->model.frameTimeLastStableMs)
+        + ",\"fpsStatus\":\"" + solum::escapeJson(renderer->model.fpsStatus) + "\""
+        + ",\"fpsUpdateMode\":\"" + solum::escapeJson(renderer->model.fpsUpdateMode) + "\""
+        + ",\"fpsSampleWindowMs\":" + std::to_string(renderer->model.fpsSampleWindowMs)
+        + ",\"framesRenderedLive\":" + std::to_string(renderer->model.framesRenderedLive)
+        + ",\"modelUploadRepeatCount\":" + std::to_string(renderer->model.modelUploadRepeatCount)
+        + ",\"uploadGenerationId\":" + std::to_string(renderer->model.uploadGenerationId)
+        + ",\"renderLoopAllocationGuardStatus\":\"" + solum::escapeJson(renderer->model.renderLoopAllocationGuardStatus) + "\""
         + ",\"debugZipStatus\":\"" + solum::escapeJson(renderer->model.debugZipStatus) + "\""
         + ",\"debugZipPath\":\"" + solum::escapeJson(renderer->model.debugZipPath) + "\""
         + ",\"debugZipIncludedFiles\":\"" + solum::escapeJson(renderer->model.debugZipIncludedFiles) + "\""
@@ -629,8 +661,14 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetPb
     jstring tangentStatus,
     jstring tangentSource,
     jint tangentGeneratedCount,
+    jint tangentFallbackGeneratedCount,
     jint tangentMissingCount,
+    jint tangentDegenerateTriangleCount,
     jstring tangentFallbackReason,
+    jstring tangentBuildMode,
+    jint modelUploadRepeatCount,
+    jint uploadGenerationId,
+    jstring renderLoopAllocationGuardStatus,
     jfloat metallicFactor,
     jfloat roughnessFactor,
     jfloat normalScale,
@@ -651,6 +689,8 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetPb
     const char* tangentStatusChars = env->GetStringUTFChars(tangentStatus, nullptr);
     const char* tangentSourceChars = env->GetStringUTFChars(tangentSource, nullptr);
     const char* tangentFallbackChars = env->GetStringUTFChars(tangentFallbackReason, nullptr);
+    const char* tangentBuildModeChars = env->GetStringUTFChars(tangentBuildMode, nullptr);
+    const char* allocationGuardChars = env->GetStringUTFChars(renderLoopAllocationGuardStatus, nullptr);
     const char* diagChars = env->GetStringUTFChars(materialSlotDiagnostics, nullptr);
     renderer->model.pbrMapsStatus = pbrChars ? pbrChars : "missing";
     renderer->model.metallicRoughnessStatus = mrChars ? mrChars : "missing";
@@ -660,8 +700,14 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetPb
     renderer->model.tangentStatus = tangentStatusChars ? tangentStatusChars : "missing_or_blocked";
     renderer->model.tangentSource = tangentSourceChars ? tangentSourceChars : "missing";
     renderer->model.tangentGeneratedCount = (uint32_t)std::max(0, (int)tangentGeneratedCount);
+    renderer->model.tangentFallbackGeneratedCount = (uint32_t)std::max(0, (int)tangentFallbackGeneratedCount);
     renderer->model.tangentMissingCount = (uint32_t)std::max(0, (int)tangentMissingCount);
+    renderer->model.tangentDegenerateTriangleCount = (uint32_t)std::max(0, (int)tangentDegenerateTriangleCount);
     renderer->model.tangentFallbackReason = tangentFallbackChars ? tangentFallbackChars : "not_loaded";
+    renderer->model.tangentBuildMode = tangentBuildModeChars ? tangentBuildModeChars : "once_on_upload";
+    renderer->model.modelUploadRepeatCount = (uint32_t)std::max(0, (int)modelUploadRepeatCount);
+    renderer->model.uploadGenerationId = (uint32_t)std::max(0, (int)uploadGenerationId);
+    renderer->model.renderLoopAllocationGuardStatus = allocationGuardChars ? allocationGuardChars : "ok_no_java_glb_parse_or_upload_in_frame_callback";
     renderer->model.metallicFactor = metallicFactor;
     renderer->model.roughnessFactor = roughnessFactor;
     renderer->model.normalScale = normalScale;
@@ -681,5 +727,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetPb
     if (tangentStatusChars) env->ReleaseStringUTFChars(tangentStatus, tangentStatusChars);
     if (tangentSourceChars) env->ReleaseStringUTFChars(tangentSource, tangentSourceChars);
     if (tangentFallbackChars) env->ReleaseStringUTFChars(tangentFallbackReason, tangentFallbackChars);
+    if (tangentBuildModeChars) env->ReleaseStringUTFChars(tangentBuildMode, tangentBuildModeChars);
+    if (allocationGuardChars) env->ReleaseStringUTFChars(renderLoopAllocationGuardStatus, allocationGuardChars);
     if (diagChars) env->ReleaseStringUTFChars(materialSlotDiagnostics, diagChars);
 }

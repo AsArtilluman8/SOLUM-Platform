@@ -29,6 +29,23 @@ Next:
 Manual runtime verify on device with ToyCar_pbr_test.glb and exported diagnostics/debug ZIP.
 ```
 
+## Patch P11B — Live FPS Diagnostics + Tangent/Normal Correctness Fix
+
+Scope:
+
+- FPS diagnostics update from a live Java Choreographer sample window.
+- Tangent generation keeps indexed triangle accumulation and counts degenerate UV triangles separately.
+- Safe normal-orthogonal tangent fallback is counted as fallback, not hidden success.
+- Normal map applied status is evaluated per material/primitive instead of globally blocked by partial tangent gaps.
+- Diagnostics add FPS status/update mode, tangent fallback/degenerate counts, and upload/render-loop guard fields.
+
+Out of scope:
+
+- shadows / CSM;
+- IBL/reflections;
+- glass/clearcoat/transmission;
+- renderer rewrite.
+
 ## Patch P10 — Lighting Foundation + Simple Material Response + Debug Views
 
 Scope:

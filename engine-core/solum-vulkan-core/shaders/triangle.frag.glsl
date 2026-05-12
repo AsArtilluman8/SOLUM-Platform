@@ -41,6 +41,7 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 192) float ambientFloor;
     layout(offset = 196) int brightnessPreset;
     layout(offset = 200) float specularBoost;
+    layout(offset = 204) float reflectionIntensity;
 } pc;
 
 vec3 toneMap(vec3 color) {
@@ -58,6 +59,16 @@ vec3 toneMap(vec3 color) {
 vec3 fresnelSchlick(float cosTheta, vec3 f0) {
     float f = pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
     return f0 + (1.0 - f0) * f;
+}
+
+vec3 environmentColor(vec3 dir, float roughness) {
+    float sky = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
+    vec3 groundColor = vec3(0.30, 0.28, 0.24);
+    vec3 horizonColor = vec3(0.58, 0.66, 0.72);
+    vec3 skyColor = vec3(0.86, 0.92, 1.0);
+    vec3 sharpColor = mix(mix(groundColor, horizonColor, smoothstep(0.0, 0.55, sky)), skyColor, smoothstep(0.45, 1.0, sky));
+    vec3 blurredColor = mix(vec3(0.42, 0.48, 0.52), vec3(0.62, 0.68, 0.74), sky);
+    return mix(sharpColor, blurredColor, clamp(roughness, 0.0, 1.0));
 }
 
 void main() {
@@ -110,9 +121,15 @@ void main() {
     float specWidth = pow(max(dot(n, h), 0.0), specPower);
     float specEnergy = mix(1.0, 0.28, roughness);
     float rim = pow(clamp(1.0 - max(dot(n, v), 0.0), 0.0, 1.0), mix(4.0, 1.6, roughness));
-    vec3 analyticEnvColor = mix(vec3(0.42, 0.52, 0.62), vec3(0.88, 0.92, 1.0), clamp(n.y * 0.5 + 0.5, 0.0, 1.0));
-    vec3 analyticSpecular = fresnel * analyticEnvColor * rim * mix(0.06, 0.28, metallic) * (1.0 - roughness * 0.55);
-    vec3 specularLight = (fresnel * specWidth * specEnergy * ndotl * sunColor * pc.sunIntensity + analyticSpecular) * pc.specularBoost;
+    vec3 reflectionDir = reflect(-v, n);
+    vec3 iblDiffuseColor = environmentColor(n, 1.0) * max(pc.ambientIntensity, pc.ambientFloor);
+    vec3 iblSpecularColor = environmentColor(reflectionDir, roughness);
+    float reflectionRoughnessEnergy = mix(1.0, 0.24, roughness);
+    float reflectionMaterialWeight = mix(0.18, 1.0, metallic);
+    vec3 iblSpecular = fresnel * iblSpecularColor * reflectionRoughnessEnergy * reflectionMaterialWeight * pc.reflectionIntensity;
+    vec3 analyticSpecular = fresnel * iblSpecularColor * rim * mix(0.04, 0.18, metallic) * (1.0 - roughness * 0.55) * pc.reflectionIntensity;
+    vec3 directSpecular = fresnel * specWidth * specEnergy * ndotl * sunColor * pc.sunIntensity;
+    vec3 specularLight = (directSpecular + analyticSpecular + iblSpecular) * pc.specularBoost;
     if (pc.activeDebugView == 6) {
         fragColor = vec4(toneMap(diffuseLight * pc.exposureValue), pc.baseColorFactor.a * texel.a);
         return;
@@ -126,10 +143,22 @@ void main() {
         return;
     }
     if (pc.activeDebugView == 9) {
+        fragColor = vec4(toneMap(iblSpecular * pc.exposureValue * 2.0), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 10) {
+        fragColor = vec4(toneMap(iblDiffuseColor * baseColor * (1.0 - metallic) * pc.exposureValue), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 11) {
+        fragColor = vec4(toneMap(iblSpecular * pc.exposureValue * 3.0), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 12) {
         fragColor = vec4(pc.baseColorTextureReady != 0 ? 0.1 : 0.85, pc.metallicRoughnessTextureReady != 0 ? 0.85 : 0.1, pc.normalTextureReady != 0 ? 0.85 : 0.1, 1.0);
         return;
     }
-    vec3 ambient = baseColor * (1.0 - metallic * 0.65) * ambientColor * max(pc.ambientIntensity, pc.ambientFloor);
+    vec3 ambient = baseColor * (1.0 - metallic * 0.75) * mix(ambientColor * max(pc.ambientIntensity, pc.ambientFloor), iblDiffuseColor, 0.65);
     vec3 rgb = (diffuseLight + ambient) * ao + specularLight + pc.emissiveFactor;
     rgb *= pc.exposureValue;
     rgb = toneMap(rgb);

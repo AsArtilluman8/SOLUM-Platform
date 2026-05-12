@@ -2,6 +2,68 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene11 Environment Reflection Lab
+
+P14 scene id:
+
+```text
+scene11_environment_reflection_lab
+```
+
+Runtime status text:
+
+```text
+Render Lab: Scene11 Environment Reflection Lab
+Lighting: Soft / Studio / Outdoor / Bright / Ultra
+Active debug view: Final Shaded / BaseColor / Normal / Roughness / Metallic / AO / Diffuse / Specular / F0 / Reflection / IBL Diffuse / IBL Specular / BRDF Status
+```
+
+Scene11 preserves Scene10 lighting controls, model import/scan/export, Debug ZIP, and live FPS while adding a mobile-friendly analytic environment reflection foundation. This is not a full cubemap or prefiltered IBL pipeline.
+
+Required P14 diagnostics:
+
+```text
+currentScene = scene11_environment_reflection_lab
+renderLab.currentLabScene = scene11_environment_reflection_lab
+renderLab.currentLabSceneName = Scene11 Environment Reflection Lab
+iblStatus
+iblMode = analytic_environment_approx
+environmentReflectionStatus = foundation_approx
+environmentReflectionMode
+environmentSource = procedural_mobile_gradient
+reflectionIntensity
+reflectionColorStatus
+reflectionRoughnessResponseStatus
+metallicReflectionStatus
+dielectricReflectionStatus
+reflectionPerformanceStatus
+lightingUiMode = compact_sliders
+sliderUpdateMode = uniform_only
+sliderTouchStatus
+sunSliderStatus
+ambientSliderStatus
+exposureSliderStatus
+specularSliderStatus
+reflectionSliderStatus
+reflectionDebugViewStatus
+iblDiffuseDebugViewStatus
+iblSpecularDebugViewStatus
+fpsStatus
+fpsUpdateMode
+debugZipStatus
+debugZipPath
+```
+
+Supported P14 foundation:
+
+- procedural sky/ground gradient environment color;
+- view-dependent reflection vector;
+- roughness reduces reflection sharpness/intensity approximately;
+- metallic surfaces receive stronger tinted environment specular;
+- dielectric surfaces receive subtle F0-based reflection;
+- sliders update uniforms only, with no texture/model rebuild on slider move;
+- no shadows, no glass/clearcoat/transmission, no skeletal animation.
+
 ## Scene10 Lighting Control Lab
 
 P13 scene id:

@@ -24,6 +24,7 @@ import android.view.SurfaceView;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.SeekBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.graphics.Color;
@@ -59,6 +60,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static final String TAG_DIAG = "SOLUM_ENGINE_DIAG";
     private static final String PREFS_NAME = "solum_engine_diagnostics";
     private static final String PREF_TREE_URI = "diagnostics_tree_uri";
+    private static final String SCENE_ID = "scene11_environment_reflection_lab";
+    private static final String SCENE_NAME = "Scene11 Environment Reflection Lab";
     private static final int REQUEST_CHOOSE_DIAGNOSTICS_TREE = 2202;
     private static final int REQUEST_IMPORT_GLB = 2305;
     private static final int TEX_BASE_COLOR = 0;
@@ -84,7 +87,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button ambientIntensityButton;
     private Button exposureButton;
     private Button specularBoostButton;
+    private Button reflectionIntensityButton;
     private Button materialViewButton;
+    private SeekBar sunSlider;
+    private SeekBar ambientSlider;
+    private SeekBar exposureSlider;
+    private SeekBar specularSlider;
+    private SeekBar reflectionSlider;
     private LinearLayout assetsPanel;
     private LinearLayout cameraPanel;
     private LinearLayout debugPanel;
@@ -93,12 +102,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private boolean assetsPanelVisible = true;
     private boolean cameraPanelVisible = false;
     private boolean debugPanelVisible = false;
+    private boolean updatingSlidersFromState = false;
     private int lightPresetIndex = 3;
     private float sunIntensity = 2.0f;
     private float ambientIntensity = 0.80f;
     private float exposureValue = 1.50f;
     private float ambientFloor = 0.16f;
     private float specularBoost = 1.60f;
+    private float reflectionIntensity = 1.0f;
     private int brightnessPresetIndex = 3;
     private int activeDebugViewIndex = 0;
     private int toneMappingModeIndex = 1;
@@ -150,7 +161,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native String nativeGetStatus(long handle);
     private static native String nativeGetRenderLabState(long handle);
     private static native void nativeSetCamera(long handle, float yawDeg, float pitchDeg, float distance);
-    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost);
+    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity);
     private static native boolean nativeUploadModelFirstPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, float[] baseColorFactor);
     private static native boolean nativeUploadModelMultiPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, int[] rangeData, float[] materialData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, int primitiveTotal, int primitiveSkipped, int unsupportedPrimitiveCount, String reason);
     private static native boolean nativeUploadBaseColorTexture(long handle, int[] rgbaPixels, int width, int height, String textureName, String textureSource, String mimeType);
@@ -185,6 +196,49 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         button.setBackground(panelBackground(190));
         return button;
     }
+
+    private LinearLayout sliderControl(String label, float min, float max, float value, ValueConsumer consumer) {
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setPadding(2, 4, 2, 4);
+        Button valueButton = compactButton(label + " " + oneDecimal(value));
+        valueButton.setEnabled(false);
+        SeekBar slider = new SeekBar(this);
+        bindSliderControl(label, valueButton, slider);
+        slider.setMax(100);
+        slider.setProgress(sliderProgress(value, min, max));
+        slider.setMinHeight(52);
+        slider.setMinimumHeight(52);
+        slider.setPadding(8, 2, 8, 2);
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (updatingSlidersFromState) return;
+                float next = min + (max - min) * (progress / 100.0f);
+                consumer.accept(next);
+                valueButton.setText(label + " " + oneDecimal(next));
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { modelState.sliderTouchStatus = "active"; }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) { modelState.sliderTouchStatus = "ok_touch_targets"; updateStatus(); }
+        });
+        column.addView(valueButton);
+        column.addView(slider);
+        return column;
+    }
+
+    private void bindSliderControl(String label, Button valueButton, SeekBar slider) {
+        if ("Sun".equals(label)) { sunIntensityButton = valueButton; sunSlider = slider; }
+        else if ("Amb".equals(label)) { ambientIntensityButton = valueButton; ambientSlider = slider; }
+        else if ("Exp".equals(label)) { exposureButton = valueButton; exposureSlider = slider; }
+        else if ("Spec".equals(label)) { specularBoostButton = valueButton; specularSlider = slider; }
+        else if ("Refl".equals(label)) { reflectionIntensityButton = valueButton; reflectionSlider = slider; }
+    }
+
+    private int sliderProgress(float value, float min, float max) {
+        if (max <= min) return 0;
+        return Math.round(clamp((value - min) / (max - min), 0.0f, 1.0f) * 100.0f);
+    }
+
+    private interface ValueConsumer { void accept(float value); }
 
     private LinearLayout lightingStepperRow(String minusLabel, String plusLabel, View.OnClickListener minusClick, View.OnClickListener plusClick) {
         LinearLayout row = new LinearLayout(this);
@@ -283,30 +337,28 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         lightPresetButton = compactButton("Lighting: Bright");
         lightPresetButton.setOnClickListener(v -> cycleLightPreset());
         assetsPanel.addView(lightPresetButton);
-        assetsPanel.addView(lightingStepperRow("Sun -", "Sun +",
-                v -> adjustSunIntensity(-0.25f),
-                v -> adjustSunIntensity(0.25f)));
-        assetsPanel.addView(lightingStepperRow("Amb -", "Amb +",
-                v -> adjustAmbientIntensity(-0.10f),
-                v -> adjustAmbientIntensity(0.10f)));
-        assetsPanel.addView(lightingStepperRow("Exp -", "Exp +",
-                v -> adjustExposureValue(-0.10f),
-                v -> adjustExposureValue(0.10f)));
-        assetsPanel.addView(lightingStepperRow("Spec -", "Spec +",
-                v -> adjustSpecularBoost(-0.10f),
-                v -> adjustSpecularBoost(0.10f)));
-        sunIntensityButton = compactButton("Sun 2.0");
-        ambientIntensityButton = compactButton("Amb 0.8");
-        exposureButton = compactButton("Exp 1.5");
-        specularBoostButton = compactButton("Spec 1.6");
-        sunIntensityButton.setEnabled(false);
-        ambientIntensityButton.setEnabled(false);
-        exposureButton.setEnabled(false);
-        specularBoostButton.setEnabled(false);
-        assetsPanel.addView(sunIntensityButton);
-        assetsPanel.addView(ambientIntensityButton);
-        assetsPanel.addView(exposureButton);
-        assetsPanel.addView(specularBoostButton);
+        assetsPanel.addView(sliderControl("Sun", 0.5f, 4.0f, sunIntensity, v -> {
+            sunIntensity = clamp(v, 0.5f, 4.0f);
+            applyLightingControls();
+        }));
+        assetsPanel.addView(sliderControl("Amb", 0.1f, 2.0f, ambientIntensity, v -> {
+            ambientIntensity = clamp(v, 0.1f, 2.0f);
+            applyLightingControls();
+        }));
+        assetsPanel.addView(sliderControl("Exp", 0.8f, 3.0f, exposureValue, v -> {
+            exposureValue = clamp(v, 0.8f, 3.0f);
+            ambientFloor = clamp(0.06f + (exposureValue - 0.8f) * 0.10f, 0.06f, 0.28f);
+            brightnessPresetIndex = exposureValue >= 1.80f ? 4 : (exposureValue >= 1.45f ? 3 : (exposureValue >= 1.2f ? 2 : 1));
+            applyLightingControls();
+        }));
+        assetsPanel.addView(sliderControl("Spec", 0.5f, 3.0f, specularBoost, v -> {
+            specularBoost = clamp(v, 0.5f, 3.0f);
+            applyLightingControls();
+        }));
+        assetsPanel.addView(sliderControl("Refl", 0.0f, 2.0f, reflectionIntensity, v -> {
+            reflectionIntensity = clamp(v, 0.0f, 2.0f);
+            applyLightingControls();
+        }));
         materialViewButton = compactButton("Debug: Final Shaded");
         materialViewButton.setOnClickListener(v -> cycleMaterialView());
         assetsPanel.addView(materialViewButton);
@@ -472,12 +524,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (fallback.isEmpty()) fallback = modelState.fallbackCubeVisible ? "on" : "off";
         if (counts.isEmpty()) counts = modelState.uploadedVertexCount + " / " + modelState.uploadedIndexCount;
         if (topHudView != null) {
-            topHudView.setText("FPS " + oneDecimal(fpsCurrent) + "  |  " + oneDecimal(frameTimeMs) + " ms  |  GPU " + gpu + "  |  Vulkan  |  Scene10 Lighting Control Lab");
+            topHudView.setText("FPS " + oneDecimal(fpsCurrent) + "  |  " + oneDecimal(frameTimeMs) + " ms  |  GPU " + gpu + "  |  Vulkan  |  " + SCENE_NAME);
         }
         int rendered = intJsonField("primitiveCountRendered", modelState.primitiveCountRendered);
         int skipped = intJsonField("primitiveCountSkipped", modelState.primitiveCountSkipped);
         int total = intJsonField("primitiveCountTotal", modelState.primitiveCountTotal);
-        return "Render Lab: Scene10 Lighting Control Lab"
+        return "Render Lab: " + SCENE_NAME
             + "\nImport: " + importStatus
             + "\nActive model: " + (activeName.isEmpty() ? "none" : shorten(activeName, 34))
             + "\nModel render: " + draw
@@ -489,6 +541,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "\nAmbient intensity: " + oneDecimal(ambientIntensity)
             + "\nExposure: " + oneDecimal(exposureValue) + " " + brightnessPresetName(brightnessPresetIndex)
             + "\nSpecular boost: " + oneDecimal(specularBoost)
+            + "\nReflection: " + oneDecimal(reflectionIntensity)
+            + "\nIBL mode: " + jsonStringField(getRenderLabStateForExport(), "iblMode", modelState.iblMode)
             + "\nMaterial response status: " + jsonStringField(getRenderLabStateForExport(), "materialResponseStatus", modelState.materialResponseStatus)
             + "\nBRDF status: " + jsonStringField(getRenderLabStateForExport(), "brdfStatus", modelState.brdfStatus)
             + "\nSpecular status: " + jsonStringField(getRenderLabStateForExport(), "specularStatus", modelState.specularStatus)
@@ -504,7 +558,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "\nFallback cube: " + fallback
             + "\nMesh meta: " + p.meshCount + " / " + p.primitiveCount + " / " + p.materialCount + " / " + p.textureCount
             + "\nStatus: " + status
-            + "\nNext: IBL/reflections later";
+            + "\nNext: cubemap IBL later";
     }
 
     private void cycleLightPreset() {
@@ -541,7 +595,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleMaterialView() {
-        activeDebugViewIndex = (activeDebugViewIndex + 1) % 10;
+        activeDebugViewIndex = (activeDebugViewIndex + 1) % 13;
         applyLightingControls();
         updateStatus();
     }
@@ -553,6 +607,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             exposureValue = 1.18f;
             ambientFloor = 0.10f;
             specularBoost = 1.20f;
+            reflectionIntensity = 0.85f;
             brightnessPresetIndex = 1;
         } else if (lightPresetIndex == 2) {
             sunIntensity = 1.65f;
@@ -560,6 +615,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             exposureValue = 1.10f;
             ambientFloor = 0.08f;
             specularBoost = 1.35f;
+            reflectionIntensity = 1.10f;
             brightnessPresetIndex = 1;
         } else if (lightPresetIndex == 3) {
             sunIntensity = 2.0f;
@@ -567,13 +623,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             exposureValue = 1.50f;
             ambientFloor = 0.16f;
             specularBoost = 1.60f;
+            reflectionIntensity = 1.00f;
             brightnessPresetIndex = 3;
         } else if (lightPresetIndex == 4) {
             sunIntensity = 3.35f;
             ambientIntensity = 1.25f;
-            exposureValue = 2.25f;
+            exposureValue = 1.90f;
             ambientFloor = 0.22f;
-            specularBoost = 2.35f;
+            specularBoost = 2.10f;
+            reflectionIntensity = 1.25f;
             brightnessPresetIndex = 4;
         } else {
             sunIntensity = 1.05f;
@@ -581,6 +639,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             exposureValue = 1.32f;
             ambientFloor = 0.14f;
             specularBoost = 1.10f;
+            reflectionIntensity = 0.75f;
             brightnessPresetIndex = 2;
         }
     }
@@ -592,13 +651,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.ambientIntensity = ambientIntensity;
         modelState.specularBoost = specularBoost;
         modelState.specularBoostStatus = "ok_uniform_controlled";
-        modelState.reflectionFoundationStatus = "analytic_specular_only";
-        modelState.reflectionMode = "analytic_view_dependent";
-        modelState.environmentReflectionStatus = "not_yet_real_ibl";
+        modelState.reflectionIntensity = reflectionIntensity;
+        modelState.iblStatus = "ok_foundation";
+        modelState.iblMode = "analytic_environment_approx";
+        modelState.environmentReflectionStatus = "foundation_approx";
+        modelState.environmentReflectionMode = "view_dependent_roughness_weighted";
+        modelState.environmentSource = "procedural_mobile_gradient";
+        modelState.reflectionFoundationStatus = "analytic_environment_foundation";
+        modelState.reflectionMode = "analytic_environment_approx";
+        modelState.reflectionColorStatus = "ok_sky_ground_gradient";
+        modelState.reflectionRoughnessResponseStatus = "ok_roughness_reduces_intensity";
+        modelState.metallicReflectionStatus = "ok_stronger_tinted_environment";
+        modelState.dielectricReflectionStatus = "ok_subtle_f0_environment";
+        modelState.reflectionPerformanceStatus = "ok_no_texture_rebuild_mobile_friendly";
         modelState.lightingControlStatus = "ok";
-        modelState.lightingUiMode = "compact_step_controls";
+        modelState.lightingUiMode = "compact_sliders";
         modelState.lightingUniformUpdateStatus = "ok_uniform_only";
         modelState.sliderUpdateMode = "uniform_only";
+        modelState.sliderTouchStatus = "ok_touch_targets";
+        modelState.sunSliderStatus = "ok";
+        modelState.ambientSliderStatus = "ok";
+        modelState.exposureSliderStatus = "ok";
+        modelState.specularSliderStatus = "ok";
+        modelState.reflectionSliderStatus = "ok";
         modelState.brdfStatus = "ok";
         modelState.brdfMode = "direct_lighting_schlick_mobile";
         modelState.diffuseStatus = "ok_non_metal_diffuse";
@@ -624,20 +699,38 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.diffuseDebugViewStatus = "shader_applied";
         modelState.specularDebugViewStatus = "shader_applied";
         modelState.f0DebugViewStatus = "shader_applied";
+        modelState.reflectionDebugViewStatus = "shader_applied";
+        modelState.iblDiffuseDebugViewStatus = "shader_applied";
+        modelState.iblSpecularDebugViewStatus = "shader_applied";
         modelState.brdfStatusDebugViewStatus = "shader_applied";
         if (lightPresetButton != null) lightPresetButton.setText("Lighting: " + modelState.lightPreset);
         if (sunIntensityButton != null) sunIntensityButton.setText("Sun " + oneDecimal(sunIntensity));
         if (ambientIntensityButton != null) ambientIntensityButton.setText("Amb " + oneDecimal(ambientIntensity));
         if (exposureButton != null) exposureButton.setText("Exp " + oneDecimal(exposureValue));
         if (specularBoostButton != null) specularBoostButton.setText("Spec " + oneDecimal(specularBoost));
+        if (reflectionIntensityButton != null) reflectionIntensityButton.setText("Refl " + oneDecimal(reflectionIntensity));
+        updateSliderPositionsFromState();
         if (materialViewButton != null) materialViewButton.setText("Debug: " + modelState.activeDebugView);
         try {
             if (nativeLoaded && nativeHandle != 0L) {
-                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost);
+                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity);
             }
         } catch (Throwable t) {
             modelState.debugViewStatus = "native_control_failed";
             writeCrashReport("lighting_controls_failed", t);
+        }
+    }
+
+    private void updateSliderPositionsFromState() {
+        updatingSlidersFromState = true;
+        try {
+            if (sunSlider != null) sunSlider.setProgress(sliderProgress(sunIntensity, 0.5f, 4.0f));
+            if (ambientSlider != null) ambientSlider.setProgress(sliderProgress(ambientIntensity, 0.1f, 2.0f));
+            if (exposureSlider != null) exposureSlider.setProgress(sliderProgress(exposureValue, 0.8f, 3.0f));
+            if (specularSlider != null) specularSlider.setProgress(sliderProgress(specularBoost, 0.5f, 3.0f));
+            if (reflectionSlider != null) reflectionSlider.setProgress(sliderProgress(reflectionIntensity, 0.0f, 2.0f));
+        } finally {
+            updatingSlidersFromState = false;
         }
     }
 
@@ -658,7 +751,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 6) return "Diffuse";
         if (index == 7) return "Specular";
         if (index == 8) return "F0";
-        if (index == 9) return "BRDF Status";
+        if (index == 9) return "Reflection";
+        if (index == 10) return "IBL Diffuse";
+        if (index == 11) return "IBL Specular";
+        if (index == 12) return "BRDF Status";
         return "Final Shaded";
     }
 
@@ -720,7 +816,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private void updateTopHudOnly() {
         if (topHudView == null) return;
-        topHudView.setText("FPS " + oneDecimal(fpsCurrent) + "  |  " + oneDecimal(frameTimeMs) + " ms  |  Vulkan  |  Scene10 Lighting Control Lab");
+        topHudView.setText("FPS " + oneDecimal(fpsCurrent) + "  |  " + oneDecimal(frameTimeMs) + " ms  |  Vulkan  |  " + SCENE_NAME);
     }
 
     private boolean isStableFpsSample(float fps, float frameMs) {
@@ -1356,8 +1452,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         addDebugZipEntry(entries, missing, new File(reportDir, "asset_report.json"), true);
         File note = new File(reportDir, "debug_zip_runtime_note.txt");
         try (FileWriter w = new FileWriter(note, false)) {
-            w.write("SOLUM P13 debug zip\n");
-            w.write("Scene10 Lighting Control Lab\n");
+            w.write("SOLUM P14 debug zip\n");
+            w.write(SCENE_NAME + "\n");
             w.write("debugZipStatus=running\n");
             w.write("requiredFiles=engine_runtime_state.json,engine_diagnostics_manifest.json,model_import_state.json,asset_report.json\n");
             if (missing.isEmpty()) {
@@ -1537,9 +1633,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"diagnosticsRootStatus\": \"" + escape(result.reason) + "\",\n"
             + "  \"build\": { \"versionName\": \"" + escape(versionName) + "\", \"versionCode\": " + versionCode + " },\n"
             + "  \"backend\": { \"rendererPath\": \"Android Native Vulkan\", \"statusText\": \"" + escape(nativeStatus) + "\" },\n"
-            + "  \"currentScene\": \"scene10_lighting_control_lab\",\n"
-            + "  \"currentLabScene\": \"scene10_lighting_control_lab\",\n"
-            + "  \"currentLabSceneName\": \"Scene10 Lighting Control Lab\",\n"
+            + "  \"currentScene\": \"" + SCENE_ID + "\",\n"
+            + "  \"currentLabScene\": \"" + SCENE_ID + "\",\n"
+            + "  \"currentLabSceneName\": \"" + SCENE_NAME + "\",\n"
             + "  \"assetImportStatus\": \"" + escape(modelState.importStatus) + "\",\n"
             + "  \"activeModelName\": \"" + escape(modelState.activeModelName()) + "\",\n"
             + "  \"activeModelPath\": \"" + escape(modelState.activeModelPath) + "\",\n"
@@ -1609,11 +1705,27 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"lightPreset\": \"" + escape(jsonStringField(renderLab, "lightPreset", modelState.lightPreset)) + "\",\n"
             + "  \"specularBoost\": " + jsonNumberField(renderLab, "specularBoost", jsonFloat(modelState.specularBoost)) + ",\n"
             + "  \"specularBoostStatus\": \"" + escape(jsonStringField(renderLab, "specularBoostStatus", modelState.specularBoostStatus)) + "\",\n"
+            + "  \"reflectionIntensity\": " + jsonNumberField(renderLab, "reflectionIntensity", jsonFloat(modelState.reflectionIntensity)) + ",\n"
+            + "  \"iblStatus\": \"" + escape(jsonStringField(renderLab, "iblStatus", modelState.iblStatus)) + "\",\n"
+            + "  \"iblMode\": \"" + escape(jsonStringField(renderLab, "iblMode", modelState.iblMode)) + "\",\n"
             + "  \"reflectionFoundationStatus\": \"" + escape(jsonStringField(renderLab, "reflectionFoundationStatus", modelState.reflectionFoundationStatus)) + "\",\n"
             + "  \"reflectionMode\": \"" + escape(jsonStringField(renderLab, "reflectionMode", modelState.reflectionMode)) + "\",\n"
             + "  \"environmentReflectionStatus\": \"" + escape(jsonStringField(renderLab, "environmentReflectionStatus", modelState.environmentReflectionStatus)) + "\",\n"
+            + "  \"environmentReflectionMode\": \"" + escape(jsonStringField(renderLab, "environmentReflectionMode", modelState.environmentReflectionMode)) + "\",\n"
+            + "  \"environmentSource\": \"" + escape(jsonStringField(renderLab, "environmentSource", modelState.environmentSource)) + "\",\n"
+            + "  \"reflectionColorStatus\": \"" + escape(jsonStringField(renderLab, "reflectionColorStatus", modelState.reflectionColorStatus)) + "\",\n"
+            + "  \"reflectionRoughnessResponseStatus\": \"" + escape(jsonStringField(renderLab, "reflectionRoughnessResponseStatus", modelState.reflectionRoughnessResponseStatus)) + "\",\n"
+            + "  \"metallicReflectionStatus\": \"" + escape(jsonStringField(renderLab, "metallicReflectionStatus", modelState.metallicReflectionStatus)) + "\",\n"
+            + "  \"dielectricReflectionStatus\": \"" + escape(jsonStringField(renderLab, "dielectricReflectionStatus", modelState.dielectricReflectionStatus)) + "\",\n"
+            + "  \"reflectionPerformanceStatus\": \"" + escape(jsonStringField(renderLab, "reflectionPerformanceStatus", modelState.reflectionPerformanceStatus)) + "\",\n"
             + "  \"lightingUniformUpdateStatus\": \"" + escape(jsonStringField(renderLab, "lightingUniformUpdateStatus", modelState.lightingUniformUpdateStatus)) + "\",\n"
             + "  \"sliderUpdateMode\": \"" + escape(jsonStringField(renderLab, "sliderUpdateMode", modelState.sliderUpdateMode)) + "\",\n"
+            + "  \"sliderTouchStatus\": \"" + escape(jsonStringField(renderLab, "sliderTouchStatus", modelState.sliderTouchStatus)) + "\",\n"
+            + "  \"sunSliderStatus\": \"" + escape(jsonStringField(renderLab, "sunSliderStatus", modelState.sunSliderStatus)) + "\",\n"
+            + "  \"ambientSliderStatus\": \"" + escape(jsonStringField(renderLab, "ambientSliderStatus", modelState.ambientSliderStatus)) + "\",\n"
+            + "  \"exposureSliderStatus\": \"" + escape(jsonStringField(renderLab, "exposureSliderStatus", modelState.exposureSliderStatus)) + "\",\n"
+            + "  \"specularSliderStatus\": \"" + escape(jsonStringField(renderLab, "specularSliderStatus", modelState.specularSliderStatus)) + "\",\n"
+            + "  \"reflectionSliderStatus\": \"" + escape(jsonStringField(renderLab, "reflectionSliderStatus", modelState.reflectionSliderStatus)) + "\",\n"
             + "  \"brdfStatus\": \"" + escape(jsonStringField(renderLab, "brdfStatus", modelState.brdfStatus)) + "\",\n"
             + "  \"brdfMode\": \"" + escape(jsonStringField(renderLab, "brdfMode", modelState.brdfMode)) + "\",\n"
             + "  \"diffuseStatus\": \"" + escape(jsonStringField(renderLab, "diffuseStatus", modelState.diffuseStatus)) + "\",\n"
@@ -1639,6 +1751,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"diffuseDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "diffuseDebugViewStatus", modelState.diffuseDebugViewStatus)) + "\",\n"
             + "  \"specularDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "specularDebugViewStatus", modelState.specularDebugViewStatus)) + "\",\n"
             + "  \"f0DebugViewStatus\": \"" + escape(jsonStringField(renderLab, "f0DebugViewStatus", modelState.f0DebugViewStatus)) + "\",\n"
+            + "  \"reflectionDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "reflectionDebugViewStatus", modelState.reflectionDebugViewStatus)) + "\",\n"
+            + "  \"iblDiffuseDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "iblDiffuseDebugViewStatus", modelState.iblDiffuseDebugViewStatus)) + "\",\n"
+            + "  \"iblSpecularDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "iblSpecularDebugViewStatus", modelState.iblSpecularDebugViewStatus)) + "\",\n"
             + "  \"brdfStatusDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "brdfStatusDebugViewStatus", modelState.brdfStatusDebugViewStatus)) + "\",\n"
             + "  \"fpsCurrent\": " + jsonFloat(fps.fpsCurrent) + ",\n"
             + "  \"frameTimeMs\": " + jsonFloat(fps.frameTimeMs) + ",\n"
@@ -1722,9 +1837,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  },\n"
             + "  \"materialConstantsReady\": " + jsonBooleanField(renderLab, "materialConstantsReady", "false") + ",\n"
             + "  \"meshAttributeLayoutReady\": " + jsonBooleanField(renderLab, "meshAttributeLayoutReady", "false") + ",\n"
-            + "  \"currentScene\": \"scene10_lighting_control_lab\",\n"
-            + "  \"currentLabScene\": \"scene10_lighting_control_lab\",\n"
-            + "  \"currentLabSceneName\": \"Scene10 Lighting Control Lab\",\n"
+            + "  \"currentScene\": \"" + SCENE_ID + "\",\n"
+            + "  \"currentLabScene\": \"" + SCENE_ID + "\",\n"
+            + "  \"currentLabSceneName\": \"" + SCENE_NAME + "\",\n"
             + "  \"sunIntensity\": " + jsonNumberField(renderLab, "sunIntensity", jsonFloat(modelState.sunIntensity)) + ",\n"
             + "  \"ambientIntensity\": " + jsonNumberField(renderLab, "ambientIntensity", jsonFloat(modelState.ambientIntensity)) + ",\n"
             + "  \"exposureValue\": " + jsonNumberField(renderLab, "exposureValue", jsonFloat(modelState.exposureValue)) + ",\n"
@@ -1735,11 +1850,27 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"lightingUiMode\": \"" + escape(jsonStringField(renderLab, "lightingUiMode", modelState.lightingUiMode)) + "\",\n"
             + "  \"specularBoost\": " + jsonNumberField(renderLab, "specularBoost", jsonFloat(modelState.specularBoost)) + ",\n"
             + "  \"specularBoostStatus\": \"" + escape(jsonStringField(renderLab, "specularBoostStatus", modelState.specularBoostStatus)) + "\",\n"
+            + "  \"reflectionIntensity\": " + jsonNumberField(renderLab, "reflectionIntensity", jsonFloat(modelState.reflectionIntensity)) + ",\n"
+            + "  \"iblStatus\": \"" + escape(jsonStringField(renderLab, "iblStatus", modelState.iblStatus)) + "\",\n"
+            + "  \"iblMode\": \"" + escape(jsonStringField(renderLab, "iblMode", modelState.iblMode)) + "\",\n"
             + "  \"reflectionFoundationStatus\": \"" + escape(jsonStringField(renderLab, "reflectionFoundationStatus", modelState.reflectionFoundationStatus)) + "\",\n"
             + "  \"reflectionMode\": \"" + escape(jsonStringField(renderLab, "reflectionMode", modelState.reflectionMode)) + "\",\n"
             + "  \"environmentReflectionStatus\": \"" + escape(jsonStringField(renderLab, "environmentReflectionStatus", modelState.environmentReflectionStatus)) + "\",\n"
+            + "  \"environmentReflectionMode\": \"" + escape(jsonStringField(renderLab, "environmentReflectionMode", modelState.environmentReflectionMode)) + "\",\n"
+            + "  \"environmentSource\": \"" + escape(jsonStringField(renderLab, "environmentSource", modelState.environmentSource)) + "\",\n"
+            + "  \"reflectionColorStatus\": \"" + escape(jsonStringField(renderLab, "reflectionColorStatus", modelState.reflectionColorStatus)) + "\",\n"
+            + "  \"reflectionRoughnessResponseStatus\": \"" + escape(jsonStringField(renderLab, "reflectionRoughnessResponseStatus", modelState.reflectionRoughnessResponseStatus)) + "\",\n"
+            + "  \"metallicReflectionStatus\": \"" + escape(jsonStringField(renderLab, "metallicReflectionStatus", modelState.metallicReflectionStatus)) + "\",\n"
+            + "  \"dielectricReflectionStatus\": \"" + escape(jsonStringField(renderLab, "dielectricReflectionStatus", modelState.dielectricReflectionStatus)) + "\",\n"
+            + "  \"reflectionPerformanceStatus\": \"" + escape(jsonStringField(renderLab, "reflectionPerformanceStatus", modelState.reflectionPerformanceStatus)) + "\",\n"
             + "  \"lightingUniformUpdateStatus\": \"" + escape(jsonStringField(renderLab, "lightingUniformUpdateStatus", modelState.lightingUniformUpdateStatus)) + "\",\n"
             + "  \"sliderUpdateMode\": \"" + escape(jsonStringField(renderLab, "sliderUpdateMode", modelState.sliderUpdateMode)) + "\",\n"
+            + "  \"sliderTouchStatus\": \"" + escape(jsonStringField(renderLab, "sliderTouchStatus", modelState.sliderTouchStatus)) + "\",\n"
+            + "  \"sunSliderStatus\": \"" + escape(jsonStringField(renderLab, "sunSliderStatus", modelState.sunSliderStatus)) + "\",\n"
+            + "  \"ambientSliderStatus\": \"" + escape(jsonStringField(renderLab, "ambientSliderStatus", modelState.ambientSliderStatus)) + "\",\n"
+            + "  \"exposureSliderStatus\": \"" + escape(jsonStringField(renderLab, "exposureSliderStatus", modelState.exposureSliderStatus)) + "\",\n"
+            + "  \"specularSliderStatus\": \"" + escape(jsonStringField(renderLab, "specularSliderStatus", modelState.specularSliderStatus)) + "\",\n"
+            + "  \"reflectionSliderStatus\": \"" + escape(jsonStringField(renderLab, "reflectionSliderStatus", modelState.reflectionSliderStatus)) + "\",\n"
             + "  \"brdfMode\": \"" + escape(jsonStringField(renderLab, "brdfMode", modelState.brdfMode)) + "\",\n"
             + "  \"diffuseStatus\": \"" + escape(jsonStringField(renderLab, "diffuseStatus", modelState.diffuseStatus)) + "\",\n"
             + "  \"specularStatus\": \"" + escape(jsonStringField(renderLab, "specularStatus", modelState.specularStatus)) + "\",\n"
@@ -1758,6 +1889,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"diffuseDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "diffuseDebugViewStatus", modelState.diffuseDebugViewStatus)) + "\",\n"
             + "  \"specularDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "specularDebugViewStatus", modelState.specularDebugViewStatus)) + "\",\n"
             + "  \"f0DebugViewStatus\": \"" + escape(jsonStringField(renderLab, "f0DebugViewStatus", modelState.f0DebugViewStatus)) + "\",\n"
+            + "  \"reflectionDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "reflectionDebugViewStatus", modelState.reflectionDebugViewStatus)) + "\",\n"
+            + "  \"iblDiffuseDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "iblDiffuseDebugViewStatus", modelState.iblDiffuseDebugViewStatus)) + "\",\n"
+            + "  \"iblSpecularDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "iblSpecularDebugViewStatus", modelState.iblSpecularDebugViewStatus)) + "\",\n"
             + "  \"brdfStatusDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "brdfStatusDebugViewStatus", modelState.brdfStatusDebugViewStatus)) + "\",\n"
             + "  \"vertexLayout\": \"" + escape(jsonStringField(renderLab, "vertexLayout", "unknown")) + "\",\n"
             + "  \"vertexStrideBytes\": " + jsonNumberField(renderLab, "vertexStrideBytes", "0") + ",\n"
@@ -2025,10 +2159,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private String getRenderLabStateForExport() {
         if (!nativeLoaded || nativeHandle == 0L) {
-            return "{\"currentScene\":\"scene10_lighting_control_lab\",\"currentLabScene\":\"scene10_lighting_control_lab\",\"currentLabSceneName\":\"Scene10 Lighting Control Lab\",\"status\":\"native_not_loaded\",\"lightingStatus\":\"ok\",\"lightingControlStatus\":\"ok\",\"lightingUiMode\":\"compact_step_controls\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":2.0,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.8,\"lightPreset\":\"Bright\",\"specularBoost\":1.6,\"specularBoostStatus\":\"ok_uniform_controlled\",\"reflectionFoundationStatus\":\"analytic_specular_only\",\"reflectionMode\":\"analytic_view_dependent\",\"environmentReflectionStatus\":\"not_yet_real_ibl\",\"lightingUniformUpdateStatus\":\"ok_uniform_only\",\"sliderUpdateMode\":\"uniform_only\",\"brdfStatus\":\"ok\",\"brdfMode\":\"direct_lighting_schlick_mobile\",\"diffuseStatus\":\"ok_non_metal_diffuse\",\"specularStatus\":\"ok_roughness_view_dependent_boosted\",\"fresnelStatus\":\"ok_schlick\",\"f0Status\":\"ok_dielectric_0_04_metal_base_color\",\"metallicResponseStatus\":\"ok_diffuse_reduced_f0_tinted\",\"roughnessResponseStatus\":\"ok_highlight_width_intensity\",\"directLightingStatus\":\"ok_single_sun_direct\",\"materialResponseStatus\":\"brdf_direct_lit\",\"pbrQualityTier\":\"mobile_direct_lighting\",\"brdfPerformanceStatus\":\"ok_mobile_friendly_direct_lighting\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"shader_applied\",\"diffuseDebugViewStatus\":\"shader_applied\",\"specularDebugViewStatus\":\"shader_applied\",\"f0DebugViewStatus\":\"shader_applied\",\"brdfStatusDebugViewStatus\":\"shader_applied\",\"exposureValue\":1.5,\"ambientFloor\":0.16,\"brightnessPreset\":\"Bright Preview\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"tangentFallbackGeneratedCount\":0,\"tangentDegenerateTriangleCount\":0,\"tangentBuildMode\":\"once_on_upload\",\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"not_ready\",\"fpsLastStable\":0,\"frameTimeLastStableMs\":0,\"fpsStatus\":\"not_ready\",\"fpsUpdateMode\":\"java_choreographer_live\",\"fpsSampleWindowMs\":1000,\"framesRenderedLive\":0,\"modelUploadRepeatCount\":0,\"uploadGenerationId\":0,\"renderLoopAllocationGuardStatus\":\"ok_no_java_glb_parse_or_upload_in_frame_callback\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\"}";
+            return fallbackRenderLabJson("native_not_loaded", "ok", "shader_applied", "");
         }
         try { return nativeGetRenderLabState(nativeHandle); }
-        catch (Throwable t) { return "{\"currentScene\":\"scene10_lighting_control_lab\",\"currentLabScene\":\"scene10_lighting_control_lab\",\"currentLabSceneName\":\"Scene10 Lighting Control Lab\",\"status\":\"native_render_lab_state_failed\",\"lightingStatus\":\"failed\",\"lightingControlStatus\":\"failed\",\"lightingUiMode\":\"compact_step_controls\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":2.0,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.8,\"lightPreset\":\"Bright\",\"specularBoost\":1.6,\"specularBoostStatus\":\"failed\",\"reflectionFoundationStatus\":\"analytic_specular_only\",\"reflectionMode\":\"analytic_view_dependent\",\"environmentReflectionStatus\":\"not_yet_real_ibl\",\"lightingUniformUpdateStatus\":\"failed\",\"sliderUpdateMode\":\"uniform_only\",\"brdfStatus\":\"ok\",\"brdfMode\":\"direct_lighting_schlick_mobile\",\"diffuseStatus\":\"ok_non_metal_diffuse\",\"specularStatus\":\"ok_roughness_view_dependent_boosted\",\"fresnelStatus\":\"ok_schlick\",\"f0Status\":\"ok_dielectric_0_04_metal_base_color\",\"metallicResponseStatus\":\"ok_diffuse_reduced_f0_tinted\",\"roughnessResponseStatus\":\"ok_highlight_width_intensity\",\"directLightingStatus\":\"ok_single_sun_direct\",\"materialResponseStatus\":\"failed\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"not_applied\",\"diffuseDebugViewStatus\":\"not_applied\",\"specularDebugViewStatus\":\"not_applied\",\"f0DebugViewStatus\":\"not_applied\",\"brdfStatusDebugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"failed\",\"baseColorTextureStatus\":\"failed\",\"textureFallbackUsed\":true,\"modelRenderMode\":\"multi_primitive_static\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(shortThrowable(t)) + "\"}"; }
+        catch (Throwable t) { return fallbackRenderLabJson("native_render_lab_state_failed", "failed", "not_applied", shortThrowable(t)); }
+    }
+
+    private String fallbackRenderLabJson(String status, String lightingStatus, String debugStatus, String reason) {
+        return "{\"currentScene\":\"" + SCENE_ID + "\",\"currentLabScene\":\"" + SCENE_ID + "\",\"currentLabSceneName\":\"" + SCENE_NAME + "\",\"status\":\"" + escape(status) + "\",\"lightingStatus\":\"" + escape(lightingStatus) + "\",\"lightingControlStatus\":\"" + escape(lightingStatus) + "\",\"lightingUiMode\":\"compact_sliders\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":2.0,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.8,\"lightPreset\":\"Bright\",\"specularBoost\":1.6,\"specularBoostStatus\":\"ok_uniform_controlled\",\"reflectionIntensity\":1.0,\"iblStatus\":\"ok_foundation\",\"iblMode\":\"analytic_environment_approx\",\"reflectionFoundationStatus\":\"analytic_environment_foundation\",\"reflectionMode\":\"analytic_environment_approx\",\"environmentReflectionStatus\":\"foundation_approx\",\"environmentReflectionMode\":\"view_dependent_roughness_weighted\",\"environmentSource\":\"procedural_mobile_gradient\",\"reflectionColorStatus\":\"ok_sky_ground_gradient\",\"reflectionRoughnessResponseStatus\":\"ok_roughness_reduces_intensity\",\"metallicReflectionStatus\":\"ok_stronger_tinted_environment\",\"dielectricReflectionStatus\":\"ok_subtle_f0_environment\",\"reflectionPerformanceStatus\":\"ok_no_texture_rebuild_mobile_friendly\",\"lightingUniformUpdateStatus\":\"ok_uniform_only\",\"sliderUpdateMode\":\"uniform_only\",\"sliderTouchStatus\":\"ok_touch_targets\",\"sunSliderStatus\":\"ok\",\"ambientSliderStatus\":\"ok\",\"exposureSliderStatus\":\"ok\",\"specularSliderStatus\":\"ok\",\"reflectionSliderStatus\":\"ok\",\"brdfStatus\":\"ok\",\"brdfMode\":\"direct_lighting_schlick_mobile_plus_analytic_ibl\",\"diffuseStatus\":\"ok_environment_diffuse\",\"specularStatus\":\"ok_environment_specular\",\"fresnelStatus\":\"ok_schlick\",\"f0Status\":\"ok_dielectric_0_04_metal_base_color\",\"metallicResponseStatus\":\"ok_diffuse_reduced_f0_tinted\",\"roughnessResponseStatus\":\"ok_highlight_width_intensity\",\"directLightingStatus\":\"ok_single_sun_direct\",\"materialResponseStatus\":\"brdf_direct_lit_plus_ibl_approx\",\"pbrQualityTier\":\"mobile_direct_lighting_ibl_foundation\",\"brdfPerformanceStatus\":\"ok_mobile_friendly_direct_lighting\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"" + escape(debugStatus) + "\",\"diffuseDebugViewStatus\":\"" + escape(debugStatus) + "\",\"specularDebugViewStatus\":\"" + escape(debugStatus) + "\",\"f0DebugViewStatus\":\"" + escape(debugStatus) + "\",\"reflectionDebugViewStatus\":\"" + escape(debugStatus) + "\",\"iblDiffuseDebugViewStatus\":\"" + escape(debugStatus) + "\",\"iblSpecularDebugViewStatus\":\"" + escape(debugStatus) + "\",\"brdfStatusDebugViewStatus\":\"" + escape(debugStatus) + "\",\"exposureValue\":1.5,\"ambientFloor\":0.16,\"brightnessPreset\":\"Bright Preview\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"tangentFallbackGeneratedCount\":0,\"tangentDegenerateTriangleCount\":0,\"tangentBuildMode\":\"once_on_upload\",\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"not_ready\",\"fpsLastStable\":0,\"frameTimeLastStableMs\":0,\"fpsStatus\":\"not_ready\",\"fpsUpdateMode\":\"java_choreographer_live\",\"fpsSampleWindowMs\":1000,\"framesRenderedLive\":0,\"modelUploadRepeatCount\":0,\"uploadGenerationId\":0,\"renderLoopAllocationGuardStatus\":\"ok_no_java_glb_parse_or_upload_in_frame_callback\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(reason) + "\"}";
     }
 
     private String timestampUtc() {
@@ -2123,13 +2261,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String lightPreset = "Bright";
         float specularBoost = 1.60f;
         String specularBoostStatus = "ok_uniform_controlled";
-        String reflectionFoundationStatus = "analytic_specular_only";
-        String reflectionMode = "analytic_view_dependent";
-        String environmentReflectionStatus = "not_yet_real_ibl";
+        float reflectionIntensity = 1.0f;
+        String iblStatus = "ok_foundation";
+        String iblMode = "analytic_environment_approx";
+        String reflectionFoundationStatus = "analytic_environment_foundation";
+        String reflectionMode = "analytic_environment_approx";
+        String environmentReflectionStatus = "foundation_approx";
+        String environmentReflectionMode = "view_dependent_roughness_weighted";
+        String environmentSource = "procedural_mobile_gradient";
+        String reflectionColorStatus = "ok_sky_ground_gradient";
+        String reflectionRoughnessResponseStatus = "ok_roughness_reduces_intensity";
+        String metallicReflectionStatus = "ok_stronger_tinted_environment";
+        String dielectricReflectionStatus = "ok_subtle_f0_environment";
+        String reflectionPerformanceStatus = "ok_no_texture_rebuild_mobile_friendly";
         String lightingControlStatus = "ok";
-        String lightingUiMode = "compact_step_controls";
+        String lightingUiMode = "compact_sliders";
         String lightingUniformUpdateStatus = "ok_uniform_only";
         String sliderUpdateMode = "uniform_only";
+        String sliderTouchStatus = "ok_touch_targets";
+        String sunSliderStatus = "ok";
+        String ambientSliderStatus = "ok";
+        String exposureSliderStatus = "ok";
+        String specularSliderStatus = "ok";
+        String reflectionSliderStatus = "ok";
         String brdfStatus = "ok";
         String brdfMode = "direct_lighting_schlick_mobile";
         String diffuseStatus = "ok_non_metal_diffuse";
@@ -2155,6 +2309,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String diffuseDebugViewStatus = "shader_applied";
         String specularDebugViewStatus = "shader_applied";
         String f0DebugViewStatus = "shader_applied";
+        String reflectionDebugViewStatus = "shader_applied";
+        String iblDiffuseDebugViewStatus = "shader_applied";
+        String iblSpecularDebugViewStatus = "shader_applied";
         String brdfStatusDebugViewStatus = "shader_applied";
         boolean fallbackCubeVisible = true;
         String fallbackCubeStatus = "on";
@@ -2253,9 +2410,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"skippedPbrTextureCount\": " + skippedPbrTextureCount + ",\n"
                 + "  \"pbrTextureFallbackCount\": " + pbrTextureFallbackCount + ",\n"
                 + "  \"materialSlotDiagnostics\": " + materialSlotDiagnostics + ",\n"
-                + "  \"currentScene\": \"scene10_lighting_control_lab\",\n"
-                + "  \"currentLabScene\": \"scene10_lighting_control_lab\",\n"
-                + "  \"currentLabSceneName\": \"Scene10 Lighting Control Lab\",\n"
+                + "  \"currentScene\": \"" + SCENE_ID + "\",\n"
+                + "  \"currentLabScene\": \"" + SCENE_ID + "\",\n"
+                + "  \"currentLabSceneName\": \"" + SCENE_NAME + "\",\n"
                 + "  \"lightingStatus\": \"" + esc(lightingStatus) + "\",\n"
                 + "  \"lightingControlStatus\": \"" + esc(lightingControlStatus) + "\",\n"
                 + "  \"lightingUiMode\": \"" + esc(lightingUiMode) + "\",\n"
@@ -2267,11 +2424,27 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"lightPreset\": \"" + esc(lightPreset) + "\",\n"
                 + "  \"specularBoost\": " + jsonFloat(specularBoost) + ",\n"
                 + "  \"specularBoostStatus\": \"" + esc(specularBoostStatus) + "\",\n"
+                + "  \"reflectionIntensity\": " + jsonFloat(reflectionIntensity) + ",\n"
+                + "  \"iblStatus\": \"" + esc(iblStatus) + "\",\n"
+                + "  \"iblMode\": \"" + esc(iblMode) + "\",\n"
                 + "  \"reflectionFoundationStatus\": \"" + esc(reflectionFoundationStatus) + "\",\n"
                 + "  \"reflectionMode\": \"" + esc(reflectionMode) + "\",\n"
                 + "  \"environmentReflectionStatus\": \"" + esc(environmentReflectionStatus) + "\",\n"
+                + "  \"environmentReflectionMode\": \"" + esc(environmentReflectionMode) + "\",\n"
+                + "  \"environmentSource\": \"" + esc(environmentSource) + "\",\n"
+                + "  \"reflectionColorStatus\": \"" + esc(reflectionColorStatus) + "\",\n"
+                + "  \"reflectionRoughnessResponseStatus\": \"" + esc(reflectionRoughnessResponseStatus) + "\",\n"
+                + "  \"metallicReflectionStatus\": \"" + esc(metallicReflectionStatus) + "\",\n"
+                + "  \"dielectricReflectionStatus\": \"" + esc(dielectricReflectionStatus) + "\",\n"
+                + "  \"reflectionPerformanceStatus\": \"" + esc(reflectionPerformanceStatus) + "\",\n"
                 + "  \"lightingUniformUpdateStatus\": \"" + esc(lightingUniformUpdateStatus) + "\",\n"
                 + "  \"sliderUpdateMode\": \"" + esc(sliderUpdateMode) + "\",\n"
+                + "  \"sliderTouchStatus\": \"" + esc(sliderTouchStatus) + "\",\n"
+                + "  \"sunSliderStatus\": \"" + esc(sunSliderStatus) + "\",\n"
+                + "  \"ambientSliderStatus\": \"" + esc(ambientSliderStatus) + "\",\n"
+                + "  \"exposureSliderStatus\": \"" + esc(exposureSliderStatus) + "\",\n"
+                + "  \"specularSliderStatus\": \"" + esc(specularSliderStatus) + "\",\n"
+                + "  \"reflectionSliderStatus\": \"" + esc(reflectionSliderStatus) + "\",\n"
                 + "  \"brdfStatus\": \"" + esc(brdfStatus) + "\",\n"
                 + "  \"brdfMode\": \"" + esc(brdfMode) + "\",\n"
                 + "  \"diffuseStatus\": \"" + esc(diffuseStatus) + "\",\n"
@@ -2297,6 +2470,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"diffuseDebugViewStatus\": \"" + esc(diffuseDebugViewStatus) + "\",\n"
                 + "  \"specularDebugViewStatus\": \"" + esc(specularDebugViewStatus) + "\",\n"
                 + "  \"f0DebugViewStatus\": \"" + esc(f0DebugViewStatus) + "\",\n"
+                + "  \"reflectionDebugViewStatus\": \"" + esc(reflectionDebugViewStatus) + "\",\n"
+                + "  \"iblDiffuseDebugViewStatus\": \"" + esc(iblDiffuseDebugViewStatus) + "\",\n"
+                + "  \"iblSpecularDebugViewStatus\": \"" + esc(iblSpecularDebugViewStatus) + "\",\n"
                 + "  \"brdfStatusDebugViewStatus\": \"" + esc(brdfStatusDebugViewStatus) + "\",\n"
                 + "  \"fallbackCubeVisible\": " + fallbackCubeVisible + ",\n"
                 + "  \"fallbackCubeStatus\": \"" + esc(fallbackCubeStatus) + "\",\n"

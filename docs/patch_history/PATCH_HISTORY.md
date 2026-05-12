@@ -2,6 +2,26 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P14 — Environment Reflections Foundation + Lighting Sliders
+
+Scope:
+
+- Scene11 Environment Reflection Lab.
+- Compact native sliders for sun, ambient, exposure, specular, and reflection intensity.
+- Analytic procedural sky/ground environment approximation for diffuse and specular response.
+- Roughness reduces reflection intensity; metallic surfaces get stronger tinted reflection; dielectric surfaces keep subtle F0 reflection.
+- Debug views add Reflection, IBL Diffuse, and IBL Specular.
+- Diagnostics add IBL/reflection statuses, slider statuses, reflection intensity, and uniform-only update evidence.
+- Live FPS, model import/scan/export, Debug ZIP, and P13 BRDF/direct lighting path are preserved.
+
+Out of scope:
+
+- full cubemap / prefiltered IBL pipeline;
+- shadows / CSM;
+- glass/clearcoat/transmission;
+- skeletal animation;
+- big UI rewrite.
+
 ## Patch P13 — Lighting UX + Specular Reflection Foundation
 
 Scope:

@@ -1,5 +1,67 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P14 analytic environment reflection foundation
+
+P14 keeps the P13 direct BRDF and lighting controls, switches Scene11 to compact sliders, and adds a mobile-friendly analytic environment approximation. It is intentionally named `analytic_environment_approx`, not full cubemap IBL.
+
+Shader/control inputs used in Scene11:
+
+- sun intensity `0.5..4.0`;
+- ambient intensity `0.1..2.0`;
+- exposure `0.8..3.0`;
+- `specularBoost` `0.5..3.0`;
+- `reflectionIntensity` `0.0..2.0`;
+- procedural sky/ground environment gradient;
+- view-dependent reflection vector;
+- roughness-weighted environment specular;
+- metallic-tinted environment reflection and subtle dielectric F0 reflection.
+
+Debug views:
+
+```text
+Final Shaded
+BaseColor
+Normal
+Roughness
+Metallic
+AO
+Diffuse
+Specular
+F0
+Reflection
+IBL Diffuse
+IBL Specular
+BRDF Status
+```
+
+Diagnostics added:
+
+```text
+iblStatus
+iblMode
+environmentReflectionStatus
+environmentReflectionMode
+environmentSource
+reflectionIntensity
+reflectionColorStatus
+reflectionRoughnessResponseStatus
+metallicReflectionStatus
+dielectricReflectionStatus
+reflectionPerformanceStatus
+lightingUiMode = compact_sliders
+sliderUpdateMode = uniform_only
+reflectionDebugViewStatus
+iblDiffuseDebugViewStatus
+iblSpecularDebugViewStatus
+```
+
+Limits:
+
+- no external cubemap or prefiltered environment pipeline yet;
+- no shadows;
+- no glass/clearcoat/transmission;
+- no skeletal animation.
+
 ## P13 lighting control and specular foundation
 
 P13 keeps the P12 BRDF foundation and adds Scene10 lighting UX plus a cheap analytic specular/reflection foundation without real IBL.

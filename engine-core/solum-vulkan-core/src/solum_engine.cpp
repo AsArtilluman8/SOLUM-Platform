@@ -76,11 +76,12 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetLi
     jfloat exposureValue,
     jfloat ambientFloor,
     jint brightnessPreset,
-    jfloat specularBoost
+    jfloat specularBoost,
+    jfloat reflectionIntensity
 ) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) return;
-    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost);
+    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdateUiDiagnostics(
@@ -136,7 +137,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdat
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) {
-        return env->NewStringUTF("{\"currentScene\":\"scene10_lighting_control_lab\",\"currentLabScene\":\"scene10_lighting_control_lab\",\"currentLabSceneName\":\"Scene10 Lighting Control Lab\",\"status\":\"native_handle_missing\",\"lightingStatus\":\"failed\",\"lightingControlStatus\":\"failed\",\"lightingUiMode\":\"compact_step_controls\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":2.0,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.8,\"lightPreset\":\"Bright\",\"specularBoost\":1.6,\"specularBoostStatus\":\"missing\",\"reflectionFoundationStatus\":\"analytic_specular_only\",\"reflectionMode\":\"analytic_view_dependent\",\"environmentReflectionStatus\":\"not_yet_real_ibl\",\"lightingUniformUpdateStatus\":\"missing\",\"sliderUpdateMode\":\"uniform_only\",\"brdfStatus\":\"missing\",\"brdfMode\":\"direct_lighting_schlick_mobile\",\"diffuseStatus\":\"missing\",\"specularStatus\":\"missing\",\"fresnelStatus\":\"missing\",\"f0Status\":\"missing\",\"metallicResponseStatus\":\"missing\",\"roughnessResponseStatus\":\"missing\",\"directLightingStatus\":\"missing\",\"materialResponseStatus\":\"missing\",\"pbrQualityTier\":\"mobile_direct_lighting\",\"brdfPerformanceStatus\":\"not_ready\",\"toneMappingStatus\":\"missing\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"not_applied\",\"diffuseDebugViewStatus\":\"not_applied\",\"specularDebugViewStatus\":\"not_applied\",\"f0DebugViewStatus\":\"not_applied\",\"brdfStatusDebugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
+        return env->NewStringUTF("{\"currentScene\":\"scene11_environment_reflection_lab\",\"currentLabScene\":\"scene11_environment_reflection_lab\",\"currentLabSceneName\":\"Scene11 Environment Reflection Lab\",\"status\":\"native_handle_missing\",\"lightingStatus\":\"failed\",\"lightingControlStatus\":\"failed\",\"lightingUiMode\":\"compact_sliders\",\"reflectionIntensity\":1.0,\"iblStatus\":\"missing\",\"iblMode\":\"analytic_environment_approx\",\"environmentReflectionStatus\":\"foundation_approx\",\"environmentReflectionMode\":\"view_dependent_roughness_weighted\",\"environmentSource\":\"procedural_mobile_gradient\",\"reflectionColorStatus\":\"missing\",\"reflectionRoughnessResponseStatus\":\"missing\",\"metallicReflectionStatus\":\"missing\",\"dielectricReflectionStatus\":\"missing\",\"reflectionPerformanceStatus\":\"not_ready\",\"sliderUpdateMode\":\"uniform_only\",\"sliderTouchStatus\":\"ok_touch_targets\",\"sunSliderStatus\":\"ok\",\"ambientSliderStatus\":\"ok\",\"exposureSliderStatus\":\"ok\",\"specularSliderStatus\":\"ok\",\"reflectionSliderStatus\":\"ok\",\"reflectionDebugViewStatus\":\"not_applied\",\"iblDiffuseDebugViewStatus\":\"not_applied\",\"iblSpecularDebugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
     }
     std::string json = std::string("{\"currentScene\":\"") + renderer->diagnostics.renderLab.sceneId()
         + "\",\"currentLabScene\":\"" + renderer->diagnostics.renderLab.sceneId()
@@ -210,11 +211,27 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"lightPreset\":\"" + solum::escapeJson(renderer->model.lightPreset) + "\""
         + ",\"specularBoost\":" + std::to_string(renderer->model.specularBoost)
         + ",\"specularBoostStatus\":\"" + solum::escapeJson(renderer->model.specularBoostStatus) + "\""
+        + ",\"reflectionIntensity\":" + std::to_string(renderer->model.reflectionIntensity)
+        + ",\"iblStatus\":\"" + solum::escapeJson(renderer->model.iblStatus) + "\""
+        + ",\"iblMode\":\"" + solum::escapeJson(renderer->model.iblMode) + "\""
         + ",\"reflectionFoundationStatus\":\"" + solum::escapeJson(renderer->model.reflectionFoundationStatus) + "\""
         + ",\"reflectionMode\":\"" + solum::escapeJson(renderer->model.reflectionMode) + "\""
         + ",\"environmentReflectionStatus\":\"" + solum::escapeJson(renderer->model.environmentReflectionStatus) + "\""
+        + ",\"environmentReflectionMode\":\"" + solum::escapeJson(renderer->model.environmentReflectionMode) + "\""
+        + ",\"environmentSource\":\"" + solum::escapeJson(renderer->model.environmentSource) + "\""
+        + ",\"reflectionColorStatus\":\"" + solum::escapeJson(renderer->model.reflectionColorStatus) + "\""
+        + ",\"reflectionRoughnessResponseStatus\":\"" + solum::escapeJson(renderer->model.reflectionRoughnessResponseStatus) + "\""
+        + ",\"metallicReflectionStatus\":\"" + solum::escapeJson(renderer->model.metallicReflectionStatus) + "\""
+        + ",\"dielectricReflectionStatus\":\"" + solum::escapeJson(renderer->model.dielectricReflectionStatus) + "\""
+        + ",\"reflectionPerformanceStatus\":\"" + solum::escapeJson(renderer->model.reflectionPerformanceStatus) + "\""
         + ",\"lightingUniformUpdateStatus\":\"" + solum::escapeJson(renderer->model.lightingUniformUpdateStatus) + "\""
         + ",\"sliderUpdateMode\":\"" + solum::escapeJson(renderer->model.sliderUpdateMode) + "\""
+        + ",\"sliderTouchStatus\":\"" + solum::escapeJson(renderer->model.sliderTouchStatus) + "\""
+        + ",\"sunSliderStatus\":\"" + solum::escapeJson(renderer->model.sunSliderStatus) + "\""
+        + ",\"ambientSliderStatus\":\"" + solum::escapeJson(renderer->model.ambientSliderStatus) + "\""
+        + ",\"exposureSliderStatus\":\"" + solum::escapeJson(renderer->model.exposureSliderStatus) + "\""
+        + ",\"specularSliderStatus\":\"" + solum::escapeJson(renderer->model.specularSliderStatus) + "\""
+        + ",\"reflectionSliderStatus\":\"" + solum::escapeJson(renderer->model.reflectionSliderStatus) + "\""
         + ",\"brdfStatus\":\"" + solum::escapeJson(renderer->model.brdfStatus) + "\""
         + ",\"brdfMode\":\"" + solum::escapeJson(renderer->model.brdfMode) + "\""
         + ",\"diffuseStatus\":\"" + solum::escapeJson(renderer->model.diffuseStatus) + "\""
@@ -240,6 +257,9 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"diffuseDebugViewStatus\":\"" + solum::escapeJson(renderer->model.diffuseDebugViewStatus) + "\""
         + ",\"specularDebugViewStatus\":\"" + solum::escapeJson(renderer->model.specularDebugViewStatus) + "\""
         + ",\"f0DebugViewStatus\":\"" + solum::escapeJson(renderer->model.f0DebugViewStatus) + "\""
+        + ",\"reflectionDebugViewStatus\":\"" + solum::escapeJson(renderer->model.reflectionDebugViewStatus) + "\""
+        + ",\"iblDiffuseDebugViewStatus\":\"" + solum::escapeJson(renderer->model.iblDiffuseDebugViewStatus) + "\""
+        + ",\"iblSpecularDebugViewStatus\":\"" + solum::escapeJson(renderer->model.iblSpecularDebugViewStatus) + "\""
         + ",\"brdfStatusDebugViewStatus\":\"" + solum::escapeJson(renderer->model.brdfStatusDebugViewStatus) + "\""
         + ",\"fpsCurrent\":" + std::to_string(renderer->model.fpsCurrent)
         + ",\"frameTimeMs\":" + std::to_string(renderer->model.frameTimeMs)

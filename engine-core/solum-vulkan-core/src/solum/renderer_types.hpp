@@ -57,6 +57,7 @@ struct MaterialConstants {
     float ambientFloor = 0.16f;
     int brightnessPreset = 3;
     float specularBoost = 1.60f;
+    float reflectionIntensity = 1.0f;
 };
 
 inline const char* lightPresetName(int preset) {
@@ -76,7 +77,10 @@ inline const char* materialDebugViewName(int view) {
     if (view == 6) return "Diffuse";
     if (view == 7) return "Specular";
     if (view == 8) return "F0";
-    if (view == 9) return "BRDF Status";
+    if (view == 9) return "Reflection";
+    if (view == 10) return "IBL Diffuse";
+    if (view == 11) return "IBL Specular";
+    if (view == 12) return "BRDF Status";
     return "Final Shaded";
 }
 
@@ -174,13 +178,29 @@ struct ModelRenderState {
     std::string lightPreset = "Bright";
     float specularBoost = 1.60f;
     std::string specularBoostStatus = "ok_uniform_controlled";
-    std::string reflectionFoundationStatus = "analytic_specular_only";
-    std::string reflectionMode = "analytic_view_dependent";
-    std::string environmentReflectionStatus = "not_yet_real_ibl";
+    float reflectionIntensity = 1.0f;
+    std::string iblStatus = "ok_foundation";
+    std::string iblMode = "analytic_environment_approx";
+    std::string reflectionFoundationStatus = "analytic_environment_foundation";
+    std::string reflectionMode = "analytic_environment_approx";
+    std::string environmentReflectionStatus = "foundation_approx";
+    std::string environmentReflectionMode = "view_dependent_roughness_weighted";
+    std::string environmentSource = "procedural_mobile_gradient";
+    std::string reflectionColorStatus = "ok_sky_ground_gradient";
+    std::string reflectionRoughnessResponseStatus = "ok_roughness_reduces_intensity";
+    std::string metallicReflectionStatus = "ok_stronger_tinted_environment";
+    std::string dielectricReflectionStatus = "ok_subtle_f0_environment";
+    std::string reflectionPerformanceStatus = "ok_no_texture_rebuild_mobile_friendly";
     std::string lightingControlStatus = "ok";
-    std::string lightingUiMode = "compact_step_controls";
+    std::string lightingUiMode = "compact_sliders";
     std::string lightingUniformUpdateStatus = "ok_uniform_only";
     std::string sliderUpdateMode = "uniform_only";
+    std::string sliderTouchStatus = "ok_touch_targets";
+    std::string sunSliderStatus = "ok";
+    std::string ambientSliderStatus = "ok";
+    std::string exposureSliderStatus = "ok";
+    std::string specularSliderStatus = "ok";
+    std::string reflectionSliderStatus = "ok";
     std::string brdfStatus = "ok";
     std::string brdfMode = "direct_lighting_schlick_mobile";
     std::string diffuseStatus = "ok_non_metal_diffuse";
@@ -206,6 +226,9 @@ struct ModelRenderState {
     std::string diffuseDebugViewStatus = "shader_applied";
     std::string specularDebugViewStatus = "shader_applied";
     std::string f0DebugViewStatus = "shader_applied";
+    std::string reflectionDebugViewStatus = "shader_applied";
+    std::string iblDiffuseDebugViewStatus = "shader_applied";
+    std::string iblSpecularDebugViewStatus = "shader_applied";
     std::string brdfStatusDebugViewStatus = "shader_applied";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;

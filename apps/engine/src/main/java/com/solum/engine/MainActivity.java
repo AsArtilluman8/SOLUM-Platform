@@ -123,10 +123,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private String fpsUpdateMode = "java_choreographer_live";
     private int fpsSampleWindowMs = 1000;
     private boolean fpsPulseActive = false;
-    private final Choreographer.FrameCallback fpsFrameCallback = frameTimeNanos -> {
-        if (!fpsPulseActive) return;
-        updateFpsFromUiPulse();
-        Choreographer.getInstance().postFrameCallback(fpsFrameCallback);
+    private final Choreographer.FrameCallback fpsFrameCallback = new Choreographer.FrameCallback() {
+        @Override
+        public void doFrame(long frameTimeNanos) {
+            if (!fpsPulseActive) return;
+            updateFpsFromUiPulse();
+            Choreographer.getInstance().postFrameCallback(this);
+        }
     };
     private float cameraYawDeg = 28.0f;
     private float cameraPitchDeg = -18.0f;

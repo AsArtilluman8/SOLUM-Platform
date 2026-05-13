@@ -229,6 +229,11 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"materialTypeDebugViewStatus\":\"" + solum::escapeJson(renderer->model.materialTypeDebugViewStatus) + "\""
         + ",\"aoInfluenceDebugViewStatus\":\"" + solum::escapeJson(renderer->model.aoInfluenceDebugViewStatus) + "\""
         + ",\"luminanceGuardDebugViewStatus\":\"" + solum::escapeJson(renderer->model.luminanceGuardDebugViewStatus) + "\""
+        + ",\"calibrationVisualStrength\":" + std::to_string(renderer->model.calibrationVisualStrength)
+        + ",\"calibrationAffectsAlbedo\":\"" + solum::escapeJson(renderer->model.calibrationAffectsAlbedo) + "\""
+        + ",\"calibrationAffectsAo\":\"" + solum::escapeJson(renderer->model.calibrationAffectsAo) + "\""
+        + ",\"calibrationAffectsRoughness\":\"" + solum::escapeJson(renderer->model.calibrationAffectsRoughness) + "\""
+        + ",\"calibrationVisibleResponseStatus\":\"" + solum::escapeJson(renderer->model.calibrationVisibleResponseStatus) + "\""
         + ",\"materialCalibrationPerformanceStatus\":\"" + solum::escapeJson(renderer->model.materialCalibrationPerformanceStatus) + "\""
         + ",\"specularGlossStatus\":\"" + solum::escapeJson(renderer->model.specularGlossStatus) + "\""
         + ",\"specularGlossMode\":\"" + solum::escapeJson(renderer->model.specularGlossMode) + "\""
@@ -246,6 +251,11 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"paintGlossRoughness\":" + std::to_string(renderer->model.paintGlossRoughness)
         + ",\"paintGlossMaterialHintStatus\":\"" + solum::escapeJson(renderer->model.paintGlossMaterialHintStatus) + "\""
         + ",\"paintGlossPerformanceStatus\":\"" + solum::escapeJson(renderer->model.paintGlossPerformanceStatus) + "\""
+        + ",\"paintGlossTargetStatus\":\"" + solum::escapeJson(renderer->model.paintGlossTargetStatus) + "\""
+        + ",\"paintGlossAppliedMaterialCount\":" + std::to_string(renderer->model.paintGlossAppliedMaterialCount)
+        + ",\"paintGlossSkippedFabricCount\":" + std::to_string(renderer->model.paintGlossSkippedFabricCount)
+        + ",\"paintGlossFallbackRouting\":\"" + solum::escapeJson(renderer->model.paintGlossFallbackRouting) + "\""
+        + ",\"paintGlossVisibleResponseStatus\":\"" + solum::escapeJson(renderer->model.paintGlossVisibleResponseStatus) + "\""
         + ",\"glossSliderStatus\":\"" + solum::escapeJson(renderer->model.glossSliderStatus) + "\""
         + ",\"glossSliderValue\":" + std::to_string(renderer->model.glossSliderValue)
         + ",\"paintGlossSliderStatus\":\"" + solum::escapeJson(renderer->model.paintGlossSliderStatus) + "\""
@@ -255,11 +265,16 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"specularGuardDebugViewStatus\":\"" + solum::escapeJson(renderer->model.specularGuardDebugViewStatus) + "\""
         + ",\"paintGlossDebugViewStatus\":\"" + solum::escapeJson(renderer->model.paintGlossDebugViewStatus) + "\""
         + ",\"metalResponseDebugViewStatus\":\"" + solum::escapeJson(renderer->model.metalResponseDebugViewStatus) + "\""
+        + ",\"paintTargetDebugViewStatus\":\"" + solum::escapeJson(renderer->model.paintTargetDebugViewStatus) + "\""
+        + ",\"calibrationResponseDebugViewStatus\":\"" + solum::escapeJson(renderer->model.calibrationResponseDebugViewStatus) + "\""
         + ",\"materialTypeSpecularRoutingStatus\":\"" + solum::escapeJson(renderer->model.materialTypeSpecularRoutingStatus) + "\""
         + ",\"paintMaterialGlossStatus\":\"" + solum::escapeJson(renderer->model.paintMaterialGlossStatus) + "\""
         + ",\"metalMaterialGlossStatus\":\"" + solum::escapeJson(renderer->model.metalMaterialGlossStatus) + "\""
         + ",\"rubberMaterialGlossStatus\":\"" + solum::escapeJson(renderer->model.rubberMaterialGlossStatus) + "\""
         + ",\"specularGlossPerformanceStatus\":\"" + solum::escapeJson(renderer->model.specularGlossPerformanceStatus) + "\""
+        + ",\"glossVisibleResponseStatus\":\"" + solum::escapeJson(renderer->model.glossVisibleResponseStatus) + "\""
+        + ",\"glossAffectsSpecularLobe\":\"" + solum::escapeJson(renderer->model.glossAffectsSpecularLobe) + "\""
+        + ",\"glossAffectsReflectionWeight\":\"" + solum::escapeJson(renderer->model.glossAffectsReflectionWeight) + "\""
         + ",\"lightingStatus\":\"" + solum::escapeJson(renderer->model.lightingStatus) + "\""
         + ",\"lightingControlStatus\":\"" + solum::escapeJson(renderer->model.lightingControlStatus) + "\""
         + ",\"lightingUiMode\":\"" + solum::escapeJson(renderer->model.lightingUiMode) + "\""

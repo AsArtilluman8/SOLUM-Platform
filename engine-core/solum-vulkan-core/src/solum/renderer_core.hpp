@@ -167,6 +167,11 @@ struct RendererCore {
         model.materialTypeDebugViewStatus = "shader_applied";
         model.aoInfluenceDebugViewStatus = "shader_applied";
         model.luminanceGuardDebugViewStatus = "shader_applied";
+        model.calibrationVisualStrength = clampFloat(0.28f + material.calibrationStrength * 0.72f, 0.28f, 1.0f);
+        model.calibrationAffectsAlbedo = "yes_guarded_luminance_clamp";
+        model.calibrationAffectsAo = "yes_indirect_occlusion_weight";
+        model.calibrationAffectsRoughness = "yes_material_safe_remap";
+        model.calibrationVisibleResponseStatus = "ok_visible_final_shaded_response";
         model.materialCalibrationPerformanceStatus = "ok_uniform_shader_no_rebuild";
         model.specularGlossStatus = "ok";
         model.specularGlossMode = "uniform_gloss_response_p17b";
@@ -189,11 +194,56 @@ struct RendererCore {
         model.specularGuardDebugViewStatus = "shader_applied";
         model.paintGlossDebugViewStatus = "shader_applied";
         model.metalResponseDebugViewStatus = "shader_applied";
+        model.paintTargetDebugViewStatus = "shader_applied";
+        model.calibrationResponseDebugViewStatus = "shader_applied";
         model.materialTypeSpecularRoutingStatus = "ok";
         model.paintMaterialGlossStatus = "ok_lite_gloss";
         model.metalMaterialGlossStatus = "ok_stronger_response";
         model.rubberMaterialGlossStatus = "ok_suppressed";
         model.specularGlossPerformanceStatus = "ok_no_alloc_no_rebuild";
+        model.glossVisibleResponseStatus = "ok_visible_lobe_and_reflection";
+        model.glossAffectsSpecularLobe = "yes_shader_roughness_distribution";
+        model.glossAffectsReflectionWeight = "yes_shader_environment_weight";
+        uint32_t paintCount = 0;
+        uint32_t metalCount = 0;
+        uint32_t unknownCount = 0;
+        uint32_t fabricCount = 0;
+        for (const auto& slot : modelMaterialSlots) {
+            if (slot.materialTypeHint == 1) ++paintCount;
+            else if (slot.materialTypeHint == 2) ++metalCount;
+            else if (slot.materialTypeHint == 0) ++fabricCount;
+            else if (slot.materialTypeHint == 4) ++unknownCount;
+        }
+        model.paintGlossSkippedFabricCount = fabricCount;
+        if (paintCount > 0) {
+            material.paintGlossRouting = 1;
+            model.paintGlossTargetStatus = "paint";
+            model.paintGlossAppliedMaterialCount = paintCount;
+            model.paintGlossFallbackRouting = "paint_like";
+            model.paintGlossVisibleResponseStatus = "ok_paint_like_visible";
+            model.paintGlossMaterialHintStatus = "ok_paint_like_target";
+        } else if (metalCount > 0) {
+            material.paintGlossRouting = 2;
+            model.paintGlossTargetStatus = "metal";
+            model.paintGlossAppliedMaterialCount = metalCount;
+            model.paintGlossFallbackRouting = "metal_like_limited_safe";
+            model.paintGlossVisibleResponseStatus = "ok_toycar_metal_coat_visible_limited";
+            model.paintGlossMaterialHintStatus = "ok_no_paint_like_using_metal_fallback";
+        } else if (unknownCount > 0) {
+            material.paintGlossRouting = 3;
+            model.paintGlossTargetStatus = "unknown";
+            model.paintGlossAppliedMaterialCount = unknownCount;
+            model.paintGlossFallbackRouting = "unknown_very_limited";
+            model.paintGlossVisibleResponseStatus = "limited_unknown_target";
+            model.paintGlossMaterialHintStatus = "ok_unknown_limited_fallback";
+        } else {
+            material.paintGlossRouting = 0;
+            model.paintGlossTargetStatus = "none";
+            model.paintGlossAppliedMaterialCount = 0;
+            model.paintGlossFallbackRouting = "none";
+            model.paintGlossVisibleResponseStatus = "no_target";
+            model.paintGlossMaterialHintStatus = "no_paint_or_safe_coat_target";
+        }
         model.brdfStatus = "ok";
         model.brdfMode = "direct_lighting_schlick_mobile_p17_gloss";
         model.diffuseStatus = "ok_environment_diffuse";
@@ -365,7 +415,7 @@ struct RendererCore {
         applyLightPreset(lightPreset);
         material.sunIntensity = clampFloat(sunIntensity, 0.5f, 4.0f);
         material.ambientIntensity = clampFloat(ambientIntensity, 0.1f, 2.0f);
-        material.activeDebugView = ((activeDebugView % 22) + 22) % 22;
+        material.activeDebugView = ((activeDebugView % 24) + 24) % 24;
         material.toneMappingMode = ((toneMappingMode % 3) + 3) % 3;
         material.exposureValue = clampFloat(exposureValue, 0.8f, 3.0f);
         material.ambientFloor = clampFloat(ambientFloor, 0.0f, 0.35f);
@@ -778,8 +828,8 @@ struct RendererCore {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.pipeline);
         PushConstants pc{};
         pc.mvp = buildMvp();
-        pc.material = material;
         syncLightingModelState();
+        pc.material = material;
         pushConstantsReady = true;
         materialConstantsReady = true;
         meshAttributeLayoutReady = sizeof(Vertex3D) == 60;

@@ -99,6 +99,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button glossButton;
     private Button paintGlossButton;
     private Button materialViewButton;
+    private TextView materialStatusView;
     private SeekBar sunSlider;
     private SeekBar ambientSlider;
     private SeekBar exposureSlider;
@@ -225,6 +226,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         return button;
     }
 
+    private TextView compactInfoText(String text) {
+        TextView view = panelText(text, 11.0f, 2);
+        view.setPadding(8, 4, 8, 4);
+        view.setTextColor(Color.rgb(190, 205, 210));
+        return view;
+    }
+
     private LinearLayout sliderControl(String label, float min, float max, float value, ValueConsumer consumer) {
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
@@ -262,7 +270,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         else if ("Ground".equals(label)) { groundIntensityButton = valueButton; groundSlider = slider; }
         else if ("Calib".equals(label)) { calibrationButton = valueButton; calibrationSlider = slider; }
         else if ("Gloss".equals(label)) { glossButton = valueButton; glossSlider = slider; }
-        else if ("Paint".equals(label)) { paintGlossButton = valueButton; paintGlossSlider = slider; }
+        else if ("Coat".equals(label)) { paintGlossButton = valueButton; paintGlossSlider = slider; }
     }
 
     private int sliderProgress(float value, float min, float max) {
@@ -462,10 +470,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             glossSliderValue = clamp(v, 0.0f, 1.0f);
             applyLightingControls();
         }));
-        materialPanel.addView(sliderControl("Paint", 0.0f, 1.0f, paintGlossSliderValue, v -> {
+        materialPanel.addView(sliderControl("Coat", 0.0f, 1.0f, paintGlossSliderValue, v -> {
             paintGlossSliderValue = clamp(v, 0.0f, 1.0f);
             applyLightingControls();
         }));
+        materialStatusView = compactInfoText("Paint targets: none | Fabric matte: on");
+        materialPanel.addView(materialStatusView);
         materialViewButton = compactButton("Debug: Final Shaded");
         materialViewButton.setOnClickListener(v -> cycleMaterialView());
         materialPanel.addView(materialViewButton);
@@ -716,7 +726,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleMaterialView() {
-        activeDebugViewIndex = (activeDebugViewIndex + 1) % 22;
+        activeDebugViewIndex = (activeDebugViewIndex + 1) % 24;
         applyLightingControls();
         updateStatus();
     }
@@ -834,6 +844,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.materialTypeDebugViewStatus = "shader_applied";
         modelState.aoInfluenceDebugViewStatus = "shader_applied";
         modelState.luminanceGuardDebugViewStatus = "shader_applied";
+        modelState.calibrationVisualStrength = clamp(0.28f + calibrationSliderValue * 0.72f, 0.28f, 1.0f);
+        modelState.calibrationAffectsAlbedo = "yes_guarded_luminance_clamp";
+        modelState.calibrationAffectsAo = "yes_indirect_occlusion_weight";
+        modelState.calibrationAffectsRoughness = "yes_material_safe_remap";
+        modelState.calibrationVisibleResponseStatus = "ok_visible_final_shaded_response";
         modelState.materialCalibrationPerformanceStatus = "ok_uniform_shader_no_rebuild";
         modelState.specularGlossStatus = "ok";
         modelState.specularGlossMode = "uniform_gloss_response_p17b";
@@ -849,7 +864,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.paintGlossLiteMode = "uniform_lite_no_texture_rebuild";
         modelState.paintGlossIntensity = paintGlossSliderValue;
         modelState.paintGlossRoughness = clamp(0.78f - paintGlossSliderValue * 0.58f, 0.20f, 0.78f);
-        modelState.paintGlossMaterialHintStatus = "ok_paint_like_only";
+        applyPaintGlossTargetDiagnostics();
         modelState.paintGlossPerformanceStatus = "ok_uniform_only";
         modelState.glossSliderStatus = "ok";
         modelState.glossSliderValue = glossSliderValue;
@@ -860,11 +875,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.specularGuardDebugViewStatus = "shader_applied";
         modelState.paintGlossDebugViewStatus = "shader_applied";
         modelState.metalResponseDebugViewStatus = "shader_applied";
+        modelState.paintTargetDebugViewStatus = "shader_applied";
+        modelState.calibrationResponseDebugViewStatus = "shader_applied";
         modelState.materialTypeSpecularRoutingStatus = "ok";
         modelState.paintMaterialGlossStatus = "ok_lite_gloss";
         modelState.metalMaterialGlossStatus = "ok_stronger_response";
         modelState.rubberMaterialGlossStatus = "ok_suppressed";
         modelState.specularGlossPerformanceStatus = "ok_no_alloc_no_rebuild";
+        modelState.glossVisibleResponseStatus = "ok_visible_lobe_and_reflection";
+        modelState.glossAffectsSpecularLobe = "yes_shader_roughness_distribution";
+        modelState.glossAffectsReflectionWeight = "yes_shader_environment_weight";
         modelState.brdfStatus = "ok";
         modelState.brdfMode = "direct_lighting_schlick_mobile";
         modelState.diffuseStatus = "ok_non_metal_diffuse";
@@ -905,7 +925,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (calibrationPresetButton != null) calibrationPresetButton.setText("Calib: " + modelState.calibrationPreset);
         if (calibrationButton != null) calibrationButton.setText("Calib " + oneDecimal(calibrationSliderValue));
         if (glossButton != null) glossButton.setText("Gloss " + oneDecimal(glossSliderValue));
-        if (paintGlossButton != null) paintGlossButton.setText("Paint " + oneDecimal(paintGlossSliderValue));
+        if (paintGlossButton != null) paintGlossButton.setText("Coat " + oneDecimal(paintGlossSliderValue));
+        if (materialStatusView != null) materialStatusView.setText("Paint targets: " + modelState.paintGlossTargetStatus + " | Fabric matte: on");
         updateSliderPositionsFromState();
         if (materialViewButton != null) materialViewButton.setText("Debug: " + modelState.activeDebugView);
         try {
@@ -976,6 +997,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 19) return "Specular Guard";
         if (index == 20) return "Paint Gloss";
         if (index == 21) return "Metal Response";
+        if (index == 22) return "Paint Target";
+        if (index == 23) return "Calibration Response";
         return "Final Shaded";
     }
 
@@ -984,6 +1007,50 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 2) return "Balanced";
         if (index == 3) return "Punchy";
         return "Neutral";
+    }
+
+    private void applyPaintGlossTargetDiagnostics() {
+        int paintCount = countOccurrences(modelState.materialSlotDiagnostics, "\"materialTypeHint\":\"paint_like\"");
+        int metalCount = countOccurrences(modelState.materialSlotDiagnostics, "\"materialTypeHint\":\"metal_like\"");
+        int fabricCount = countOccurrences(modelState.materialSlotDiagnostics, "\"materialTypeHint\":\"fabric_like\"");
+        int unknownCount = countOccurrences(modelState.materialSlotDiagnostics, "\"materialTypeHint\":\"unknown\"");
+        modelState.paintGlossSkippedFabricCount = fabricCount;
+        if (paintCount > 0) {
+            modelState.paintGlossTargetStatus = "paint";
+            modelState.paintGlossAppliedMaterialCount = paintCount;
+            modelState.paintGlossFallbackRouting = "paint_like";
+            modelState.paintGlossVisibleResponseStatus = "ok_paint_like_visible";
+            modelState.paintGlossMaterialHintStatus = "ok_paint_like_target";
+        } else if (metalCount > 0) {
+            modelState.paintGlossTargetStatus = "metal";
+            modelState.paintGlossAppliedMaterialCount = metalCount;
+            modelState.paintGlossFallbackRouting = "metal_like_limited_safe";
+            modelState.paintGlossVisibleResponseStatus = "ok_toycar_metal_coat_visible_limited";
+            modelState.paintGlossMaterialHintStatus = "ok_no_paint_like_using_metal_fallback";
+        } else if (unknownCount > 0) {
+            modelState.paintGlossTargetStatus = "unknown";
+            modelState.paintGlossAppliedMaterialCount = unknownCount;
+            modelState.paintGlossFallbackRouting = "unknown_very_limited";
+            modelState.paintGlossVisibleResponseStatus = "limited_unknown_target";
+            modelState.paintGlossMaterialHintStatus = "ok_unknown_limited_fallback";
+        } else {
+            modelState.paintGlossTargetStatus = "none";
+            modelState.paintGlossAppliedMaterialCount = 0;
+            modelState.paintGlossFallbackRouting = "none";
+            modelState.paintGlossVisibleResponseStatus = "no_target";
+            modelState.paintGlossMaterialHintStatus = "no_paint_or_safe_coat_target";
+        }
+    }
+
+    private int countOccurrences(String text, String needle) {
+        if (text == null || needle == null || needle.isEmpty()) return 0;
+        int count = 0;
+        int at = 0;
+        while ((at = text.indexOf(needle, at)) >= 0) {
+            count++;
+            at += needle.length();
+        }
+        return count;
     }
 
     private String brightnessPresetName(int index) {
@@ -2232,6 +2299,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"paintGlossRoughness\": " + jsonNumberField(renderLab, "paintGlossRoughness", jsonFloat(modelState.paintGlossRoughness)) + ",\n"
             + indent + "\"paintGlossMaterialHintStatus\": \"" + escape(jsonStringField(renderLab, "paintGlossMaterialHintStatus", modelState.paintGlossMaterialHintStatus)) + "\",\n"
             + indent + "\"paintGlossPerformanceStatus\": \"" + escape(jsonStringField(renderLab, "paintGlossPerformanceStatus", modelState.paintGlossPerformanceStatus)) + "\",\n"
+            + indent + "\"calibrationVisualStrength\": " + jsonNumberField(renderLab, "calibrationVisualStrength", jsonFloat(modelState.calibrationVisualStrength)) + ",\n"
+            + indent + "\"calibrationAffectsAlbedo\": \"" + escape(jsonStringField(renderLab, "calibrationAffectsAlbedo", modelState.calibrationAffectsAlbedo)) + "\",\n"
+            + indent + "\"calibrationAffectsAo\": \"" + escape(jsonStringField(renderLab, "calibrationAffectsAo", modelState.calibrationAffectsAo)) + "\",\n"
+            + indent + "\"calibrationAffectsRoughness\": \"" + escape(jsonStringField(renderLab, "calibrationAffectsRoughness", modelState.calibrationAffectsRoughness)) + "\",\n"
+            + indent + "\"calibrationVisibleResponseStatus\": \"" + escape(jsonStringField(renderLab, "calibrationVisibleResponseStatus", modelState.calibrationVisibleResponseStatus)) + "\",\n"
+            + indent + "\"paintGlossTargetStatus\": \"" + escape(jsonStringField(renderLab, "paintGlossTargetStatus", modelState.paintGlossTargetStatus)) + "\",\n"
+            + indent + "\"paintGlossAppliedMaterialCount\": " + jsonNumberField(renderLab, "paintGlossAppliedMaterialCount", String.valueOf(modelState.paintGlossAppliedMaterialCount)) + ",\n"
+            + indent + "\"paintGlossSkippedFabricCount\": " + jsonNumberField(renderLab, "paintGlossSkippedFabricCount", String.valueOf(modelState.paintGlossSkippedFabricCount)) + ",\n"
+            + indent + "\"paintGlossFallbackRouting\": \"" + escape(jsonStringField(renderLab, "paintGlossFallbackRouting", modelState.paintGlossFallbackRouting)) + "\",\n"
+            + indent + "\"paintGlossVisibleResponseStatus\": \"" + escape(jsonStringField(renderLab, "paintGlossVisibleResponseStatus", modelState.paintGlossVisibleResponseStatus)) + "\",\n"
             + indent + "\"glossSliderStatus\": \"" + escape(jsonStringField(renderLab, "glossSliderStatus", modelState.glossSliderStatus)) + "\",\n"
             + indent + "\"glossSliderValue\": " + jsonNumberField(renderLab, "glossSliderValue", jsonFloat(modelState.glossSliderValue)) + ",\n"
             + indent + "\"paintGlossSliderStatus\": \"" + escape(jsonStringField(renderLab, "paintGlossSliderStatus", modelState.paintGlossSliderStatus)) + "\",\n"
@@ -2241,11 +2318,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"specularGuardDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "specularGuardDebugViewStatus", modelState.specularGuardDebugViewStatus)) + "\",\n"
             + indent + "\"paintGlossDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "paintGlossDebugViewStatus", modelState.paintGlossDebugViewStatus)) + "\",\n"
             + indent + "\"metalResponseDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "metalResponseDebugViewStatus", modelState.metalResponseDebugViewStatus)) + "\",\n"
+            + indent + "\"paintTargetDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "paintTargetDebugViewStatus", modelState.paintTargetDebugViewStatus)) + "\",\n"
+            + indent + "\"calibrationResponseDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "calibrationResponseDebugViewStatus", modelState.calibrationResponseDebugViewStatus)) + "\",\n"
             + indent + "\"materialTypeSpecularRoutingStatus\": \"" + escape(jsonStringField(renderLab, "materialTypeSpecularRoutingStatus", modelState.materialTypeSpecularRoutingStatus)) + "\",\n"
             + indent + "\"paintMaterialGlossStatus\": \"" + escape(jsonStringField(renderLab, "paintMaterialGlossStatus", modelState.paintMaterialGlossStatus)) + "\",\n"
             + indent + "\"metalMaterialGlossStatus\": \"" + escape(jsonStringField(renderLab, "metalMaterialGlossStatus", modelState.metalMaterialGlossStatus)) + "\",\n"
             + indent + "\"rubberMaterialGlossStatus\": \"" + escape(jsonStringField(renderLab, "rubberMaterialGlossStatus", modelState.rubberMaterialGlossStatus)) + "\",\n"
-            + indent + "\"specularGlossPerformanceStatus\": \"" + escape(jsonStringField(renderLab, "specularGlossPerformanceStatus", modelState.specularGlossPerformanceStatus)) + "\",\n";
+            + indent + "\"specularGlossPerformanceStatus\": \"" + escape(jsonStringField(renderLab, "specularGlossPerformanceStatus", modelState.specularGlossPerformanceStatus)) + "\",\n"
+            + indent + "\"glossVisibleResponseStatus\": \"" + escape(jsonStringField(renderLab, "glossVisibleResponseStatus", modelState.glossVisibleResponseStatus)) + "\",\n"
+            + indent + "\"glossAffectsSpecularLobe\": \"" + escape(jsonStringField(renderLab, "glossAffectsSpecularLobe", modelState.glossAffectsSpecularLobe)) + "\",\n"
+            + indent + "\"glossAffectsReflectionWeight\": \"" + escape(jsonStringField(renderLab, "glossAffectsReflectionWeight", modelState.glossAffectsReflectionWeight)) + "\",\n";
     }
 
     private String jsonStringField(String json, String key, String fallback) {
@@ -2630,6 +2712,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String materialTypeDebugViewStatus = "shader_applied";
         String aoInfluenceDebugViewStatus = "shader_applied";
         String luminanceGuardDebugViewStatus = "shader_applied";
+        float calibrationVisualStrength = 0.72f;
+        String calibrationAffectsAlbedo = "yes_guarded_luminance_clamp";
+        String calibrationAffectsAo = "yes_indirect_occlusion_weight";
+        String calibrationAffectsRoughness = "yes_material_safe_remap";
+        String calibrationVisibleResponseStatus = "ok_visible_final_shaded_response";
         String materialCalibrationPerformanceStatus = "ok_uniform_shader_no_rebuild";
         String specularGlossStatus = "ok";
         String specularGlossMode = "uniform_gloss_response_p17b";
@@ -2647,6 +2734,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         float paintGlossRoughness = 0.45f;
         String paintGlossMaterialHintStatus = "ok_paint_like_only";
         String paintGlossPerformanceStatus = "ok_uniform_only";
+        String paintGlossTargetStatus = "none";
+        int paintGlossAppliedMaterialCount = 0;
+        int paintGlossSkippedFabricCount = 0;
+        String paintGlossFallbackRouting = "none";
+        String paintGlossVisibleResponseStatus = "no_target";
         String glossSliderStatus = "ok";
         float glossSliderValue = 0.62f;
         String paintGlossSliderStatus = "ok";
@@ -2656,11 +2748,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String specularGuardDebugViewStatus = "shader_applied";
         String paintGlossDebugViewStatus = "shader_applied";
         String metalResponseDebugViewStatus = "shader_applied";
+        String paintTargetDebugViewStatus = "shader_applied";
+        String calibrationResponseDebugViewStatus = "shader_applied";
         String materialTypeSpecularRoutingStatus = "ok";
         String paintMaterialGlossStatus = "ok_lite_gloss";
         String metalMaterialGlossStatus = "ok_stronger_response";
         String rubberMaterialGlossStatus = "ok_suppressed";
         String specularGlossPerformanceStatus = "ok_no_alloc_no_rebuild";
+        String glossVisibleResponseStatus = "ok_visible_lobe_and_reflection";
+        String glossAffectsSpecularLobe = "yes_shader_roughness_distribution";
+        String glossAffectsReflectionWeight = "yes_shader_environment_weight";
         String lightingStatus = "ok";
         float[] sunDirection = new float[] { -0.35f, -0.82f, -0.45f };
         float[] sunColor = new float[] { 1.0f, 0.96f, 0.88f };

@@ -17,6 +17,7 @@ Calib preset
 Calib slider
 Gloss slider
 Paint Gloss slider
+Paint/Coat target status
 Debug view
 ```
 
@@ -54,6 +55,21 @@ paintMaterialGlossStatus
 metalMaterialGlossStatus
 rubberMaterialGlossStatus
 specularGlossPerformanceStatus
+calibrationVisualStrength
+calibrationAffectsAlbedo
+calibrationAffectsAo
+calibrationAffectsRoughness
+calibrationVisibleResponseStatus
+paintGlossTargetStatus
+paintGlossAppliedMaterialCount
+paintGlossSkippedFabricCount
+paintGlossFallbackRouting
+paintGlossVisibleResponseStatus
+glossVisibleResponseStatus
+glossAffectsSpecularLobe
+glossAffectsReflectionWeight
+paintTargetDebugViewStatus
+calibrationResponseDebugViewStatus
 ```
 
 Debug views added:
@@ -63,6 +79,8 @@ Gloss Response
 Specular Guard
 Paint Gloss
 Metal Response
+Paint Target
+Calibration Response
 ```
 
 Performance guard:

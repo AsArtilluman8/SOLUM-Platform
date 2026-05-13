@@ -109,6 +109,13 @@ struct RendererCore {
     CameraState camera;
     MaterialConstants material;
     ModelRenderState model;
+    int selectedMaterialSlot = 0;
+    float selectedSlotMetallicOverride = 0.0f;
+    float selectedSlotRoughnessOverride = 1.0f;
+    float selectedSlotNormalScaleOverride = 1.0f;
+    float selectedSlotAoOverride = 1.0f;
+    float selectedSlotGlossOverride = 0.0f;
+    float selectedSlotCoatOverride = 0.0f;
 
     void setOutputRoot(const std::string& root) { outputRoot = root; diagnostics.outputRoot = root; }
 
@@ -146,7 +153,7 @@ struct RendererCore {
         model.assetsTabStatus = "ok_import_scan_export_summary";
         model.cameraTabStatus = "ok_camera_info_reset_zoom";
         model.lightingTabStatus = "ok_sliders_environment_controls";
-        model.materialTabStatus = "ok_debug_views";
+        model.materialTabStatus = "ok_slot_controls";
         model.debugTabStatus = "ok_fps_zip_status";
         model.materialCalibrationStatus = "ok";
         model.materialCalibrationMode = "shader_uniform_upload_lightweight";
@@ -207,6 +214,7 @@ struct RendererCore {
         model.glossVisibleResponseStatus = "ok_visible_lobe_and_reflection";
         model.glossAffectsSpecularLobe = "yes_shader_roughness_distribution";
         model.glossAffectsReflectionWeight = "yes_shader_environment_weight";
+        syncMaterialSlotEditorState();
         uint32_t paintCount = 0;
         uint32_t metalCount = 0;
         uint32_t unknownCount = 0;
@@ -442,11 +450,45 @@ struct RendererCore {
         syncLightingModelState();
     }
 
-    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float environmentIntensity, int environmentPreset, float horizonStrength) {
+    void syncMaterialSlotEditorState() {
+        const int slotCount = (int)modelMaterialSlots.size();
+        selectedMaterialSlot = slotCount > 0 ? std::max(0, std::min(selectedMaterialSlot, slotCount - 1)) : 0;
+        model.materialSlotEditorStatus = "ok";
+        model.selectedMaterialSlot = selectedMaterialSlot;
+        model.selectedMaterialSlotCount = slotCount;
+        model.selectedMaterialTypeHint = slotCount > 0 ? materialTypeHintName(modelMaterialSlots[(size_t)selectedMaterialSlot].materialTypeHint) : "unknown";
+        model.selectedMaterialName = slotCount > 0 ? ("slot_" + std::to_string(selectedMaterialSlot)) : "unknown";
+        model.selectedMaterialSummaryStatus = slotCount > 0 ? "ok_metallic_roughness_normal_ao_texture_summary" : "empty";
+        model.materialSlotSelectionUiStatus = "ok_prev_next_label_summary";
+        model.perMaterialOverrideStatus = "foundation_selected_slot_uniform";
+        model.perMaterialOverrideMode = "cpu_selected_slot_push_constants";
+        model.selectedSlotMetallicOverride = selectedSlotMetallicOverride;
+        model.selectedSlotRoughnessOverride = selectedSlotRoughnessOverride;
+        model.selectedSlotNormalScaleOverride = selectedSlotNormalScaleOverride;
+        model.selectedSlotAoOverride = selectedSlotAoOverride;
+        model.selectedSlotGlossOverride = selectedSlotGlossOverride;
+        model.selectedSlotCoatOverride = selectedSlotCoatOverride;
+        model.selectedSlotOverrideApplied = slotCount > 0 ? "true_selected_slot_only" : "false_no_material_slot";
+        model.selectedSlotResetStatus = "available_safe_reseed_from_slot";
+        model.perMaterialUniformUpdateStatus = "ok_uniform_only";
+        model.materialSlotControlsUiStatus = "ok_compact";
+        model.metallicSlotSliderStatus = "ok";
+        model.roughnessSlotSliderStatus = "ok";
+        model.normalSlotSliderStatus = "ok";
+        model.aoSlotSliderStatus = "ok";
+        model.selectedMaterialDebugViewStatus = "shader_applied";
+        model.materialOverrideDebugViewStatus = "shader_applied";
+        model.slotMetallicDebugViewStatus = "shader_applied";
+        model.slotRoughnessDebugViewStatus = "shader_applied";
+        model.slotAoDebugViewStatus = "shader_applied";
+        model.perMaterialOverridePerformanceStatus = "ok_no_extra_pass_no_upload";
+    }
+
+    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float environmentIntensity, int environmentPreset, float horizonStrength, int selectedSlot, float slotMetallic, float slotRoughness, float slotNormalScale, float slotAo, float slotGloss, float slotCoat) {
         applyLightPreset(lightPreset);
         material.sunIntensity = clampFloat(sunIntensity, 0.5f, 4.0f);
         material.ambientIntensity = clampFloat(ambientIntensity, 0.1f, 2.0f);
-        material.activeDebugView = ((activeDebugView % 27) + 27) % 27;
+        material.activeDebugView = ((activeDebugView % 32) + 32) % 32;
         material.toneMappingMode = ((toneMappingMode % 3) + 3) % 3;
         material.exposureValue = clampFloat(exposureValue, 0.8f, 3.0f);
         material.ambientFloor = clampFloat(ambientFloor, 0.0f, 0.35f);
@@ -461,10 +503,17 @@ struct RendererCore {
         material.environmentIntensity = clampFloat(environmentIntensity, 0.0f, 2.0f);
         material.environmentPreset = ((environmentPreset % 5) + 5) % 5;
         material.horizonStrength = clampFloat(horizonStrength, 0.0f, 1.0f);
+        selectedMaterialSlot = selectedSlot;
+        selectedSlotMetallicOverride = clampFloat(slotMetallic, 0.0f, 1.0f);
+        selectedSlotRoughnessOverride = clampFloat(slotRoughness, 0.0f, 1.0f);
+        selectedSlotNormalScaleOverride = clampFloat(slotNormalScale, 0.0f, 2.0f);
+        selectedSlotAoOverride = clampFloat(slotAo, 0.0f, 1.5f);
+        selectedSlotGlossOverride = clampFloat(slotGloss, 0.0f, 1.0f);
+        selectedSlotCoatOverride = clampFloat(slotCoat, 0.0f, 1.0f);
         syncLightingModelState();
         const bool ok = renderOneFrame();
         syncDiagnostics();
-        diagnostics.write(ok ? "valid" : diagnostics.status, ok ? "Scene15 environment IBL controls updated uniforms only." : diagnostics.reason);
+        diagnostics.write(ok ? "valid" : diagnostics.status, ok ? "Scene16 material slot controls updated selected slot uniforms only." : diagnostics.reason);
         updateReadyStatus();
         return ok;
     }
@@ -801,7 +850,7 @@ struct RendererCore {
 
     void updateReadyStatus() {
         syncLightingModelState();
-        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene15 Environment IBL Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nModel render: " + model.drawStatus + "\nPrimitives rendered/skipped/total: " + std::to_string(model.primitiveCountRendered) + " / " + std::to_string(model.primitiveCountSkipped) + " / " + std::to_string(model.primitiveCountTotal) + "\nMaterials used: " + std::to_string(model.materialSlotCountRendered) + "\nInspector: " + model.inspectorUiMode + "\nLighting status: " + model.lightingStatus + "\nIBL mode: " + model.iblMode + "\nEnvironment: " + model.environmentPreset + " " + std::to_string(model.environmentIntensity) + "\nReflection intensity: " + std::to_string(model.reflectionIntensity) + "\nGrounding: " + model.contactGroundingStatus + " " + std::to_string(model.contactShadowIntensity) + "\nCalibration: " + model.calibrationPreset + " " + std::to_string(model.calibrationSliderValue) + "\nAlbedo guard: " + model.albedoEnergyStatus + " / " + model.luminanceGuardStatus + "\nMaterial hints: " + model.materialTypeHintStatus + "\nBRDF status: " + model.brdfStatus + "\nSpecular status: " + model.specularStatus + "\nSpecular boost: " + std::to_string(model.specularBoost) + "\nReflection foundation: " + model.reflectionFoundationStatus + "\nFresnel status: " + model.fresnelStatus + "\nF0 status: " + model.f0Status + "\nLight preset: " + model.lightPreset + "\nSun intensity: " + std::to_string(model.sunIntensity) + "\nAmbient intensity: " + std::to_string(model.ambientIntensity) + "\nExposure: " + std::to_string(model.exposureValue) + " " + model.brightnessPreset + "\nMaterial response status: " + model.materialResponseStatus + "\nActive debug view: " + model.activeDebugView + "\nBaseColor status: " + model.baseColorTextureStatus + "\nMetallicRoughness status: " + model.metallicRoughnessStatus + "\nTangent status: " + model.tangentStatus + "\nNormal status: " + model.normalMapStatus + " applied=" + model.normalMapAppliedStatus + "\nAO status: " + model.occlusionMapStatus + "\nPBR textures uploaded/fallback/skipped: " + std::to_string(model.uploadedPbrTextureCount) + " / " + std::to_string(model.pbrTextureFallbackCount) + " / " + std::to_string(model.skippedPbrTextureCount) + "\nFPS/frameMs: " + std::to_string(model.fpsCurrent) + " / " + std::to_string(model.frameTimeMs) + "\nDebug ZIP: " + model.debugZipStatus + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nTexture size: " + std::to_string(model.textureWidth) + "x" + std::to_string(model.textureHeight) + "\nFallback texture: " + std::string(model.textureFallbackUsed ? "yes" : "no") + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: P19 after user validation";
+        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene16 Material Slot Editor Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nModel render: " + model.drawStatus + "\nPrimitives rendered/skipped/total: " + std::to_string(model.primitiveCountRendered) + " / " + std::to_string(model.primitiveCountSkipped) + " / " + std::to_string(model.primitiveCountTotal) + "\nMaterials used: " + std::to_string(model.materialSlotCountRendered) + "\nSelected material slot: " + std::to_string(model.selectedMaterialSlot) + " / " + std::to_string(model.selectedMaterialSlotCount) + "\nPer-material override: " + model.selectedSlotOverrideApplied + "\nInspector: " + model.inspectorUiMode + "\nLighting status: " + model.lightingStatus + "\nIBL mode: " + model.iblMode + "\nEnvironment: " + model.environmentPreset + " " + std::to_string(model.environmentIntensity) + "\nReflection intensity: " + std::to_string(model.reflectionIntensity) + "\nGrounding: " + model.contactGroundingStatus + " " + std::to_string(model.contactShadowIntensity) + "\nCalibration: " + model.calibrationPreset + " " + std::to_string(model.calibrationSliderValue) + "\nAlbedo guard: " + model.albedoEnergyStatus + " / " + model.luminanceGuardStatus + "\nMaterial hints: " + model.materialTypeHintStatus + "\nBRDF status: " + model.brdfStatus + "\nSpecular status: " + model.specularStatus + "\nSpecular boost: " + std::to_string(model.specularBoost) + "\nReflection foundation: " + model.reflectionFoundationStatus + "\nFresnel status: " + model.fresnelStatus + "\nF0 status: " + model.f0Status + "\nLight preset: " + model.lightPreset + "\nSun intensity: " + std::to_string(model.sunIntensity) + "\nAmbient intensity: " + std::to_string(model.ambientIntensity) + "\nExposure: " + std::to_string(model.exposureValue) + " " + model.brightnessPreset + "\nMaterial response status: " + model.materialResponseStatus + "\nActive debug view: " + model.activeDebugView + "\nBaseColor status: " + model.baseColorTextureStatus + "\nMetallicRoughness status: " + model.metallicRoughnessStatus + "\nTangent status: " + model.tangentStatus + "\nNormal status: " + model.normalMapStatus + " applied=" + model.normalMapAppliedStatus + "\nAO status: " + model.occlusionMapStatus + "\nPBR textures uploaded/fallback/skipped: " + std::to_string(model.uploadedPbrTextureCount) + " / " + std::to_string(model.pbrTextureFallbackCount) + " / " + std::to_string(model.skippedPbrTextureCount) + "\nFPS/frameMs: " + std::to_string(model.fpsCurrent) + " / " + std::to_string(model.frameTimeMs) + "\nDebug ZIP: " + model.debugZipStatus + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nTexture size: " + std::to_string(model.textureWidth) + "x" + std::to_string(model.textureHeight) + "\nFallback texture: " + std::string(model.textureFallbackUsed ? "yes" : "no") + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: validate Scene16 material slot controls";
     }
 
     bool setCamera(float yawDeg, float pitchDeg, float distance, bool controlsActive) {
@@ -871,6 +920,7 @@ struct RendererCore {
             modelMesh.bind(cmd);
             if (modelMesh.indexedReady()) vkCmdBindIndexBuffer(cmd, modelMesh.indexBuffer.buffer, 0, modelMesh.indexType);
             for (const auto& range : modelDrawRanges) {
+                pc.material = material;
                 if (range.materialSlot >= 0 && (size_t)range.materialSlot < modelMaterialSlots.size()) {
                     const auto& slot = modelMaterialSlots[(size_t)range.materialSlot];
                     for (int i = 0; i < 4; ++i) pc.material.baseColorFactor[i] = slot.baseColorFactor[i];
@@ -878,6 +928,20 @@ struct RendererCore {
                     pc.material.roughnessFactor = slot.roughnessFactor;
                     pc.material.normalScale = slot.normalScale;
                     pc.material.occlusionStrength = slot.occlusionStrength;
+                    if (range.materialSlot == selectedMaterialSlot) {
+                        pc.material.metallicFactor = selectedSlotMetallicOverride;
+                        pc.material.roughnessFactor = selectedSlotRoughnessOverride;
+                        pc.material.normalScale = selectedSlotNormalScaleOverride;
+                        pc.material.occlusionStrength = selectedSlotAoOverride;
+                        pc.material.glossSliderValue = selectedSlotGlossOverride;
+                        pc.material.paintGlossSliderValue = selectedSlotCoatOverride;
+                    } else {
+                        pc.material.glossSliderValue = 0.0f;
+                        pc.material.paintGlossSliderValue = 0.0f;
+                    }
+                    if (material.activeDebugView >= 27 && material.activeDebugView <= 31 && range.materialSlot != selectedMaterialSlot) {
+                        pc.material.activeDebugView = 0;
+                    }
                     pc.material.alphaMode = slot.alphaMode;
                     pc.material.materialId = range.materialSlot;
                     pc.material.materialTypeHint = slot.materialTypeHint;
@@ -1037,7 +1101,7 @@ struct RendererCore {
             return false;
         }
         syncDiagnostics();
-        diagnostics.write("valid", "Scene15 Environment IBL Lab uploaded and drew first primitive.");
+        diagnostics.write("valid", "Scene16 Material Slot Editor Lab uploaded and drew first primitive.");
         updateReadyStatus();
         return true;
     }
@@ -1139,7 +1203,7 @@ struct RendererCore {
             return false;
         }
         syncDiagnostics();
-        diagnostics.write("valid", "Scene15 Environment IBL Lab uploaded and drew supported primitives.");
+        diagnostics.write("valid", "Scene16 Material Slot Editor Lab uploaded and drew supported primitives.");
         updateReadyStatus();
         return true;
     }
@@ -1390,7 +1454,7 @@ struct RendererCore {
         model.textureFallbackUsed = true;
         model.reason = "no active model";
         syncDiagnostics();
-        diagnostics.write("valid", "Scene15 Environment IBL Lab initialized with cube fallback while waiting for active model upload.");
+        diagnostics.write("valid", "Scene16 Material Slot Editor Lab initialized with cube fallback while waiting for active model upload.");
         updateReadyStatus();
         return true;
     }

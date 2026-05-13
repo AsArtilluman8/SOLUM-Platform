@@ -2,6 +2,71 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene16 Material Slot Editor Lab
+
+Patch P19 switches the active lab to:
+
+```text
+scene16_material_slot_editor_lab
+Scene16 Material Slot Editor Lab
+```
+
+Scene16 preserves import/scan/export, Debug ZIP, live FPS, inspector tabs, P18 Env/Sky/Horizon controls, and P17/P18 Calib/Gloss/Coat controls. It adds compact Material tab slot controls and selected-slot overrides for metallic, roughness, normal scale, AO, gloss, and coat.
+
+Selected-slot override routing is uniform/push-constant only in the existing per-primitive draw path: the renderer applies override values only when the primitive material slot equals the selected slot. Other slots keep their source material factors, and fabric-like slots remain matte unless their selected-slot gloss/coat values are raised.
+
+Diagnostics added at top level and under `renderLab`:
+
+```text
+materialSlotEditorStatus
+selectedMaterialSlot
+selectedMaterialSlotCount
+selectedMaterialTypeHint
+selectedMaterialName
+selectedMaterialSummaryStatus
+materialSlotSelectionUiStatus
+perMaterialOverrideStatus
+perMaterialOverrideMode
+selectedSlotMetallicOverride
+selectedSlotRoughnessOverride
+selectedSlotNormalScaleOverride
+selectedSlotAoOverride
+selectedSlotGlossOverride
+selectedSlotCoatOverride
+selectedSlotOverrideApplied
+selectedSlotResetStatus
+perMaterialUniformUpdateStatus
+materialSlotControlsUiStatus
+metallicSlotSliderStatus
+roughnessSlotSliderStatus
+normalSlotSliderStatus
+aoSlotSliderStatus
+selectedMaterialDebugViewStatus
+materialOverrideDebugViewStatus
+slotMetallicDebugViewStatus
+slotRoughnessDebugViewStatus
+slotAoDebugViewStatus
+perMaterialOverridePerformanceStatus
+```
+
+Debug views added:
+
+```text
+Selected Material
+Material Override
+Slot Metallic
+Slot Roughness
+Slot AO
+```
+
+Out of scope:
+
+- shadows, shadow maps, CSM;
+- cubemap texture pipeline;
+- glass, transmission, refraction;
+- skeletal animation;
+- large UI rewrite.
+
 ## Scene15 Environment IBL Lab
 
 Patch P18 switches the active lab to:

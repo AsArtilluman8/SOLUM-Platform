@@ -1,5 +1,59 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P19 material slot override foundation
+
+P19 keeps the P18 directional sky/ground IBL foundation and switches the lab to `scene16_material_slot_editor_lab`.
+
+New selected-slot inputs:
+
+- selected material slot index;
+- metallic override `0.0..1.0`;
+- roughness override `0.0..1.0`;
+- normal scale override `0.0..2.0`;
+- AO override `0.0..1.5`;
+- gloss override `0.0..1.0`;
+- coat override `0.0..1.0`.
+
+Routing:
+
+- overrides are applied only to primitives whose material slot equals the selected slot;
+- other slots keep their original material factors;
+- no texture rebuild, model upload, tangent rebuild, extra render pass, cubemap upload, shadow map, CSM, glass, transmission, or refraction is introduced;
+- implementation mode is `foundation_selected_slot_uniform` using per-primitive push constants in the existing Vulkan path.
+
+Debug views added:
+
+```text
+Selected Material
+Material Override
+Slot Metallic
+Slot Roughness
+Slot AO
+```
+
+Diagnostics added:
+
+```text
+materialSlotEditorStatus
+selectedMaterialSlot
+selectedMaterialSlotCount
+selectedMaterialTypeHint
+selectedMaterialName
+selectedMaterialSummaryStatus
+perMaterialOverrideStatus
+perMaterialOverrideMode
+selectedSlotMetallicOverride
+selectedSlotRoughnessOverride
+selectedSlotNormalScaleOverride
+selectedSlotAoOverride
+selectedSlotGlossOverride
+selectedSlotCoatOverride
+selectedSlotOverrideApplied
+perMaterialUniformUpdateStatus
+materialSlotControlsUiStatus
+perMaterialOverridePerformanceStatus
+```
+
 ## P18 environment IBL foundation
 
 P18 keeps P17 material calibration/gloss controls and switches the lab to `scene15_environment_ibl_lab`.

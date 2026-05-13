@@ -114,6 +114,11 @@ inline const char* materialDebugViewName(int view) {
     if (view == 24) return "Environment";
     if (view == 25) return "Reflection Direction";
     if (view == 26) return "Environment Color";
+    if (view == 27) return "Selected Material";
+    if (view == 28) return "Material Override";
+    if (view == 29) return "Slot Metallic";
+    if (view == 30) return "Slot Roughness";
+    if (view == 31) return "Slot AO";
     return "Final Shaded";
 }
 
@@ -394,6 +399,35 @@ struct ModelRenderState {
     std::string glossVisibleResponseStatus = "ok_visible_lobe_and_reflection";
     std::string glossAffectsSpecularLobe = "yes_shader_roughness_distribution";
     std::string glossAffectsReflectionWeight = "yes_shader_environment_weight";
+    std::string materialSlotEditorStatus = "ok";
+    int selectedMaterialSlot = 0;
+    int selectedMaterialSlotCount = 0;
+    std::string selectedMaterialTypeHint = "unknown";
+    std::string selectedMaterialName = "unknown";
+    std::string selectedMaterialSummaryStatus = "empty";
+    std::string materialSlotSelectionUiStatus = "ok";
+    std::string perMaterialOverrideStatus = "foundation_selected_slot_uniform";
+    std::string perMaterialOverrideMode = "cpu_selected_slot_push_constants";
+    float selectedSlotMetallicOverride = 0.0f;
+    float selectedSlotRoughnessOverride = 1.0f;
+    float selectedSlotNormalScaleOverride = 1.0f;
+    float selectedSlotAoOverride = 1.0f;
+    float selectedSlotGlossOverride = 0.0f;
+    float selectedSlotCoatOverride = 0.0f;
+    std::string selectedSlotOverrideApplied = "false_no_material_slot";
+    std::string selectedSlotResetStatus = "not_run";
+    std::string perMaterialUniformUpdateStatus = "ok_uniform_only";
+    std::string materialSlotControlsUiStatus = "ok_compact";
+    std::string metallicSlotSliderStatus = "ok";
+    std::string roughnessSlotSliderStatus = "ok";
+    std::string normalSlotSliderStatus = "ok";
+    std::string aoSlotSliderStatus = "ok";
+    std::string selectedMaterialDebugViewStatus = "shader_applied";
+    std::string materialOverrideDebugViewStatus = "shader_applied";
+    std::string slotMetallicDebugViewStatus = "shader_applied";
+    std::string slotRoughnessDebugViewStatus = "shader_applied";
+    std::string slotAoDebugViewStatus = "shader_applied";
+    std::string perMaterialOverridePerformanceStatus = "ok_no_extra_pass_no_upload";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;
     float fpsLastStable = 0.0f;

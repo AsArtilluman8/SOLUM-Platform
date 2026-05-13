@@ -2,6 +2,45 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P19 — Material Slot Controls / Per-Material Override Foundation
+
+Scope:
+
+- Scene16 Material Slot Editor Lab.
+- Compact Material tab slot selector and selected-slot summary.
+- Selected-slot metallic, roughness, normal scale, AO, gloss, and coat override controls.
+- Renderer applies overrides only to the selected material slot in the existing per-primitive Vulkan draw path.
+- Debug views: Selected Material, Material Override, Slot Metallic, Slot Roughness, Slot AO.
+- P18 Env/Sky/Horizon controls, P17/P18 Calib/Gloss/Coat controls, import/scan/export, Debug ZIP, live FPS, and inspector tabs preserved.
+
+Diagnostics:
+
+- `currentScene = scene16_material_slot_editor_lab`
+- `materialSlotEditorStatus`
+- `selectedMaterialSlot`
+- `selectedMaterialSlotCount`
+- `selectedMaterialTypeHint`
+- `selectedMaterialName`
+- `perMaterialOverrideStatus = foundation_selected_slot_uniform`
+- `perMaterialOverrideMode = cpu_selected_slot_push_constants`
+- `selectedSlotMetallicOverride`
+- `selectedSlotRoughnessOverride`
+- `selectedSlotNormalScaleOverride`
+- `selectedSlotAoOverride`
+- `selectedSlotGlossOverride`
+- `selectedSlotCoatOverride`
+- `selectedSlotOverrideApplied`
+- `materialSlotControlsUiStatus`
+- `perMaterialOverridePerformanceStatus`
+
+Out of scope:
+
+- Shadows, shadow maps, CSM.
+- Cubemap texture pipeline.
+- Glass/transmission/refraction.
+- Skeletal animation.
+- Big UI rewrite.
+
 ## Patch P18 — Environment Cubemap / Real IBL Foundation
 
 Scope:

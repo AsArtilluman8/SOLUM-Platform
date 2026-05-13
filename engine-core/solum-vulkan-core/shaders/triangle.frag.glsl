@@ -363,6 +363,26 @@ void main() {
         fragColor = vec4(toneMap(iblSpecularColor * pc.exposureValue), pc.baseColorFactor.a * texel.a);
         return;
     }
+    if (pc.activeDebugView == 27) {
+        fragColor = vec4(materialTypeColor(hint), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 28) {
+        fragColor = vec4(vec3(clamp(pc.glossSliderValue, 0.0, 1.0), clamp(pc.paintGlossSliderValue, 0.0, 1.0), 1.0 - roughness), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 29) {
+        fragColor = vec4(vec3(metallic), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 30) {
+        fragColor = vec4(vec3(roughness), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 31) {
+        fragColor = vec4(vec3(ao), pc.baseColorFactor.a * texel.a);
+        return;
+    }
     rgb *= 1.0 - contactMask * clamp(pc.contactShadowIntensity, 0.0, 1.5) * 0.22;
     float diffuseLum = luminance(diffuseLight + ambient);
     float diffuseLimit = mix(2.4, 1.55, calibration);

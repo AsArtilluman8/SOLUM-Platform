@@ -20,11 +20,12 @@ enum class RenderLabScene {
     Scene13MaterialCalibrationLab,
     Scene14SpecularGlossLab,
     Scene15EnvironmentIblLab,
+    Scene16MaterialSlotEditorLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene15EnvironmentIblLab;
+    RenderLabScene currentScene = RenderLabScene::Scene16MaterialSlotEditorLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -65,6 +66,7 @@ struct RenderLabState {
             case RenderLabScene::Scene13MaterialCalibrationLab: return "scene13_material_calibration_lab";
             case RenderLabScene::Scene14SpecularGlossLab: return "scene14_specular_gloss_lab";
             case RenderLabScene::Scene15EnvironmentIblLab: return "scene15_environment_ibl_lab";
+            case RenderLabScene::Scene16MaterialSlotEditorLab: return "scene16_material_slot_editor_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -88,6 +90,7 @@ struct RenderLabState {
             case RenderLabScene::Scene13MaterialCalibrationLab: return "Scene13 Material Calibration Lab";
             case RenderLabScene::Scene14SpecularGlossLab: return "Scene14 Specular Gloss Lab";
             case RenderLabScene::Scene15EnvironmentIblLab: return "Scene15 Environment IBL Lab";
+            case RenderLabScene::Scene16MaterialSlotEditorLab: return "Scene16 Material Slot Editor Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }
@@ -333,6 +336,35 @@ struct RenderLabState {
         f << indent << "  \"glossVisibleResponseStatus\": \"" << escapeJson(model.glossVisibleResponseStatus) << "\",\n";
         f << indent << "  \"glossAffectsSpecularLobe\": \"" << escapeJson(model.glossAffectsSpecularLobe) << "\",\n";
         f << indent << "  \"glossAffectsReflectionWeight\": \"" << escapeJson(model.glossAffectsReflectionWeight) << "\",\n";
+        f << indent << "  \"materialSlotEditorStatus\": \"" << escapeJson(model.materialSlotEditorStatus) << "\",\n";
+        f << indent << "  \"selectedMaterialSlot\": " << model.selectedMaterialSlot << ",\n";
+        f << indent << "  \"selectedMaterialSlotCount\": " << model.selectedMaterialSlotCount << ",\n";
+        f << indent << "  \"selectedMaterialTypeHint\": \"" << escapeJson(model.selectedMaterialTypeHint) << "\",\n";
+        f << indent << "  \"selectedMaterialName\": \"" << escapeJson(model.selectedMaterialName) << "\",\n";
+        f << indent << "  \"selectedMaterialSummaryStatus\": \"" << escapeJson(model.selectedMaterialSummaryStatus) << "\",\n";
+        f << indent << "  \"materialSlotSelectionUiStatus\": \"" << escapeJson(model.materialSlotSelectionUiStatus) << "\",\n";
+        f << indent << "  \"perMaterialOverrideStatus\": \"" << escapeJson(model.perMaterialOverrideStatus) << "\",\n";
+        f << indent << "  \"perMaterialOverrideMode\": \"" << escapeJson(model.perMaterialOverrideMode) << "\",\n";
+        f << indent << "  \"selectedSlotMetallicOverride\": " << model.selectedSlotMetallicOverride << ",\n";
+        f << indent << "  \"selectedSlotRoughnessOverride\": " << model.selectedSlotRoughnessOverride << ",\n";
+        f << indent << "  \"selectedSlotNormalScaleOverride\": " << model.selectedSlotNormalScaleOverride << ",\n";
+        f << indent << "  \"selectedSlotAoOverride\": " << model.selectedSlotAoOverride << ",\n";
+        f << indent << "  \"selectedSlotGlossOverride\": " << model.selectedSlotGlossOverride << ",\n";
+        f << indent << "  \"selectedSlotCoatOverride\": " << model.selectedSlotCoatOverride << ",\n";
+        f << indent << "  \"selectedSlotOverrideApplied\": \"" << escapeJson(model.selectedSlotOverrideApplied) << "\",\n";
+        f << indent << "  \"selectedSlotResetStatus\": \"" << escapeJson(model.selectedSlotResetStatus) << "\",\n";
+        f << indent << "  \"perMaterialUniformUpdateStatus\": \"" << escapeJson(model.perMaterialUniformUpdateStatus) << "\",\n";
+        f << indent << "  \"materialSlotControlsUiStatus\": \"" << escapeJson(model.materialSlotControlsUiStatus) << "\",\n";
+        f << indent << "  \"metallicSlotSliderStatus\": \"" << escapeJson(model.metallicSlotSliderStatus) << "\",\n";
+        f << indent << "  \"roughnessSlotSliderStatus\": \"" << escapeJson(model.roughnessSlotSliderStatus) << "\",\n";
+        f << indent << "  \"normalSlotSliderStatus\": \"" << escapeJson(model.normalSlotSliderStatus) << "\",\n";
+        f << indent << "  \"aoSlotSliderStatus\": \"" << escapeJson(model.aoSlotSliderStatus) << "\",\n";
+        f << indent << "  \"selectedMaterialDebugViewStatus\": \"" << escapeJson(model.selectedMaterialDebugViewStatus) << "\",\n";
+        f << indent << "  \"materialOverrideDebugViewStatus\": \"" << escapeJson(model.materialOverrideDebugViewStatus) << "\",\n";
+        f << indent << "  \"slotMetallicDebugViewStatus\": \"" << escapeJson(model.slotMetallicDebugViewStatus) << "\",\n";
+        f << indent << "  \"slotRoughnessDebugViewStatus\": \"" << escapeJson(model.slotRoughnessDebugViewStatus) << "\",\n";
+        f << indent << "  \"slotAoDebugViewStatus\": \"" << escapeJson(model.slotAoDebugViewStatus) << "\",\n";
+        f << indent << "  \"perMaterialOverridePerformanceStatus\": \"" << escapeJson(model.perMaterialOverridePerformanceStatus) << "\",\n";
         f << indent << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << indent << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";
         f << indent << "  \"fpsSource\": \"" << escapeJson(model.fpsSource) << "\",\n";

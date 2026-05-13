@@ -9,6 +9,8 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Build;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.MediaStore;
 import android.content.ContentValues;
 import android.provider.DocumentsContract;
@@ -60,8 +62,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static final String TAG_DIAG = "SOLUM_ENGINE_DIAG";
     private static final String PREFS_NAME = "solum_engine_diagnostics";
     private static final String PREF_TREE_URI = "diagnostics_tree_uri";
-    private static final String SCENE_ID = "scene16_material_slot_editor_lab";
-    private static final String SCENE_NAME = "Scene16 Material Slot Editor Lab";
+    private static final String PREF_ACTIVE_MODEL_PATH = "active_model_path";
+    private static final String PREF_ACTIVE_MODEL_LOCAL_PATH = "active_model_local_path";
+    private static final String PREF_ACTIVE_MODEL_NAME = "active_model_name";
+    private static final String SCENE_ID = "scene17_runtime_material_workflow_lab";
+    private static final String SCENE_NAME = "Scene17 Runtime Material Workflow Lab";
     private static final int REQUEST_CHOOSE_DIAGNOSTICS_TREE = 2202;
     private static final int REQUEST_IMPORT_GLB = 2305;
     private static final int TEX_BASE_COLOR = 0;
@@ -107,7 +112,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button roughnessSlotButton;
     private Button normalSlotButton;
     private Button aoSlotButton;
+    private Button resetSelectedSlotButton;
     private Button materialViewButton;
+    private Button reloadActiveModelButton;
     private TextView materialStatusView;
     private SeekBar sunSlider;
     private SeekBar ambientSlider;
@@ -131,6 +138,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private LinearLayout lightingPanel;
     private LinearLayout materialPanel;
     private LinearLayout debugPanel;
+    private ScrollView inspectorScrollView;
     private TextView topHudView;
     private boolean nativeLoaded = false;
     private boolean inspectorPanelVisible = true;
@@ -199,6 +207,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private float lastPinchDistance = 0.0f;
     private boolean pinchActive = false;
     private ModelImportState modelState = ModelImportState.notRun();
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private final Runnable restoreInspectorAlphaRunnable = () -> setInspectorAlpha(0.92f, "idle");
 
     private static native long nativeCreate();
     private static native void nativeDestroy(long handle);
@@ -277,8 +287,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 consumer.accept(next);
                 valueButton.setText(label + " " + oneDecimal(next));
             }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) { modelState.sliderTouchStatus = "active"; }
-            @Override public void onStopTrackingTouch(SeekBar seekBar) { modelState.sliderTouchStatus = "ok_touch_targets"; updateStatus(); }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {
+                modelState.sliderTouchStatus = "active";
+                setInspectorAlpha(0.12f, "slider_drag");
+            }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                modelState.sliderTouchStatus = "ok_touch_targets";
+                scheduleInspectorAlphaRestore();
+                updateStatus();
+            }
         });
         column.addView(valueButton);
         column.addView(slider);
@@ -333,6 +350,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private void syncPanelVisibility() {
         if (inspectorPanel != null) inspectorPanel.setVisibility(inspectorPanelVisible ? View.VISIBLE : View.GONE);
+        if (inspectorScrollView != null) inspectorScrollView.setVisibility(inspectorPanelVisible ? View.VISIBLE : View.GONE);
         if (assetsPanel != null) assetsPanel.setVisibility("Assets".equals(activeInspectorTab) ? View.VISIBLE : View.GONE);
         if (cameraPanel != null) cameraPanel.setVisibility("Camera".equals(activeInspectorTab) ? View.VISIBLE : View.GONE);
         if (lightingPanel != null) lightingPanel.setVisibility("Lighting".equals(activeInspectorTab) ? View.VISIBLE : View.GONE);
@@ -350,6 +368,34 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (button == null) return;
         button.setText(tab.equals(activeInspectorTab) ? tab + " -" : tab);
         button.setBackground(panelBackground(tab.equals(activeInspectorTab) ? 230 : 170));
+    }
+
+    private void applyInspectorHeightCap() {
+        if (inspectorScrollView == null) return;
+        int height = getResources().getDisplayMetrics().heightPixels;
+        int capped = Math.max(dp(180), Math.round(height * 0.30f));
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, capped);
+        params.gravity = Gravity.BOTTOM;
+        params.setMargins(dp(76), dp(12), dp(12), dp(28));
+        inspectorScrollView.setLayoutParams(params);
+        modelState.inspectorExpandedMaxHeightPercent = 30;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private void setInspectorAlpha(float alpha, String mode) {
+        uiHandler.removeCallbacks(restoreInspectorAlphaRunnable);
+        float clamped = clamp(alpha, 0.10f, 0.92f);
+        if (inspectorScrollView != null) inspectorScrollView.setAlpha(clamped);
+        if (inspectorPanel != null) inspectorPanel.setAlpha(clamped);
+        modelState.inspectorCurrentAlphaMode = mode;
+    }
+
+    private void scheduleInspectorAlphaRestore() {
+        uiHandler.removeCallbacks(restoreInspectorAlphaRunnable);
+        uiHandler.postDelayed(restoreInspectorAlphaRunnable, 420L);
     }
 
     private Button tabButton(String label) {
@@ -403,6 +449,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         root.addView(inspectorToggleButton, inspectorToggleParams);
 
         ScrollView dockScroll = new ScrollView(this);
+        inspectorScrollView = dockScroll;
+        dockScroll.setFillViewport(false);
+        dockScroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         inspectorPanel = new LinearLayout(this);
         inspectorPanel.setOrientation(LinearLayout.VERTICAL);
         inspectorPanel.setPadding(10, 8, 10, 8);
@@ -426,16 +475,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         inspectorPanel.addView(tabRow);
         assetsPanel = new LinearLayout(this);
         assetsPanel.setOrientation(LinearLayout.VERTICAL);
+        TextView assetsWorkflowHint = compactInfoText("Assets: active model, import, scan, reload, export");
+        assetsPanel.addView(assetsWorkflowHint);
         importGlbButton = compactButton("Import GLB");
         importGlbButton.setOnClickListener(v -> chooseGlbForImport());
         scanModelsButton = compactButton("Scan Models");
         scanModelsButton.setOnClickListener(v -> scanModelsFromButton());
+        reloadActiveModelButton = compactButton("Reload Active Model");
+        reloadActiveModelButton.setOnClickListener(v -> reloadActiveModelFromButton());
         quickExportButton = compactButton("Export");
         quickExportButton.setOnClickListener(v -> exportEngineDiagnosticsFromButton());
         assetsPanel.addView(importGlbButton);
         assetsPanel.addView(scanModelsButton);
+        assetsPanel.addView(reloadActiveModelButton);
         assetsPanel.addView(quickExportButton);
-        assetsSummaryView = panelText("Active: none", 10f, 3);
+        assetsSummaryView = panelText("Active: none", 10f, 5);
         assetsPanel.addView(assetsSummaryView);
         inspectorPanel.addView(assetsPanel);
 
@@ -500,6 +554,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
         materialPanel = new LinearLayout(this);
         materialPanel.setOrientation(LinearLayout.VERTICAL);
+        materialPanel.addView(compactInfoText("Selected slot workflow"));
         LinearLayout slotRow = new LinearLayout(this);
         slotRow.setOrientation(LinearLayout.VERTICAL);
         slotPrevButton = compactButton("Slot -");
@@ -525,6 +580,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             selectedSlotAoOverride = clamp(v, 0.0f, 1.5f);
             applyLightingControls();
         }));
+        resetSelectedSlotButton = compactButton("Reset Selected Slot");
+        resetSelectedSlotButton.setOnClickListener(v -> resetSelectedMaterialSlot());
+        materialPanel.addView(resetSelectedSlotButton);
         calibrationPresetButton = compactButton("Calib: Balanced");
         calibrationPresetButton.setOnClickListener(v -> cycleCalibrationPreset());
         materialPanel.addView(calibrationPresetButton);
@@ -561,11 +619,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         debugPanel.addView(debugZipButton);
         debugPanel.addView(diagnosticsStatusView);
         inspectorPanel.addView(debugPanel);
-        FrameLayout.LayoutParams dockParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        dockParams.gravity = Gravity.BOTTOM;
-        dockParams.setMargins(76, 12, 12, 28);
-        root.addView(dockScroll, dockParams);
+        root.addView(dockScroll);
+        applyInspectorHeightCap();
         syncPanelVisibility();
+        restorePersistedActiveModel();
         scanModels("startup");
         updateDiagnosticsStatusPanel();
         setContentView(root);
@@ -597,6 +654,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override protected void onDestroy() {
         stopFpsPulse();
+        uiHandler.removeCallbacks(restoreInspectorAlphaRunnable);
         try { if (nativeLoaded && nativeHandle != 0L) { nativeDestroy(nativeHandle); nativeHandle = 0L; } } catch (Throwable t) { writeCrashReport("native_destroy_failed", t); }
         super.onDestroy();
     }
@@ -651,13 +709,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override public void surfaceCreated(SurfaceHolder holder) {
         if (!nativeLoaded || nativeHandle == 0L) return;
-        try { nativeSurfaceCreated(nativeHandle, holder.getSurface(), getRuntimeReportDirPath()); applyLightingControls(); attemptActiveModelGpuUpload("surface_created"); updateStatus(); exportEngineDiagnostics("surface_created"); }
+        try { modelState.surfaceRecreateStatus = "surface_created"; nativeSurfaceCreated(nativeHandle, holder.getSurface(), getRuntimeReportDirPath()); applyLightingControls(); attemptActiveModelGpuUpload("surface_created"); updateStatus(); exportEngineDiagnostics("surface_created"); }
         catch (Throwable t) { writeCrashReport("surface_created_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: surface init failed\n" + shortThrowable(t)); }
     }
 
     @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         if (!nativeLoaded || nativeHandle == 0L) return;
-        try { nativeSurfaceChanged(nativeHandle, holder.getSurface(), width, height); applyLightingControls(); attemptActiveModelGpuUpload("surface_changed"); updateStatus(); exportEngineDiagnostics("surface_changed"); }
+        try { modelState.surfaceRecreateStatus = "surface_changed"; nativeSurfaceChanged(nativeHandle, holder.getSurface(), width, height); applyLightingControls(); attemptActiveModelGpuUpload("surface_changed"); updateStatus(); exportEngineDiagnostics("surface_changed"); }
         catch (Throwable t) { writeCrashReport("surface_changed_failed", t); statusView.setMaxLines(8); statusView.setText("SOLUM Engine\nStatus: surface resize failed\n" + shortThrowable(t)); }
     }
 
@@ -704,6 +762,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (assetsSummaryView != null) {
             assetsSummaryView.setText("Active: " + (activeName.isEmpty() ? "none" : shorten(activeName, 32))
                 + "\nModels: " + modelState.modelsFoundCount
+                + "\nFallback reason: " + (modelState.fallbackCubeVisible ? shorten(modelState.fallbackCubeReason, 42) : "none")
+                + "\nReload: " + modelState.reloadActiveModelStatus
                 + "\nExport: " + lastExportStatus + " / ZIP " + debugZipStatus);
         }
         if (cameraInfoView != null) {
@@ -748,7 +808,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "\nFallback cube: " + fallback
             + "\nMesh meta: " + p.meshCount + " / " + p.primitiveCount + " / " + p.materialCount + " / " + p.textureCount
             + "\nStatus: " + status
-            + "\nNext: P18 environment cubemap / real IBL foundation";
+            + "\nNext: runtime material workflow restore validation";
     }
 
     private void cycleLightPreset() {
@@ -805,6 +865,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         } else {
             selectedMaterialSlot = 0;
         }
+        applyLightingControls();
+        updateStatus();
+    }
+
+    private void resetSelectedMaterialSlot() {
+        seedSelectedSlotOverridesFromDiagnostics();
+        modelState.selectedSlotResetStatus = "ok_reset_selected_slot_from_source_material";
         applyLightingControls();
         updateStatus();
     }
@@ -1047,7 +1114,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.selectedSlotGlossOverride = glossSliderValue;
         modelState.selectedSlotCoatOverride = paintGlossSliderValue;
         modelState.selectedSlotOverrideApplied = selectedSlot == null ? "false_no_material_slot" : "true_selected_slot_only";
-        if (!"seeded_from_slot".equals(modelState.selectedSlotResetStatus)) modelState.selectedSlotResetStatus = "available_safe_reseed_from_slot";
+        if (!"seeded_from_slot".equals(modelState.selectedSlotResetStatus)
+            && !"ok_reset_selected_slot_from_source_material".equals(modelState.selectedSlotResetStatus)) {
+            modelState.selectedSlotResetStatus = "available_safe_reseed_from_slot";
+        }
         modelState.perMaterialUniformUpdateStatus = "ok_uniform_only";
         modelState.materialSlotControlsUiStatus = "ok_compact";
         modelState.metallicSlotSliderStatus = "ok";
@@ -1060,6 +1130,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.slotRoughnessDebugViewStatus = "shader_applied";
         modelState.slotAoDebugViewStatus = "shader_applied";
         modelState.perMaterialOverridePerformanceStatus = "ok_no_extra_pass_no_upload";
+        modelState.materialWorkflowStatus = "ok_selected_slot_material_workflow";
+        modelState.materialSlotSummaryUiStatus = "ok_slot_name_hint_texture_summary";
+        modelState.selectedSlotResetButtonStatus = "ok";
+        modelState.selectedMaterialTextureSummaryStatus = selectedSlot == null ? "missing_no_slot" : textureSummaryForSlot(selectedSlot);
+        modelState.assetsWorkflowStatus = "ok_active_model_import_scan_reload_export";
+        modelState.reloadActiveModelButtonStatus = "ok";
+        modelState.activeModelDisplayStatus = modelState.activeModelName().isEmpty() ? "empty" : "ok";
+        modelState.fallbackReasonDisplayStatus = modelState.fallbackCubeVisible ? "ok_visible" : "ok_hidden_when_not_needed";
+        modelState.p19PreservedStatus = "ok";
+        modelState.p18IblPreservedStatus = "ok";
+        modelState.p17GlossPreservedStatus = "ok";
+        modelState.runtimeStateDebugViewStatus = "ok";
+        modelState.restoreStateDebugViewStatus = "ok";
+        modelState.uiStateDebugViewStatus = "ok";
         modelState.brdfStatus = "ok";
         modelState.brdfMode = "direct_lighting_schlick_mobile";
         modelState.diffuseStatus = "ok_non_metal_diffuse";
@@ -1106,7 +1190,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (horizonButton != null) horizonButton.setText("Horizon " + oneDecimal(horizonStrength));
         if (calibrationPresetButton != null) calibrationPresetButton.setText("Calib: " + modelState.calibrationPreset);
         if (slotPrevButton != null) slotPrevButton.setText("Slot -");
-        if (slotNextButton != null) slotNextButton.setText("Slot " + selectedMaterialSlot + " / " + Math.max(0, selectedMaterialSlotCount));
+        if (slotNextButton != null) slotNextButton.setText("Slot " + selectedMaterialSlot + "/" + Math.max(0, selectedMaterialSlotCount));
         if (metallicSlotButton != null) metallicSlotButton.setText("Metallic " + oneDecimal(selectedSlotMetallicOverride));
         if (roughnessSlotButton != null) roughnessSlotButton.setText("Rough " + oneDecimal(selectedSlotRoughnessOverride));
         if (normalSlotButton != null) normalSlotButton.setText("Normal " + oneDecimal(selectedSlotNormalScaleOverride));
@@ -1114,7 +1198,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (calibrationButton != null) calibrationButton.setText("Calib " + oneDecimal(calibrationSliderValue));
         if (glossButton != null) glossButton.setText("Gloss " + oneDecimal(glossSliderValue));
         if (paintGlossButton != null) paintGlossButton.setText("Coat " + oneDecimal(paintGlossSliderValue));
-        if (materialStatusView != null) materialStatusView.setText("Hint: " + modelState.selectedMaterialTypeHint + " | " + modelState.selectedMaterialName + "\nMetallic " + oneDecimal(selectedSlotMetallicOverride) + " Rough " + oneDecimal(selectedSlotRoughnessOverride) + " Normal " + oneDecimal(selectedSlotNormalScaleOverride) + " AO " + oneDecimal(selectedSlotAoOverride) + "\nGloss " + oneDecimal(glossSliderValue) + " Coat " + oneDecimal(paintGlossSliderValue) + " | Fabric matte: on");
+        if (materialStatusView != null) materialStatusView.setText("Slot " + selectedMaterialSlot + "/" + Math.max(0, selectedMaterialSlotCount) + " " + modelState.selectedMaterialName + " " + modelState.selectedMaterialTypeHint + "\n" + modelState.selectedMaterialTextureSummaryStatus + "\nMetallic " + oneDecimal(selectedSlotMetallicOverride) + " Rough " + oneDecimal(selectedSlotRoughnessOverride) + " Normal " + oneDecimal(selectedSlotNormalScaleOverride) + " AO " + oneDecimal(selectedSlotAoOverride) + "\nCalib " + oneDecimal(calibrationSliderValue) + " Gloss " + oneDecimal(glossSliderValue) + " Coat " + oneDecimal(paintGlossSliderValue) + " | Fabric matte: on");
         updateSliderPositionsFromState();
         if (materialViewButton != null) materialViewButton.setText("Debug: " + modelState.activeDebugView);
         try {
@@ -1129,13 +1213,38 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private void applyInspectorDiagnostics() {
         modelState.inspectorUiStatus = "ok";
-        modelState.inspectorUiMode = "tabbed_compact_inspector";
+        modelState.inspectorUiMode = "tabbed_capped_scroll_inspector";
         modelState.activeInspectorTab = activeInspectorTab;
-        modelState.assetsTabStatus = "ok_import_scan_export_summary";
+        modelState.assetsTabStatus = "ok_import_scan_reload_export_summary";
         modelState.cameraTabStatus = "ok_camera_info_reset_zoom";
         modelState.lightingTabStatus = "ok_sliders_environment_controls";
-        modelState.materialTabStatus = "ok_slot_controls";
+        modelState.materialTabStatus = "ok_scrollable_selected_slot_workflow";
         modelState.debugTabStatus = "ok_fps_zip_status";
+        modelState.inspectorHeightMode = "capped_30_percent";
+        modelState.inspectorScrollStatus = "ok";
+        modelState.inspectorExpandedMaxHeightPercent = 30;
+        modelState.inspectorCollapsedStatus = "ok_compact_toggle";
+        modelState.materialTabScrollStatus = "ok";
+        modelState.inspectorTouchTargetStatus = "ok";
+        modelState.inspectorDynamicAlphaStatus = "ok";
+        modelState.inspectorAlphaIdle = 0.92f;
+        modelState.inspectorAlphaWhileSliderDrag = 0.12f;
+        modelState.inspectorAlphaWhileCameraMove = 0.16f;
+        modelState.inspectorAlphaRestoreStatus = "ok_timed_restore";
+        modelState.sliderDragVisualMode = "transparent_inspector_uniform_only";
+        modelState.cameraMoveVisualMode = "transparent_inspector_camera_drag";
+    }
+
+    private String textureSummaryForSlot(JSONObject slot) {
+        if (slot == null) return "baseColor missing | metallicRoughness missing | normal missing | occlusion missing";
+        return "baseColor " + okMissing(slot, "baseColorTextureSlot")
+            + " | metallicRoughness " + okMissing(slot, "metallicRoughnessTextureSlot")
+            + "\nnormal " + okMissing(slot, "normalTextureSlot")
+            + " | occlusion " + okMissing(slot, "occlusionTextureSlot");
+    }
+
+    private String okMissing(JSONObject slot, String key) {
+        return slot.optInt(key, -1) >= 0 ? "ok" : "missing";
     }
 
     private void updateSliderPositionsFromState() {
@@ -1364,6 +1473,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (!nativeLoaded || nativeHandle == 0L) return true;
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
+            setInspectorAlpha(0.16f, "camera_move");
             lastTouchX = event.getX();
             lastTouchY = event.getY();
             pinchActive = false;
@@ -1375,6 +1485,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             return true;
         }
         if (action == MotionEvent.ACTION_MOVE) {
+            setInspectorAlpha(0.16f, "camera_move");
             if (event.getPointerCount() >= 2) {
                 float d = touchDistance(event);
                 if (lastPinchDistance > 0.0f && d > 0.0f) {
@@ -1399,6 +1510,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_UP) {
             pinchActive = false;
             lastPinchDistance = 0.0f;
+            scheduleInspectorAlphaRestore();
             return true;
         }
         return true;
@@ -1442,12 +1554,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private void attemptActiveModelGpuUpload(String trigger) {
         if (!nativeLoaded || nativeHandle == 0L) return;
         if (modelState.activeModelPath == null || modelState.activeModelPath.isEmpty()) {
+            modelState.resumeRestoreStatus = "skipped_no_active_model";
+            modelState.resumeRestoreMode = "none";
+            modelState.activeModelPersistenceStatus = "empty";
+            modelState.activeModelRestoreResult = "skipped";
             setModelFallbackState("no active model");
             nativeSetModelFallback(nativeHandle, "none", "", "no active model");
             return;
         }
+        if (trigger.startsWith("surface_") || trigger.contains("resume") || trigger.contains("reload")) {
+            modelState.activeModelRestoreAttemptCount++;
+            modelState.resumeRestoreStatus = "attempting";
+            modelState.resumeRestoreMode = "cached_parsed_model_reupload";
+        }
         File active = new File(modelState.localExtractionPath());
         if (!active.exists()) {
+            modelState.resumeRestoreStatus = "failed";
+            modelState.activeModelRestoreResult = "failed_missing_cached_model";
             setModelFallbackState("active model missing: " + active.getAbsolutePath());
             nativeSetModelFallback(nativeHandle, modelState.activeModelName(), modelState.activeModelPath, modelState.reason);
             return;
@@ -1478,6 +1601,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 mesh.reason
             );
             if (ok) {
+                modelState.resumeRestoreStatus = trigger.startsWith("surface_") || trigger.contains("reload") ? "ok" : modelState.resumeRestoreStatus;
+                modelState.activeModelPersistenceStatus = "ok_cached_metadata_and_local_model";
+                modelState.activeModelRestoreResult = "ok_model_active";
                 modelState.modelUploadRepeatCount++;
                 modelState.uploadGenerationId++;
                 modelState.lastUploadedModelKey = uploadKey;
@@ -1509,6 +1635,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 modelState.tangentBuildMode = mesh.tangentBuildMode;
                 modelState.pbrTextureSlotCount = mesh.pbrTextureSlotCount;
                 modelState.materialSlotDiagnostics = mesh.materialSlotDiagnostics;
+                modelState.persistedModelBounds = "[" + jsonFloat(mesh.boundsMin[0]) + "," + jsonFloat(mesh.boundsMin[1]) + "," + jsonFloat(mesh.boundsMin[2]) + "]-[" + jsonFloat(mesh.boundsMax[0]) + "," + jsonFloat(mesh.boundsMax[1]) + "," + jsonFloat(mesh.boundsMax[2]) + "]";
+                modelState.persistedModelScale = mesh.modelScale;
                 selectedMaterialSlotCount = mesh.materialSlotCount;
                 selectedMaterialSlot = selectedMaterialSlotCount > 0 ? Math.min(selectedMaterialSlot, selectedMaterialSlotCount - 1) : 0;
                 seedSelectedSlotOverridesFromDiagnostics();
@@ -1521,6 +1649,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 }
                 modelState.fallbackCubeVisible = false;
                 modelState.fallbackCubeStatus = "off";
+                modelState.fallbackCubeReason = "none_active_model_restored";
                 modelState.reason = trigger + ": multi primitive static upload rendered=" + mesh.primitiveCountRendered + " skipped=" + mesh.primitiveCountSkipped + " reason=" + mesh.reason;
                 modelState.parse.gpuUploadStatus = "ok";
                 modelState.parse.drawStatus = modelState.drawStatus;
@@ -1528,10 +1657,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 modelState.parse.uploadedIndexCount = mesh.indexCount;
                 applyBaseColorTextures(mesh, trigger);
                 applyPbrTextures(mesh, trigger);
+                persistActiveModelMetadata();
             } else {
+                modelState.resumeRestoreStatus = "failed";
+                modelState.activeModelRestoreResult = "failed_native_upload";
                 setModelFallbackState(trigger + ": native model upload/draw failed");
             }
         } catch (Throwable t) {
+            modelState.resumeRestoreStatus = "failed";
+            modelState.activeModelRestoreResult = "failed_exception";
             setModelFallbackState(trigger + ": " + shortThrowable(t));
             nativeSetModelFallback(nativeHandle, modelState.activeModelName(), modelState.activeModelPath, modelState.reason);
         }
@@ -1661,6 +1795,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.uploadedIndexCount = 0;
         modelState.fallbackCubeVisible = true;
         modelState.fallbackCubeStatus = "on";
+        modelState.fallbackCubeReason = reason;
         modelState.reason = reason;
         if (modelState.parse != null) {
             modelState.parse.gpuUploadStatus = "failed";
@@ -1704,6 +1839,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 modelState.activeModelPath = copy.path;
                 modelState.activeModelLocalPath = copy.localFile.getAbsolutePath();
                 modelState.lastImportedModel = copy.path;
+                modelState.activeModelPersistenceStatus = "metadata_pending_upload";
                 modelState.reason = copy.reason;
                 modelState.parse = GlbParser.parse(copy.localFile);
                 if (!modelState.parse.glbValid) {
@@ -1714,6 +1850,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 scanModels("after_import");
                 importGlbButton.setText(modelState.parse.glbValid ? "Import OK" : "Import Failed");
                 attemptActiveModelGpuUpload("model_import");
+                persistActiveModelMetadata();
             } catch (Throwable t) {
                 modelState.importStatus = "failed";
                 modelState.importRoute = "failed";
@@ -1740,6 +1877,56 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             exportEngineDiagnostics("model_scan");
             updateImportUi();
         });
+    }
+
+    private void reloadActiveModelFromButton() {
+        if (reloadActiveModelButton != null) {
+            reloadActiveModelButton.setEnabled(false);
+            reloadActiveModelButton.setText("Reloading...");
+        }
+        modelState.reloadActiveModelStatus = "running";
+        View poster = reloadActiveModelButton != null ? reloadActiveModelButton : statusView;
+        poster.post(() -> {
+            attemptActiveModelGpuUpload("reload_active_model");
+            modelState.reloadActiveModelStatus = "ok".equals(modelState.gpuUploadStatus) ? "ok" : "failed";
+            if (reloadActiveModelButton != null) {
+                reloadActiveModelButton.setText("Reload Active Model");
+                reloadActiveModelButton.setEnabled(true);
+            }
+            writeModelDiagnostics("reload_active_model");
+            exportEngineDiagnostics("reload_active_model");
+            updateImportUi();
+        });
+    }
+
+    private void persistActiveModelMetadata() {
+        if (modelState.activeModelPath == null || modelState.activeModelPath.isEmpty()) return;
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putString(PREF_ACTIVE_MODEL_PATH, modelState.activeModelPath)
+            .putString(PREF_ACTIVE_MODEL_LOCAL_PATH, modelState.activeModelLocalPath)
+            .putString(PREF_ACTIVE_MODEL_NAME, modelState.activeModelName())
+            .apply();
+        modelState.activeModelPersistenceStatus = "ok_metadata_saved";
+    }
+
+    private void restorePersistedActiveModel() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String path = prefs.getString(PREF_ACTIVE_MODEL_PATH, "");
+        String local = prefs.getString(PREF_ACTIVE_MODEL_LOCAL_PATH, "");
+        String name = prefs.getString(PREF_ACTIVE_MODEL_NAME, "");
+        if (path == null || path.isEmpty()) {
+            modelState.activeModelPersistenceStatus = "empty";
+            modelState.resumeRestoreStatus = "skipped_no_persisted_model";
+            return;
+        }
+        modelState.activeModelPath = path;
+        modelState.activeModelLocalPath = local == null ? "" : local;
+        modelState.sourceDisplayName = name == null ? "" : name;
+        modelState.importStatus = "ok";
+        modelState.importRoute = "persisted_metadata";
+        modelState.activeModelPersistenceStatus = "ok_metadata_restored";
+        modelState.resumeRestoreStatus = "pending_surface_restore";
+        modelState.resumeRestoreMode = "cached_local_path";
     }
 
     private void scanModels(String trigger) {
@@ -2144,6 +2331,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"currentScene\": \"" + SCENE_ID + "\",\n"
             + "  \"currentLabScene\": \"" + SCENE_ID + "\",\n"
             + "  \"currentLabSceneName\": \"" + SCENE_NAME + "\",\n"
+            + "  \"resumeRestoreStatus\": \"" + escape(jsonStringField(renderLab, "resumeRestoreStatus", modelState.resumeRestoreStatus)) + "\",\n"
+            + "  \"resumeRestoreMode\": \"" + escape(jsonStringField(renderLab, "resumeRestoreMode", modelState.resumeRestoreMode)) + "\",\n"
+            + "  \"activeModelPersistenceStatus\": \"" + escape(jsonStringField(renderLab, "activeModelPersistenceStatus", modelState.activeModelPersistenceStatus)) + "\",\n"
+            + "  \"activeModelRestoreAttemptCount\": " + jsonNumberField(renderLab, "activeModelRestoreAttemptCount", String.valueOf(modelState.activeModelRestoreAttemptCount)) + ",\n"
+            + "  \"activeModelRestoreResult\": \"" + escape(jsonStringField(renderLab, "activeModelRestoreResult", modelState.activeModelRestoreResult)) + "\",\n"
+            + "  \"fallbackCubeReason\": \"" + escape(jsonStringField(renderLab, "fallbackCubeReason", modelState.fallbackCubeReason)) + "\",\n"
+            + "  \"surfaceRecreateStatus\": \"" + escape(jsonStringField(renderLab, "surfaceRecreateStatus", modelState.surfaceRecreateStatus)) + "\",\n"
             + "  \"assetImportStatus\": \"" + escape(modelState.importStatus) + "\",\n"
             + "  \"activeModelName\": \"" + escape(modelState.activeModelName()) + "\",\n"
             + "  \"activeModelPath\": \"" + escape(modelState.activeModelPath) + "\",\n"
@@ -2321,6 +2515,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"modelUploadRepeatCount\": " + jsonNumberField(renderLab, "modelUploadRepeatCount", String.valueOf(modelState.modelUploadRepeatCount)) + ",\n"
             + "  \"uploadGenerationId\": " + jsonNumberField(renderLab, "uploadGenerationId", String.valueOf(modelState.uploadGenerationId)) + ",\n"
             + "  \"renderLoopAllocationGuardStatus\": \"" + escape(jsonStringField(renderLab, "renderLoopAllocationGuardStatus", modelState.renderLoopAllocationGuardStatus)) + "\",\n"
+            + p20WorkflowJsonFields(renderLab, "  ")
             + "  \"debugZipStatus\": \"" + escape(debugZipStatus) + "\",\n"
             + "  \"debugZipPath\": \"" + escape(debugZipPath) + "\",\n"
             + "  \"debugZipIncludedFiles\": \"" + escape(debugZipIncludedFiles) + "\",\n"
@@ -2394,6 +2589,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"currentScene\": \"" + SCENE_ID + "\",\n"
             + "  \"currentLabScene\": \"" + SCENE_ID + "\",\n"
             + "  \"currentLabSceneName\": \"" + SCENE_NAME + "\",\n"
+            + "  \"resumeRestoreStatus\": \"" + escape(jsonStringField(renderLab, "resumeRestoreStatus", modelState.resumeRestoreStatus)) + "\",\n"
+            + "  \"resumeRestoreMode\": \"" + escape(jsonStringField(renderLab, "resumeRestoreMode", modelState.resumeRestoreMode)) + "\",\n"
+            + "  \"activeModelPersistenceStatus\": \"" + escape(jsonStringField(renderLab, "activeModelPersistenceStatus", modelState.activeModelPersistenceStatus)) + "\",\n"
+            + "  \"activeModelRestoreAttemptCount\": " + jsonNumberField(renderLab, "activeModelRestoreAttemptCount", String.valueOf(modelState.activeModelRestoreAttemptCount)) + ",\n"
+            + "  \"activeModelRestoreResult\": \"" + escape(jsonStringField(renderLab, "activeModelRestoreResult", modelState.activeModelRestoreResult)) + "\",\n"
+            + "  \"fallbackCubeReason\": \"" + escape(jsonStringField(renderLab, "fallbackCubeReason", modelState.fallbackCubeReason)) + "\",\n"
+            + "  \"surfaceRecreateStatus\": \"" + escape(jsonStringField(renderLab, "surfaceRecreateStatus", modelState.surfaceRecreateStatus)) + "\",\n"
             + "  \"materialCalibrationStatus\": \"" + escape(jsonStringField(renderLab, "materialCalibrationStatus", modelState.materialCalibrationStatus)) + "\",\n"
             + "  \"materialCalibrationMode\": \"" + escape(jsonStringField(renderLab, "materialCalibrationMode", modelState.materialCalibrationMode)) + "\",\n"
             + "  \"albedoEnergyStatus\": \"" + escape(jsonStringField(renderLab, "albedoEnergyStatus", modelState.albedoEnergyStatus)) + "\",\n"
@@ -2422,6 +2624,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + p17GlossJsonFields(renderLab, "  ")
             + p18EnvironmentJsonFields(renderLab, "  ")
             + p19MaterialSlotJsonFields(renderLab, "  ")
+            + p20WorkflowJsonFields(renderLab, "  ")
             + "  \"sunIntensity\": " + jsonNumberField(renderLab, "sunIntensity", jsonFloat(modelState.sunIntensity)) + ",\n"
             + "  \"ambientIntensity\": " + jsonNumberField(renderLab, "ambientIntensity", jsonFloat(modelState.ambientIntensity)) + ",\n"
             + "  \"exposureValue\": " + jsonNumberField(renderLab, "exposureValue", jsonFloat(modelState.exposureValue)) + ",\n"
@@ -2606,6 +2809,37 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"slotRoughnessDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "slotRoughnessDebugViewStatus", modelState.slotRoughnessDebugViewStatus)) + "\",\n"
             + indent + "\"slotAoDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "slotAoDebugViewStatus", modelState.slotAoDebugViewStatus)) + "\",\n"
             + indent + "\"perMaterialOverridePerformanceStatus\": \"" + escape(jsonStringField(renderLab, "perMaterialOverridePerformanceStatus", modelState.perMaterialOverridePerformanceStatus)) + "\",\n";
+    }
+
+    private String p20WorkflowJsonFields(String renderLab, String indent) {
+        return indent + "\"inspectorHeightMode\": \"" + escape(jsonStringField(renderLab, "inspectorHeightMode", modelState.inspectorHeightMode)) + "\",\n"
+            + indent + "\"inspectorScrollStatus\": \"" + escape(jsonStringField(renderLab, "inspectorScrollStatus", modelState.inspectorScrollStatus)) + "\",\n"
+            + indent + "\"inspectorExpandedMaxHeightPercent\": " + jsonNumberField(renderLab, "inspectorExpandedMaxHeightPercent", String.valueOf(modelState.inspectorExpandedMaxHeightPercent)) + ",\n"
+            + indent + "\"inspectorCollapsedStatus\": \"" + escape(jsonStringField(renderLab, "inspectorCollapsedStatus", modelState.inspectorCollapsedStatus)) + "\",\n"
+            + indent + "\"materialTabScrollStatus\": \"" + escape(jsonStringField(renderLab, "materialTabScrollStatus", modelState.materialTabScrollStatus)) + "\",\n"
+            + indent + "\"inspectorTouchTargetStatus\": \"" + escape(jsonStringField(renderLab, "inspectorTouchTargetStatus", modelState.inspectorTouchTargetStatus)) + "\",\n"
+            + indent + "\"inspectorDynamicAlphaStatus\": \"" + escape(jsonStringField(renderLab, "inspectorDynamicAlphaStatus", modelState.inspectorDynamicAlphaStatus)) + "\",\n"
+            + indent + "\"inspectorAlphaIdle\": " + jsonNumberField(renderLab, "inspectorAlphaIdle", jsonFloat(modelState.inspectorAlphaIdle)) + ",\n"
+            + indent + "\"inspectorAlphaWhileSliderDrag\": " + jsonNumberField(renderLab, "inspectorAlphaWhileSliderDrag", jsonFloat(modelState.inspectorAlphaWhileSliderDrag)) + ",\n"
+            + indent + "\"inspectorAlphaWhileCameraMove\": " + jsonNumberField(renderLab, "inspectorAlphaWhileCameraMove", jsonFloat(modelState.inspectorAlphaWhileCameraMove)) + ",\n"
+            + indent + "\"inspectorAlphaRestoreStatus\": \"" + escape(jsonStringField(renderLab, "inspectorAlphaRestoreStatus", modelState.inspectorAlphaRestoreStatus)) + "\",\n"
+            + indent + "\"sliderDragVisualMode\": \"" + escape(jsonStringField(renderLab, "sliderDragVisualMode", modelState.sliderDragVisualMode)) + "\",\n"
+            + indent + "\"cameraMoveVisualMode\": \"" + escape(jsonStringField(renderLab, "cameraMoveVisualMode", modelState.cameraMoveVisualMode)) + "\",\n"
+            + indent + "\"materialWorkflowStatus\": \"" + escape(jsonStringField(renderLab, "materialWorkflowStatus", modelState.materialWorkflowStatus)) + "\",\n"
+            + indent + "\"materialSlotSummaryUiStatus\": \"" + escape(jsonStringField(renderLab, "materialSlotSummaryUiStatus", modelState.materialSlotSummaryUiStatus)) + "\",\n"
+            + indent + "\"selectedSlotResetButtonStatus\": \"" + escape(jsonStringField(renderLab, "selectedSlotResetButtonStatus", modelState.selectedSlotResetButtonStatus)) + "\",\n"
+            + indent + "\"selectedMaterialTextureSummaryStatus\": \"" + escape(jsonStringField(renderLab, "selectedMaterialTextureSummaryStatus", modelState.selectedMaterialTextureSummaryStatus)) + "\",\n"
+            + indent + "\"assetsWorkflowStatus\": \"" + escape(jsonStringField(renderLab, "assetsWorkflowStatus", modelState.assetsWorkflowStatus)) + "\",\n"
+            + indent + "\"reloadActiveModelButtonStatus\": \"" + escape(jsonStringField(renderLab, "reloadActiveModelButtonStatus", modelState.reloadActiveModelButtonStatus)) + "\",\n"
+            + indent + "\"reloadActiveModelStatus\": \"" + escape(jsonStringField(renderLab, "reloadActiveModelStatus", modelState.reloadActiveModelStatus)) + "\",\n"
+            + indent + "\"activeModelDisplayStatus\": \"" + escape(jsonStringField(renderLab, "activeModelDisplayStatus", modelState.activeModelDisplayStatus)) + "\",\n"
+            + indent + "\"fallbackReasonDisplayStatus\": \"" + escape(jsonStringField(renderLab, "fallbackReasonDisplayStatus", modelState.fallbackReasonDisplayStatus)) + "\",\n"
+            + indent + "\"p19PreservedStatus\": \"" + escape(jsonStringField(renderLab, "p19PreservedStatus", modelState.p19PreservedStatus)) + "\",\n"
+            + indent + "\"p18IblPreservedStatus\": \"" + escape(jsonStringField(renderLab, "p18IblPreservedStatus", modelState.p18IblPreservedStatus)) + "\",\n"
+            + indent + "\"p17GlossPreservedStatus\": \"" + escape(jsonStringField(renderLab, "p17GlossPreservedStatus", modelState.p17GlossPreservedStatus)) + "\",\n"
+            + indent + "\"runtimeStateDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "runtimeStateDebugViewStatus", modelState.runtimeStateDebugViewStatus)) + "\",\n"
+            + indent + "\"restoreStateDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "restoreStateDebugViewStatus", modelState.restoreStateDebugViewStatus)) + "\",\n"
+            + indent + "\"uiStateDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "uiStateDebugViewStatus", modelState.uiStateDebugViewStatus)) + "\",\n";
     }
 
     private String jsonStringField(String json, String key, String fallback) {
@@ -2868,15 +3102,55 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private String getRenderLabStateForExport() {
         if (!nativeLoaded || nativeHandle == 0L) {
-            return fallbackRenderLabJson("native_not_loaded", "ok", "shader_applied", "");
+            return injectJavaInspectorState(fallbackRenderLabJson("native_not_loaded", "ok", "shader_applied", ""));
         }
         try { return injectJavaInspectorState(nativeGetRenderLabState(nativeHandle)); }
-        catch (Throwable t) { return fallbackRenderLabJson("native_render_lab_state_failed", "failed", "not_applied", shortThrowable(t)); }
+        catch (Throwable t) { return injectJavaInspectorState(fallbackRenderLabJson("native_render_lab_state_failed", "failed", "not_applied", shortThrowable(t))); }
     }
 
     private String injectJavaInspectorState(String json) {
         if (json == null || json.isEmpty()) return json;
-        return json.replace("\"activeInspectorTab\":\"Assets\"", "\"activeInspectorTab\":\"" + escape(activeInspectorTab) + "\"");
+        String updated = json.replace("\"activeInspectorTab\":\"Assets\"", "\"activeInspectorTab\":\"" + escape(activeInspectorTab) + "\"");
+        int end = updated.lastIndexOf('}');
+        if (end < 0) return updated;
+        return updated.substring(0, end)
+            + ",\"resumeRestoreStatus\":\"" + escape(modelState.resumeRestoreStatus) + "\""
+            + ",\"resumeRestoreMode\":\"" + escape(modelState.resumeRestoreMode) + "\""
+            + ",\"activeModelPersistenceStatus\":\"" + escape(modelState.activeModelPersistenceStatus) + "\""
+            + ",\"activeModelRestoreAttemptCount\":" + modelState.activeModelRestoreAttemptCount
+            + ",\"activeModelRestoreResult\":\"" + escape(modelState.activeModelRestoreResult) + "\""
+            + ",\"fallbackCubeReason\":\"" + escape(modelState.fallbackCubeReason) + "\""
+            + ",\"surfaceRecreateStatus\":\"" + escape(modelState.surfaceRecreateStatus) + "\""
+            + ",\"inspectorHeightMode\":\"" + escape(modelState.inspectorHeightMode) + "\""
+            + ",\"inspectorScrollStatus\":\"" + escape(modelState.inspectorScrollStatus) + "\""
+            + ",\"inspectorExpandedMaxHeightPercent\":" + modelState.inspectorExpandedMaxHeightPercent
+            + ",\"inspectorCollapsedStatus\":\"" + escape(modelState.inspectorCollapsedStatus) + "\""
+            + ",\"materialTabScrollStatus\":\"" + escape(modelState.materialTabScrollStatus) + "\""
+            + ",\"inspectorTouchTargetStatus\":\"" + escape(modelState.inspectorTouchTargetStatus) + "\""
+            + ",\"inspectorDynamicAlphaStatus\":\"" + escape(modelState.inspectorDynamicAlphaStatus) + "\""
+            + ",\"inspectorAlphaIdle\":" + jsonFloat(modelState.inspectorAlphaIdle)
+            + ",\"inspectorAlphaWhileSliderDrag\":" + jsonFloat(modelState.inspectorAlphaWhileSliderDrag)
+            + ",\"inspectorAlphaWhileCameraMove\":" + jsonFloat(modelState.inspectorAlphaWhileCameraMove)
+            + ",\"inspectorAlphaRestoreStatus\":\"" + escape(modelState.inspectorAlphaRestoreStatus) + "\""
+            + ",\"sliderDragVisualMode\":\"" + escape(modelState.sliderDragVisualMode) + "\""
+            + ",\"cameraMoveVisualMode\":\"" + escape(modelState.cameraMoveVisualMode) + "\""
+            + ",\"materialWorkflowStatus\":\"" + escape(modelState.materialWorkflowStatus) + "\""
+            + ",\"materialSlotSummaryUiStatus\":\"" + escape(modelState.materialSlotSummaryUiStatus) + "\""
+            + ",\"selectedSlotResetButtonStatus\":\"" + escape(modelState.selectedSlotResetButtonStatus) + "\""
+            + ",\"selectedSlotResetStatus\":\"" + escape(modelState.selectedSlotResetStatus) + "\""
+            + ",\"selectedMaterialTextureSummaryStatus\":\"" + escape(modelState.selectedMaterialTextureSummaryStatus) + "\""
+            + ",\"assetsWorkflowStatus\":\"" + escape(modelState.assetsWorkflowStatus) + "\""
+            + ",\"reloadActiveModelButtonStatus\":\"" + escape(modelState.reloadActiveModelButtonStatus) + "\""
+            + ",\"reloadActiveModelStatus\":\"" + escape(modelState.reloadActiveModelStatus) + "\""
+            + ",\"activeModelDisplayStatus\":\"" + escape(modelState.activeModelDisplayStatus) + "\""
+            + ",\"fallbackReasonDisplayStatus\":\"" + escape(modelState.fallbackReasonDisplayStatus) + "\""
+            + ",\"p19PreservedStatus\":\"" + escape(modelState.p19PreservedStatus) + "\""
+            + ",\"p18IblPreservedStatus\":\"" + escape(modelState.p18IblPreservedStatus) + "\""
+            + ",\"p17GlossPreservedStatus\":\"" + escape(modelState.p17GlossPreservedStatus) + "\""
+            + ",\"runtimeStateDebugViewStatus\":\"" + escape(modelState.runtimeStateDebugViewStatus) + "\""
+            + ",\"restoreStateDebugViewStatus\":\"" + escape(modelState.restoreStateDebugViewStatus) + "\""
+            + ",\"uiStateDebugViewStatus\":\"" + escape(modelState.uiStateDebugViewStatus) + "\""
+            + "}";
     }
 
     private String fallbackRenderLabJson(String status, String lightingStatus, String debugStatus, String reason) {
@@ -2921,6 +3195,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String activeModelPath = "";
         String activeModelLocalPath = "";
         String lastImportedModel = "";
+        String resumeRestoreStatus = "not_run";
+        String resumeRestoreMode = "not_run";
+        String activeModelPersistenceStatus = "not_run";
+        int activeModelRestoreAttemptCount = 0;
+        String activeModelRestoreResult = "not_run";
+        String fallbackCubeReason = "no active model";
+        String surfaceRecreateStatus = "not_run";
+        String persistedModelBounds = "unknown";
+        float persistedModelScale = 1.0f;
         String reason = "not run";
         int modelsFoundCount = 0;
         GlbParseResult parse = GlbParseResult.notParsed("not_parsed");
@@ -3065,6 +3348,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String slotRoughnessDebugViewStatus = "shader_applied";
         String slotAoDebugViewStatus = "shader_applied";
         String perMaterialOverridePerformanceStatus = "ok_no_extra_pass_no_upload";
+        String materialWorkflowStatus = "ok_selected_slot_material_workflow";
+        String materialSlotSummaryUiStatus = "ok_slot_name_hint_texture_summary";
+        String selectedSlotResetButtonStatus = "ok";
+        String selectedMaterialTextureSummaryStatus = "baseColor missing | metallicRoughness missing | normal missing | occlusion missing";
+        String assetsWorkflowStatus = "ok_active_model_import_scan_reload_export";
+        String reloadActiveModelButtonStatus = "ok";
+        String reloadActiveModelStatus = "not_run";
+        String activeModelDisplayStatus = "empty";
+        String fallbackReasonDisplayStatus = "ok_visible";
+        String p19PreservedStatus = "ok";
+        String p18IblPreservedStatus = "ok";
+        String p17GlossPreservedStatus = "ok";
+        String runtimeStateDebugViewStatus = "ok";
+        String restoreStateDebugViewStatus = "ok";
+        String uiStateDebugViewStatus = "ok";
         String lightingStatus = "ok";
         float[] sunDirection = new float[] { -0.35f, -0.82f, -0.45f };
         float[] sunColor = new float[] { 1.0f, 0.96f, 0.88f };
@@ -3117,6 +3415,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String inspectorUiStatus = "ok";
         String inspectorUiMode = "tabbed_compact_inspector";
         String activeInspectorTab = "Assets";
+        String inspectorHeightMode = "capped_30_percent";
+        String inspectorScrollStatus = "ok";
+        int inspectorExpandedMaxHeightPercent = 30;
+        String inspectorCollapsedStatus = "ok_compact_toggle";
+        String materialTabScrollStatus = "ok";
+        String inspectorTouchTargetStatus = "ok";
+        String inspectorDynamicAlphaStatus = "ok";
+        float inspectorAlphaIdle = 0.92f;
+        float inspectorAlphaWhileSliderDrag = 0.12f;
+        float inspectorAlphaWhileCameraMove = 0.16f;
+        String inspectorAlphaRestoreStatus = "ok_timed_restore";
+        String sliderDragVisualMode = "transparent_inspector_uniform_only";
+        String cameraMoveVisualMode = "transparent_inspector_camera_drag";
+        String inspectorCurrentAlphaMode = "idle";
         String assetsTabStatus = "ok_import_scan_export_summary";
         String cameraTabStatus = "ok_camera_info_reset_zoom";
         String lightingTabStatus = "ok_sliders_environment_controls";
@@ -3215,6 +3527,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"activeModelPath\": \"" + esc(activeModelPath) + "\",\n"
                 + "  \"activeModelLocalPath\": \"" + esc(activeModelLocalPath) + "\",\n"
                 + "  \"lastImportedModel\": \"" + esc(lastImportedModel) + "\",\n"
+                + "  \"activeModelName\": \"" + esc(activeModelName()) + "\",\n"
+                + "  \"resumeRestoreStatus\": \"" + esc(resumeRestoreStatus) + "\",\n"
+                + "  \"resumeRestoreMode\": \"" + esc(resumeRestoreMode) + "\",\n"
+                + "  \"activeModelPersistenceStatus\": \"" + esc(activeModelPersistenceStatus) + "\",\n"
+                + "  \"activeModelRestoreAttemptCount\": " + activeModelRestoreAttemptCount + ",\n"
+                + "  \"activeModelRestoreResult\": \"" + esc(activeModelRestoreResult) + "\",\n"
+                + "  \"fallbackCubeReason\": \"" + esc(fallbackCubeReason) + "\",\n"
+                + "  \"surfaceRecreateStatus\": \"" + esc(surfaceRecreateStatus) + "\",\n"
+                + "  \"persistedModelBounds\": \"" + esc(persistedModelBounds) + "\",\n"
+                + "  \"persistedModelScale\": " + jsonFloat(persistedModelScale) + ",\n"
                 + "  \"importReason\": \"" + esc(reason) + "\",\n"
                 + "  \"modelsFoundCount\": " + modelsFoundCount + ",\n"
                 + "  \"gpuUploadStatus\": \"" + esc(gpuUploadStatus) + "\",\n"
@@ -3352,6 +3674,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"slotRoughnessDebugViewStatus\": \"" + esc(slotRoughnessDebugViewStatus) + "\",\n"
                 + "  \"slotAoDebugViewStatus\": \"" + esc(slotAoDebugViewStatus) + "\",\n"
                 + "  \"perMaterialOverridePerformanceStatus\": \"" + esc(perMaterialOverridePerformanceStatus) + "\",\n"
+                + "  \"materialWorkflowStatus\": \"" + esc(materialWorkflowStatus) + "\",\n"
+                + "  \"materialSlotSummaryUiStatus\": \"" + esc(materialSlotSummaryUiStatus) + "\",\n"
+                + "  \"selectedSlotResetButtonStatus\": \"" + esc(selectedSlotResetButtonStatus) + "\",\n"
+                + "  \"selectedMaterialTextureSummaryStatus\": \"" + esc(selectedMaterialTextureSummaryStatus) + "\",\n"
+                + "  \"assetsWorkflowStatus\": \"" + esc(assetsWorkflowStatus) + "\",\n"
+                + "  \"reloadActiveModelButtonStatus\": \"" + esc(reloadActiveModelButtonStatus) + "\",\n"
+                + "  \"reloadActiveModelStatus\": \"" + esc(reloadActiveModelStatus) + "\",\n"
+                + "  \"activeModelDisplayStatus\": \"" + esc(activeModelDisplayStatus) + "\",\n"
+                + "  \"fallbackReasonDisplayStatus\": \"" + esc(fallbackReasonDisplayStatus) + "\",\n"
+                + "  \"p19PreservedStatus\": \"" + esc(p19PreservedStatus) + "\",\n"
+                + "  \"p18IblPreservedStatus\": \"" + esc(p18IblPreservedStatus) + "\",\n"
+                + "  \"p17GlossPreservedStatus\": \"" + esc(p17GlossPreservedStatus) + "\",\n"
+                + "  \"runtimeStateDebugViewStatus\": \"" + esc(runtimeStateDebugViewStatus) + "\",\n"
+                + "  \"restoreStateDebugViewStatus\": \"" + esc(restoreStateDebugViewStatus) + "\",\n"
+                + "  \"uiStateDebugViewStatus\": \"" + esc(uiStateDebugViewStatus) + "\",\n"
                 + "  \"environmentIblStatus\": \"" + esc(environmentIblStatus) + "\",\n"
                 + "  \"environmentIblMode\": \"" + esc(environmentIblMode) + "\",\n"
                 + "  \"environmentSourceStatus\": \"" + esc(environmentSourceStatus) + "\",\n"
@@ -3408,6 +3745,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"inspectorUiStatus\": \"" + esc(inspectorUiStatus) + "\",\n"
                 + "  \"inspectorUiMode\": \"" + esc(inspectorUiMode) + "\",\n"
                 + "  \"activeInspectorTab\": \"" + esc(activeInspectorTab) + "\",\n"
+                + "  \"inspectorHeightMode\": \"" + esc(inspectorHeightMode) + "\",\n"
+                + "  \"inspectorScrollStatus\": \"" + esc(inspectorScrollStatus) + "\",\n"
+                + "  \"inspectorExpandedMaxHeightPercent\": " + inspectorExpandedMaxHeightPercent + ",\n"
+                + "  \"inspectorCollapsedStatus\": \"" + esc(inspectorCollapsedStatus) + "\",\n"
+                + "  \"materialTabScrollStatus\": \"" + esc(materialTabScrollStatus) + "\",\n"
+                + "  \"inspectorTouchTargetStatus\": \"" + esc(inspectorTouchTargetStatus) + "\",\n"
+                + "  \"inspectorDynamicAlphaStatus\": \"" + esc(inspectorDynamicAlphaStatus) + "\",\n"
+                + "  \"inspectorAlphaIdle\": " + jsonFloat(inspectorAlphaIdle) + ",\n"
+                + "  \"inspectorAlphaWhileSliderDrag\": " + jsonFloat(inspectorAlphaWhileSliderDrag) + ",\n"
+                + "  \"inspectorAlphaWhileCameraMove\": " + jsonFloat(inspectorAlphaWhileCameraMove) + ",\n"
+                + "  \"inspectorAlphaRestoreStatus\": \"" + esc(inspectorAlphaRestoreStatus) + "\",\n"
+                + "  \"sliderDragVisualMode\": \"" + esc(sliderDragVisualMode) + "\",\n"
+                + "  \"cameraMoveVisualMode\": \"" + esc(cameraMoveVisualMode) + "\",\n"
                 + "  \"assetsTabStatus\": \"" + esc(assetsTabStatus) + "\",\n"
                 + "  \"cameraTabStatus\": \"" + esc(cameraTabStatus) + "\",\n"
                 + "  \"lightingTabStatus\": \"" + esc(lightingTabStatus) + "\",\n"

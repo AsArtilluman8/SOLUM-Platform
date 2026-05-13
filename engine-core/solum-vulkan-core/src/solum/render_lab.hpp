@@ -21,11 +21,12 @@ enum class RenderLabScene {
     Scene14SpecularGlossLab,
     Scene15EnvironmentIblLab,
     Scene16MaterialSlotEditorLab,
+    Scene17RuntimeMaterialWorkflowLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene16MaterialSlotEditorLab;
+    RenderLabScene currentScene = RenderLabScene::Scene17RuntimeMaterialWorkflowLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -67,6 +68,7 @@ struct RenderLabState {
             case RenderLabScene::Scene14SpecularGlossLab: return "scene14_specular_gloss_lab";
             case RenderLabScene::Scene15EnvironmentIblLab: return "scene15_environment_ibl_lab";
             case RenderLabScene::Scene16MaterialSlotEditorLab: return "scene16_material_slot_editor_lab";
+            case RenderLabScene::Scene17RuntimeMaterialWorkflowLab: return "scene17_runtime_material_workflow_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -91,6 +93,7 @@ struct RenderLabState {
             case RenderLabScene::Scene14SpecularGlossLab: return "Scene14 Specular Gloss Lab";
             case RenderLabScene::Scene15EnvironmentIblLab: return "Scene15 Environment IBL Lab";
             case RenderLabScene::Scene16MaterialSlotEditorLab: return "Scene16 Material Slot Editor Lab";
+            case RenderLabScene::Scene17RuntimeMaterialWorkflowLab: return "Scene17 Runtime Material Workflow Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }

@@ -1,5 +1,27 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P20 runtime material workflow polish
+
+P20 keeps the P19 selected-slot override foundation and switches the active lab to `scene17_runtime_material_workflow_lab`.
+
+Runtime UX and workflow additions:
+
+- active model metadata is persisted after successful import/upload;
+- surface recreate/resume attempts safe re-upload from cached parsed model/local path before allowing fallback cube;
+- diagnostics expose `resumeRestoreStatus`, `activeModelPersistenceStatus`, `activeModelRestoreAttemptCount`, `activeModelRestoreResult`, `fallbackCubeReason`, and `surfaceRecreateStatus`;
+- inspector is capped to 30 percent of screen height when expanded and scrolls internally;
+- slider and camera drag temporarily lower inspector alpha for live visual inspection;
+- Material tab shows selected slot name/hint, texture summary, selected-slot controls, and Reset Selected Slot;
+- Assets tab shows active model, fallback reason, Import/Scan/Export, and Reload Active Model.
+
+Preserved material/render rules:
+
+- selected-slot overrides remain uniform/push-constant only;
+- no texture rebuild while sliding;
+- no model reupload while sliding;
+- fabric matte routing remains guarded;
+- P18 IBL and P17 gloss/calib/coat diagnostics remain active.
+
 ## P19 material slot override foundation
 
 P19 keeps the P18 directional sky/ground IBL foundation and switches the lab to `scene16_material_slot_editor_lab`.

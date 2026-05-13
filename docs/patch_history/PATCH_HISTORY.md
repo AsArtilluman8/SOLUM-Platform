@@ -2,6 +2,44 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P20 — Runtime UX Stability + Material Workflow Polish
+
+Scope:
+
+- Scene17 Runtime Material Workflow Lab.
+- Runtime active model metadata persistence and restore attempt on surface recreate/resume.
+- Phone inspector capped to 30 percent height with internal scroll.
+- Dynamic inspector alpha while dragging sliders or camera.
+- Material tab selected-slot workflow summary, texture ok/missing summary, selected-slot controls, and Reset Selected Slot.
+- Assets tab active model/fallback reason display plus Reload Active Model.
+- P19 selected-slot overrides, P18 IBL, P17 gloss/calib/coat, Debug ZIP, and live FPS preserved.
+
+Diagnostics:
+
+- `currentScene = scene17_runtime_material_workflow_lab`
+- `resumeRestoreStatus`
+- `resumeRestoreMode`
+- `activeModelPersistenceStatus`
+- `activeModelRestoreAttemptCount`
+- `activeModelRestoreResult`
+- `fallbackCubeReason`
+- `surfaceRecreateStatus`
+- `inspectorHeightMode = capped_30_percent`
+- `inspectorScrollStatus`
+- `inspectorDynamicAlphaStatus`
+- `materialWorkflowStatus`
+- `reloadActiveModelStatus`
+- `p19PreservedStatus`
+- `p18IblPreservedStatus`
+- `p17GlossPreservedStatus`
+
+Out of scope:
+
+- Shadows, shadow maps, CSM.
+- Glass/refraction/transmission.
+- Skeletal animation.
+- Material math rewrite or new render pass.
+
 ## Patch P19 — Material Slot Controls / Per-Material Override Foundation
 
 Scope:

@@ -2,6 +2,70 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene17 Runtime Material Workflow Lab
+
+Patch P20 switches the active lab to:
+
+```text
+scene17_runtime_material_workflow_lab
+Scene17 Runtime Material Workflow Lab
+```
+
+Scene17 preserves Scene16/P19 material slot controls, P18 directional sky/ground IBL, P17 gloss/calib/coat controls, import/scan/export, Debug ZIP, and live FPS. It adds runtime model persistence for surface recreate/resume, a capped scrollable phone inspector, dynamic inspector alpha while dragging sliders or the camera, selected-slot material workflow polish, and Reload Active Model.
+
+Runtime restore diagnostics:
+
+```text
+resumeRestoreStatus
+resumeRestoreMode
+activeModelPersistenceStatus
+activeModelRestoreAttemptCount
+activeModelRestoreResult
+fallbackCubeReason
+surfaceRecreateStatus
+modelUploadRepeatCount
+renderLoopAllocationGuardStatus
+```
+
+Inspector workflow diagnostics:
+
+```text
+inspectorHeightMode = capped_30_percent
+inspectorScrollStatus = ok
+inspectorExpandedMaxHeightPercent = 30
+inspectorCollapsedStatus
+materialTabScrollStatus
+inspectorTouchTargetStatus
+inspectorDynamicAlphaStatus
+inspectorAlphaIdle
+inspectorAlphaWhileSliderDrag
+inspectorAlphaWhileCameraMove
+inspectorAlphaRestoreStatus
+sliderDragVisualMode
+cameraMoveVisualMode
+```
+
+Material and Assets workflow diagnostics:
+
+```text
+materialWorkflowStatus
+materialSlotSummaryUiStatus
+selectedSlotResetButtonStatus
+selectedSlotResetStatus
+selectedMaterialTextureSummaryStatus
+assetsWorkflowStatus
+reloadActiveModelButtonStatus
+reloadActiveModelStatus
+activeModelDisplayStatus
+fallbackReasonDisplayStatus
+p19PreservedStatus
+p18IblPreservedStatus
+p17GlossPreservedStatus
+runtimeStateDebugViewStatus
+restoreStateDebugViewStatus
+uiStateDebugViewStatus
+```
+
 ## Scene16 Material Slot Editor Lab
 
 Patch P19 switches the active lab to:

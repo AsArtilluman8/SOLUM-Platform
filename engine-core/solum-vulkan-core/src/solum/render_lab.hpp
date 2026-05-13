@@ -18,11 +18,12 @@ enum class RenderLabScene {
     Scene11EnvironmentReflectionLab,
     Scene12GroundingInspectorLab,
     Scene13MaterialCalibrationLab,
+    Scene14SpecularGlossLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene13MaterialCalibrationLab;
+    RenderLabScene currentScene = RenderLabScene::Scene14SpecularGlossLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -61,6 +62,7 @@ struct RenderLabState {
             case RenderLabScene::Scene11EnvironmentReflectionLab: return "scene11_environment_reflection_lab";
             case RenderLabScene::Scene12GroundingInspectorLab: return "scene12_grounding_inspector_lab";
             case RenderLabScene::Scene13MaterialCalibrationLab: return "scene13_material_calibration_lab";
+            case RenderLabScene::Scene14SpecularGlossLab: return "scene14_specular_gloss_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -82,6 +84,7 @@ struct RenderLabState {
             case RenderLabScene::Scene11EnvironmentReflectionLab: return "Scene11 Environment Reflection Lab";
             case RenderLabScene::Scene12GroundingInspectorLab: return "Scene12 Grounding Inspector Lab";
             case RenderLabScene::Scene13MaterialCalibrationLab: return "Scene13 Material Calibration Lab";
+            case RenderLabScene::Scene14SpecularGlossLab: return "Scene14 Specular Gloss Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }

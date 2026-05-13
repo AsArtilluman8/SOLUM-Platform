@@ -60,8 +60,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static final String TAG_DIAG = "SOLUM_ENGINE_DIAG";
     private static final String PREFS_NAME = "solum_engine_diagnostics";
     private static final String PREF_TREE_URI = "diagnostics_tree_uri";
-    private static final String SCENE_ID = "scene13_material_calibration_lab";
-    private static final String SCENE_NAME = "Scene13 Material Calibration Lab";
+    private static final String SCENE_ID = "scene14_specular_gloss_lab";
+    private static final String SCENE_NAME = "Scene14 Specular Gloss Lab";
     private static final int REQUEST_CHOOSE_DIAGNOSTICS_TREE = 2202;
     private static final int REQUEST_IMPORT_GLB = 2305;
     private static final int TEX_BASE_COLOR = 0;
@@ -121,8 +121,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private float ambientIntensity = 0.80f;
     private float exposureValue = 1.50f;
     private float ambientFloor = 0.16f;
-    private float specularBoost = 1.60f;
-    private float reflectionIntensity = 1.0f;
+    private float specularBoost = 1.85f;
+    private float reflectionIntensity = 1.15f;
     private float contactShadowIntensity = 0.65f;
     private int calibrationPresetIndex = 2;
     private float calibrationSliderValue = 0.65f;
@@ -453,7 +453,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         materialViewButton = compactButton("Debug: Final Shaded");
         materialViewButton.setOnClickListener(v -> cycleMaterialView());
         materialPanel.addView(materialViewButton);
-        materialPanel.addView(panelText("Calib: Balanced\nAlbedo clamp: ok\nAO: calibrated\nMaterial hints: ok", 10f, 4));
+        materialPanel.addView(panelText("Scene14 gloss lab\nCalib: Balanced\nFabric matte preserved\nMetal/paint gloss guarded", 10f, 4));
         materialPanel.addView(panelText("Views: Final / BaseColor / Normal / Rough / Metal / AO / Diff / Spec / F0 / Refl / IBL / BRDF / Ground / Calib / Type / AO Infl / Guard", 10f, 3));
         inspectorPanel.addView(materialPanel);
 
@@ -658,7 +658,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "\nFallback cube: " + fallback
             + "\nMesh meta: " + p.meshCount + " / " + p.primitiveCount + " / " + p.materialCount + " / " + p.textureCount
             + "\nStatus: " + status
-            + "\nNext: shadow maps later";
+            + "\nNext: P18 environment cubemap / real IBL foundation";
     }
 
     private void cycleLightPreset() {
@@ -713,8 +713,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             ambientIntensity = 0.46f;
             exposureValue = 1.18f;
             ambientFloor = 0.10f;
-            specularBoost = 1.20f;
-            reflectionIntensity = 0.85f;
+            specularBoost = 1.35f;
+            reflectionIntensity = 0.95f;
             contactShadowIntensity = 0.55f;
             brightnessPresetIndex = 1;
         } else if (lightPresetIndex == 2) {
@@ -722,8 +722,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             ambientIntensity = 0.38f;
             exposureValue = 1.10f;
             ambientFloor = 0.08f;
-            specularBoost = 1.35f;
-            reflectionIntensity = 1.10f;
+            specularBoost = 1.55f;
+            reflectionIntensity = 1.20f;
             contactShadowIntensity = 0.75f;
             brightnessPresetIndex = 1;
         } else if (lightPresetIndex == 3) {
@@ -731,8 +731,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             ambientIntensity = 0.80f;
             exposureValue = 1.50f;
             ambientFloor = 0.16f;
-            specularBoost = 1.60f;
-            reflectionIntensity = 1.00f;
+            specularBoost = 1.85f;
+            reflectionIntensity = 1.15f;
             contactShadowIntensity = 0.65f;
             brightnessPresetIndex = 3;
         } else if (lightPresetIndex == 4) {
@@ -740,8 +740,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             ambientIntensity = 1.25f;
             exposureValue = 1.90f;
             ambientFloor = 0.22f;
-            specularBoost = 2.10f;
-            reflectionIntensity = 1.25f;
+            specularBoost = 2.25f;
+            reflectionIntensity = 1.35f;
             contactShadowIntensity = 0.90f;
             brightnessPresetIndex = 4;
         } else {
@@ -749,8 +749,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             ambientIntensity = 0.58f;
             exposureValue = 1.32f;
             ambientFloor = 0.14f;
-            specularBoost = 1.10f;
-            reflectionIntensity = 0.75f;
+            specularBoost = 1.25f;
+            reflectionIntensity = 0.85f;
             contactShadowIntensity = 0.45f;
             brightnessPresetIndex = 2;
         }
@@ -766,15 +766,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.specularBoostStatus = "ok_uniform_controlled";
         modelState.reflectionIntensity = reflectionIntensity;
         modelState.iblStatus = "ok_foundation";
-        modelState.iblMode = "analytic_environment_approx";
-        modelState.environmentReflectionStatus = "foundation_approx";
-        modelState.environmentReflectionMode = "view_dependent_roughness_weighted";
+        modelState.iblMode = "p18_ready_analytic_environment_approx";
+        modelState.environmentReflectionStatus = "p18_ready_foundation_approx_no_cubemap_texture";
+        modelState.environmentReflectionMode = "view_dependent_gloss_weighted";
         modelState.environmentSource = "procedural_mobile_gradient";
-        modelState.reflectionFoundationStatus = "analytic_environment_foundation";
+        modelState.reflectionFoundationStatus = "p18_ready_analytic_environment_foundation";
         modelState.reflectionMode = "analytic_environment_approx";
         modelState.reflectionColorStatus = "ok_sky_ground_gradient";
-        modelState.reflectionRoughnessResponseStatus = "ok_roughness_reduces_intensity";
-        modelState.metallicReflectionStatus = "ok_stronger_tinted_environment";
+        modelState.reflectionRoughnessResponseStatus = "ok_gloss_tightens_reflection_without_cubemap";
+        modelState.metallicReflectionStatus = "ok_p17_stronger_tinted_environment_guarded";
         modelState.dielectricReflectionStatus = "ok_subtle_f0_environment";
         modelState.reflectionPerformanceStatus = "ok_no_texture_rebuild_mobile_friendly";
         modelState.contactGroundingStatus = "foundation_analytic";
@@ -824,14 +824,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.brdfStatus = "ok";
         modelState.brdfMode = "direct_lighting_schlick_mobile";
         modelState.diffuseStatus = "ok_non_metal_diffuse";
-        modelState.specularStatus = "ok_roughness_view_dependent_boosted";
+        modelState.specularStatus = "ok_p17_gloss_response_guarded";
         modelState.fresnelStatus = "ok_schlick";
         modelState.f0Status = "ok_dielectric_0_04_metal_base_color";
         modelState.metallicResponseStatus = "ok_diffuse_reduced_f0_tinted";
-        modelState.roughnessResponseStatus = "ok_highlight_width_intensity";
-        modelState.directLightingStatus = "ok_single_sun_direct";
-        modelState.materialResponseStatus = "brdf_direct_lit";
-        modelState.pbrQualityTier = "mobile_direct_lighting";
+        modelState.roughnessResponseStatus = "ok_gloss_width_energy_remap";
+        modelState.directLightingStatus = "ok_single_sun_direct_gloss_lobe";
+        modelState.materialResponseStatus = "p17_specular_gloss_response";
+        modelState.pbrQualityTier = "mobile_direct_lighting_p17";
         modelState.brdfPerformanceStatus = "ok_mobile_friendly_direct_lighting";
         modelState.toneMappingStatus = "ok";
         modelState.toneMappingMode = toneMappingModeName(toneMappingModeIndex);
@@ -2433,7 +2433,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private String fallbackRenderLabJson(String status, String lightingStatus, String debugStatus, String reason) {
-        return "{\"currentScene\":\"" + SCENE_ID + "\",\"currentLabScene\":\"" + SCENE_ID + "\",\"currentLabSceneName\":\"" + SCENE_NAME + "\",\"status\":\"" + escape(status) + "\",\"lightingStatus\":\"" + escape(lightingStatus) + "\",\"lightingControlStatus\":\"" + escape(lightingStatus) + "\",\"lightingUiMode\":\"compact_sliders\",\"inspectorUiStatus\":\"ok\",\"inspectorUiMode\":\"tabbed_compact_inspector\",\"activeInspectorTab\":\"" + escape(activeInspectorTab) + "\",\"assetsTabStatus\":\"ok_import_scan_export_summary\",\"cameraTabStatus\":\"ok_camera_info_reset_zoom\",\"lightingTabStatus\":\"ok_sliders\",\"materialTabStatus\":\"ok_debug_views\",\"debugTabStatus\":\"ok_fps_zip_status\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":2.0,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.8,\"lightPreset\":\"Bright\",\"specularBoost\":1.6,\"specularBoostStatus\":\"ok_uniform_controlled\",\"reflectionIntensity\":1.0,\"contactGroundingStatus\":\"foundation_analytic\",\"contactShadowStatus\":\"enabled\",\"contactShadowMode\":\"analytic_blob_or_grounding_approx\",\"contactShadowIntensity\":" + jsonFloat(contactShadowIntensity) + ",\"contactShadowPerformanceStatus\":\"ok_uniform_only_no_shadow_pass\",\"groundingUsesModelBounds\":\"yes_upload_bounds_scaled_local\",\"groundingUniformUpdateStatus\":\"ok_uniform_only\",\"groundSliderStatus\":\"ok\",\"contactGroundingSliderStatus\":\"ok\",\"iblStatus\":\"ok_foundation\",\"iblMode\":\"analytic_environment_approx\",\"reflectionFoundationStatus\":\"analytic_environment_foundation\",\"reflectionMode\":\"analytic_environment_approx\",\"environmentReflectionStatus\":\"foundation_approx\",\"environmentReflectionMode\":\"view_dependent_roughness_weighted\",\"environmentSource\":\"procedural_mobile_gradient\",\"reflectionColorStatus\":\"ok_sky_ground_gradient\",\"reflectionRoughnessResponseStatus\":\"ok_roughness_reduces_intensity\",\"metallicReflectionStatus\":\"ok_stronger_tinted_environment\",\"dielectricReflectionStatus\":\"ok_subtle_f0_environment\",\"reflectionPerformanceStatus\":\"ok_no_texture_rebuild_mobile_friendly\",\"lightingUniformUpdateStatus\":\"ok_uniform_only\",\"sliderUpdateMode\":\"uniform_only\",\"sliderTouchStatus\":\"ok_touch_targets\",\"sunSliderStatus\":\"ok\",\"ambientSliderStatus\":\"ok\",\"exposureSliderStatus\":\"ok\",\"specularSliderStatus\":\"ok\",\"reflectionSliderStatus\":\"ok\",\"brdfStatus\":\"ok\",\"brdfMode\":\"direct_lighting_schlick_mobile_plus_analytic_ibl\",\"diffuseStatus\":\"ok_environment_diffuse\",\"specularStatus\":\"ok_environment_specular\",\"fresnelStatus\":\"ok_schlick\",\"f0Status\":\"ok_dielectric_0_04_metal_base_color\",\"metallicResponseStatus\":\"ok_diffuse_reduced_f0_tinted\",\"roughnessResponseStatus\":\"ok_highlight_width_intensity\",\"directLightingStatus\":\"ok_single_sun_direct\",\"materialResponseStatus\":\"brdf_direct_lit_plus_ibl_approx\",\"pbrQualityTier\":\"mobile_direct_lighting_ibl_foundation\",\"brdfPerformanceStatus\":\"ok_mobile_friendly_direct_lighting\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"" + escape(debugStatus) + "\",\"diffuseDebugViewStatus\":\"" + escape(debugStatus) + "\",\"specularDebugViewStatus\":\"" + escape(debugStatus) + "\",\"f0DebugViewStatus\":\"" + escape(debugStatus) + "\",\"reflectionDebugViewStatus\":\"" + escape(debugStatus) + "\",\"iblDiffuseDebugViewStatus\":\"" + escape(debugStatus) + "\",\"iblSpecularDebugViewStatus\":\"" + escape(debugStatus) + "\",\"brdfStatusDebugViewStatus\":\"" + escape(debugStatus) + "\",\"groundingDebugViewStatus\":\"" + escape(debugStatus) + "\",\"exposureValue\":1.5,\"ambientFloor\":0.16,\"brightnessPreset\":\"Bright Preview\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"tangentFallbackGeneratedCount\":0,\"tangentDegenerateTriangleCount\":0,\"tangentBuildMode\":\"once_on_upload\",\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"not_ready\",\"fpsLastStable\":0,\"frameTimeLastStableMs\":0,\"fpsStatus\":\"not_ready\",\"fpsUpdateMode\":\"java_choreographer_live\",\"fpsSampleWindowMs\":1000,\"framesRenderedLive\":0,\"modelUploadRepeatCount\":0,\"uploadGenerationId\":0,\"renderLoopAllocationGuardStatus\":\"ok_no_java_glb_parse_or_upload_in_frame_callback\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(reason) + "\"}";
+        return "{\"currentScene\":\"" + SCENE_ID + "\",\"currentLabScene\":\"" + SCENE_ID + "\",\"currentLabSceneName\":\"" + SCENE_NAME + "\",\"status\":\"" + escape(status) + "\",\"lightingStatus\":\"" + escape(lightingStatus) + "\",\"lightingControlStatus\":\"" + escape(lightingStatus) + "\",\"lightingUiMode\":\"compact_sliders\",\"inspectorUiStatus\":\"ok\",\"inspectorUiMode\":\"tabbed_compact_inspector\",\"activeInspectorTab\":\"" + escape(activeInspectorTab) + "\",\"assetsTabStatus\":\"ok_import_scan_export_summary\",\"cameraTabStatus\":\"ok_camera_info_reset_zoom\",\"lightingTabStatus\":\"ok_sliders\",\"materialTabStatus\":\"ok_debug_views\",\"debugTabStatus\":\"ok_fps_zip_status\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":2.0,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.8,\"lightPreset\":\"Bright\",\"specularBoost\":1.85,\"specularBoostStatus\":\"ok_uniform_controlled\",\"reflectionIntensity\":1.15,\"contactGroundingStatus\":\"foundation_analytic\",\"contactShadowStatus\":\"enabled\",\"contactShadowMode\":\"analytic_blob_or_grounding_approx\",\"contactShadowIntensity\":" + jsonFloat(contactShadowIntensity) + ",\"contactShadowPerformanceStatus\":\"ok_uniform_only_no_shadow_pass\",\"groundingUsesModelBounds\":\"yes_upload_bounds_scaled_local\",\"groundingUniformUpdateStatus\":\"ok_uniform_only\",\"groundSliderStatus\":\"ok\",\"contactGroundingSliderStatus\":\"ok\",\"iblStatus\":\"ok_foundation\",\"iblMode\":\"p18_ready_analytic_environment_approx\",\"reflectionFoundationStatus\":\"p18_ready_analytic_environment_foundation\",\"reflectionMode\":\"analytic_environment_approx\",\"environmentReflectionStatus\":\"p18_ready_foundation_approx_no_cubemap_texture\",\"environmentReflectionMode\":\"view_dependent_gloss_weighted\",\"environmentSource\":\"procedural_mobile_gradient\",\"reflectionColorStatus\":\"ok_sky_ground_gradient\",\"reflectionRoughnessResponseStatus\":\"ok_gloss_tightens_reflection_without_cubemap\",\"metallicReflectionStatus\":\"ok_p17_stronger_tinted_environment_guarded\",\"dielectricReflectionStatus\":\"ok_subtle_f0_environment\",\"reflectionPerformanceStatus\":\"ok_no_texture_rebuild_mobile_friendly\",\"lightingUniformUpdateStatus\":\"ok_uniform_only\",\"sliderUpdateMode\":\"uniform_only\",\"sliderTouchStatus\":\"ok_touch_targets\",\"sunSliderStatus\":\"ok\",\"ambientSliderStatus\":\"ok\",\"exposureSliderStatus\":\"ok\",\"specularSliderStatus\":\"ok\",\"reflectionSliderStatus\":\"ok\",\"brdfStatus\":\"ok\",\"brdfMode\":\"direct_lighting_schlick_mobile_p17_gloss\",\"diffuseStatus\":\"ok_environment_diffuse\",\"specularStatus\":\"ok_p17_gloss_response_guarded\",\"fresnelStatus\":\"ok_schlick\",\"f0Status\":\"ok_dielectric_0_04_metal_base_color\",\"metallicResponseStatus\":\"ok_diffuse_reduced_f0_tinted\",\"roughnessResponseStatus\":\"ok_gloss_width_energy_remap\",\"directLightingStatus\":\"ok_single_sun_direct_gloss_lobe\",\"materialResponseStatus\":\"p17_specular_gloss_response\",\"pbrQualityTier\":\"mobile_direct_lighting_p17\",\"brdfPerformanceStatus\":\"ok_mobile_friendly_direct_lighting\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"" + escape(debugStatus) + "\",\"diffuseDebugViewStatus\":\"" + escape(debugStatus) + "\",\"specularDebugViewStatus\":\"" + escape(debugStatus) + "\",\"f0DebugViewStatus\":\"" + escape(debugStatus) + "\",\"reflectionDebugViewStatus\":\"" + escape(debugStatus) + "\",\"iblDiffuseDebugViewStatus\":\"" + escape(debugStatus) + "\",\"iblSpecularDebugViewStatus\":\"" + escape(debugStatus) + "\",\"brdfStatusDebugViewStatus\":\"" + escape(debugStatus) + "\",\"groundingDebugViewStatus\":\"" + escape(debugStatus) + "\",\"exposureValue\":1.5,\"ambientFloor\":0.16,\"brightnessPreset\":\"Bright Preview\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"tangentFallbackGeneratedCount\":0,\"tangentDegenerateTriangleCount\":0,\"tangentBuildMode\":\"once_on_upload\",\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"not_ready\",\"fpsLastStable\":0,\"frameTimeLastStableMs\":0,\"fpsStatus\":\"not_ready\",\"fpsUpdateMode\":\"java_choreographer_live\",\"fpsSampleWindowMs\":1000,\"framesRenderedLive\":0,\"modelUploadRepeatCount\":0,\"uploadGenerationId\":0,\"renderLoopAllocationGuardStatus\":\"ok_no_java_glb_parse_or_upload_in_frame_callback\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(reason) + "\"}";
     }
 
     private String timestampUtc() {
@@ -2551,19 +2551,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         float[] ambientColor = new float[] { 0.42f, 0.52f, 0.62f };
         float ambientIntensity = 0.80f;
         String lightPreset = "Bright";
-        float specularBoost = 1.60f;
+        float specularBoost = 1.85f;
         String specularBoostStatus = "ok_uniform_controlled";
-        float reflectionIntensity = 1.0f;
+        float reflectionIntensity = 1.15f;
         String iblStatus = "ok_foundation";
-        String iblMode = "analytic_environment_approx";
-        String reflectionFoundationStatus = "analytic_environment_foundation";
+        String iblMode = "p18_ready_analytic_environment_approx";
+        String reflectionFoundationStatus = "p18_ready_analytic_environment_foundation";
         String reflectionMode = "analytic_environment_approx";
-        String environmentReflectionStatus = "foundation_approx";
-        String environmentReflectionMode = "view_dependent_roughness_weighted";
+        String environmentReflectionStatus = "p18_ready_foundation_approx_no_cubemap_texture";
+        String environmentReflectionMode = "view_dependent_gloss_weighted";
         String environmentSource = "procedural_mobile_gradient";
         String reflectionColorStatus = "ok_sky_ground_gradient";
-        String reflectionRoughnessResponseStatus = "ok_roughness_reduces_intensity";
-        String metallicReflectionStatus = "ok_stronger_tinted_environment";
+        String reflectionRoughnessResponseStatus = "ok_gloss_tightens_reflection_without_cubemap";
+        String metallicReflectionStatus = "ok_p17_stronger_tinted_environment_guarded";
         String dielectricReflectionStatus = "ok_subtle_f0_environment";
         String reflectionPerformanceStatus = "ok_no_texture_rebuild_mobile_friendly";
         String inspectorUiStatus = "ok";
@@ -2596,14 +2596,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String brdfStatus = "ok";
         String brdfMode = "direct_lighting_schlick_mobile";
         String diffuseStatus = "ok_non_metal_diffuse";
-        String specularStatus = "ok_roughness_view_dependent_boosted";
+        String specularStatus = "ok_p17_gloss_response_guarded";
         String fresnelStatus = "ok_schlick";
         String f0Status = "ok_dielectric_0_04_metal_base_color";
         String metallicResponseStatus = "ok_diffuse_reduced_f0_tinted";
-        String roughnessResponseStatus = "ok_highlight_width_intensity";
-        String directLightingStatus = "ok_single_sun_direct";
-        String materialResponseStatus = "brdf_direct_lit";
-        String pbrQualityTier = "mobile_direct_lighting";
+        String roughnessResponseStatus = "ok_gloss_width_energy_remap";
+        String directLightingStatus = "ok_single_sun_direct_gloss_lobe";
+        String materialResponseStatus = "p17_specular_gloss_response";
+        String pbrQualityTier = "mobile_direct_lighting_p17";
         String brdfPerformanceStatus = "ok_mobile_friendly_direct_lighting";
         String toneMappingStatus = "ok";
         String toneMappingMode = "reinhard";

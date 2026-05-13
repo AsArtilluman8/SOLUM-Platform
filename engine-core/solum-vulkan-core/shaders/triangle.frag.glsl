@@ -96,14 +96,43 @@ vec3 fresnelSchlick(float cosTheta, vec3 f0) {
     return f0 + (1.0 - f0) * f;
 }
 
+float distributionGGX(vec3 n, vec3 h, float roughness) {
+    float a = max(roughness * roughness, 0.045);
+    float a2 = a * a;
+    float ndoth = max(dot(n, h), 0.0);
+    float denom = ndoth * ndoth * (a2 - 1.0) + 1.0;
+    return a2 / max(3.14159 * denom * denom, 0.0001);
+}
+
+float geometrySchlickGGX(float ndotv, float roughness) {
+    float r = roughness + 1.0;
+    float k = (r * r) * 0.125;
+    return ndotv / max(ndotv * (1.0 - k) + k, 0.0001);
+}
+
+float geometrySmith(vec3 n, vec3 v, vec3 l, float roughness) {
+    return geometrySchlickGGX(max(dot(n, v), 0.0), roughness) * geometrySchlickGGX(max(dot(n, l), 0.0), roughness);
+}
+
 vec3 environmentColor(vec3 dir, float roughness) {
     float sky = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
     vec3 groundColor = vec3(0.30, 0.28, 0.24);
     vec3 horizonColor = vec3(0.58, 0.66, 0.72);
     vec3 skyColor = vec3(0.86, 0.92, 1.0);
     vec3 sharpColor = mix(mix(groundColor, horizonColor, smoothstep(0.0, 0.55, sky)), skyColor, smoothstep(0.45, 1.0, sky));
+    float horizonLine = 1.0 - smoothstep(0.035, 0.22, abs(dir.y - 0.08));
+    sharpColor += vec3(0.38, 0.42, 0.46) * horizonLine * (1.0 - roughness);
     vec3 blurredColor = mix(vec3(0.42, 0.48, 0.52), vec3(0.62, 0.68, 0.74), sky);
     return mix(sharpColor, blurredColor, clamp(roughness, 0.0, 1.0));
+}
+
+float materialGlossWeight(int hint, float metallic, float roughness) {
+    float base = mix(0.32, 1.0, metallic);
+    if (hint == 0) base *= 0.10;
+    else if (hint == 3) base *= 0.18;
+    else if (hint == 1) base *= 0.82;
+    else if (hint == 2) base *= 1.18;
+    return clamp(base * (1.0 - roughness * 0.55), 0.0, 1.25);
 }
 
 float contactGroundingMask(vec3 localPos, vec3 normalDir) {
@@ -166,19 +195,25 @@ void main() {
     vec3 fresnel = fresnelSchlick(max(dot(h, v), 0.0), f0);
     vec3 diffuseTerm = baseColor * (1.0 - metallic) * (vec3(1.0) - fresnel);
     vec3 diffuseLight = diffuseTerm * ndotl * sunColor * pc.sunIntensity;
-    float specPower = mix(96.0, 8.0, roughness);
-    float specWidth = pow(max(dot(n, h), 0.0), specPower);
-    float specEnergy = mix(1.0, 0.28, roughness);
+    float specDistribution = distributionGGX(n, h, roughness);
+    float specGeometry = geometrySmith(n, v, l, roughness);
+    float specDenom = max(4.0 * max(dot(n, v), 0.0) * ndotl, 0.001);
+    float glossWeight = materialGlossWeight(hint, metallic, roughness);
+    float specEnergy = mix(1.12, 0.34, roughness) * mix(0.72, 1.22, metallic);
     float rim = pow(clamp(1.0 - max(dot(n, v), 0.0), 0.0, 1.0), mix(4.0, 1.6, roughness));
     vec3 reflectionDir = reflect(-v, n);
     vec3 iblDiffuseColor = environmentColor(n, 1.0) * max(pc.ambientIntensity, pc.ambientFloor);
     vec3 iblSpecularColor = environmentColor(reflectionDir, roughness);
-    float reflectionRoughnessEnergy = mix(1.0, 0.24, roughness);
-    float reflectionMaterialWeight = mix(0.18, 1.0, metallic);
+    float reflectionRoughnessEnergy = mix(1.18, 0.22, roughness);
+    float reflectionMaterialWeight = mix(0.16, 1.12, metallic) * max(glossWeight, 0.16);
     vec3 iblSpecular = fresnel * iblSpecularColor * reflectionRoughnessEnergy * reflectionMaterialWeight * pc.reflectionIntensity;
-    vec3 analyticSpecular = fresnel * iblSpecularColor * rim * mix(0.04, 0.18, metallic) * (1.0 - roughness * 0.55) * pc.reflectionIntensity;
-    vec3 directSpecular = fresnel * specWidth * specEnergy * ndotl * sunColor * pc.sunIntensity;
+    vec3 analyticSpecular = fresnel * iblSpecularColor * rim * mix(0.035, 0.22, metallic) * glossWeight * pc.reflectionIntensity;
+    vec3 directSpecular = fresnel * (specDistribution * specGeometry / specDenom) * specEnergy * ndotl * sunColor * pc.sunIntensity;
+    directSpecular *= mix(0.34, 1.0, glossWeight);
     vec3 specularLight = (directSpecular + analyticSpecular + iblSpecular) * pc.specularBoost;
+    float specLum = luminance(specularLight);
+    float specGuard = mix(1.45, 2.10, metallic) * mix(1.0, 0.72, calibration);
+    if (specLum > specGuard) specularLight *= mix(1.0, specGuard / max(specLum, 0.001), 0.55);
     if (pc.activeDebugView == 6) {
         fragColor = vec4(toneMap(diffuseLight * pc.exposureValue), pc.baseColorFactor.a * texel.a);
         return;

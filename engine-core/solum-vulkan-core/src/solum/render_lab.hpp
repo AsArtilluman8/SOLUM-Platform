@@ -19,11 +19,12 @@ enum class RenderLabScene {
     Scene12GroundingInspectorLab,
     Scene13MaterialCalibrationLab,
     Scene14SpecularGlossLab,
+    Scene15EnvironmentIblLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene14SpecularGlossLab;
+    RenderLabScene currentScene = RenderLabScene::Scene15EnvironmentIblLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -63,6 +64,7 @@ struct RenderLabState {
             case RenderLabScene::Scene12GroundingInspectorLab: return "scene12_grounding_inspector_lab";
             case RenderLabScene::Scene13MaterialCalibrationLab: return "scene13_material_calibration_lab";
             case RenderLabScene::Scene14SpecularGlossLab: return "scene14_specular_gloss_lab";
+            case RenderLabScene::Scene15EnvironmentIblLab: return "scene15_environment_ibl_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -85,6 +87,7 @@ struct RenderLabState {
             case RenderLabScene::Scene12GroundingInspectorLab: return "Scene12 Grounding Inspector Lab";
             case RenderLabScene::Scene13MaterialCalibrationLab: return "Scene13 Material Calibration Lab";
             case RenderLabScene::Scene14SpecularGlossLab: return "Scene14 Specular Gloss Lab";
+            case RenderLabScene::Scene15EnvironmentIblLab: return "Scene15 Environment IBL Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }
@@ -169,6 +172,32 @@ struct RenderLabState {
         f << indent << "  \"reflectionIntensity\": " << model.reflectionIntensity << ",\n";
         f << indent << "  \"iblStatus\": \"" << escapeJson(model.iblStatus) << "\",\n";
         f << indent << "  \"iblMode\": \"" << escapeJson(model.iblMode) << "\",\n";
+        f << indent << "  \"environmentIblStatus\": \"" << escapeJson(model.environmentIblStatus) << "\",\n";
+        f << indent << "  \"environmentIblMode\": \"" << escapeJson(model.environmentIblMode) << "\",\n";
+        f << indent << "  \"environmentSourceStatus\": \"" << escapeJson(model.environmentSourceStatus) << "\",\n";
+        f << indent << "  \"environmentSourceType\": \"" << escapeJson(model.environmentSourceType) << "\",\n";
+        f << indent << "  \"environmentSkyColorStatus\": \"" << escapeJson(model.environmentSkyColorStatus) << "\",\n";
+        f << indent << "  \"environmentGroundColorStatus\": \"" << escapeJson(model.environmentGroundColorStatus) << "\",\n";
+        f << indent << "  \"environmentHorizonStatus\": \"" << escapeJson(model.environmentHorizonStatus) << "\",\n";
+        f << indent << "  \"environmentPerformanceStatus\": \"" << escapeJson(model.environmentPerformanceStatus) << "\",\n";
+        f << indent << "  \"iblDiffuseStatus\": \"" << escapeJson(model.iblDiffuseStatus) << "\",\n";
+        f << indent << "  \"iblSpecularStatus\": \"" << escapeJson(model.iblSpecularStatus) << "\",\n";
+        f << indent << "  \"iblRoughnessResponseStatus\": \"" << escapeJson(model.iblRoughnessResponseStatus) << "\",\n";
+        f << indent << "  \"iblMetallicResponseStatus\": \"" << escapeJson(model.iblMetallicResponseStatus) << "\",\n";
+        f << indent << "  \"iblDielectricResponseStatus\": \"" << escapeJson(model.iblDielectricResponseStatus) << "\",\n";
+        f << indent << "  \"iblFabricPreserveStatus\": \"" << escapeJson(model.iblFabricPreserveStatus) << "\",\n";
+        f << indent << "  \"iblOverbrightGuardStatus\": \"" << escapeJson(model.iblOverbrightGuardStatus) << "\",\n";
+        f << indent << "  \"environmentUiStatus\": \"" << escapeJson(model.environmentUiStatus) << "\",\n";
+        f << indent << "  \"environmentPreset\": \"" << escapeJson(model.environmentPreset) << "\",\n";
+        f << indent << "  \"environmentIntensity\": " << model.environmentIntensity << ",\n";
+        f << indent << "  \"environmentSliderStatus\": \"" << escapeJson(model.environmentSliderStatus) << "\",\n";
+        f << indent << "  \"skyPresetStatus\": \"" << escapeJson(model.skyPresetStatus) << "\",\n";
+        f << indent << "  \"horizonControlStatus\": \"" << escapeJson(model.horizonControlStatus) << "\",\n";
+        f << indent << "  \"environmentUniformUpdateStatus\": \"" << escapeJson(model.environmentUniformUpdateStatus) << "\",\n";
+        f << indent << "  \"environmentDebugViewStatus\": \"" << escapeJson(model.environmentDebugViewStatus) << "\",\n";
+        f << indent << "  \"reflectionDirectionDebugViewStatus\": \"" << escapeJson(model.reflectionDirectionDebugViewStatus) << "\",\n";
+        f << indent << "  \"environmentColorDebugViewStatus\": \"" << escapeJson(model.environmentColorDebugViewStatus) << "\",\n";
+        f << indent << "  \"iblPerformanceStatus\": \"" << escapeJson(model.iblPerformanceStatus) << "\",\n";
         f << indent << "  \"reflectionFoundationStatus\": \"" << escapeJson(model.reflectionFoundationStatus) << "\",\n";
         f << indent << "  \"reflectionMode\": \"" << escapeJson(model.reflectionMode) << "\",\n";
         f << indent << "  \"environmentReflectionStatus\": \"" << escapeJson(model.environmentReflectionStatus) << "\",\n";

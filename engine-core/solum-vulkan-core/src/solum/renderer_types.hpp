@@ -65,6 +65,10 @@ struct MaterialConstants {
     float glossSliderValue = 0.62f;
     float paintGlossSliderValue = 0.55f;
     int paintGlossRouting = 0;
+    float environmentIntensity = 1.0f;
+    int environmentPreset = 0;
+    float horizonStrength = 0.55f;
+    int environmentPadding = 0;
 };
 
 inline const char* lightPresetName(int preset) {
@@ -73,6 +77,14 @@ inline const char* lightPresetName(int preset) {
     if (preset == 3) return "Bright";
     if (preset == 4) return "Ultra";
     return "Soft";
+}
+
+inline const char* environmentPresetName(int preset) {
+    if (preset == 1) return "Warm";
+    if (preset == 2) return "Cool";
+    if (preset == 3) return "Outdoor";
+    if (preset == 4) return "Sunset";
+    return "Studio";
 }
 
 inline const char* materialDebugViewName(int view) {
@@ -99,6 +111,9 @@ inline const char* materialDebugViewName(int view) {
     if (view == 21) return "Metal Response";
     if (view == 22) return "Paint Target";
     if (view == 23) return "Calibration Response";
+    if (view == 24) return "Environment";
+    if (view == 25) return "Reflection Direction";
+    if (view == 26) return "Environment Color";
     return "Final Shaded";
 }
 
@@ -214,23 +229,50 @@ struct ModelRenderState {
     std::string specularBoostStatus = "ok_uniform_controlled";
     float reflectionIntensity = 1.15f;
     std::string iblStatus = "ok_foundation";
-    std::string iblMode = "analytic_environment_approx";
-    std::string reflectionFoundationStatus = "p18_ready_analytic_environment_foundation";
-    std::string reflectionMode = "analytic_environment_approx";
-    std::string environmentReflectionStatus = "p18_ready_foundation_approx_no_cubemap_texture";
-    std::string environmentReflectionMode = "view_dependent_gloss_weighted";
-    std::string environmentSource = "procedural_mobile_gradient";
-    std::string reflectionColorStatus = "ok_sky_ground_gradient";
-    std::string reflectionRoughnessResponseStatus = "ok_gloss_tightens_reflection_without_cubemap";
-    std::string metallicReflectionStatus = "ok_stronger_tinted_environment_p17";
+    std::string iblMode = "directional_sky_ground_ibl";
+    std::string environmentIblStatus = "ok_foundation";
+    std::string environmentIblMode = "directional_sky_ground_ibl";
+    std::string environmentSourceStatus = "ok_procedural_no_external_texture";
+    std::string environmentSourceType = "directional_sky_ground_shader_model";
+    std::string environmentSkyColorStatus = "ok_preset_uniform";
+    std::string environmentGroundColorStatus = "ok_preset_uniform";
+    std::string environmentHorizonStatus = "ok_directional_horizon_blend";
+    std::string environmentPerformanceStatus = "ok_no_extra_pass_no_texture_upload";
+    std::string iblDiffuseStatus = "ok_directional_sky_ground_diffuse";
+    std::string iblSpecularStatus = "ok_reflection_direction_environment";
+    std::string iblRoughnessResponseStatus = "ok_roughness_blurs_and_reduces_specular";
+    std::string iblMetallicResponseStatus = "ok_metal_tints_reflection";
+    std::string iblDielectricResponseStatus = "ok_subtle_f0_reflection";
+    std::string iblFabricPreserveStatus = "ok_fabric_matte_preserved";
+    std::string iblOverbrightGuardStatus = "ok_luminance_guarded";
+    std::string environmentUiStatus = "ok_compact_lighting_controls";
+    std::string environmentPreset = "Studio";
+    float environmentIntensity = 1.0f;
+    std::string environmentSliderStatus = "ok";
+    std::string skyPresetStatus = "ok";
+    std::string horizonControlStatus = "ok";
+    float horizonStrength = 0.55f;
+    std::string environmentUniformUpdateStatus = "ok_uniform_only";
+    std::string environmentDebugViewStatus = "shader_applied";
+    std::string reflectionDirectionDebugViewStatus = "shader_applied";
+    std::string environmentColorDebugViewStatus = "shader_applied";
+    std::string iblPerformanceStatus = "ok_shader_math_only_no_loops";
+    std::string reflectionFoundationStatus = "p18_environment_ibl_foundation";
+    std::string reflectionMode = "directional_sky_ground_ibl";
+    std::string environmentReflectionStatus = "p18_environment_directional_source_no_texture_cubemap";
+    std::string environmentReflectionMode = "reflection_direction_sky_ground_ibl";
+    std::string environmentSource = "directional_sky_ground_shader_model";
+    std::string reflectionColorStatus = "ok_environment_preset_horizon_gradient";
+    std::string reflectionRoughnessResponseStatus = "ok_roughness_blurs_reduces_reflection";
+    std::string metallicReflectionStatus = "ok_metal_tinted_environment_guarded";
     std::string dielectricReflectionStatus = "ok_subtle_f0_environment";
-    std::string reflectionPerformanceStatus = "ok_no_texture_rebuild_mobile_friendly";
+    std::string reflectionPerformanceStatus = "ok_no_extra_pass_no_texture_rebuild";
     std::string inspectorUiStatus = "ok";
     std::string inspectorUiMode = "tabbed_compact_inspector";
     std::string activeInspectorTab = "Assets";
     std::string assetsTabStatus = "ok_import_scan_export_summary";
     std::string cameraTabStatus = "ok_camera_info_reset_zoom";
-    std::string lightingTabStatus = "ok_sliders";
+    std::string lightingTabStatus = "ok_sliders_environment_controls";
     std::string materialTabStatus = "ok_debug_views";
     std::string debugTabStatus = "ok_fps_zip_status";
     std::string contactGroundingStatus = "foundation_analytic";
@@ -261,9 +303,9 @@ struct ModelRenderState {
     std::string metallicResponseStatus = "ok_diffuse_reduced_f0_tinted";
     std::string roughnessResponseStatus = "ok_gloss_width_energy_remap";
     std::string directLightingStatus = "ok_single_sun_direct_gloss_lobe";
-    std::string materialResponseStatus = "p17_specular_gloss_response";
-    std::string pbrQualityTier = "mobile_direct_lighting_p17";
-    std::string brdfPerformanceStatus = "ok_mobile_friendly_direct_lighting";
+    std::string materialResponseStatus = "p18_environment_ibl_foundation";
+    std::string pbrQualityTier = "mobile_direct_lighting_ibl_v1";
+    std::string brdfPerformanceStatus = "ok_mobile_friendly_direct_lighting_ibl";
     std::string toneMappingStatus = "ok";
     std::string toneMappingMode = "reinhard";
     std::string exposureStatus = "ok";

@@ -2,6 +2,37 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P18 — Environment Cubemap / Real IBL Foundation
+
+Scope:
+
+- Scene15 Environment IBL Lab.
+- Lightweight procedural directional sky/ground/horizon IBL source, without external cubemap files.
+- IBL diffuse/specular split in the existing mobile shader path.
+- Compact Lighting controls: Env slider, Sky preset cycle, Horizon slider.
+- Debug views: Environment, Reflection Direction, Environment Color.
+- P17 Calib/Gloss/Coat controls, import/scan/export, Debug ZIP, live FPS, and inspector tabs preserved.
+
+Diagnostics:
+
+- `currentScene = scene15_environment_ibl_lab`
+- `environmentIblMode = directional_sky_ground_ibl`
+- `environmentSourceType = directional_sky_ground_shader_model`
+- `iblDiffuseStatus`
+- `iblSpecularStatus`
+- `environmentSliderStatus`
+- `environmentDebugViewStatus`
+- `materialResponseStatus = p18_environment_ibl_foundation`
+- `pbrQualityTier = mobile_direct_lighting_ibl_v1`
+
+Out of scope:
+
+- Shadows, shadow maps, CSM.
+- External cubemap or prefiltered IBL pipeline.
+- Glass/transmission/refraction.
+- Skeletal animation.
+- Big UI rewrite.
+
 ## Patch P16 — Material Calibration Pack
 
 Scope:

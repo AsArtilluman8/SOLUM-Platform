@@ -2,6 +2,74 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene15 Environment IBL Lab
+
+Patch P18 switches the active lab to:
+
+```text
+scene15_environment_ibl_lab
+Scene15 Environment IBL Lab
+```
+
+Scene15 keeps import/scan/export, Debug ZIP, live FPS, inspector tabs, and P17 Calib/Gloss/Coat controls. It replaces the P17 analytic-only environment status with a lightweight procedural directional sky/ground IBL foundation.
+
+Environment controls in Lighting:
+
+```text
+Env 0.0..2.0
+Sky: Studio/Warm/Cool/Outdoor/Sunset
+Horizon 0.0..1.0
+```
+
+Diagnostics added at top level and under `renderLab`:
+
+```text
+environmentIblStatus
+environmentIblMode = directional_sky_ground_ibl
+environmentSourceStatus
+environmentSourceType
+environmentSkyColorStatus
+environmentGroundColorStatus
+environmentHorizonStatus
+environmentPerformanceStatus
+iblDiffuseStatus
+iblSpecularStatus
+iblRoughnessResponseStatus
+iblMetallicResponseStatus
+iblDielectricResponseStatus
+iblFabricPreserveStatus
+iblOverbrightGuardStatus
+materialResponseStatus = p18_environment_ibl_foundation
+pbrQualityTier = mobile_direct_lighting_ibl_v1
+environmentUiStatus
+environmentPreset
+environmentIntensity
+environmentSliderStatus
+skyPresetStatus
+horizonControlStatus
+environmentUniformUpdateStatus
+environmentDebugViewStatus
+reflectionDirectionDebugViewStatus
+environmentColorDebugViewStatus
+iblPerformanceStatus
+```
+
+Debug views added:
+
+```text
+Environment
+Reflection Direction
+Environment Color
+```
+
+Out of scope:
+
+- real shadow pass, shadow maps, CSM;
+- external cubemap textures or prefiltered IBL pipeline;
+- glass, transmission, refraction;
+- skeletal animation;
+- large UI rewrite.
+
 ## Scene14 Specular Gloss Lab
 
 Patch P17B completes the Scene14 material controls:

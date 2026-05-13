@@ -82,11 +82,14 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetLi
     jint calibrationPreset,
     jfloat calibrationStrength,
     jfloat glossSliderValue,
-    jfloat paintGlossSliderValue
+    jfloat paintGlossSliderValue,
+    jfloat environmentIntensity,
+    jint environmentPreset,
+    jfloat horizonStrength
 ) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) return;
-    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPreset, calibrationStrength, glossSliderValue, paintGlossSliderValue);
+    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPreset, calibrationStrength, glossSliderValue, paintGlossSliderValue, environmentIntensity, environmentPreset, horizonStrength);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdateUiDiagnostics(
@@ -142,7 +145,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdat
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) {
-        return env->NewStringUTF("{\"currentScene\":\"scene14_specular_gloss_lab\",\"currentLabScene\":\"scene14_specular_gloss_lab\",\"currentLabSceneName\":\"Scene14 Specular Gloss Lab\",\"status\":\"native_handle_missing\",\"lightingStatus\":\"failed\",\"lightingControlStatus\":\"failed\",\"lightingUiMode\":\"compact_sliders\",\"inspectorUiStatus\":\"ok\",\"inspectorUiMode\":\"tabbed_compact_inspector\",\"activeInspectorTab\":\"Assets\",\"assetsTabStatus\":\"ok_import_scan_export_summary\",\"cameraTabStatus\":\"ok_camera_info_reset_zoom\",\"lightingTabStatus\":\"ok_sliders\",\"materialTabStatus\":\"ok_debug_views\",\"debugTabStatus\":\"ok_fps_zip_status\",\"reflectionIntensity\":1.15,\"contactGroundingStatus\":\"foundation_analytic\",\"contactShadowStatus\":\"enabled\",\"contactShadowMode\":\"analytic_blob_or_grounding_approx\",\"contactShadowIntensity\":0.65,\"contactShadowPerformanceStatus\":\"ok_uniform_only_no_shadow_pass\",\"groundingUsesModelBounds\":\"yes_upload_bounds_scaled_local\",\"groundingUniformUpdateStatus\":\"ok_uniform_only\",\"groundSliderStatus\":\"ok\",\"contactGroundingSliderStatus\":\"ok\",\"groundingDebugViewStatus\":\"not_applied\",\"iblStatus\":\"missing\",\"iblMode\":\"p18_ready_analytic_environment_approx\",\"environmentReflectionStatus\":\"p18_ready_foundation_approx_no_cubemap_texture\",\"environmentReflectionMode\":\"view_dependent_gloss_weighted\",\"environmentSource\":\"procedural_mobile_gradient\",\"reflectionColorStatus\":\"missing\",\"reflectionRoughnessResponseStatus\":\"missing\",\"metallicReflectionStatus\":\"missing\",\"dielectricReflectionStatus\":\"missing\",\"reflectionPerformanceStatus\":\"not_ready\",\"sliderUpdateMode\":\"uniform_only\",\"sliderTouchStatus\":\"ok_touch_targets\",\"sunSliderStatus\":\"ok\",\"ambientSliderStatus\":\"ok\",\"exposureSliderStatus\":\"ok\",\"specularSliderStatus\":\"ok\",\"reflectionSliderStatus\":\"ok\",\"reflectionDebugViewStatus\":\"not_applied\",\"iblDiffuseDebugViewStatus\":\"not_applied\",\"iblSpecularDebugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
+        return env->NewStringUTF("{\"currentScene\":\"scene15_environment_ibl_lab\",\"currentLabScene\":\"scene15_environment_ibl_lab\",\"currentLabSceneName\":\"Scene15 Environment IBL Lab\",\"status\":\"native_handle_missing\",\"lightingStatus\":\"failed\",\"lightingControlStatus\":\"failed\",\"lightingUiMode\":\"compact_sliders\",\"inspectorUiStatus\":\"ok\",\"inspectorUiMode\":\"tabbed_compact_inspector\",\"activeInspectorTab\":\"Assets\",\"assetsTabStatus\":\"ok_import_scan_export_summary\",\"cameraTabStatus\":\"ok_camera_info_reset_zoom\",\"lightingTabStatus\":\"ok_sliders_environment_controls\",\"materialTabStatus\":\"ok_debug_views\",\"debugTabStatus\":\"ok_fps_zip_status\",\"reflectionIntensity\":1.15,\"environmentIntensity\":1.0,\"environmentPreset\":\"Studio\",\"contactGroundingStatus\":\"foundation_analytic\",\"contactShadowStatus\":\"enabled\",\"contactShadowMode\":\"analytic_blob_or_grounding_approx\",\"contactShadowIntensity\":0.65,\"contactShadowPerformanceStatus\":\"ok_uniform_only_no_shadow_pass\",\"groundingUsesModelBounds\":\"yes_upload_bounds_scaled_local\",\"groundingUniformUpdateStatus\":\"ok_uniform_only\",\"groundSliderStatus\":\"ok\",\"contactGroundingSliderStatus\":\"ok\",\"groundingDebugViewStatus\":\"not_applied\",\"iblStatus\":\"missing\",\"iblMode\":\"directional_sky_ground_ibl\",\"environmentIblStatus\":\"ok_foundation\",\"environmentIblMode\":\"directional_sky_ground_ibl\",\"environmentSourceStatus\":\"ok_procedural_no_external_texture\",\"environmentSourceType\":\"directional_sky_ground_shader_model\",\"environmentSkyColorStatus\":\"ok_preset_uniform\",\"environmentGroundColorStatus\":\"ok_preset_uniform\",\"environmentHorizonStatus\":\"ok_directional_horizon_blend\",\"environmentPerformanceStatus\":\"ok_no_extra_pass_no_texture_upload\",\"iblDiffuseStatus\":\"ok_directional_sky_ground_diffuse\",\"iblSpecularStatus\":\"ok_reflection_direction_environment\",\"iblRoughnessResponseStatus\":\"ok_roughness_blurs_and_reduces_specular\",\"iblMetallicResponseStatus\":\"ok_metal_tints_reflection\",\"iblDielectricResponseStatus\":\"ok_subtle_f0_reflection\",\"iblFabricPreserveStatus\":\"ok_fabric_matte_preserved\",\"iblOverbrightGuardStatus\":\"ok_luminance_guarded\",\"environmentUiStatus\":\"ok_compact_lighting_controls\",\"environmentSliderStatus\":\"ok\",\"skyPresetStatus\":\"ok\",\"horizonControlStatus\":\"ok\",\"environmentUniformUpdateStatus\":\"ok_uniform_only\",\"environmentDebugViewStatus\":\"not_applied\",\"iblDiffuseDebugViewStatus\":\"not_applied\",\"iblSpecularDebugViewStatus\":\"not_applied\",\"reflectionDirectionDebugViewStatus\":\"not_applied\",\"environmentColorDebugViewStatus\":\"not_applied\",\"iblPerformanceStatus\":\"ok_shader_math_only_no_loops\",\"environmentReflectionStatus\":\"p18_environment_directional_source_no_texture_cubemap\",\"environmentReflectionMode\":\"reflection_direction_sky_ground_ibl\",\"environmentSource\":\"directional_sky_ground_shader_model\",\"reflectionColorStatus\":\"missing\",\"reflectionRoughnessResponseStatus\":\"missing\",\"metallicReflectionStatus\":\"missing\",\"dielectricReflectionStatus\":\"missing\",\"reflectionPerformanceStatus\":\"not_ready\",\"sliderUpdateMode\":\"uniform_only\",\"sliderTouchStatus\":\"ok_touch_targets\",\"sunSliderStatus\":\"ok\",\"ambientSliderStatus\":\"ok\",\"exposureSliderStatus\":\"ok\",\"specularSliderStatus\":\"ok\",\"reflectionSliderStatus\":\"ok\",\"reflectionDebugViewStatus\":\"not_applied\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
     }
     std::string json = std::string("{\"currentScene\":\"") + renderer->diagnostics.renderLab.sceneId()
         + "\",\"currentLabScene\":\"" + renderer->diagnostics.renderLab.sceneId()
@@ -289,6 +292,32 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"reflectionIntensity\":" + std::to_string(renderer->model.reflectionIntensity)
         + ",\"iblStatus\":\"" + solum::escapeJson(renderer->model.iblStatus) + "\""
         + ",\"iblMode\":\"" + solum::escapeJson(renderer->model.iblMode) + "\""
+        + ",\"environmentIblStatus\":\"" + solum::escapeJson(renderer->model.environmentIblStatus) + "\""
+        + ",\"environmentIblMode\":\"" + solum::escapeJson(renderer->model.environmentIblMode) + "\""
+        + ",\"environmentSourceStatus\":\"" + solum::escapeJson(renderer->model.environmentSourceStatus) + "\""
+        + ",\"environmentSourceType\":\"" + solum::escapeJson(renderer->model.environmentSourceType) + "\""
+        + ",\"environmentSkyColorStatus\":\"" + solum::escapeJson(renderer->model.environmentSkyColorStatus) + "\""
+        + ",\"environmentGroundColorStatus\":\"" + solum::escapeJson(renderer->model.environmentGroundColorStatus) + "\""
+        + ",\"environmentHorizonStatus\":\"" + solum::escapeJson(renderer->model.environmentHorizonStatus) + "\""
+        + ",\"environmentPerformanceStatus\":\"" + solum::escapeJson(renderer->model.environmentPerformanceStatus) + "\""
+        + ",\"iblDiffuseStatus\":\"" + solum::escapeJson(renderer->model.iblDiffuseStatus) + "\""
+        + ",\"iblSpecularStatus\":\"" + solum::escapeJson(renderer->model.iblSpecularStatus) + "\""
+        + ",\"iblRoughnessResponseStatus\":\"" + solum::escapeJson(renderer->model.iblRoughnessResponseStatus) + "\""
+        + ",\"iblMetallicResponseStatus\":\"" + solum::escapeJson(renderer->model.iblMetallicResponseStatus) + "\""
+        + ",\"iblDielectricResponseStatus\":\"" + solum::escapeJson(renderer->model.iblDielectricResponseStatus) + "\""
+        + ",\"iblFabricPreserveStatus\":\"" + solum::escapeJson(renderer->model.iblFabricPreserveStatus) + "\""
+        + ",\"iblOverbrightGuardStatus\":\"" + solum::escapeJson(renderer->model.iblOverbrightGuardStatus) + "\""
+        + ",\"environmentUiStatus\":\"" + solum::escapeJson(renderer->model.environmentUiStatus) + "\""
+        + ",\"environmentPreset\":\"" + solum::escapeJson(renderer->model.environmentPreset) + "\""
+        + ",\"environmentIntensity\":" + std::to_string(renderer->model.environmentIntensity)
+        + ",\"environmentSliderStatus\":\"" + solum::escapeJson(renderer->model.environmentSliderStatus) + "\""
+        + ",\"skyPresetStatus\":\"" + solum::escapeJson(renderer->model.skyPresetStatus) + "\""
+        + ",\"horizonControlStatus\":\"" + solum::escapeJson(renderer->model.horizonControlStatus) + "\""
+        + ",\"environmentUniformUpdateStatus\":\"" + solum::escapeJson(renderer->model.environmentUniformUpdateStatus) + "\""
+        + ",\"environmentDebugViewStatus\":\"" + solum::escapeJson(renderer->model.environmentDebugViewStatus) + "\""
+        + ",\"reflectionDirectionDebugViewStatus\":\"" + solum::escapeJson(renderer->model.reflectionDirectionDebugViewStatus) + "\""
+        + ",\"environmentColorDebugViewStatus\":\"" + solum::escapeJson(renderer->model.environmentColorDebugViewStatus) + "\""
+        + ",\"iblPerformanceStatus\":\"" + solum::escapeJson(renderer->model.iblPerformanceStatus) + "\""
         + ",\"reflectionFoundationStatus\":\"" + solum::escapeJson(renderer->model.reflectionFoundationStatus) + "\""
         + ",\"reflectionMode\":\"" + solum::escapeJson(renderer->model.reflectionMode) + "\""
         + ",\"environmentReflectionStatus\":\"" + solum::escapeJson(renderer->model.environmentReflectionStatus) + "\""
@@ -324,6 +353,7 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"exposureSliderStatus\":\"" + solum::escapeJson(renderer->model.exposureSliderStatus) + "\""
         + ",\"specularSliderStatus\":\"" + solum::escapeJson(renderer->model.specularSliderStatus) + "\""
         + ",\"reflectionSliderStatus\":\"" + solum::escapeJson(renderer->model.reflectionSliderStatus) + "\""
+        + ",\"environmentSliderStatus\":\"" + solum::escapeJson(renderer->model.environmentSliderStatus) + "\""
         + ",\"brdfStatus\":\"" + solum::escapeJson(renderer->model.brdfStatus) + "\""
         + ",\"brdfMode\":\"" + solum::escapeJson(renderer->model.brdfMode) + "\""
         + ",\"diffuseStatus\":\"" + solum::escapeJson(renderer->model.diffuseStatus) + "\""
@@ -352,6 +382,9 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"reflectionDebugViewStatus\":\"" + solum::escapeJson(renderer->model.reflectionDebugViewStatus) + "\""
         + ",\"iblDiffuseDebugViewStatus\":\"" + solum::escapeJson(renderer->model.iblDiffuseDebugViewStatus) + "\""
         + ",\"iblSpecularDebugViewStatus\":\"" + solum::escapeJson(renderer->model.iblSpecularDebugViewStatus) + "\""
+        + ",\"environmentDebugViewStatus\":\"" + solum::escapeJson(renderer->model.environmentDebugViewStatus) + "\""
+        + ",\"reflectionDirectionDebugViewStatus\":\"" + solum::escapeJson(renderer->model.reflectionDirectionDebugViewStatus) + "\""
+        + ",\"environmentColorDebugViewStatus\":\"" + solum::escapeJson(renderer->model.environmentColorDebugViewStatus) + "\""
         + ",\"brdfStatusDebugViewStatus\":\"" + solum::escapeJson(renderer->model.brdfStatusDebugViewStatus) + "\""
         + ",\"groundingDebugViewStatus\":\"" + solum::escapeJson(renderer->model.groundingDebugViewStatus) + "\""
         + ",\"fpsCurrent\":" + std::to_string(renderer->model.fpsCurrent)

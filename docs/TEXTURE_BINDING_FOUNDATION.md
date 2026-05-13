@@ -1,5 +1,65 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P18 environment IBL foundation
+
+P18 keeps P17 material calibration/gloss controls and switches the lab to `scene15_environment_ibl_lab`.
+
+New shader/control inputs:
+
+- `environmentIntensity` push constant from the Lighting tab Env slider.
+- `environmentPreset` push constant for Studio, Warm, Cool, Outdoor, Sunset.
+- `horizonStrength` push constant from the optional Horizon slider.
+- Directional sky/ground/horizon environment sampling in shader.
+
+Material response:
+
+- IBL diffuse samples the environment from the normal direction.
+- IBL specular samples the environment from the reflection direction.
+- Roughness approximately blurs and reduces specular energy.
+- Metallic tints reflections with base color.
+- Dielectric reflections stay subtle through F0.
+- Fabric material hints keep specular response suppressed.
+
+This is a foundation only:
+
+- no external cubemap file;
+- no heavy prefilter pipeline;
+- no extra render pass;
+- no texture upload per slider;
+- no shadows, shadow maps, or CSM;
+- no glass/transmission/refraction.
+
+Diagnostics added:
+
+```text
+environmentIblStatus
+environmentIblMode
+environmentSourceStatus
+environmentSourceType
+environmentSkyColorStatus
+environmentGroundColorStatus
+environmentHorizonStatus
+environmentPerformanceStatus
+iblDiffuseStatus
+iblSpecularStatus
+iblRoughnessResponseStatus
+iblMetallicResponseStatus
+iblDielectricResponseStatus
+iblFabricPreserveStatus
+iblOverbrightGuardStatus
+environmentUiStatus
+environmentPreset
+environmentIntensity
+environmentSliderStatus
+skyPresetStatus
+horizonControlStatus
+environmentUniformUpdateStatus
+environmentDebugViewStatus
+reflectionDirectionDebugViewStatus
+environmentColorDebugViewStatus
+iblPerformanceStatus
+```
+
 ## P16 material calibration pack
 
 P16 keeps the P15 inspector, analytic IBL, contact grounding, import/export/debug ZIP, and live FPS, then switches the lab to `scene13_material_calibration_lab`.

@@ -50,6 +50,10 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 224) float glossSliderValue;
     layout(offset = 228) float paintGlossSliderValue;
     layout(offset = 232) int paintGlossRouting;
+    layout(offset = 236) float environmentIntensity;
+    layout(offset = 240) int environmentPreset;
+    layout(offset = 244) float horizonStrength;
+    layout(offset = 248) int environmentPadding;
 } pc;
 
 float luminance(vec3 c) {
@@ -119,16 +123,47 @@ float geometrySmith(vec3 n, vec3 v, vec3 l, float roughness) {
     return geometrySchlickGGX(max(dot(n, v), 0.0), roughness) * geometrySchlickGGX(max(dot(n, l), 0.0), roughness);
 }
 
+void environmentPalette(out vec3 groundColor, out vec3 horizonColor, out vec3 skyColor, out vec3 accentColor) {
+    if (pc.environmentPreset == 1) {
+        groundColor = vec3(0.34, 0.29, 0.24);
+        horizonColor = vec3(0.74, 0.58, 0.42);
+        skyColor = vec3(0.98, 0.86, 0.68);
+        accentColor = vec3(0.58, 0.34, 0.20);
+    } else if (pc.environmentPreset == 2) {
+        groundColor = vec3(0.20, 0.25, 0.30);
+        horizonColor = vec3(0.48, 0.62, 0.76);
+        skyColor = vec3(0.72, 0.86, 1.00);
+        accentColor = vec3(0.25, 0.48, 0.70);
+    } else if (pc.environmentPreset == 3) {
+        groundColor = vec3(0.25, 0.32, 0.22);
+        horizonColor = vec3(0.66, 0.76, 0.82);
+        skyColor = vec3(0.55, 0.76, 1.00);
+        accentColor = vec3(0.78, 0.72, 0.48);
+    } else if (pc.environmentPreset == 4) {
+        groundColor = vec3(0.28, 0.20, 0.24);
+        horizonColor = vec3(0.88, 0.45, 0.30);
+        skyColor = vec3(0.34, 0.42, 0.70);
+        accentColor = vec3(1.00, 0.58, 0.25);
+    } else {
+        groundColor = vec3(0.30, 0.28, 0.26);
+        horizonColor = vec3(0.58, 0.64, 0.70);
+        skyColor = vec3(0.82, 0.88, 0.96);
+        accentColor = vec3(0.46, 0.50, 0.56);
+    }
+}
+
 vec3 environmentColor(vec3 dir, float roughness) {
     float sky = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
-    vec3 groundColor = vec3(0.30, 0.28, 0.24);
-    vec3 horizonColor = vec3(0.58, 0.66, 0.72);
-    vec3 skyColor = vec3(0.86, 0.92, 1.0);
+    vec3 groundColor;
+    vec3 horizonColor;
+    vec3 skyColor;
+    vec3 accentColor;
+    environmentPalette(groundColor, horizonColor, skyColor, accentColor);
     vec3 sharpColor = mix(mix(groundColor, horizonColor, smoothstep(0.0, 0.55, sky)), skyColor, smoothstep(0.45, 1.0, sky));
     float horizonLine = 1.0 - smoothstep(0.035, 0.22, abs(dir.y - 0.08));
-    sharpColor += vec3(0.38, 0.42, 0.46) * horizonLine * (1.0 - roughness);
-    vec3 blurredColor = mix(vec3(0.42, 0.48, 0.52), vec3(0.62, 0.68, 0.74), sky);
-    return mix(sharpColor, blurredColor, clamp(roughness, 0.0, 1.0));
+    sharpColor += accentColor * horizonLine * (1.0 - roughness) * clamp(pc.horizonStrength, 0.0, 1.0);
+    vec3 blurredColor = mix(mix(groundColor, horizonColor, 0.45), mix(horizonColor, skyColor, 0.55), sky);
+    return mix(sharpColor, blurredColor, clamp(roughness, 0.0, 1.0)) * clamp(pc.environmentIntensity, 0.0, 2.0);
 }
 
 float materialGlossWeight(int hint, float metallic, float roughness) {
@@ -226,7 +261,7 @@ void main() {
     vec3 reflectionDir = reflect(-v, n);
     vec3 iblDiffuseColor = environmentColor(n, 1.0) * max(pc.ambientIntensity, pc.ambientFloor);
     vec3 iblSpecularColor = environmentColor(reflectionDir, roughness);
-    float reflectionRoughnessEnergy = mix(1.18, 0.22, roughness);
+    float reflectionRoughnessEnergy = mix(1.08, 0.18, roughness);
     float reflectionMaterialWeight = mix(0.16, 1.12, metallic) * max(glossWeight, 0.16);
     vec3 iblSpecular = fresnel * iblSpecularColor * reflectionRoughnessEnergy * reflectionMaterialWeight * pc.reflectionIntensity;
     vec3 analyticSpecular = fresnel * iblSpecularColor * rim * mix(0.035, 0.22, metallic) * glossWeight * pc.reflectionIntensity;
@@ -314,6 +349,18 @@ void main() {
     }
     if (pc.activeDebugView == 23) {
         fragColor = vec4(vec3(calibrationVisual, 1.0 - roughness, 1.0 - ao), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 24) {
+        fragColor = vec4(toneMap(environmentColor(n, 0.45) * pc.exposureValue), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 25) {
+        fragColor = vec4(reflectionDir * 0.5 + 0.5, pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 26) {
+        fragColor = vec4(toneMap(iblSpecularColor * pc.exposureValue), pc.baseColorFactor.a * texel.a);
         return;
     }
     rgb *= 1.0 - contactMask * clamp(pc.contactShadowIntensity, 0.0, 1.5) * 0.22;

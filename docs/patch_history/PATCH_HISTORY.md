@@ -2,6 +2,27 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P21 — Alpha / Cutout / Double-sided Material Polish
+
+Scope:
+
+- Scene18 Alpha Cutout Material Lab.
+- Active scene: `scene18_alpha_cutout_material_lab`.
+- glTF `alphaMode` metadata recognized for `OPAQUE`, `MASK`, and `BLEND`.
+- `MASK` uses shader discard with baseColor factor/texture alpha and `alphaCutoff`.
+- `BLEND` is deferred to safe fallback diagnostics; no transparent sorting or real glass.
+- glTF `doubleSided` metadata recorded per slot with face-orientation normal handling foundation.
+- Material hints added for `cutout_like`, metadata-only `glass_like`, and `decal_like`.
+- Material tab adds Alpha Cutoff, Alpha Mode debug, Double-sided debug, and Reset Alpha controls.
+- Debug views: Alpha Mask, Alpha Mode, Double Sided, Cutout Hint, Transparency Status.
+- P20 runtime workflow, P19 slot controls, P18 IBL, P17 gloss/calib/coat, live FPS, and Debug ZIP preserved.
+
+Out of scope:
+
+- Glass, refraction, transmission.
+- Shadow maps, CSM, skeletal animation.
+- Transparent sorting or a new render pass.
+
 ## Patch P20 — Runtime UX Stability + Material Workflow Polish
 
 Scope:

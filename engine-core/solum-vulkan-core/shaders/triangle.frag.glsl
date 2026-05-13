@@ -53,7 +53,7 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 236) float environmentIntensity;
     layout(offset = 240) int environmentPreset;
     layout(offset = 244) float horizonStrength;
-    layout(offset = 248) int environmentPadding;
+    layout(offset = 248) float alphaCutoff;
 } pc;
 
 float luminance(vec3 c) {
@@ -75,6 +75,9 @@ float remapRoughness(float roughness, float metallic, int hint, float strength) 
     else if (hint == 3) target = max(roughness, 0.68);
     else if (hint == 1) target = clamp(roughness, 0.18, 0.62);
     else if (hint == 2) target = clamp(roughness, 0.08, 0.52);
+    else if (hint == 5) target = max(roughness, 0.48);
+    else if (hint == 6) target = clamp(roughness, 0.18, 0.70);
+    else if (hint == 7) target = clamp(roughness, 0.22, 0.68);
     else target = clamp(roughness, 0.22, 0.86);
     float presetBias = pc.calibrationPreset == 1 ? 0.18 : (pc.calibrationPreset == 3 ? -0.16 : 0.0);
     return clamp(mix(roughness, target + presetBias * (1.0 - metallic), visualStrength), 0.06, 1.0);
@@ -85,6 +88,9 @@ vec3 materialTypeColor(int hint) {
     if (hint == 1) return vec3(0.90, 0.42, 0.32);
     if (hint == 2) return vec3(0.70, 0.78, 0.86);
     if (hint == 3) return vec3(0.08, 0.10, 0.11);
+    if (hint == 5) return vec3(0.20, 0.86, 0.42);
+    if (hint == 6) return vec3(0.38, 0.78, 0.95);
+    if (hint == 7) return vec3(0.94, 0.78, 0.28);
     return vec3(0.45, 0.48, 0.50);
 }
 
@@ -172,6 +178,9 @@ float materialGlossWeight(int hint, float metallic, float roughness) {
     float base = mix(0.18, 1.18, glossSlider) * mix(0.30, 1.0, metallic);
     if (hint == 0) base *= mix(0.04, 0.14, glossSlider);
     else if (hint == 3) base *= mix(0.08, 0.28, glossSlider);
+    else if (hint == 5) base *= mix(0.12, 0.40, glossSlider);
+    else if (hint == 6) base *= 0.38;
+    else if (hint == 7) base *= mix(0.18, 0.55, glossSlider);
     else if (hint == 1) base *= mix(0.50, 1.18, paintSlider);
     else if (hint == 2) base *= pc.paintGlossRouting == 2 ? mix(1.04, 1.46, paintSlider) : 1.28;
     else if (hint == 4 && pc.paintGlossRouting == 3) base *= mix(0.78, 1.08, paintSlider);
@@ -211,13 +220,19 @@ void main() {
     float calibrationVisual = clamp(0.28 + calibration * 0.72, 0.28, 1.0);
     float aoStrength = clamp(mix(pc.occlusionStrength * 0.72, pc.occlusionStrength * 1.35, calibrationVisual), 0.0, 1.0);
     float ao = pc.occlusionTextureReady != 0 ? mix(1.0, aoRaw, aoStrength) : 1.0;
+    float alpha = clamp(pc.baseColorFactor.a * texel.a, 0.0, 1.0);
+    float cutoff = clamp(pc.alphaCutoff, 0.0, 1.0);
+    if ((pc.alphaMode == 1 || pc.alphaMode == 2) && alpha < cutoff) {
+        discard;
+    }
     vec3 rawBaseColor = inColor * pc.baseColorFactor.rgb * texel.rgb;
     vec3 baseColor = normalizeAlbedoEnergy(rawBaseColor, calibration);
     if (pc.activeDebugView == 1) {
-        fragColor = vec4(rawBaseColor, pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(rawBaseColor, alpha);
         return;
     }
     vec3 n = normalize(inNormal);
+    if (!gl_FrontFacing) n = -n;
     if (pc.normalTextureReady != 0) {
         vec3 t = normalize(inTangent.xyz - n * dot(n, inTangent.xyz));
         vec3 b = normalize(cross(n, t) * (inTangent.w < 0.0 ? -1.0 : 1.0));
@@ -232,19 +247,19 @@ void main() {
     vec3 ambientColor = vec3(pc.ambientColorR, pc.ambientColorG, pc.ambientColorB);
     float ndotl = max(dot(n, l), 0.0);
     if (pc.activeDebugView == 2) {
-        fragColor = vec4(n * 0.5 + 0.5, pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(n * 0.5 + 0.5, alpha);
         return;
     }
     if (pc.activeDebugView == 3) {
-        fragColor = vec4(vec3(roughness), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(vec3(roughness), alpha);
         return;
     }
     if (pc.activeDebugView == 4) {
-        fragColor = vec4(vec3(metallic), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(vec3(metallic), alpha);
         return;
     }
     if (pc.activeDebugView == 5) {
-        fragColor = vec4(vec3(ao), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(vec3(ao), alpha);
         return;
     }
     vec3 specColor = mix(vec3(0.04), baseColor, metallic);
@@ -275,27 +290,27 @@ void main() {
     float specGuard = mix(1.45, 2.10, metallic) * mix(1.0, 0.72, calibration);
     if (specLum > specGuard) specularLight *= mix(1.0, specGuard / max(specLum, 0.001), 0.55);
     if (pc.activeDebugView == 6) {
-        fragColor = vec4(toneMap(diffuseLight * pc.exposureValue), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(toneMap(diffuseLight * pc.exposureValue), alpha);
         return;
     }
     if (pc.activeDebugView == 7) {
-        fragColor = vec4(toneMap(specularLight * pc.exposureValue * 3.0), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(toneMap(specularLight * pc.exposureValue * 3.0), alpha);
         return;
     }
     if (pc.activeDebugView == 8) {
-        fragColor = vec4(f0, pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(f0, alpha);
         return;
     }
     if (pc.activeDebugView == 9) {
-        fragColor = vec4(toneMap(iblSpecular * pc.exposureValue * 2.0), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(toneMap(iblSpecular * pc.exposureValue * 2.0), alpha);
         return;
     }
     if (pc.activeDebugView == 10) {
-        fragColor = vec4(toneMap(iblDiffuseColor * baseColor * (1.0 - metallic) * pc.exposureValue), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(toneMap(iblDiffuseColor * baseColor * (1.0 - metallic) * pc.exposureValue), alpha);
         return;
     }
     if (pc.activeDebugView == 11) {
-        fragColor = vec4(toneMap(iblSpecular * pc.exposureValue * 3.0), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(toneMap(iblSpecular * pc.exposureValue * 3.0), alpha);
         return;
     }
     if (pc.activeDebugView == 12) {
@@ -306,81 +321,101 @@ void main() {
     vec3 rgb = (diffuseLight + ambient) * ao + specularLight + pc.emissiveFactor;
     float contactMask = contactGroundingMask(inLocalPosition, n);
     if (pc.activeDebugView == 13) {
-        fragColor = vec4(vec3(contactMask * clamp(pc.contactShadowIntensity / 1.5, 0.0, 1.0)), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(vec3(contactMask * clamp(pc.contactShadowIntensity / 1.5, 0.0, 1.0)), alpha);
         return;
     }
     if (pc.activeDebugView == 14) {
-        fragColor = vec4(baseColor, pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(baseColor, alpha);
         return;
     }
     if (pc.activeDebugView == 15) {
-        fragColor = vec4(materialTypeColor(hint), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(materialTypeColor(hint), alpha);
         return;
     }
     if (pc.activeDebugView == 16) {
-        fragColor = vec4(vec3(1.0 - ao), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(vec3(1.0 - ao), alpha);
         return;
     }
     if (pc.activeDebugView == 17) {
         float rawLum = luminance(rawBaseColor);
         float clampedLum = luminance(baseColor);
-        fragColor = vec4(clamp(vec3(clampedLum, rawLum - clampedLum, rawLum), 0.0, 1.0), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(clamp(vec3(clampedLum, rawLum - clampedLum, rawLum), 0.0, 1.0), alpha);
         return;
     }
     if (pc.activeDebugView == 18) {
-        fragColor = vec4(vec3(glossWeight), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(vec3(glossWeight), alpha);
         return;
     }
     if (pc.activeDebugView == 19) {
-        fragColor = vec4(vec3(clamp(specLum / max(specGuard, 0.001), 0.0, 1.0)), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(vec3(clamp(specLum / max(specGuard, 0.001), 0.0, 1.0)), alpha);
         return;
     }
     if (pc.activeDebugView == 20) {
-        fragColor = vec4(vec3(paintTarget), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(vec3(paintTarget), alpha);
         return;
     }
     if (pc.activeDebugView == 21) {
-        fragColor = vec4(vec3(metallic, glossWeight, roughness), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(vec3(metallic, glossWeight, roughness), alpha);
         return;
     }
     if (pc.activeDebugView == 22) {
-        fragColor = vec4(materialTypeColor(hint) * mix(0.35, 1.0, paintTarget), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(materialTypeColor(hint) * mix(0.35, 1.0, paintTarget), alpha);
         return;
     }
     if (pc.activeDebugView == 23) {
-        fragColor = vec4(vec3(calibrationVisual, 1.0 - roughness, 1.0 - ao), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(vec3(calibrationVisual, 1.0 - roughness, 1.0 - ao), alpha);
         return;
     }
     if (pc.activeDebugView == 24) {
-        fragColor = vec4(toneMap(environmentColor(n, 0.45) * pc.exposureValue), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(toneMap(environmentColor(n, 0.45) * pc.exposureValue), alpha);
         return;
     }
     if (pc.activeDebugView == 25) {
-        fragColor = vec4(reflectionDir * 0.5 + 0.5, pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(reflectionDir * 0.5 + 0.5, alpha);
         return;
     }
     if (pc.activeDebugView == 26) {
-        fragColor = vec4(toneMap(iblSpecularColor * pc.exposureValue), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(toneMap(iblSpecularColor * pc.exposureValue), alpha);
         return;
     }
     if (pc.activeDebugView == 27) {
-        fragColor = vec4(materialTypeColor(hint), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(materialTypeColor(hint), alpha);
         return;
     }
     if (pc.activeDebugView == 28) {
-        fragColor = vec4(vec3(clamp(pc.glossSliderValue, 0.0, 1.0), clamp(pc.paintGlossSliderValue, 0.0, 1.0), 1.0 - roughness), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(vec3(clamp(pc.glossSliderValue, 0.0, 1.0), clamp(pc.paintGlossSliderValue, 0.0, 1.0), 1.0 - roughness), alpha);
         return;
     }
     if (pc.activeDebugView == 29) {
-        fragColor = vec4(vec3(metallic), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(vec3(metallic), alpha);
         return;
     }
     if (pc.activeDebugView == 30) {
-        fragColor = vec4(vec3(roughness), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(vec3(roughness), alpha);
         return;
     }
     if (pc.activeDebugView == 31) {
-        fragColor = vec4(vec3(ao), pc.baseColorFactor.a * texel.a);
+        fragColor = vec4(vec3(ao), alpha);
+        return;
+    }
+    if (pc.activeDebugView == 32) {
+        fragColor = vec4(vec3(alpha >= cutoff ? 1.0 : 0.0), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 33) {
+        fragColor = vec4(pc.alphaMode == 1 ? vec3(0.1, 0.9, 0.25) : (pc.alphaMode == 2 ? vec3(1.0, 0.70, 0.12) : vec3(0.45, 0.55, 0.65)), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 34) {
+        fragColor = vec4(gl_FrontFacing ? vec3(0.2, 0.75, 1.0) : vec3(1.0, 0.35, 0.2), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 35) {
+        fragColor = vec4((hint == 5 || pc.alphaMode == 1 || pc.alphaMode == 2) ? vec3(0.3, 0.95, 0.55) : materialTypeColor(hint) * 0.55, 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 36) {
+        fragColor = vec4(pc.alphaMode == 2 ? vec3(1.0, 0.45, 0.12) : (pc.alphaMode == 1 ? vec3(0.2, 0.9, 0.35) : vec3(0.25, 0.45, 0.9)), 1.0);
         return;
     }
     rgb *= 1.0 - contactMask * clamp(pc.contactShadowIntensity, 0.0, 1.5) * 0.22;
@@ -392,5 +427,5 @@ void main() {
     if (litLum > guardLimit && luminance(pc.emissiveFactor) <= 0.001) rgb *= guardLimit / max(litLum, 0.001);
     rgb *= pc.exposureValue;
     rgb = toneMap(rgb);
-    fragColor = vec4(rgb, pc.baseColorFactor.a * texel.a);
+    fragColor = vec4(rgb, alpha);
 }

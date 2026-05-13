@@ -68,7 +68,7 @@ struct MaterialConstants {
     float environmentIntensity = 1.0f;
     int environmentPreset = 0;
     float horizonStrength = 0.55f;
-    int environmentPadding = 0;
+    float alphaCutoff = 0.5f;
 };
 
 inline const char* lightPresetName(int preset) {
@@ -119,6 +119,11 @@ inline const char* materialDebugViewName(int view) {
     if (view == 29) return "Slot Metallic";
     if (view == 30) return "Slot Roughness";
     if (view == 31) return "Slot AO";
+    if (view == 32) return "Alpha Mask";
+    if (view == 33) return "Alpha Mode";
+    if (view == 34) return "Double Sided";
+    if (view == 35) return "Cutout Hint";
+    if (view == 36) return "Transparency Status";
     return "Final Shaded";
 }
 
@@ -134,6 +139,9 @@ inline const char* materialTypeHintName(int hint) {
     if (hint == 1) return "paint_like";
     if (hint == 2) return "metal_like";
     if (hint == 3) return "rubber_like";
+    if (hint == 5) return "cutout_like";
+    if (hint == 6) return "glass_like";
+    if (hint == 7) return "decal_like";
     return "unknown";
 }
 
@@ -428,6 +436,43 @@ struct ModelRenderState {
     std::string slotRoughnessDebugViewStatus = "shader_applied";
     std::string slotAoDebugViewStatus = "shader_applied";
     std::string perMaterialOverridePerformanceStatus = "ok_no_extra_pass_no_upload";
+    std::string alphaMaterialStatus = "ok_opaque_materials";
+    std::string alphaModeSupportStatus = "ok_opaque_mask_blend_metadata";
+    std::string alphaMaskStatus = "ok_no_mask_material";
+    std::string alphaBlendStatus = "ok_no_blend_material";
+    std::string alphaCutoffStatus = "ok_uniform_control";
+    float alphaCutoffValue = 0.5f;
+    std::string alphaDiscardStatus = "inactive_opaque";
+    std::string alphaTextureChannelStatus = "baseColor_alpha_channel_sampled_when_texture_ready";
+    std::string alphaFallbackStatus = "none";
+    std::string doubleSidedMaterialStatus = "ok_no_double_sided_material";
+    std::string doubleSidedMode = "selected_slot_single_sided_or_none";
+    std::string doubleSidedNormalStatus = "shader_gl_front_facing_normal_flip";
+    std::string doubleSidedRasterStatus = "ok_pipeline_cull_none_no_new_permutation";
+    std::string doubleSidedFallbackStatus = "none";
+    std::string thinMaterialPolishStatus = "ok_cutout_double_sided_hint_foundation";
+    std::string cutoutMaterialHintStatus = "ok_available";
+    std::string fabricEdgeStatus = "ok_available";
+    std::string glassMetadataStatus = "none";
+    std::string decalMaterialHintStatus = "ok_available";
+    std::string transparencyDeferredStatus = "ok_no_full_transparent_sorting_or_glass";
+    std::string alphaUiStatus = "ok_compact_material_tab";
+    std::string alphaCutoffSliderStatus = "ok";
+    std::string alphaDebugViewStatus = "shader_applied";
+    std::string doubleSidedDebugViewStatus = "shader_applied";
+    std::string alphaResetButtonStatus = "ok";
+    std::string alphaUniformUpdateStatus = "ok_uniform_only";
+    std::string alphaSliderUpdateMode = "uniform_only";
+    std::string alphaMaskDebugViewStatus = "shader_applied";
+    std::string alphaModeDebugViewStatus = "shader_applied";
+    std::string cutoutHintDebugViewStatus = "shader_applied";
+    std::string transparencyStatusDebugViewStatus = "shader_applied";
+    std::string alphaPerformanceStatus = "ok_no_new_pass_no_sorting_no_reupload";
+    std::string alphaNoNewPassStatus = "ok";
+    std::string alphaNoTextureRebuildStatus = "ok";
+    std::string alphaNoModelReuploadStatus = "ok";
+    std::string p20RuntimeWorkflowPreservedStatus = "ok";
+    std::string p19SlotControlsPreservedStatus = "ok";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;
     float fpsLastStable = 0.0f;

@@ -65,8 +65,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static final String PREF_ACTIVE_MODEL_PATH = "active_model_path";
     private static final String PREF_ACTIVE_MODEL_LOCAL_PATH = "active_model_local_path";
     private static final String PREF_ACTIVE_MODEL_NAME = "active_model_name";
-    private static final String SCENE_ID = "scene17_runtime_material_workflow_lab";
-    private static final String SCENE_NAME = "Scene17 Runtime Material Workflow Lab";
+    private static final String SCENE_ID = "scene18_alpha_cutout_material_lab";
+    private static final String SCENE_NAME = "Scene18 Alpha Cutout Material Lab";
     private static final int REQUEST_CHOOSE_DIAGNOSTICS_TREE = 2202;
     private static final int REQUEST_IMPORT_GLB = 2305;
     private static final int TEX_BASE_COLOR = 0;
@@ -113,6 +113,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button normalSlotButton;
     private Button aoSlotButton;
     private Button resetSelectedSlotButton;
+    private Button alphaModeDebugButton;
+    private Button doubleSidedDebugButton;
+    private Button resetAlphaButton;
     private Button materialViewButton;
     private Button reloadActiveModelButton;
     private TextView materialStatusView;
@@ -131,6 +134,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private SeekBar roughnessSlotSlider;
     private SeekBar normalSlotSlider;
     private SeekBar aoSlotSlider;
+    private SeekBar alphaCutoffSlider;
     private LinearLayout inspectorPanel;
     private LinearLayout tabRow;
     private LinearLayout assetsPanel;
@@ -165,6 +169,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private float selectedSlotRoughnessOverride = 1.0f;
     private float selectedSlotNormalScaleOverride = 1.0f;
     private float selectedSlotAoOverride = 1.0f;
+    private float alphaCutoffValue = 0.5f;
     private int brightnessPresetIndex = 3;
     private int activeDebugViewIndex = 0;
     private int toneMappingModeIndex = 1;
@@ -218,7 +223,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native String nativeGetStatus(long handle);
     private static native String nativeGetRenderLabState(long handle);
     private static native void nativeSetCamera(long handle, float yawDeg, float pitchDeg, float distance);
-    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float environmentIntensity, int environmentPreset, float horizonStrength, int selectedMaterialSlot, float selectedSlotMetallicOverride, float selectedSlotRoughnessOverride, float selectedSlotNormalScaleOverride, float selectedSlotAoOverride, float selectedSlotGlossOverride, float selectedSlotCoatOverride);
+    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float environmentIntensity, int environmentPreset, float horizonStrength, int selectedMaterialSlot, float selectedSlotMetallicOverride, float selectedSlotRoughnessOverride, float selectedSlotNormalScaleOverride, float selectedSlotAoOverride, float selectedSlotGlossOverride, float selectedSlotCoatOverride, float alphaCutoffValue);
     private static native boolean nativeUploadModelFirstPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, float[] baseColorFactor);
     private static native boolean nativeUploadModelMultiPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, int[] rangeData, float[] materialData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, int primitiveTotal, int primitiveSkipped, int unsupportedPrimitiveCount, String reason);
     private static native boolean nativeUploadBaseColorTexture(long handle, int[] rgbaPixels, int width, int height, String textureName, String textureSource, String mimeType);
@@ -318,6 +323,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         else if ("Rough".equals(label)) { roughnessSlotButton = valueButton; roughnessSlotSlider = slider; }
         else if ("Normal".equals(label)) { normalSlotButton = valueButton; normalSlotSlider = slider; }
         else if ("AO".equals(label)) { aoSlotButton = valueButton; aoSlotSlider = slider; }
+        else if ("Alpha Cutoff".equals(label)) { alphaCutoffSlider = slider; }
     }
 
     private int sliderProgress(float value, float min, float max) {
@@ -580,6 +586,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             selectedSlotAoOverride = clamp(v, 0.0f, 1.5f);
             applyLightingControls();
         }));
+        materialPanel.addView(sliderControl("Alpha Cutoff", 0.0f, 1.0f, alphaCutoffValue, v -> {
+            alphaCutoffValue = clamp(v, 0.0f, 1.0f);
+            applyLightingControls();
+        }));
+        alphaModeDebugButton = compactButton("Alpha Mode");
+        alphaModeDebugButton.setOnClickListener(v -> cycleAlphaDebugView());
+        materialPanel.addView(alphaModeDebugButton);
+        doubleSidedDebugButton = compactButton("Double Sided");
+        doubleSidedDebugButton.setOnClickListener(v -> {
+            activeDebugViewIndex = 34;
+            applyLightingControls();
+            updateStatus();
+        });
+        materialPanel.addView(doubleSidedDebugButton);
+        resetAlphaButton = compactButton("Reset Alpha");
+        resetAlphaButton.setOnClickListener(v -> resetAlphaControls());
+        materialPanel.addView(resetAlphaButton);
         resetSelectedSlotButton = compactButton("Reset Selected Slot");
         resetSelectedSlotButton.setOnClickListener(v -> resetSelectedMaterialSlot());
         materialPanel.addView(resetSelectedSlotButton);
@@ -852,7 +875,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleMaterialView() {
-        activeDebugViewIndex = (activeDebugViewIndex + 1) % 32;
+        activeDebugViewIndex = (activeDebugViewIndex + 1) % 37;
+        applyLightingControls();
+        updateStatus();
+    }
+
+    private void cycleAlphaDebugView() {
+        activeDebugViewIndex = activeDebugViewIndex < 32 || activeDebugViewIndex > 36 ? 32 : 32 + ((activeDebugViewIndex - 31) % 5);
+        applyLightingControls();
+        updateStatus();
+    }
+
+    private void resetAlphaControls() {
+        alphaCutoffValue = 0.5f;
+        activeDebugViewIndex = 0;
+        modelState.alphaResetButtonStatus = "ok_reset_alpha_cutoff_and_debug";
         applyLightingControls();
         updateStatus();
     }
@@ -895,6 +932,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         selectedSlotRoughnessOverride = clamp((float)slot.optDouble("roughnessFactor", selectedSlotRoughnessOverride), 0.0f, 1.0f);
         selectedSlotNormalScaleOverride = clamp((float)slot.optDouble("normalScale", selectedSlotNormalScaleOverride), 0.0f, 2.0f);
         selectedSlotAoOverride = clamp((float)slot.optDouble("occlusionStrength", selectedSlotAoOverride), 0.0f, 1.5f);
+        alphaCutoffValue = clamp((float)slot.optDouble("alphaCutoff", alphaCutoffValue), 0.0f, 1.0f);
         modelState.selectedSlotResetStatus = "seeded_from_slot";
     }
 
@@ -1134,11 +1172,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.materialSlotSummaryUiStatus = "ok_slot_name_hint_texture_summary";
         modelState.selectedSlotResetButtonStatus = "ok";
         modelState.selectedMaterialTextureSummaryStatus = selectedSlot == null ? "missing_no_slot" : textureSummaryForSlot(selectedSlot);
+        applyAlphaCutoutDiagnostics(selectedSlot);
         modelState.assetsWorkflowStatus = "ok_active_model_import_scan_reload_export";
         modelState.reloadActiveModelButtonStatus = "ok";
         modelState.activeModelDisplayStatus = modelState.activeModelName().isEmpty() ? "empty" : "ok";
         modelState.fallbackReasonDisplayStatus = modelState.fallbackCubeVisible ? "ok_visible" : "ok_hidden_when_not_needed";
         modelState.p19PreservedStatus = "ok";
+        modelState.p19SlotControlsPreservedStatus = "ok";
+        modelState.p20RuntimeWorkflowPreservedStatus = "ok";
         modelState.p18IblPreservedStatus = "ok";
         modelState.p17GlossPreservedStatus = "ok";
         modelState.runtimeStateDebugViewStatus = "ok";
@@ -1195,20 +1236,71 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (roughnessSlotButton != null) roughnessSlotButton.setText("Rough " + oneDecimal(selectedSlotRoughnessOverride));
         if (normalSlotButton != null) normalSlotButton.setText("Normal " + oneDecimal(selectedSlotNormalScaleOverride));
         if (aoSlotButton != null) aoSlotButton.setText("AO " + oneDecimal(selectedSlotAoOverride));
+        if (alphaModeDebugButton != null) alphaModeDebugButton.setText("Alpha: " + materialDebugViewName(activeDebugViewIndex));
+        if (doubleSidedDebugButton != null) doubleSidedDebugButton.setText("Double Sided");
+        if (resetAlphaButton != null) resetAlphaButton.setText("Reset Alpha");
         if (calibrationButton != null) calibrationButton.setText("Calib " + oneDecimal(calibrationSliderValue));
         if (glossButton != null) glossButton.setText("Gloss " + oneDecimal(glossSliderValue));
         if (paintGlossButton != null) paintGlossButton.setText("Coat " + oneDecimal(paintGlossSliderValue));
-        if (materialStatusView != null) materialStatusView.setText("Slot " + selectedMaterialSlot + "/" + Math.max(0, selectedMaterialSlotCount) + " " + modelState.selectedMaterialName + " " + modelState.selectedMaterialTypeHint + "\n" + modelState.selectedMaterialTextureSummaryStatus + "\nMetallic " + oneDecimal(selectedSlotMetallicOverride) + " Rough " + oneDecimal(selectedSlotRoughnessOverride) + " Normal " + oneDecimal(selectedSlotNormalScaleOverride) + " AO " + oneDecimal(selectedSlotAoOverride) + "\nCalib " + oneDecimal(calibrationSliderValue) + " Gloss " + oneDecimal(glossSliderValue) + " Coat " + oneDecimal(paintGlossSliderValue) + " | Fabric matte: on");
+        if (materialStatusView != null) materialStatusView.setText("Slot " + selectedMaterialSlot + "/" + Math.max(0, selectedMaterialSlotCount) + " " + modelState.selectedMaterialName + " " + modelState.selectedMaterialTypeHint + "\n" + modelState.selectedMaterialTextureSummaryStatus + "\nAlpha " + modelState.alphaModeSupportStatus + " cutoff " + oneDecimal(alphaCutoffValue) + " | Double " + modelState.doubleSidedMode + "\nMetallic " + oneDecimal(selectedSlotMetallicOverride) + " Rough " + oneDecimal(selectedSlotRoughnessOverride) + " Normal " + oneDecimal(selectedSlotNormalScaleOverride) + " AO " + oneDecimal(selectedSlotAoOverride) + "\nCalib " + oneDecimal(calibrationSliderValue) + " Gloss " + oneDecimal(glossSliderValue) + " Coat " + oneDecimal(paintGlossSliderValue) + " | Fabric matte: on");
         updateSliderPositionsFromState();
         if (materialViewButton != null) materialViewButton.setText("Debug: " + modelState.activeDebugView);
         try {
             if (nativeLoaded && nativeHandle != 0L) {
-                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPresetIndex, calibrationSliderValue, glossSliderValue, paintGlossSliderValue, environmentIntensity, environmentPresetIndex, horizonStrength, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, glossSliderValue, paintGlossSliderValue);
+                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPresetIndex, calibrationSliderValue, glossSliderValue, paintGlossSliderValue, environmentIntensity, environmentPresetIndex, horizonStrength, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, glossSliderValue, paintGlossSliderValue, alphaCutoffValue);
             }
         } catch (Throwable t) {
             modelState.debugViewStatus = "native_control_failed";
             writeCrashReport("lighting_controls_failed", t);
         }
+    }
+
+    private void applyAlphaCutoutDiagnostics(JSONObject selectedSlot) {
+        int maskCount = countOccurrences(modelState.materialSlotDiagnostics, "\"alphaMode\":\"MASK\"");
+        int blendCount = countOccurrences(modelState.materialSlotDiagnostics, "\"alphaMode\":\"BLEND\"");
+        int doubleCount = countOccurrences(modelState.materialSlotDiagnostics, "\"doubleSided\":true");
+        int cutoutCount = countOccurrences(modelState.materialSlotDiagnostics, "\"materialTypeHint\":\"cutout_like\"");
+        int fabricCount = countOccurrences(modelState.materialSlotDiagnostics, "\"materialTypeHint\":\"fabric_like\"");
+        int glassCount = countOccurrences(modelState.materialSlotDiagnostics, "\"materialTypeHint\":\"glass_like\"");
+        int decalCount = countOccurrences(modelState.materialSlotDiagnostics, "\"materialTypeHint\":\"decal_like\"");
+        String selectedAlpha = selectedSlot == null ? "OPAQUE" : selectedSlot.optString("alphaMode", "OPAQUE");
+        boolean selectedDoubleSided = selectedSlot != null && selectedSlot.optBoolean("doubleSided", false);
+        modelState.alphaMaterialStatus = maskCount > 0 || blendCount > 0 ? "ok_alpha_metadata_detected" : "ok_opaque_materials";
+        modelState.alphaModeSupportStatus = "ok_opaque_mask_blend_metadata";
+        modelState.alphaMaskStatus = maskCount > 0 ? "ok_mask_discard_shader" : "ok_no_mask_material";
+        modelState.alphaBlendStatus = blendCount > 0 ? "fallback_no_sorting_blend_as_cutout_or_opaque" : "ok_no_blend_material";
+        modelState.alphaCutoffStatus = "ok_uniform_control";
+        modelState.alphaCutoffValue = alphaCutoffValue;
+        modelState.alphaDiscardStatus = maskCount > 0 || blendCount > 0 ? "ok_shader_discard_for_safe_cutout" : "inactive_opaque";
+        modelState.alphaTextureChannelStatus = "baseColor_alpha_channel_sampled_when_texture_ready";
+        modelState.alphaFallbackStatus = blendCount > 0 ? "blend_deferred_safe_cutout_or_opaque" : "none";
+        modelState.doubleSidedMaterialStatus = doubleCount > 0 ? "ok_double_sided_metadata_detected" : "ok_no_double_sided_material";
+        modelState.doubleSidedMode = selectedDoubleSided ? "selected_slot_double_sided" : "selected_slot_single_sided_or_none";
+        modelState.doubleSidedNormalStatus = "shader_gl_front_facing_normal_flip";
+        modelState.doubleSidedRasterStatus = "ok_pipeline_cull_none_no_new_permutation";
+        modelState.doubleSidedFallbackStatus = doubleCount > 0 ? "no_new_pipeline_permutation_needed" : "none";
+        modelState.thinMaterialPolishStatus = "ok_cutout_double_sided_hint_foundation";
+        modelState.cutoutMaterialHintStatus = cutoutCount > 0 ? "ok" : "ok_available";
+        modelState.fabricEdgeStatus = fabricCount > 0 ? "ok_fabric_like_matte_edges" : "ok_available";
+        modelState.glassMetadataStatus = glassCount > 0 ? "metadata_only_render_safe_cutout_or_opaque" : "none";
+        modelState.decalMaterialHintStatus = decalCount > 0 ? "ok" : "ok_available";
+        modelState.transparencyDeferredStatus = "ok_no_full_transparent_sorting_or_glass";
+        modelState.alphaUiStatus = "ok_compact_material_tab";
+        modelState.alphaCutoffSliderStatus = "ok";
+        modelState.alphaDebugViewStatus = "shader_applied";
+        modelState.doubleSidedDebugViewStatus = "shader_applied";
+        modelState.alphaResetButtonStatus = "ok".equals(modelState.alphaResetButtonStatus) ? "ok" : modelState.alphaResetButtonStatus;
+        modelState.alphaUniformUpdateStatus = "ok_uniform_only";
+        modelState.alphaSliderUpdateMode = "uniform_only";
+        modelState.alphaMaskDebugViewStatus = "shader_applied";
+        modelState.alphaModeDebugViewStatus = "shader_applied";
+        modelState.cutoutHintDebugViewStatus = "shader_applied";
+        modelState.transparencyStatusDebugViewStatus = "shader_applied";
+        modelState.alphaPerformanceStatus = "ok_no_new_pass_no_sorting_no_reupload";
+        modelState.alphaNoNewPassStatus = "ok";
+        modelState.alphaNoTextureRebuildStatus = "ok";
+        modelState.alphaNoModelReuploadStatus = "ok";
+        modelState.selectedAlphaMode = selectedAlpha;
     }
 
     private void applyInspectorDiagnostics() {
@@ -1262,6 +1354,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (roughnessSlotSlider != null) roughnessSlotSlider.setProgress(sliderProgress(selectedSlotRoughnessOverride, 0.0f, 1.0f));
             if (normalSlotSlider != null) normalSlotSlider.setProgress(sliderProgress(selectedSlotNormalScaleOverride, 0.0f, 2.0f));
             if (aoSlotSlider != null) aoSlotSlider.setProgress(sliderProgress(selectedSlotAoOverride, 0.0f, 1.5f));
+            if (alphaCutoffSlider != null) alphaCutoffSlider.setProgress(sliderProgress(alphaCutoffValue, 0.0f, 1.0f));
             if (calibrationSlider != null) calibrationSlider.setProgress(sliderProgress(calibrationSliderValue, 0.0f, 1.0f));
             if (glossSlider != null) glossSlider.setProgress(sliderProgress(glossSliderValue, 0.0f, 1.0f));
             if (paintGlossSlider != null) paintGlossSlider.setProgress(sliderProgress(paintGlossSliderValue, 0.0f, 1.0f));
@@ -1318,6 +1411,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 29) return "Slot Metallic";
         if (index == 30) return "Slot Roughness";
         if (index == 31) return "Slot AO";
+        if (index == 32) return "Alpha Mask";
+        if (index == 33) return "Alpha Mode";
+        if (index == 34) return "Double Sided";
+        if (index == 35) return "Cutout Hint";
+        if (index == 36) return "Transparency Status";
         return "Final Shaded";
     }
 
@@ -2147,10 +2245,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         addDebugZipEntry(entries, missing, new File(reportDir, "asset_report.json"), true);
         File note = new File(reportDir, "debug_zip_runtime_note.txt");
         try (FileWriter w = new FileWriter(note, false)) {
-            w.write("SOLUM P15 debug zip\n");
+            w.write("SOLUM P21 debug zip\n");
             w.write(SCENE_NAME + "\n");
             w.write("debugZipStatus=running\n");
-            w.write("requiredFiles=engine_runtime_state.json,engine_diagnostics_manifest.json,model_import_state.json,asset_report.json\n");
+            w.write("requiredFiles=engine_runtime_state.json,engine_diagnostics_manifest.json,model_import_state.json,asset_report.json,glb_model_summary.json,debug_zip_runtime_note.txt\n");
             if (missing.isEmpty()) {
                 w.write("missingFiles=none\n");
             } else {
@@ -2424,6 +2522,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + p17GlossJsonFields(renderLab, "  ")
             + p18EnvironmentJsonFields(renderLab, "  ")
             + p19MaterialSlotJsonFields(renderLab, "  ")
+            + p21AlphaCutoutJsonFields(renderLab, "  ")
             + "  \"lightingStatus\": \"" + escape(jsonStringField(renderLab, "lightingStatus", modelState.lightingStatus)) + "\",\n"
             + "  \"lightingControlStatus\": \"" + escape(jsonStringField(renderLab, "lightingControlStatus", modelState.lightingControlStatus)) + "\",\n"
             + "  \"lightingUiMode\": \"" + escape(jsonStringField(renderLab, "lightingUiMode", modelState.lightingUiMode)) + "\",\n"
@@ -2564,18 +2663,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"debugZipPath\": \"" + escape(debugZipPath) + "\",\n"
             + "  \"debugZipIncludedFiles\": \"" + escape(debugZipIncludedFiles) + "\",\n"
             + "  \"debugZipReason\": \"" + escape(debugZipReason) + "\",\n"
-            + "  \"debugZipRequiredFiles\": [\"engine_runtime_state.json\", \"engine_diagnostics_manifest.json\", \"model_import_state.json\", \"asset_report.json\", \"debug_zip_runtime_note.txt\"],\n"
-            + "  \"debugZipOptionalFiles\": [\"glb_model_summary.json\"],\n"
+            + "  \"debugZipRequiredFiles\": [\"engine_runtime_state.json\", \"engine_diagnostics_manifest.json\", \"model_import_state.json\", \"asset_report.json\", \"glb_model_summary.json\", \"debug_zip_runtime_note.txt\"],\n"
+            + "  \"debugZipOptionalFiles\": [],\n"
             + "  \"debugZipRequiredFileStatus\": {\n"
             + "    \"engine_runtime_state.json\": \"" + fileStatusForDebugZip("engine_runtime_state.json", debugZipIncludedFiles, true) + "\",\n"
             + "    \"engine_diagnostics_manifest.json\": \"" + fileStatusForDebugZip("engine_diagnostics_manifest.json", debugZipIncludedFiles, true) + "\",\n"
             + "    \"model_import_state.json\": \"" + fileStatusForDebugZip("model_import_state.json", debugZipIncludedFiles, true) + "\",\n"
             + "    \"asset_report.json\": \"" + fileStatusForDebugZip("asset_report.json", debugZipIncludedFiles, true) + "\",\n"
+            + "    \"glb_model_summary.json\": \"" + fileStatusForDebugZip("glb_model_summary.json", debugZipIncludedFiles, true) + "\",\n"
             + "    \"debug_zip_runtime_note.txt\": \"" + fileStatusForDebugZip("debug_zip_runtime_note.txt", debugZipIncludedFiles, true) + "\"\n"
             + "  },\n"
-            + "  \"debugZipOptionalFileStatus\": {\n"
-            + "    \"glb_model_summary.json\": \"" + fileStatusForDebugZip("glb_model_summary.json", debugZipIncludedFiles, false) + "\"\n"
-            + "  },\n"
+            + "  \"debugZipOptionalFileStatus\": {},\n"
             + "  \"screenshot\": { \"status\": \"not_available\", \"reason\": \"renderer_readback_not_implemented\" },\n"
             + "  \"camera\": {\n"
             + "    \"cameraMvpStatus\": \"" + escape(jsonStringField(renderLab, "cameraMvpStatus", "unknown")) + "\",\n"
@@ -2624,6 +2722,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + p17GlossJsonFields(renderLab, "  ")
             + p18EnvironmentJsonFields(renderLab, "  ")
             + p19MaterialSlotJsonFields(renderLab, "  ")
+            + p21AlphaCutoutJsonFields(renderLab, "  ")
             + p20WorkflowJsonFields(renderLab, "  ")
             + "  \"sunIntensity\": " + jsonNumberField(renderLab, "sunIntensity", jsonFloat(modelState.sunIntensity)) + ",\n"
             + "  \"ambientIntensity\": " + jsonNumberField(renderLab, "ambientIntensity", jsonFloat(modelState.ambientIntensity)) + ",\n"
@@ -2811,6 +2910,44 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"perMaterialOverridePerformanceStatus\": \"" + escape(jsonStringField(renderLab, "perMaterialOverridePerformanceStatus", modelState.perMaterialOverridePerformanceStatus)) + "\",\n";
     }
 
+    private String p21AlphaCutoutJsonFields(String renderLab, String indent) {
+        return indent + "\"alphaMaterialStatus\": \"" + escape(jsonStringField(renderLab, "alphaMaterialStatus", modelState.alphaMaterialStatus)) + "\",\n"
+            + indent + "\"alphaModeSupportStatus\": \"" + escape(jsonStringField(renderLab, "alphaModeSupportStatus", modelState.alphaModeSupportStatus)) + "\",\n"
+            + indent + "\"alphaMaskStatus\": \"" + escape(jsonStringField(renderLab, "alphaMaskStatus", modelState.alphaMaskStatus)) + "\",\n"
+            + indent + "\"alphaBlendStatus\": \"" + escape(jsonStringField(renderLab, "alphaBlendStatus", modelState.alphaBlendStatus)) + "\",\n"
+            + indent + "\"alphaCutoffStatus\": \"" + escape(jsonStringField(renderLab, "alphaCutoffStatus", modelState.alphaCutoffStatus)) + "\",\n"
+            + indent + "\"alphaCutoffValue\": " + jsonNumberField(renderLab, "alphaCutoffValue", jsonFloat(modelState.alphaCutoffValue)) + ",\n"
+            + indent + "\"alphaDiscardStatus\": \"" + escape(jsonStringField(renderLab, "alphaDiscardStatus", modelState.alphaDiscardStatus)) + "\",\n"
+            + indent + "\"alphaTextureChannelStatus\": \"" + escape(jsonStringField(renderLab, "alphaTextureChannelStatus", modelState.alphaTextureChannelStatus)) + "\",\n"
+            + indent + "\"alphaFallbackStatus\": \"" + escape(jsonStringField(renderLab, "alphaFallbackStatus", modelState.alphaFallbackStatus)) + "\",\n"
+            + indent + "\"doubleSidedMaterialStatus\": \"" + escape(jsonStringField(renderLab, "doubleSidedMaterialStatus", modelState.doubleSidedMaterialStatus)) + "\",\n"
+            + indent + "\"doubleSidedMode\": \"" + escape(jsonStringField(renderLab, "doubleSidedMode", modelState.doubleSidedMode)) + "\",\n"
+            + indent + "\"doubleSidedNormalStatus\": \"" + escape(jsonStringField(renderLab, "doubleSidedNormalStatus", modelState.doubleSidedNormalStatus)) + "\",\n"
+            + indent + "\"doubleSidedRasterStatus\": \"" + escape(jsonStringField(renderLab, "doubleSidedRasterStatus", modelState.doubleSidedRasterStatus)) + "\",\n"
+            + indent + "\"doubleSidedFallbackStatus\": \"" + escape(jsonStringField(renderLab, "doubleSidedFallbackStatus", modelState.doubleSidedFallbackStatus)) + "\",\n"
+            + indent + "\"thinMaterialPolishStatus\": \"" + escape(jsonStringField(renderLab, "thinMaterialPolishStatus", modelState.thinMaterialPolishStatus)) + "\",\n"
+            + indent + "\"cutoutMaterialHintStatus\": \"" + escape(jsonStringField(renderLab, "cutoutMaterialHintStatus", modelState.cutoutMaterialHintStatus)) + "\",\n"
+            + indent + "\"fabricEdgeStatus\": \"" + escape(jsonStringField(renderLab, "fabricEdgeStatus", modelState.fabricEdgeStatus)) + "\",\n"
+            + indent + "\"glassMetadataStatus\": \"" + escape(jsonStringField(renderLab, "glassMetadataStatus", modelState.glassMetadataStatus)) + "\",\n"
+            + indent + "\"decalMaterialHintStatus\": \"" + escape(jsonStringField(renderLab, "decalMaterialHintStatus", modelState.decalMaterialHintStatus)) + "\",\n"
+            + indent + "\"transparencyDeferredStatus\": \"" + escape(jsonStringField(renderLab, "transparencyDeferredStatus", modelState.transparencyDeferredStatus)) + "\",\n"
+            + indent + "\"alphaUiStatus\": \"" + escape(jsonStringField(renderLab, "alphaUiStatus", modelState.alphaUiStatus)) + "\",\n"
+            + indent + "\"alphaCutoffSliderStatus\": \"" + escape(jsonStringField(renderLab, "alphaCutoffSliderStatus", modelState.alphaCutoffSliderStatus)) + "\",\n"
+            + indent + "\"alphaDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "alphaDebugViewStatus", modelState.alphaDebugViewStatus)) + "\",\n"
+            + indent + "\"doubleSidedDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "doubleSidedDebugViewStatus", modelState.doubleSidedDebugViewStatus)) + "\",\n"
+            + indent + "\"alphaResetButtonStatus\": \"" + escape(jsonStringField(renderLab, "alphaResetButtonStatus", modelState.alphaResetButtonStatus)) + "\",\n"
+            + indent + "\"alphaUniformUpdateStatus\": \"" + escape(jsonStringField(renderLab, "alphaUniformUpdateStatus", modelState.alphaUniformUpdateStatus)) + "\",\n"
+            + indent + "\"alphaSliderUpdateMode\": \"" + escape(jsonStringField(renderLab, "alphaSliderUpdateMode", modelState.alphaSliderUpdateMode)) + "\",\n"
+            + indent + "\"alphaMaskDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "alphaMaskDebugViewStatus", modelState.alphaMaskDebugViewStatus)) + "\",\n"
+            + indent + "\"alphaModeDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "alphaModeDebugViewStatus", modelState.alphaModeDebugViewStatus)) + "\",\n"
+            + indent + "\"cutoutHintDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "cutoutHintDebugViewStatus", modelState.cutoutHintDebugViewStatus)) + "\",\n"
+            + indent + "\"transparencyStatusDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "transparencyStatusDebugViewStatus", modelState.transparencyStatusDebugViewStatus)) + "\",\n"
+            + indent + "\"alphaPerformanceStatus\": \"" + escape(jsonStringField(renderLab, "alphaPerformanceStatus", modelState.alphaPerformanceStatus)) + "\",\n"
+            + indent + "\"alphaNoNewPassStatus\": \"" + escape(jsonStringField(renderLab, "alphaNoNewPassStatus", modelState.alphaNoNewPassStatus)) + "\",\n"
+            + indent + "\"alphaNoTextureRebuildStatus\": \"" + escape(jsonStringField(renderLab, "alphaNoTextureRebuildStatus", modelState.alphaNoTextureRebuildStatus)) + "\",\n"
+            + indent + "\"alphaNoModelReuploadStatus\": \"" + escape(jsonStringField(renderLab, "alphaNoModelReuploadStatus", modelState.alphaNoModelReuploadStatus)) + "\",\n";
+    }
+
     private String p20WorkflowJsonFields(String renderLab, String indent) {
         return indent + "\"inspectorHeightMode\": \"" + escape(jsonStringField(renderLab, "inspectorHeightMode", modelState.inspectorHeightMode)) + "\",\n"
             + indent + "\"inspectorScrollStatus\": \"" + escape(jsonStringField(renderLab, "inspectorScrollStatus", modelState.inspectorScrollStatus)) + "\",\n"
@@ -2834,6 +2971,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"reloadActiveModelStatus\": \"" + escape(jsonStringField(renderLab, "reloadActiveModelStatus", modelState.reloadActiveModelStatus)) + "\",\n"
             + indent + "\"activeModelDisplayStatus\": \"" + escape(jsonStringField(renderLab, "activeModelDisplayStatus", modelState.activeModelDisplayStatus)) + "\",\n"
             + indent + "\"fallbackReasonDisplayStatus\": \"" + escape(jsonStringField(renderLab, "fallbackReasonDisplayStatus", modelState.fallbackReasonDisplayStatus)) + "\",\n"
+            + indent + "\"p20RuntimeWorkflowPreservedStatus\": \"" + escape(jsonStringField(renderLab, "p20RuntimeWorkflowPreservedStatus", modelState.p20RuntimeWorkflowPreservedStatus)) + "\",\n"
+            + indent + "\"p19SlotControlsPreservedStatus\": \"" + escape(jsonStringField(renderLab, "p19SlotControlsPreservedStatus", modelState.p19SlotControlsPreservedStatus)) + "\",\n"
             + indent + "\"p19PreservedStatus\": \"" + escape(jsonStringField(renderLab, "p19PreservedStatus", modelState.p19PreservedStatus)) + "\",\n"
             + indent + "\"p18IblPreservedStatus\": \"" + escape(jsonStringField(renderLab, "p18IblPreservedStatus", modelState.p18IblPreservedStatus)) + "\",\n"
             + indent + "\"p17GlossPreservedStatus\": \"" + escape(jsonStringField(renderLab, "p17GlossPreservedStatus", modelState.p17GlossPreservedStatus)) + "\",\n"
@@ -3348,6 +3487,42 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String slotRoughnessDebugViewStatus = "shader_applied";
         String slotAoDebugViewStatus = "shader_applied";
         String perMaterialOverridePerformanceStatus = "ok_no_extra_pass_no_upload";
+        String alphaMaterialStatus = "ok_opaque_materials";
+        String alphaModeSupportStatus = "ok_opaque_mask_blend_metadata";
+        String alphaMaskStatus = "ok_no_mask_material";
+        String alphaBlendStatus = "ok_no_blend_material";
+        String alphaCutoffStatus = "ok_uniform_control";
+        float alphaCutoffValue = 0.5f;
+        String alphaDiscardStatus = "inactive_opaque";
+        String alphaTextureChannelStatus = "baseColor_alpha_channel_sampled_when_texture_ready";
+        String alphaFallbackStatus = "none";
+        String doubleSidedMaterialStatus = "ok_no_double_sided_material";
+        String doubleSidedMode = "selected_slot_single_sided_or_none";
+        String doubleSidedNormalStatus = "shader_gl_front_facing_normal_flip";
+        String doubleSidedRasterStatus = "ok_pipeline_cull_none_no_new_permutation";
+        String doubleSidedFallbackStatus = "none";
+        String thinMaterialPolishStatus = "ok_cutout_double_sided_hint_foundation";
+        String cutoutMaterialHintStatus = "ok_available";
+        String fabricEdgeStatus = "ok_available";
+        String glassMetadataStatus = "none";
+        String decalMaterialHintStatus = "ok_available";
+        String transparencyDeferredStatus = "ok_no_full_transparent_sorting_or_glass";
+        String alphaUiStatus = "ok_compact_material_tab";
+        String alphaCutoffSliderStatus = "ok";
+        String alphaDebugViewStatus = "shader_applied";
+        String doubleSidedDebugViewStatus = "shader_applied";
+        String alphaResetButtonStatus = "ok";
+        String alphaUniformUpdateStatus = "ok_uniform_only";
+        String alphaSliderUpdateMode = "uniform_only";
+        String alphaMaskDebugViewStatus = "shader_applied";
+        String alphaModeDebugViewStatus = "shader_applied";
+        String cutoutHintDebugViewStatus = "shader_applied";
+        String transparencyStatusDebugViewStatus = "shader_applied";
+        String alphaPerformanceStatus = "ok_no_new_pass_no_sorting_no_reupload";
+        String alphaNoNewPassStatus = "ok";
+        String alphaNoTextureRebuildStatus = "ok";
+        String alphaNoModelReuploadStatus = "ok";
+        String selectedAlphaMode = "OPAQUE";
         String materialWorkflowStatus = "ok_selected_slot_material_workflow";
         String materialSlotSummaryUiStatus = "ok_slot_name_hint_texture_summary";
         String selectedSlotResetButtonStatus = "ok";
@@ -3358,6 +3533,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String activeModelDisplayStatus = "empty";
         String fallbackReasonDisplayStatus = "ok_visible";
         String p19PreservedStatus = "ok";
+        String p19SlotControlsPreservedStatus = "ok";
+        String p20RuntimeWorkflowPreservedStatus = "ok";
         String p18IblPreservedStatus = "ok";
         String p17GlossPreservedStatus = "ok";
         String runtimeStateDebugViewStatus = "ok";
@@ -3674,6 +3851,41 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"slotRoughnessDebugViewStatus\": \"" + esc(slotRoughnessDebugViewStatus) + "\",\n"
                 + "  \"slotAoDebugViewStatus\": \"" + esc(slotAoDebugViewStatus) + "\",\n"
                 + "  \"perMaterialOverridePerformanceStatus\": \"" + esc(perMaterialOverridePerformanceStatus) + "\",\n"
+                + "  \"alphaMaterialStatus\": \"" + esc(alphaMaterialStatus) + "\",\n"
+                + "  \"alphaModeSupportStatus\": \"" + esc(alphaModeSupportStatus) + "\",\n"
+                + "  \"alphaMaskStatus\": \"" + esc(alphaMaskStatus) + "\",\n"
+                + "  \"alphaBlendStatus\": \"" + esc(alphaBlendStatus) + "\",\n"
+                + "  \"alphaCutoffStatus\": \"" + esc(alphaCutoffStatus) + "\",\n"
+                + "  \"alphaCutoffValue\": " + jsonFloat(alphaCutoffValue) + ",\n"
+                + "  \"alphaDiscardStatus\": \"" + esc(alphaDiscardStatus) + "\",\n"
+                + "  \"alphaTextureChannelStatus\": \"" + esc(alphaTextureChannelStatus) + "\",\n"
+                + "  \"alphaFallbackStatus\": \"" + esc(alphaFallbackStatus) + "\",\n"
+                + "  \"doubleSidedMaterialStatus\": \"" + esc(doubleSidedMaterialStatus) + "\",\n"
+                + "  \"doubleSidedMode\": \"" + esc(doubleSidedMode) + "\",\n"
+                + "  \"doubleSidedNormalStatus\": \"" + esc(doubleSidedNormalStatus) + "\",\n"
+                + "  \"doubleSidedRasterStatus\": \"" + esc(doubleSidedRasterStatus) + "\",\n"
+                + "  \"doubleSidedFallbackStatus\": \"" + esc(doubleSidedFallbackStatus) + "\",\n"
+                + "  \"thinMaterialPolishStatus\": \"" + esc(thinMaterialPolishStatus) + "\",\n"
+                + "  \"cutoutMaterialHintStatus\": \"" + esc(cutoutMaterialHintStatus) + "\",\n"
+                + "  \"fabricEdgeStatus\": \"" + esc(fabricEdgeStatus) + "\",\n"
+                + "  \"glassMetadataStatus\": \"" + esc(glassMetadataStatus) + "\",\n"
+                + "  \"decalMaterialHintStatus\": \"" + esc(decalMaterialHintStatus) + "\",\n"
+                + "  \"transparencyDeferredStatus\": \"" + esc(transparencyDeferredStatus) + "\",\n"
+                + "  \"alphaUiStatus\": \"" + esc(alphaUiStatus) + "\",\n"
+                + "  \"alphaCutoffSliderStatus\": \"" + esc(alphaCutoffSliderStatus) + "\",\n"
+                + "  \"alphaDebugViewStatus\": \"" + esc(alphaDebugViewStatus) + "\",\n"
+                + "  \"doubleSidedDebugViewStatus\": \"" + esc(doubleSidedDebugViewStatus) + "\",\n"
+                + "  \"alphaResetButtonStatus\": \"" + esc(alphaResetButtonStatus) + "\",\n"
+                + "  \"alphaUniformUpdateStatus\": \"" + esc(alphaUniformUpdateStatus) + "\",\n"
+                + "  \"alphaSliderUpdateMode\": \"" + esc(alphaSliderUpdateMode) + "\",\n"
+                + "  \"alphaMaskDebugViewStatus\": \"" + esc(alphaMaskDebugViewStatus) + "\",\n"
+                + "  \"alphaModeDebugViewStatus\": \"" + esc(alphaModeDebugViewStatus) + "\",\n"
+                + "  \"cutoutHintDebugViewStatus\": \"" + esc(cutoutHintDebugViewStatus) + "\",\n"
+                + "  \"transparencyStatusDebugViewStatus\": \"" + esc(transparencyStatusDebugViewStatus) + "\",\n"
+                + "  \"alphaPerformanceStatus\": \"" + esc(alphaPerformanceStatus) + "\",\n"
+                + "  \"alphaNoNewPassStatus\": \"" + esc(alphaNoNewPassStatus) + "\",\n"
+                + "  \"alphaNoTextureRebuildStatus\": \"" + esc(alphaNoTextureRebuildStatus) + "\",\n"
+                + "  \"alphaNoModelReuploadStatus\": \"" + esc(alphaNoModelReuploadStatus) + "\",\n"
                 + "  \"materialWorkflowStatus\": \"" + esc(materialWorkflowStatus) + "\",\n"
                 + "  \"materialSlotSummaryUiStatus\": \"" + esc(materialSlotSummaryUiStatus) + "\",\n"
                 + "  \"selectedSlotResetButtonStatus\": \"" + esc(selectedSlotResetButtonStatus) + "\",\n"
@@ -3683,6 +3895,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"reloadActiveModelStatus\": \"" + esc(reloadActiveModelStatus) + "\",\n"
                 + "  \"activeModelDisplayStatus\": \"" + esc(activeModelDisplayStatus) + "\",\n"
                 + "  \"fallbackReasonDisplayStatus\": \"" + esc(fallbackReasonDisplayStatus) + "\",\n"
+                + "  \"p20RuntimeWorkflowPreservedStatus\": \"" + esc(p20RuntimeWorkflowPreservedStatus) + "\",\n"
+                + "  \"p19SlotControlsPreservedStatus\": \"" + esc(p19SlotControlsPreservedStatus) + "\",\n"
                 + "  \"p19PreservedStatus\": \"" + esc(p19PreservedStatus) + "\",\n"
                 + "  \"p18IblPreservedStatus\": \"" + esc(p18IblPreservedStatus) + "\",\n"
                 + "  \"p17GlossPreservedStatus\": \"" + esc(p17GlossPreservedStatus) + "\",\n"
@@ -4302,6 +4516,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             String name = info.materialName == null ? "" : info.materialName.toLowerCase(Locale.US);
             boolean hasBase = info.texture != null && "ok".equals(info.texture.status);
             boolean hasMr = info.metallicRoughnessTexture != null && "ok".equals(info.metallicRoughnessTexture.status);
+            boolean alphaHint = info.alphaMode == 1 || info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f;
+            if (name.contains("glass") || name.contains("window") || name.contains("windshield")) return 6;
+            if (name.contains("decal") || name.contains("sticker") || name.contains("label") || (alphaHint && info.roughnessFactor < 0.36f && info.metallicFactor < 0.2f)) return 7;
+            if (alphaHint || info.doubleSided || name.contains("leaf") || name.contains("leaves") || name.contains("hair") || name.contains("grille") || name.contains("grid") || name.contains("card")) return 5;
             if (info.metallicFactor >= 0.65f || name.contains("metal") || name.contains("chrome") || name.contains("steel")) return 2;
             if (name.contains("fabric") || name.contains("cloth") || name.contains("seat") || name.contains("carpet") || (info.roughnessFactor >= 0.78f && info.metallicFactor < 0.15f && info.alphaMode == 0)) return 0;
             if (name.contains("rubber") || name.contains("tire") || name.contains("tyre") || name.contains("black") || (info.roughnessFactor >= 0.55f && info.metallicFactor < 0.08f && !hasBase)) return 3;
@@ -4314,6 +4532,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (hint == 1) return "paint_like";
             if (hint == 2) return "metal_like";
             if (hint == 3) return "rubber_like";
+            if (hint == 5) return "cutout_like";
+            if (hint == 6) return "glass_like";
+            if (hint == 7) return "decal_like";
             return "unknown";
         }
 
@@ -4323,6 +4544,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (info.materialTypeHint == 3) return Math.max(r, 0.62f);
             if (info.materialTypeHint == 1) return clampUnitRange(r, 0.28f, 0.72f);
             if (info.materialTypeHint == 2) return clampUnitRange(r, 0.18f, 0.64f);
+            if (info.materialTypeHint == 5) return Math.max(r, 0.48f);
+            if (info.materialTypeHint == 6) return clampUnitRange(r, 0.18f, 0.70f);
+            if (info.materialTypeHint == 7) return clampUnitRange(r, 0.22f, 0.68f);
             return clampUnitRange(r, 0.24f, 0.88f);
         }
 
@@ -4617,7 +4841,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     .append(",\"emissiveFactor\":[").append(jsonFloat(m.emissiveFactor[0])).append(",").append(jsonFloat(m.emissiveFactor[1])).append(",").append(jsonFloat(m.emissiveFactor[2])).append("]")
                     .append(",\"emissiveTextureStatus\":\"").append(esc(m.emissiveTextureStatus)).append("\"")
                     .append(",\"alphaMode\":\"").append(esc(m.alphaModeText)).append("\"")
+                    .append(",\"alphaCutoff\":").append(jsonFloat(m.alphaCutoff))
+                    .append(",\"alphaTextureStatus\":\"").append(esc(m.texture == null ? "missing" : m.texture.status)).append("\"")
+                    .append(",\"alphaMaskAppliedStatus\":\"").append(esc(m.alphaMode == 1 ? "shader_discard_enabled" : "not_mask")).append("\"")
+                    .append(",\"alphaBlendFallbackStatus\":\"").append(esc(m.alphaMode == 2 ? "fallback_no_transparent_sorting" : "not_blend")).append("\"")
                     .append(",\"doubleSided\":").append(m.doubleSided)
+                    .append(",\"doubleSidedAppliedStatus\":\"").append(esc(m.doubleSided ? "normal_flip_foundation_pipeline_cull_none" : "not_double_sided")).append("\"")
                     .append("}");
             }
             return b.append("]").toString();

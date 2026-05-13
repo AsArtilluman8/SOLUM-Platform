@@ -2,6 +2,103 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene18 Alpha Cutout Material Lab
+
+Patch P21 switches the active lab to:
+
+```text
+scene18_alpha_cutout_material_lab
+Scene18 Alpha Cutout Material Lab
+```
+
+Scene18 preserves P20 runtime restore/reload, capped inspector scroll, dynamic inspector alpha, P19 selected-slot controls, P18 directional sky/ground IBL, P17 gloss/calib/coat controls, Debug ZIP, and live FPS. It adds alpha/cutout/double-sided material handling for static GLB material slots without glass, refraction, transparent sorting, a new pass, or texture/model rebuilds while sliding.
+
+Material tab additions:
+
+- Alpha Cutoff slider, uniform-only.
+- Alpha Mode debug cycle.
+- Double-sided debug view button.
+- Reset Alpha button.
+
+Alpha handling:
+
+- glTF `alphaMode` metadata recognizes `OPAQUE`, `MASK`, and `BLEND`.
+- `MASK` uses baseColor factor/texture alpha and shader discard with `alphaCutoff`.
+- `BLEND` is diagnostics-only fallback for now: no full transparent sorting or real blending.
+- Per-slot diagnostics include `alphaMode`, `alphaCutoff`, `alphaTextureStatus`, `alphaMaskAppliedStatus`, and `alphaBlendFallbackStatus`.
+
+Double-sided handling:
+
+- glTF `doubleSided` metadata is recorded per material slot.
+- Current pipeline already uses `VK_CULL_MODE_NONE`; diagnostics mark no new raster permutation.
+- Shader normal handling uses face orientation for a two-sided normal foundation.
+- Per-slot diagnostics include `doubleSided` and `doubleSidedAppliedStatus`.
+
+Thin/edge polish:
+
+- `fabric_like` remains matte.
+- `cutout_like` is used for MASK/double-sided/card/leaf/hair/grille-like materials.
+- `glass_like` is metadata only and renders through safe opaque/cutout behavior until a future glass stage.
+- `decal_like` is a safe hint for alpha/low-roughness flat-ish materials.
+
+Debug views added:
+
+```text
+Alpha Mask
+Alpha Mode
+Double Sided
+Cutout Hint
+Transparency Status
+```
+
+Diagnostics added at top level and under `renderLab`:
+
+```text
+alphaMaterialStatus
+alphaModeSupportStatus
+alphaMaskStatus
+alphaBlendStatus
+alphaCutoffStatus
+alphaCutoffValue
+alphaDiscardStatus
+alphaTextureChannelStatus
+alphaFallbackStatus
+doubleSidedMaterialStatus
+doubleSidedMode
+doubleSidedNormalStatus
+doubleSidedRasterStatus
+doubleSidedFallbackStatus
+thinMaterialPolishStatus
+cutoutMaterialHintStatus
+fabricEdgeStatus
+glassMetadataStatus
+decalMaterialHintStatus
+transparencyDeferredStatus
+alphaUiStatus
+alphaCutoffSliderStatus
+alphaDebugViewStatus
+doubleSidedDebugViewStatus
+alphaResetButtonStatus
+alphaUniformUpdateStatus
+alphaSliderUpdateMode
+alphaMaskDebugViewStatus
+alphaModeDebugViewStatus
+cutoutHintDebugViewStatus
+transparencyStatusDebugViewStatus
+alphaPerformanceStatus
+alphaNoNewPassStatus
+alphaNoTextureRebuildStatus
+alphaNoModelReuploadStatus
+p20RuntimeWorkflowPreservedStatus
+p19SlotControlsPreservedStatus
+p18IblPreservedStatus
+p17GlossPreservedStatus
+fpsStatus
+fpsUpdateMode
+debugZipStatus
+debugZipPath
+```
+
 ## Scene17 Runtime Material Workflow Lab
 
 Patch P20 switches the active lab to:

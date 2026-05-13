@@ -1,5 +1,38 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P21 alpha cutout and double-sided material polish
+
+P21 switches the active lab to `scene18_alpha_cutout_material_lab`.
+
+The texture/material binding path remains the existing per-material-slot Vulkan path. No new pass, transparent sorting, glass/refraction/transmission, texture rebuild, or model reupload is added for alpha slider changes.
+
+Alpha/cutout foundation:
+
+- glTF `alphaMode` is recognized per material slot: `OPAQUE`, `MASK`, and `BLEND`.
+- `MASK` uses baseColor factor alpha and baseColor texture alpha for shader discard.
+- `alphaCutoff` is read from glTF material metadata and can be adjusted through a uniform-only Material tab slider.
+- `BLEND` is preserved as metadata and routed to safe cutout/opaque fallback diagnostics until a later transparent-sorting stage.
+
+Double-sided foundation:
+
+- glTF `doubleSided` is recorded per slot.
+- Current raster state uses `VK_CULL_MODE_NONE`, so double-sided cards/leaves/fabric planes can be visible without a new pipeline permutation.
+- Shader normal handling uses face orientation for a safe two-sided normal foundation.
+
+Material hints added:
+
+- `cutout_like`
+- `glass_like` metadata-only, rendered as safe opaque/cutout
+- `decal_like`
+
+Debug views added:
+
+- Alpha Mask
+- Alpha Mode
+- Double Sided
+- Cutout Hint
+- Transparency Status
+
 ## P20 runtime material workflow polish
 
 P20 keeps the P19 selected-slot override foundation and switches the active lab to `scene17_runtime_material_workflow_lab`.

@@ -22,11 +22,12 @@ enum class RenderLabScene {
     Scene15EnvironmentIblLab,
     Scene16MaterialSlotEditorLab,
     Scene17RuntimeMaterialWorkflowLab,
+    Scene18AlphaCutoutMaterialLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene17RuntimeMaterialWorkflowLab;
+    RenderLabScene currentScene = RenderLabScene::Scene18AlphaCutoutMaterialLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -69,6 +70,7 @@ struct RenderLabState {
             case RenderLabScene::Scene15EnvironmentIblLab: return "scene15_environment_ibl_lab";
             case RenderLabScene::Scene16MaterialSlotEditorLab: return "scene16_material_slot_editor_lab";
             case RenderLabScene::Scene17RuntimeMaterialWorkflowLab: return "scene17_runtime_material_workflow_lab";
+            case RenderLabScene::Scene18AlphaCutoutMaterialLab: return "scene18_alpha_cutout_material_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -94,6 +96,7 @@ struct RenderLabState {
             case RenderLabScene::Scene15EnvironmentIblLab: return "Scene15 Environment IBL Lab";
             case RenderLabScene::Scene16MaterialSlotEditorLab: return "Scene16 Material Slot Editor Lab";
             case RenderLabScene::Scene17RuntimeMaterialWorkflowLab: return "Scene17 Runtime Material Workflow Lab";
+            case RenderLabScene::Scene18AlphaCutoutMaterialLab: return "Scene18 Alpha Cutout Material Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }
@@ -368,6 +371,43 @@ struct RenderLabState {
         f << indent << "  \"slotRoughnessDebugViewStatus\": \"" << escapeJson(model.slotRoughnessDebugViewStatus) << "\",\n";
         f << indent << "  \"slotAoDebugViewStatus\": \"" << escapeJson(model.slotAoDebugViewStatus) << "\",\n";
         f << indent << "  \"perMaterialOverridePerformanceStatus\": \"" << escapeJson(model.perMaterialOverridePerformanceStatus) << "\",\n";
+        f << indent << "  \"alphaMaterialStatus\": \"" << escapeJson(model.alphaMaterialStatus) << "\",\n";
+        f << indent << "  \"alphaModeSupportStatus\": \"" << escapeJson(model.alphaModeSupportStatus) << "\",\n";
+        f << indent << "  \"alphaMaskStatus\": \"" << escapeJson(model.alphaMaskStatus) << "\",\n";
+        f << indent << "  \"alphaBlendStatus\": \"" << escapeJson(model.alphaBlendStatus) << "\",\n";
+        f << indent << "  \"alphaCutoffStatus\": \"" << escapeJson(model.alphaCutoffStatus) << "\",\n";
+        f << indent << "  \"alphaCutoffValue\": " << model.alphaCutoffValue << ",\n";
+        f << indent << "  \"alphaDiscardStatus\": \"" << escapeJson(model.alphaDiscardStatus) << "\",\n";
+        f << indent << "  \"alphaTextureChannelStatus\": \"" << escapeJson(model.alphaTextureChannelStatus) << "\",\n";
+        f << indent << "  \"alphaFallbackStatus\": \"" << escapeJson(model.alphaFallbackStatus) << "\",\n";
+        f << indent << "  \"doubleSidedMaterialStatus\": \"" << escapeJson(model.doubleSidedMaterialStatus) << "\",\n";
+        f << indent << "  \"doubleSidedMode\": \"" << escapeJson(model.doubleSidedMode) << "\",\n";
+        f << indent << "  \"doubleSidedNormalStatus\": \"" << escapeJson(model.doubleSidedNormalStatus) << "\",\n";
+        f << indent << "  \"doubleSidedRasterStatus\": \"" << escapeJson(model.doubleSidedRasterStatus) << "\",\n";
+        f << indent << "  \"doubleSidedFallbackStatus\": \"" << escapeJson(model.doubleSidedFallbackStatus) << "\",\n";
+        f << indent << "  \"thinMaterialPolishStatus\": \"" << escapeJson(model.thinMaterialPolishStatus) << "\",\n";
+        f << indent << "  \"cutoutMaterialHintStatus\": \"" << escapeJson(model.cutoutMaterialHintStatus) << "\",\n";
+        f << indent << "  \"fabricEdgeStatus\": \"" << escapeJson(model.fabricEdgeStatus) << "\",\n";
+        f << indent << "  \"glassMetadataStatus\": \"" << escapeJson(model.glassMetadataStatus) << "\",\n";
+        f << indent << "  \"decalMaterialHintStatus\": \"" << escapeJson(model.decalMaterialHintStatus) << "\",\n";
+        f << indent << "  \"transparencyDeferredStatus\": \"" << escapeJson(model.transparencyDeferredStatus) << "\",\n";
+        f << indent << "  \"alphaUiStatus\": \"" << escapeJson(model.alphaUiStatus) << "\",\n";
+        f << indent << "  \"alphaCutoffSliderStatus\": \"" << escapeJson(model.alphaCutoffSliderStatus) << "\",\n";
+        f << indent << "  \"alphaDebugViewStatus\": \"" << escapeJson(model.alphaDebugViewStatus) << "\",\n";
+        f << indent << "  \"doubleSidedDebugViewStatus\": \"" << escapeJson(model.doubleSidedDebugViewStatus) << "\",\n";
+        f << indent << "  \"alphaResetButtonStatus\": \"" << escapeJson(model.alphaResetButtonStatus) << "\",\n";
+        f << indent << "  \"alphaUniformUpdateStatus\": \"" << escapeJson(model.alphaUniformUpdateStatus) << "\",\n";
+        f << indent << "  \"alphaSliderUpdateMode\": \"" << escapeJson(model.alphaSliderUpdateMode) << "\",\n";
+        f << indent << "  \"alphaMaskDebugViewStatus\": \"" << escapeJson(model.alphaMaskDebugViewStatus) << "\",\n";
+        f << indent << "  \"alphaModeDebugViewStatus\": \"" << escapeJson(model.alphaModeDebugViewStatus) << "\",\n";
+        f << indent << "  \"cutoutHintDebugViewStatus\": \"" << escapeJson(model.cutoutHintDebugViewStatus) << "\",\n";
+        f << indent << "  \"transparencyStatusDebugViewStatus\": \"" << escapeJson(model.transparencyStatusDebugViewStatus) << "\",\n";
+        f << indent << "  \"alphaPerformanceStatus\": \"" << escapeJson(model.alphaPerformanceStatus) << "\",\n";
+        f << indent << "  \"alphaNoNewPassStatus\": \"" << escapeJson(model.alphaNoNewPassStatus) << "\",\n";
+        f << indent << "  \"alphaNoTextureRebuildStatus\": \"" << escapeJson(model.alphaNoTextureRebuildStatus) << "\",\n";
+        f << indent << "  \"alphaNoModelReuploadStatus\": \"" << escapeJson(model.alphaNoModelReuploadStatus) << "\",\n";
+        f << indent << "  \"p20RuntimeWorkflowPreservedStatus\": \"" << escapeJson(model.p20RuntimeWorkflowPreservedStatus) << "\",\n";
+        f << indent << "  \"p19SlotControlsPreservedStatus\": \"" << escapeJson(model.p19SlotControlsPreservedStatus) << "\",\n";
         f << indent << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << indent << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";
         f << indent << "  \"fpsSource\": \"" << escapeJson(model.fpsSource) << "\",\n";
@@ -409,7 +449,8 @@ struct RenderLabState {
         f << indent << "    \"normalScale\": " << material.normalScale << ",\n";
         f << indent << "    \"occlusionStrength\": " << material.occlusionStrength << ",\n";
         f << indent << "    \"emissiveFactor\": [" << material.emissiveFactor[0] << ", " << material.emissiveFactor[1] << ", " << material.emissiveFactor[2] << "],\n";
-        f << indent << "    \"alphaMode\": \"OPAQUE\"\n";
+        f << indent << "    \"alphaMode\": \"OPAQUE\",\n";
+        f << indent << "    \"alphaCutoff\": " << material.alphaCutoff << "\n";
         f << indent << "  },\n";
         f << indent << "  \"vertexCount\": " << vertexCount << ",\n";
         f << indent << "  \"indexCount\": " << indexCount << ",\n";

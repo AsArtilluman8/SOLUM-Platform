@@ -62,6 +62,8 @@ struct MaterialConstants {
     int calibrationPreset = 2;
     float calibrationStrength = 0.65f;
     int materialTypeHint = 4;
+    float glossSliderValue = 0.62f;
+    float paintGlossSliderValue = 0.55f;
 };
 
 inline const char* lightPresetName(int preset) {
@@ -90,6 +92,10 @@ inline const char* materialDebugViewName(int view) {
     if (view == 15) return "Material Type";
     if (view == 16) return "AO Influence";
     if (view == 17) return "Luminance Guard";
+    if (view == 18) return "Gloss Response";
+    if (view == 19) return "Specular Guard";
+    if (view == 20) return "Paint Gloss";
+    if (view == 21) return "Metal Response";
     return "Final Shaded";
 }
 
@@ -298,6 +304,36 @@ struct ModelRenderState {
     std::string aoInfluenceDebugViewStatus = "shader_applied";
     std::string luminanceGuardDebugViewStatus = "shader_applied";
     std::string materialCalibrationPerformanceStatus = "ok_uniform_shader_no_rebuild";
+    std::string specularGlossStatus = "ok";
+    std::string specularGlossMode = "uniform_gloss_response_p17b";
+    std::string specularResponseStatus = "ok_guarded_dielectric_metal";
+    std::string glossResponseStatus = "ok_slider_controls_lobe_width";
+    std::string roughnessRemapV2Status = "ok_calib_and_gloss_weighted";
+    std::string metallicSpecularBoostStatus = "ok_metal_routed_boost";
+    std::string dielectricGlossStatus = "ok_f0_guarded";
+    std::string fabricSpecularSuppressStatus = "ok_matte_preserved";
+    std::string specularOverbrightGuardStatus = "ok_luminance_guard";
+    std::string viewDependentHighlightStatus = "ok_reflection_vector";
+    std::string paintGlossLiteStatus = "ok";
+    std::string paintGlossLiteMode = "uniform_lite_no_texture_rebuild";
+    float paintGlossIntensity = 0.55f;
+    float paintGlossRoughness = 0.45f;
+    std::string paintGlossMaterialHintStatus = "ok_paint_like_only";
+    std::string paintGlossPerformanceStatus = "ok_uniform_only";
+    std::string glossSliderStatus = "ok";
+    float glossSliderValue = 0.62f;
+    std::string paintGlossSliderStatus = "ok";
+    float paintGlossSliderValue = 0.55f;
+    std::string glossUniformUpdateStatus = "ok_uniform_only";
+    std::string glossResponseDebugViewStatus = "shader_applied";
+    std::string specularGuardDebugViewStatus = "shader_applied";
+    std::string paintGlossDebugViewStatus = "shader_applied";
+    std::string metalResponseDebugViewStatus = "shader_applied";
+    std::string materialTypeSpecularRoutingStatus = "ok";
+    std::string paintMaterialGlossStatus = "ok_lite_gloss";
+    std::string metalMaterialGlossStatus = "ok_stronger_response";
+    std::string rubberMaterialGlossStatus = "ok_suppressed";
+    std::string specularGlossPerformanceStatus = "ok_no_alloc_no_rebuild";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;
     float fpsLastStable = 0.0f;

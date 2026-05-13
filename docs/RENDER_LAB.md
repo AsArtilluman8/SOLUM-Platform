@@ -2,6 +2,74 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene14 Specular Gloss Lab
+
+Patch P17B completes the Scene14 material controls:
+
+```text
+scene14_specular_gloss_lab
+```
+
+Material tab controls:
+
+```text
+Calib preset
+Calib slider
+Gloss slider
+Paint Gloss slider
+Debug view
+```
+
+Required P17 diagnostics are emitted at top level and under `renderLab`:
+
+```text
+specularGlossStatus
+specularGlossMode
+specularResponseStatus
+glossResponseStatus
+roughnessRemapV2Status
+metallicSpecularBoostStatus
+dielectricGlossStatus
+fabricSpecularSuppressStatus
+specularOverbrightGuardStatus
+viewDependentHighlightStatus
+paintGlossLiteStatus
+paintGlossLiteMode
+paintGlossIntensity
+paintGlossRoughness
+paintGlossMaterialHintStatus
+paintGlossPerformanceStatus
+glossSliderStatus
+glossSliderValue
+paintGlossSliderStatus
+paintGlossSliderValue
+glossUniformUpdateStatus
+glossResponseDebugViewStatus
+specularGuardDebugViewStatus
+paintGlossDebugViewStatus
+metalResponseDebugViewStatus
+materialTypeSpecularRoutingStatus
+fabricMattePreserveStatus
+paintMaterialGlossStatus
+metalMaterialGlossStatus
+rubberMaterialGlossStatus
+specularGlossPerformanceStatus
+```
+
+Debug views added:
+
+```text
+Gloss Response
+Specular Guard
+Paint Gloss
+Metal Response
+```
+
+Performance guard:
+
+- Calib, Gloss, and Paint Gloss update uniforms only.
+- No texture rebuild, model upload, tangent rebuild, cubemap texture, CSM, or shadow pass is introduced.
+
 ## Scene13 Material Calibration Lab
 
 Patch P16 advances the Render Lab to:

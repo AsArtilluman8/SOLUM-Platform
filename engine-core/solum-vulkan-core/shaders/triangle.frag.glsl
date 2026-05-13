@@ -47,6 +47,8 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 212) int calibrationPreset;
     layout(offset = 216) float calibrationStrength;
     layout(offset = 220) int materialTypeHint;
+    layout(offset = 224) float glossSliderValue;
+    layout(offset = 228) float paintGlossSliderValue;
 } pc;
 
 float luminance(vec3 c) {
@@ -62,12 +64,12 @@ vec3 normalizeAlbedoEnergy(vec3 color, float strength) {
 
 float remapRoughness(float roughness, float metallic, int hint, float strength) {
     float target = roughness;
-    if (hint == 0) target = max(roughness, 0.78);
-    else if (hint == 3) target = max(roughness, 0.62);
-    else if (hint == 1) target = clamp(roughness, 0.28, 0.72);
-    else if (hint == 2) target = clamp(roughness, 0.18, 0.64);
-    else target = clamp(roughness, 0.24, 0.88);
-    float presetBias = pc.calibrationPreset == 1 ? 0.08 : (pc.calibrationPreset == 3 ? -0.06 : 0.0);
+    if (hint == 0) target = max(roughness, 0.84);
+    else if (hint == 3) target = max(roughness, 0.68);
+    else if (hint == 1) target = clamp(roughness, 0.22, 0.68);
+    else if (hint == 2) target = clamp(roughness, 0.12, 0.58);
+    else target = clamp(roughness, 0.22, 0.86);
+    float presetBias = pc.calibrationPreset == 1 ? 0.14 : (pc.calibrationPreset == 3 ? -0.12 : 0.0);
     return clamp(mix(roughness, target + presetBias * (1.0 - metallic), strength), 0.06, 1.0);
 }
 
@@ -127,12 +129,14 @@ vec3 environmentColor(vec3 dir, float roughness) {
 }
 
 float materialGlossWeight(int hint, float metallic, float roughness) {
-    float base = mix(0.32, 1.0, metallic);
-    if (hint == 0) base *= 0.10;
-    else if (hint == 3) base *= 0.18;
-    else if (hint == 1) base *= 0.82;
-    else if (hint == 2) base *= 1.18;
-    return clamp(base * (1.0 - roughness * 0.55), 0.0, 1.25);
+    float glossSlider = clamp(pc.glossSliderValue, 0.0, 1.0);
+    float paintSlider = clamp(pc.paintGlossSliderValue, 0.0, 1.0);
+    float base = mix(0.18, 1.18, glossSlider) * mix(0.30, 1.0, metallic);
+    if (hint == 0) base *= mix(0.04, 0.14, glossSlider);
+    else if (hint == 3) base *= mix(0.08, 0.28, glossSlider);
+    else if (hint == 1) base *= mix(0.50, 1.18, paintSlider);
+    else if (hint == 2) base *= 1.28;
+    return clamp(base * (1.0 - roughness * mix(0.72, 0.38, glossSlider)), 0.0, 1.45);
 }
 
 float contactGroundingMask(vec3 localPos, vec3 normalDir) {
@@ -151,6 +155,10 @@ void main() {
     float roughnessRaw = clamp(pc.roughnessFactor * mr.g, 0.04, 1.0);
     float metallic = clamp(pc.metallicFactor * mr.b, 0.0, 1.0);
     float roughness = remapRoughness(roughnessRaw, metallic, hint, calibration);
+    float glossSlider = clamp(pc.glossSliderValue, 0.0, 1.0);
+    float paintSlider = clamp(pc.paintGlossSliderValue, 0.0, 1.0);
+    if (hint == 1) roughness = mix(roughness, clamp(0.78 - paintSlider * 0.58, 0.20, 0.78), 0.48 * paintSlider);
+    roughness = clamp(mix(roughness, roughness * mix(1.18, 0.72, glossSlider), 0.55), 0.06, 1.0);
     float aoRaw = pc.occlusionTextureReady != 0 ? texture(occlusionTexture, inTexcoord0).r : 1.0;
     float aoStrength = clamp(mix(pc.occlusionStrength, pc.occlusionStrength * 1.25, calibration), 0.0, 1.0);
     float ao = pc.occlusionTextureReady != 0 ? mix(1.0, aoRaw, aoStrength) : 1.0;
@@ -211,6 +219,9 @@ void main() {
     vec3 directSpecular = fresnel * (specDistribution * specGeometry / specDenom) * specEnergy * ndotl * sunColor * pc.sunIntensity;
     directSpecular *= mix(0.34, 1.0, glossWeight);
     vec3 specularLight = (directSpecular + analyticSpecular + iblSpecular) * pc.specularBoost;
+    specularLight *= mix(0.55, 1.35, glossSlider);
+    if (hint == 0) specularLight *= 0.55;
+    if (hint == 1) specularLight *= mix(0.75, 1.25, paintSlider);
     float specLum = luminance(specularLight);
     float specGuard = mix(1.45, 2.10, metallic) * mix(1.0, 0.72, calibration);
     if (specLum > specGuard) specularLight *= mix(1.0, specGuard / max(specLum, 0.001), 0.55);
@@ -265,6 +276,22 @@ void main() {
         float rawLum = luminance(rawBaseColor);
         float clampedLum = luminance(baseColor);
         fragColor = vec4(clamp(vec3(clampedLum, rawLum - clampedLum, rawLum), 0.0, 1.0), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 18) {
+        fragColor = vec4(vec3(glossWeight), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 19) {
+        fragColor = vec4(vec3(clamp(specLum / max(specGuard, 0.001), 0.0, 1.0)), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 20) {
+        fragColor = vec4(vec3(hint == 1 ? paintSlider : 0.0), pc.baseColorFactor.a * texel.a);
+        return;
+    }
+    if (pc.activeDebugView == 21) {
+        fragColor = vec4(vec3(metallic, glossWeight, roughness), pc.baseColorFactor.a * texel.a);
         return;
     }
     rgb *= 1.0 - contactMask * clamp(pc.contactShadowIntensity, 0.0, 1.5) * 0.22;

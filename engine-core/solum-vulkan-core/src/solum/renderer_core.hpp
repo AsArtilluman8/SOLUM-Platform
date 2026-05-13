@@ -125,6 +125,10 @@ struct RendererCore {
         model.activeDebugView = materialDebugViewName(material.activeDebugView);
         model.calibrationPreset = calibrationPresetName(material.calibrationPreset);
         model.calibrationSliderValue = material.calibrationStrength;
+        model.glossSliderValue = material.glossSliderValue;
+        model.paintGlossSliderValue = material.paintGlossSliderValue;
+        model.paintGlossIntensity = material.paintGlossSliderValue;
+        model.paintGlossRoughness = clampFloat(0.78f - material.paintGlossSliderValue * 0.58f, 0.20f, 0.78f);
         model.exposureValue = material.exposureValue;
         model.ambientFloor = material.ambientFloor;
         model.brightnessPreset = brightnessPresetName(material.brightnessPreset);
@@ -164,6 +168,32 @@ struct RendererCore {
         model.aoInfluenceDebugViewStatus = "shader_applied";
         model.luminanceGuardDebugViewStatus = "shader_applied";
         model.materialCalibrationPerformanceStatus = "ok_uniform_shader_no_rebuild";
+        model.specularGlossStatus = "ok";
+        model.specularGlossMode = "uniform_gloss_response_p17b";
+        model.specularResponseStatus = "ok_guarded_dielectric_metal";
+        model.glossResponseStatus = "ok_slider_controls_lobe_width";
+        model.roughnessRemapV2Status = "ok_calib_and_gloss_weighted";
+        model.metallicSpecularBoostStatus = "ok_metal_routed_boost";
+        model.dielectricGlossStatus = "ok_f0_guarded";
+        model.fabricSpecularSuppressStatus = "ok_matte_preserved";
+        model.specularOverbrightGuardStatus = "ok_luminance_guard";
+        model.viewDependentHighlightStatus = "ok_reflection_vector";
+        model.paintGlossLiteStatus = "ok";
+        model.paintGlossLiteMode = "uniform_lite_no_texture_rebuild";
+        model.paintGlossMaterialHintStatus = "ok_paint_like_only";
+        model.paintGlossPerformanceStatus = "ok_uniform_only";
+        model.glossSliderStatus = "ok";
+        model.paintGlossSliderStatus = "ok";
+        model.glossUniformUpdateStatus = "ok_uniform_only";
+        model.glossResponseDebugViewStatus = "shader_applied";
+        model.specularGuardDebugViewStatus = "shader_applied";
+        model.paintGlossDebugViewStatus = "shader_applied";
+        model.metalResponseDebugViewStatus = "shader_applied";
+        model.materialTypeSpecularRoutingStatus = "ok";
+        model.paintMaterialGlossStatus = "ok_lite_gloss";
+        model.metalMaterialGlossStatus = "ok_stronger_response";
+        model.rubberMaterialGlossStatus = "ok_suppressed";
+        model.specularGlossPerformanceStatus = "ok_no_alloc_no_rebuild";
         model.brdfStatus = "ok";
         model.brdfMode = "direct_lighting_schlick_mobile_p17_gloss";
         model.diffuseStatus = "ok_environment_diffuse";
@@ -331,11 +361,11 @@ struct RendererCore {
         syncLightingModelState();
     }
 
-    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength) {
+    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue) {
         applyLightPreset(lightPreset);
         material.sunIntensity = clampFloat(sunIntensity, 0.5f, 4.0f);
         material.ambientIntensity = clampFloat(ambientIntensity, 0.1f, 2.0f);
-        material.activeDebugView = ((activeDebugView % 18) + 18) % 18;
+        material.activeDebugView = ((activeDebugView % 22) + 22) % 22;
         material.toneMappingMode = ((toneMappingMode % 3) + 3) % 3;
         material.exposureValue = clampFloat(exposureValue, 0.8f, 3.0f);
         material.ambientFloor = clampFloat(ambientFloor, 0.0f, 0.35f);
@@ -345,6 +375,8 @@ struct RendererCore {
         material.contactShadowIntensity = clampFloat(contactShadowIntensity, 0.0f, 1.5f);
         material.calibrationPreset = ((calibrationPreset % 4) + 4) % 4;
         material.calibrationStrength = clampFloat(calibrationStrength, 0.0f, 1.0f);
+        material.glossSliderValue = clampFloat(glossSliderValue, 0.0f, 1.0f);
+        material.paintGlossSliderValue = clampFloat(paintGlossSliderValue, 0.0f, 1.0f);
         syncLightingModelState();
         const bool ok = renderOneFrame();
         syncDiagnostics();

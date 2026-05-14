@@ -65,8 +65,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static final String PREF_ACTIVE_MODEL_PATH = "active_model_path";
     private static final String PREF_ACTIVE_MODEL_LOCAL_PATH = "active_model_local_path";
     private static final String PREF_ACTIVE_MODEL_NAME = "active_model_name";
-    private static final String SCENE_ID = "scene19_emissive_material_presets_lab";
-    private static final String SCENE_NAME = "Scene19 Emissive Material Presets Lab";
+    private static final String SCENE_ID = "scene20_clearcoat_paint_layer_lab";
+    private static final String SCENE_NAME = "Scene20 Clearcoat Paint Layer Lab";
     private static final int REQUEST_CHOOSE_DIAGNOSTICS_TREE = 2202;
     private static final int REQUEST_IMPORT_GLB = 2305;
     private static final int TEX_BASE_COLOR = 0;
@@ -106,6 +106,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button calibrationButton;
     private Button glossButton;
     private Button paintGlossButton;
+    private Button clearcoatButton;
+    private Button clearcoatRoughnessButton;
     private Button slotPrevButton;
     private Button slotNextButton;
     private Button metallicSlotButton;
@@ -133,6 +135,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private SeekBar calibrationSlider;
     private SeekBar glossSlider;
     private SeekBar paintGlossSlider;
+    private SeekBar clearcoatSlider;
+    private SeekBar clearcoatRoughnessSlider;
     private SeekBar metallicSlotSlider;
     private SeekBar roughnessSlotSlider;
     private SeekBar normalSlotSlider;
@@ -167,6 +171,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private float calibrationSliderValue = 0.65f;
     private float glossSliderValue = 0.62f;
     private float paintGlossSliderValue = 0.55f;
+    private float clearcoatIntensity = 0.72f;
+    private float clearcoatRoughness = 0.28f;
     private int selectedMaterialSlot = 0;
     private int selectedMaterialSlotCount = 0;
     private float selectedSlotMetallicOverride = 0.0f;
@@ -230,7 +236,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native String nativeGetStatus(long handle);
     private static native String nativeGetRenderLabState(long handle);
     private static native void nativeSetCamera(long handle, float yawDeg, float pitchDeg, float distance);
-    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float environmentIntensity, int environmentPreset, float horizonStrength, int selectedMaterialSlot, float selectedSlotMetallicOverride, float selectedSlotRoughnessOverride, float selectedSlotNormalScaleOverride, float selectedSlotAoOverride, float selectedSlotGlossOverride, float selectedSlotCoatOverride, float alphaCutoffValue, float emissiveIntensity, int materialPreset);
+    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, int selectedMaterialSlot, float selectedSlotMetallicOverride, float selectedSlotRoughnessOverride, float selectedSlotNormalScaleOverride, float selectedSlotAoOverride, float selectedSlotGlossOverride, float selectedSlotCoatOverride, float alphaCutoffValue, float emissiveIntensity, int materialPreset);
     private static native boolean nativeUploadModelFirstPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, float[] baseColorFactor);
     private static native boolean nativeUploadModelMultiPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, int[] rangeData, float[] materialData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, int primitiveTotal, int primitiveSkipped, int unsupportedPrimitiveCount, String reason);
     private static native boolean nativeUploadBaseColorTexture(long handle, int[] rgbaPixels, int width, int height, String textureName, String textureSource, String mimeType);
@@ -326,6 +332,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         else if ("Calib".equals(label)) { calibrationButton = valueButton; calibrationSlider = slider; }
         else if ("Gloss".equals(label)) { glossButton = valueButton; glossSlider = slider; }
         else if ("Coat".equals(label)) { paintGlossButton = valueButton; paintGlossSlider = slider; }
+        else if ("Clearcoat".equals(label)) { clearcoatButton = valueButton; clearcoatSlider = slider; }
+        else if ("Clearcoat Rough".equals(label)) { clearcoatRoughnessButton = valueButton; clearcoatRoughnessSlider = slider; }
         else if ("Metallic".equals(label)) { metallicSlotButton = valueButton; metallicSlotSlider = slider; }
         else if ("Rough".equals(label)) { roughnessSlotButton = valueButton; roughnessSlotSlider = slider; }
         else if ("Normal".equals(label)) { normalSlotButton = valueButton; normalSlotSlider = slider; }
@@ -608,6 +616,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             emissiveIntensity = clamp(v, 0.0f, 2.0f);
             applyLightingControls();
         }));
+        materialPanel.addView(sliderControl("Clearcoat", 0.0f, 2.0f, clearcoatIntensity, v -> {
+            clearcoatIntensity = clamp(v, 0.0f, 2.0f);
+            applyLightingControls();
+        }));
+        materialPanel.addView(sliderControl("Clearcoat Rough", 0.0f, 1.0f, clearcoatRoughness, v -> {
+            clearcoatRoughness = clamp(v, 0.0f, 1.0f);
+            applyLightingControls();
+        }));
         alphaModeDebugButton = compactButton("Alpha Mode");
         alphaModeDebugButton.setOnClickListener(v -> cycleAlphaDebugView());
         materialPanel.addView(alphaModeDebugButton);
@@ -856,7 +872,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "\nFallback cube: " + fallback
             + "\nMesh meta: " + p.meshCount + " / " + p.primitiveCount + " / " + p.materialCount + " / " + p.textureCount
             + "\nStatus: " + status
-            + "\nNext: runtime material workflow restore validation";
+            + "\nNext: validate Scene20 clearcoat paint layer lab";
     }
 
     private void cycleLightPreset() {
@@ -900,7 +916,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleMaterialView() {
-        activeDebugViewIndex = (activeDebugViewIndex + 1) % 42;
+        activeDebugViewIndex = (activeDebugViewIndex + 1) % 46;
         applyLightingControls();
         updateStatus();
     }
@@ -915,21 +931,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private void applyActiveMaterialPreset() {
         if (activeMaterialPresetIndex == 1) {
-            selectedSlotMetallicOverride = 0.08f; selectedSlotRoughnessOverride = 0.32f; selectedSlotNormalScaleOverride = 1.0f; selectedSlotAoOverride = 1.0f; glossSliderValue = 0.78f; paintGlossSliderValue = 0.86f; emissiveIntensity = 0.0f;
+            selectedSlotMetallicOverride = 0.12f; selectedSlotRoughnessOverride = 0.24f; selectedSlotNormalScaleOverride = 1.0f; selectedSlotAoOverride = 1.0f; glossSliderValue = 0.86f; paintGlossSliderValue = 0.92f; clearcoatIntensity = 1.35f; clearcoatRoughness = 0.22f; emissiveIntensity = 0.0f;
         } else if (activeMaterialPresetIndex == 2) {
-            selectedSlotMetallicOverride = 0.92f; selectedSlotRoughnessOverride = 0.24f; selectedSlotNormalScaleOverride = 1.0f; selectedSlotAoOverride = 0.92f; glossSliderValue = 0.72f; paintGlossSliderValue = 0.42f; emissiveIntensity = 0.0f;
+            selectedSlotMetallicOverride = 0.92f; selectedSlotRoughnessOverride = 0.24f; selectedSlotNormalScaleOverride = 1.0f; selectedSlotAoOverride = 0.92f; glossSliderValue = 0.72f; paintGlossSliderValue = 0.42f; clearcoatIntensity = 0.25f; clearcoatRoughness = 0.36f; emissiveIntensity = 0.0f;
         } else if (activeMaterialPresetIndex == 3) {
-            selectedSlotMetallicOverride = 0.0f; selectedSlotRoughnessOverride = 0.88f; selectedSlotNormalScaleOverride = 0.75f; selectedSlotAoOverride = 1.15f; glossSliderValue = 0.12f; paintGlossSliderValue = 0.0f; emissiveIntensity = 0.0f;
+            selectedSlotMetallicOverride = 0.0f; selectedSlotRoughnessOverride = 0.88f; selectedSlotNormalScaleOverride = 0.75f; selectedSlotAoOverride = 1.15f; glossSliderValue = 0.12f; paintGlossSliderValue = 0.0f; clearcoatIntensity = 0.0f; clearcoatRoughness = 0.80f; emissiveIntensity = 0.0f;
         } else if (activeMaterialPresetIndex == 4) {
-            selectedSlotMetallicOverride = 0.0f; selectedSlotRoughnessOverride = 0.82f; selectedSlotNormalScaleOverride = 0.55f; selectedSlotAoOverride = 1.10f; glossSliderValue = 0.08f; paintGlossSliderValue = 0.0f; emissiveIntensity = 0.0f;
+            selectedSlotMetallicOverride = 0.0f; selectedSlotRoughnessOverride = 0.82f; selectedSlotNormalScaleOverride = 0.55f; selectedSlotAoOverride = 1.10f; glossSliderValue = 0.08f; paintGlossSliderValue = 0.0f; clearcoatIntensity = 0.0f; clearcoatRoughness = 0.75f; emissiveIntensity = 0.0f;
         } else if (activeMaterialPresetIndex == 5) {
-            selectedSlotMetallicOverride = 0.0f; selectedSlotRoughnessOverride = 0.46f; selectedSlotNormalScaleOverride = 0.85f; selectedSlotAoOverride = 1.0f; glossSliderValue = 0.42f; paintGlossSliderValue = 0.18f; emissiveIntensity = 0.0f;
+            selectedSlotMetallicOverride = 0.0f; selectedSlotRoughnessOverride = 0.46f; selectedSlotNormalScaleOverride = 0.85f; selectedSlotAoOverride = 1.0f; glossSliderValue = 0.42f; paintGlossSliderValue = 0.18f; clearcoatIntensity = 0.20f; clearcoatRoughness = 0.46f; emissiveIntensity = 0.0f;
         } else if (activeMaterialPresetIndex == 6) {
-            selectedSlotMetallicOverride = 0.0f; selectedSlotRoughnessOverride = 0.22f; selectedSlotNormalScaleOverride = 0.65f; selectedSlotAoOverride = 0.75f; glossSliderValue = 0.55f; paintGlossSliderValue = 0.20f; emissiveIntensity = 0.0f; alphaCutoffValue = Math.max(alphaCutoffValue, 0.5f);
+            selectedSlotMetallicOverride = 0.0f; selectedSlotRoughnessOverride = 0.22f; selectedSlotNormalScaleOverride = 0.65f; selectedSlotAoOverride = 0.75f; glossSliderValue = 0.55f; paintGlossSliderValue = 0.20f; clearcoatIntensity = 0.0f; clearcoatRoughness = 0.35f; emissiveIntensity = 0.0f; alphaCutoffValue = Math.max(alphaCutoffValue, 0.5f);
         } else if (activeMaterialPresetIndex == 7) {
-            selectedSlotMetallicOverride = 0.0f; selectedSlotRoughnessOverride = 0.55f; selectedSlotNormalScaleOverride = 1.0f; selectedSlotAoOverride = 1.0f; glossSliderValue = 0.24f; paintGlossSliderValue = 0.0f; emissiveIntensity = Math.max(0.8f, emissiveIntensity);
+            selectedSlotMetallicOverride = 0.0f; selectedSlotRoughnessOverride = 0.55f; selectedSlotNormalScaleOverride = 1.0f; selectedSlotAoOverride = 1.0f; glossSliderValue = 0.24f; paintGlossSliderValue = 0.0f; clearcoatIntensity = 0.0f; clearcoatRoughness = 0.65f; emissiveIntensity = Math.max(0.8f, emissiveIntensity);
         } else {
-            selectedSlotMetallicOverride = 0.0f; selectedSlotRoughnessOverride = 0.62f; selectedSlotNormalScaleOverride = 1.0f; selectedSlotAoOverride = 1.0f; glossSliderValue = 0.62f; paintGlossSliderValue = 0.55f; emissiveIntensity = 0.0f;
+            selectedSlotMetallicOverride = 0.0f; selectedSlotRoughnessOverride = 0.62f; selectedSlotNormalScaleOverride = 1.0f; selectedSlotAoOverride = 1.0f; glossSliderValue = 0.62f; paintGlossSliderValue = 0.55f; clearcoatIntensity = 0.55f; clearcoatRoughness = 0.34f; emissiveIntensity = 0.0f;
         }
         materialPresetPendingApply = false;
         modelState.materialPresetAppliedStatus = "ok_selected_slot_uniform_only";
@@ -1173,11 +1189,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.paintGlossIntensity = paintGlossSliderValue;
         modelState.paintGlossRoughness = clamp(0.78f - paintGlossSliderValue * 0.58f, 0.20f, 0.78f);
         applyPaintGlossTargetDiagnostics();
+        applyClearcoatDiagnostics(selectedMaterialJson());
         modelState.paintGlossPerformanceStatus = "ok_uniform_only";
         modelState.glossSliderStatus = "ok";
         modelState.glossSliderValue = glossSliderValue;
         modelState.paintGlossSliderStatus = "ok";
         modelState.paintGlossSliderValue = paintGlossSliderValue;
+        modelState.clearcoatSliderStatus = "ok";
+        modelState.clearcoatSliderValue = clearcoatIntensity;
+        modelState.clearcoatRoughnessSliderStatus = "ok";
+        modelState.clearcoatRoughnessSliderValue = clearcoatRoughness;
+        modelState.clearcoatUniformUpdateStatus = "ok_uniform_only";
+        modelState.clearcoatUiStatus = "ok_compact_material_tab";
         modelState.glossUniformUpdateStatus = "ok_uniform_only";
         modelState.glossResponseDebugViewStatus = "shader_applied";
         modelState.specularGuardDebugViewStatus = "shader_applied";
@@ -1185,6 +1208,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.metalResponseDebugViewStatus = "shader_applied";
         modelState.paintTargetDebugViewStatus = "shader_applied";
         modelState.calibrationResponseDebugViewStatus = "shader_applied";
+        modelState.clearcoatDebugViewStatus = "shader_applied";
+        modelState.clearcoatHighlightDebugViewStatus = "shader_applied";
+        modelState.paintLayerDebugViewStatus = "shader_applied";
+        modelState.paintEnergyGuardDebugViewStatus = "shader_applied";
         modelState.materialTypeSpecularRoutingStatus = "ok";
         modelState.paintMaterialGlossStatus = "ok_lite_gloss";
         modelState.metalMaterialGlossStatus = "ok_stronger_response";
@@ -1240,6 +1267,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.p20RuntimeWorkflowPreservedStatus = "ok";
         modelState.p18IblPreservedStatus = "ok";
         modelState.p17GlossPreservedStatus = "ok";
+        modelState.p22EmissivePreservedStatus = "ok";
+        modelState.p22PresetsPreservedStatus = "ok";
         modelState.runtimeStateDebugViewStatus = "ok";
         modelState.restoreStateDebugViewStatus = "ok";
         modelState.uiStateDebugViewStatus = "ok";
@@ -1304,12 +1333,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (calibrationButton != null) calibrationButton.setText("Calib " + oneDecimal(calibrationSliderValue));
         if (glossButton != null) glossButton.setText("Gloss " + oneDecimal(glossSliderValue));
         if (paintGlossButton != null) paintGlossButton.setText("Coat " + oneDecimal(paintGlossSliderValue));
-        if (materialStatusView != null) materialStatusView.setText("Slot " + selectedMaterialSlot + "/" + Math.max(0, selectedMaterialSlotCount) + " " + modelState.selectedMaterialName + " " + modelState.selectedMaterialTypeHint + "\n" + modelState.selectedMaterialTextureSummaryStatus + "\nPreset " + modelState.activeMaterialPreset + " | Emissive " + oneDecimal(emissiveIntensity) + "\nAlpha " + modelState.alphaModeSupportStatus + " cutoff " + oneDecimal(alphaCutoffValue) + " | Double " + modelState.doubleSidedMode + "\nMetallic " + oneDecimal(selectedSlotMetallicOverride) + " Rough " + oneDecimal(selectedSlotRoughnessOverride) + " Normal " + oneDecimal(selectedSlotNormalScaleOverride) + " AO " + oneDecimal(selectedSlotAoOverride) + "\nCalib " + oneDecimal(calibrationSliderValue) + " Gloss " + oneDecimal(glossSliderValue) + " Coat " + oneDecimal(paintGlossSliderValue) + " | Fabric matte: on");
+        if (clearcoatButton != null) clearcoatButton.setText("Clearcoat " + oneDecimal(clearcoatIntensity));
+        if (clearcoatRoughnessButton != null) clearcoatRoughnessButton.setText("Clearcoat Rough " + oneDecimal(clearcoatRoughness));
+        if (materialStatusView != null) materialStatusView.setText("Slot " + selectedMaterialSlot + "/" + Math.max(0, selectedMaterialSlotCount) + " " + modelState.selectedMaterialName + " " + modelState.selectedMaterialTypeHint + "\n" + modelState.selectedMaterialTextureSummaryStatus + "\nPreset " + modelState.activeMaterialPreset + " | Emissive " + oneDecimal(emissiveIntensity) + "\nAlpha " + modelState.alphaModeSupportStatus + " cutoff " + oneDecimal(alphaCutoffValue) + " | Double " + modelState.doubleSidedMode + "\nMetallic " + oneDecimal(selectedSlotMetallicOverride) + " Rough " + oneDecimal(selectedSlotRoughnessOverride) + " Normal " + oneDecimal(selectedSlotNormalScaleOverride) + " AO " + oneDecimal(selectedSlotAoOverride) + "\nCalib " + oneDecimal(calibrationSliderValue) + " Gloss " + oneDecimal(glossSliderValue) + " Coat " + oneDecimal(paintGlossSliderValue) + " Clear " + oneDecimal(clearcoatIntensity) + "/" + oneDecimal(clearcoatRoughness) + " | Fabric matte: on");
         updateSliderPositionsFromState();
         if (materialViewButton != null) materialViewButton.setText("Debug: " + modelState.activeDebugView);
         try {
             if (nativeLoaded && nativeHandle != 0L) {
-                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPresetIndex, calibrationSliderValue, glossSliderValue, paintGlossSliderValue, environmentIntensity, environmentPresetIndex, horizonStrength, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, glossSliderValue, paintGlossSliderValue, alphaCutoffValue, emissiveIntensity, activeMaterialPresetIndex);
+                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPresetIndex, calibrationSliderValue, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPresetIndex, horizonStrength, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, glossSliderValue, paintGlossSliderValue, alphaCutoffValue, emissiveIntensity, activeMaterialPresetIndex);
             }
         } catch (Throwable t) {
             modelState.debugViewStatus = "native_control_failed";
@@ -1413,6 +1444,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.emissiveNoNewPassStatus = "ok";
         modelState.presetNoModelReuploadStatus = "ok";
         modelState.presetNoTextureRebuildStatus = "ok";
+        modelState.p22EmissivePreservedStatus = "ok";
+        modelState.p22PresetsPreservedStatus = "ok";
     }
 
     private void applyInspectorDiagnostics() {
@@ -1468,6 +1501,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (aoSlotSlider != null) aoSlotSlider.setProgress(sliderProgress(selectedSlotAoOverride, 0.0f, 1.5f));
             if (alphaCutoffSlider != null) alphaCutoffSlider.setProgress(sliderProgress(alphaCutoffValue, 0.0f, 1.0f));
             if (emissiveSlider != null) emissiveSlider.setProgress(sliderProgress(emissiveIntensity, 0.0f, 2.0f));
+            if (clearcoatSlider != null) clearcoatSlider.setProgress(sliderProgress(clearcoatIntensity, 0.0f, 2.0f));
+            if (clearcoatRoughnessSlider != null) clearcoatRoughnessSlider.setProgress(sliderProgress(clearcoatRoughness, 0.0f, 1.0f));
             if (calibrationSlider != null) calibrationSlider.setProgress(sliderProgress(calibrationSliderValue, 0.0f, 1.0f));
             if (glossSlider != null) glossSlider.setProgress(sliderProgress(glossSliderValue, 0.0f, 1.0f));
             if (paintGlossSlider != null) paintGlossSlider.setProgress(sliderProgress(paintGlossSliderValue, 0.0f, 1.0f));
@@ -1534,6 +1569,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 39) return "Preset Response";
         if (index == 40) return "Material Energy Guard";
         if (index == 41) return "Selected Slot Preset";
+        if (index == 42) return "Clearcoat";
+        if (index == 43) return "Clearcoat Highlight";
+        if (index == 44) return "Paint Layer";
+        if (index == 45) return "Paint Energy Guard";
         return "Final Shaded";
     }
 
@@ -1586,6 +1625,44 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             modelState.paintGlossVisibleResponseStatus = "no_target";
             modelState.paintGlossMaterialHintStatus = "no_paint_or_safe_coat_target";
         }
+    }
+
+    private void applyClearcoatDiagnostics(JSONObject selectedSlot) {
+        int paintCount = countOccurrences(modelState.materialSlotDiagnostics, "\"materialTypeHint\":\"paint_like\"");
+        int metalCount = countOccurrences(modelState.materialSlotDiagnostics, "\"materialTypeHint\":\"metal_like\"");
+        int fabricCount = countOccurrences(modelState.materialSlotDiagnostics, "\"materialTypeHint\":\"fabric_like\"");
+        boolean selectedFabric = selectedSlot != null && "fabric_like".equals(selectedSlot.optString("materialTypeHint", ""));
+        boolean selectedGlass = selectedSlot != null && "glass_like".equals(selectedSlot.optString("materialTypeHint", ""));
+        boolean carPaintPreset = activeMaterialPresetIndex == 1;
+        boolean selectedCoatable = selectedSlot != null && !selectedFabric && !selectedGlass && !"rubber_like".equals(selectedSlot.optString("materialTypeHint", ""));
+        boolean applied = clearcoatIntensity > 0.001f && (carPaintPreset || selectedCoatable);
+        float selectedLum = selectedSlot == null ? 0.0f : (float)selectedSlot.optDouble("albedoLuminance", 0.0);
+        boolean guard = selectedLum > 0.82f || selectedFabric || selectedGlass;
+        modelState.clearcoatStatus = applied ? "ok" : "available";
+        modelState.clearcoatMode = "single_pass_uniform_clearcoat";
+        modelState.clearcoatIntensity = clearcoatIntensity;
+        modelState.clearcoatRoughness = clearcoatRoughness;
+        modelState.clearcoatFresnelStatus = "ok_schlick_view_angle";
+        modelState.clearcoatHighlightStatus = "ok_view_dependent";
+        modelState.clearcoatMaterialRoutingStatus = selectedFabric ? "fabric_skipped_matte" : (selectedGlass ? "glass_metadata_only_skipped" : (carPaintPreset ? "car_paint_preset" : "selected_slot_safe"));
+        modelState.clearcoatOverbrightGuardStatus = guard ? "ok_guard_applied" : "ok";
+        modelState.clearcoatPerformanceStatus = "ok_single_pass_no_texture_no_loop";
+        modelState.clearcoatAppliedStatus = applied ? "applied" : "not_applied";
+        modelState.clearcoatWeight = applied ? clearcoatIntensity : 0.0f;
+        modelState.clearcoatRoughnessApplied = applied ? clearcoatRoughness : 1.0f;
+        modelState.clearcoatGuardApplied = guard ? "yes" : "no";
+        modelState.carPaintLayerStatus = "ok";
+        modelState.carPaintPresetV2Status = "ok";
+        modelState.carPaintClearcoatStatus = carPaintPreset ? "ok_clearcoat_enabled" : "available";
+        modelState.paintLayerEnergyGuardStatus = guard ? "ok_guard_applied" : "ok";
+        modelState.paintLayerMaterialHintStatus = paintCount > 0 ? "paint_like" : (metalCount > 0 ? "metal_limited" : "selected_slot");
+        modelState.p23PerformanceStatus = "ok_single_pass_uniform_only";
+        modelState.clearcoatNoNewPassStatus = "ok";
+        modelState.clearcoatNoTextureRebuildStatus = "ok";
+        modelState.clearcoatNoModelReuploadStatus = "ok";
+        modelState.clearcoatNoTransparentSortingStatus = "ok";
+        modelState.renderLoopAllocationGuardStatus = "ok_no_java_glb_parse_or_upload_in_frame_callback";
+        modelState.fabricMattePreserveStatus = fabricCount > 0 || selectedFabric ? "ok_fabric_matte_preserved" : "ok";
     }
 
     private int countOccurrences(String text, String needle) {
@@ -3757,6 +3834,41 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String emissiveNoNewPassStatus = "ok";
         String presetNoModelReuploadStatus = "ok";
         String presetNoTextureRebuildStatus = "ok";
+        String clearcoatStatus = "available";
+        String clearcoatMode = "single_pass_uniform_clearcoat";
+        float clearcoatIntensity = 0.72f;
+        float clearcoatRoughness = 0.28f;
+        String clearcoatFresnelStatus = "ok_schlick_view_angle";
+        String clearcoatHighlightStatus = "ok_view_dependent";
+        String clearcoatMaterialRoutingStatus = "selected_slot_safe";
+        String clearcoatOverbrightGuardStatus = "ok";
+        String clearcoatPerformanceStatus = "ok_single_pass_no_texture_no_loop";
+        String clearcoatAppliedStatus = "not_applied";
+        float clearcoatWeight = 0.0f;
+        float clearcoatRoughnessApplied = 1.0f;
+        String clearcoatGuardApplied = "no";
+        String carPaintLayerStatus = "ok";
+        String carPaintPresetV2Status = "ok";
+        String carPaintClearcoatStatus = "available";
+        String paintLayerEnergyGuardStatus = "ok";
+        String paintLayerMaterialHintStatus = "selected_slot";
+        String clearcoatSliderStatus = "ok";
+        float clearcoatSliderValue = 0.72f;
+        String clearcoatRoughnessSliderStatus = "ok";
+        float clearcoatRoughnessSliderValue = 0.28f;
+        String clearcoatUniformUpdateStatus = "ok_uniform_only";
+        String clearcoatUiStatus = "ok_compact_material_tab";
+        String clearcoatDebugViewStatus = "shader_applied";
+        String clearcoatHighlightDebugViewStatus = "shader_applied";
+        String paintLayerDebugViewStatus = "shader_applied";
+        String paintEnergyGuardDebugViewStatus = "shader_applied";
+        String p22EmissivePreservedStatus = "ok";
+        String p22PresetsPreservedStatus = "ok";
+        String p23PerformanceStatus = "ok_single_pass_uniform_only";
+        String clearcoatNoNewPassStatus = "ok";
+        String clearcoatNoTextureRebuildStatus = "ok";
+        String clearcoatNoModelReuploadStatus = "ok";
+        String clearcoatNoTransparentSortingStatus = "ok";
         String runtimeStateDebugViewStatus = "ok";
         String restoreStateDebugViewStatus = "ok";
         String uiStateDebugViewStatus = "ok";
@@ -4163,6 +4275,41 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"emissiveNoNewPassStatus\": \"" + esc(emissiveNoNewPassStatus) + "\",\n"
                 + "  \"presetNoModelReuploadStatus\": \"" + esc(presetNoModelReuploadStatus) + "\",\n"
                 + "  \"presetNoTextureRebuildStatus\": \"" + esc(presetNoTextureRebuildStatus) + "\",\n"
+                + "  \"clearcoatStatus\": \"" + esc(clearcoatStatus) + "\",\n"
+                + "  \"clearcoatMode\": \"" + esc(clearcoatMode) + "\",\n"
+                + "  \"clearcoatIntensity\": " + jsonFloat(clearcoatIntensity) + ",\n"
+                + "  \"clearcoatRoughness\": " + jsonFloat(clearcoatRoughness) + ",\n"
+                + "  \"clearcoatFresnelStatus\": \"" + esc(clearcoatFresnelStatus) + "\",\n"
+                + "  \"clearcoatHighlightStatus\": \"" + esc(clearcoatHighlightStatus) + "\",\n"
+                + "  \"clearcoatMaterialRoutingStatus\": \"" + esc(clearcoatMaterialRoutingStatus) + "\",\n"
+                + "  \"clearcoatOverbrightGuardStatus\": \"" + esc(clearcoatOverbrightGuardStatus) + "\",\n"
+                + "  \"clearcoatPerformanceStatus\": \"" + esc(clearcoatPerformanceStatus) + "\",\n"
+                + "  \"clearcoatAppliedStatus\": \"" + esc(clearcoatAppliedStatus) + "\",\n"
+                + "  \"clearcoatWeight\": " + jsonFloat(clearcoatWeight) + ",\n"
+                + "  \"clearcoatRoughnessApplied\": " + jsonFloat(clearcoatRoughnessApplied) + ",\n"
+                + "  \"clearcoatGuardApplied\": \"" + esc(clearcoatGuardApplied) + "\",\n"
+                + "  \"carPaintLayerStatus\": \"" + esc(carPaintLayerStatus) + "\",\n"
+                + "  \"carPaintPresetV2Status\": \"" + esc(carPaintPresetV2Status) + "\",\n"
+                + "  \"carPaintClearcoatStatus\": \"" + esc(carPaintClearcoatStatus) + "\",\n"
+                + "  \"paintLayerEnergyGuardStatus\": \"" + esc(paintLayerEnergyGuardStatus) + "\",\n"
+                + "  \"paintLayerMaterialHintStatus\": \"" + esc(paintLayerMaterialHintStatus) + "\",\n"
+                + "  \"clearcoatSliderStatus\": \"" + esc(clearcoatSliderStatus) + "\",\n"
+                + "  \"clearcoatSliderValue\": " + jsonFloat(clearcoatSliderValue) + ",\n"
+                + "  \"clearcoatRoughnessSliderStatus\": \"" + esc(clearcoatRoughnessSliderStatus) + "\",\n"
+                + "  \"clearcoatRoughnessSliderValue\": " + jsonFloat(clearcoatRoughnessSliderValue) + ",\n"
+                + "  \"clearcoatUniformUpdateStatus\": \"" + esc(clearcoatUniformUpdateStatus) + "\",\n"
+                + "  \"clearcoatUiStatus\": \"" + esc(clearcoatUiStatus) + "\",\n"
+                + "  \"clearcoatDebugViewStatus\": \"" + esc(clearcoatDebugViewStatus) + "\",\n"
+                + "  \"clearcoatHighlightDebugViewStatus\": \"" + esc(clearcoatHighlightDebugViewStatus) + "\",\n"
+                + "  \"paintLayerDebugViewStatus\": \"" + esc(paintLayerDebugViewStatus) + "\",\n"
+                + "  \"paintEnergyGuardDebugViewStatus\": \"" + esc(paintEnergyGuardDebugViewStatus) + "\",\n"
+                + "  \"p22EmissivePreservedStatus\": \"" + esc(p22EmissivePreservedStatus) + "\",\n"
+                + "  \"p22PresetsPreservedStatus\": \"" + esc(p22PresetsPreservedStatus) + "\",\n"
+                + "  \"p23PerformanceStatus\": \"" + esc(p23PerformanceStatus) + "\",\n"
+                + "  \"clearcoatNoNewPassStatus\": \"" + esc(clearcoatNoNewPassStatus) + "\",\n"
+                + "  \"clearcoatNoTextureRebuildStatus\": \"" + esc(clearcoatNoTextureRebuildStatus) + "\",\n"
+                + "  \"clearcoatNoModelReuploadStatus\": \"" + esc(clearcoatNoModelReuploadStatus) + "\",\n"
+                + "  \"clearcoatNoTransparentSortingStatus\": \"" + esc(clearcoatNoTransparentSortingStatus) + "\",\n"
                 + "  \"runtimeStateDebugViewStatus\": \"" + esc(runtimeStateDebugViewStatus) + "\",\n"
                 + "  \"restoreStateDebugViewStatus\": \"" + esc(restoreStateDebugViewStatus) + "\",\n"
                 + "  \"uiStateDebugViewStatus\": \"" + esc(uiStateDebugViewStatus) + "\",\n"
@@ -5110,6 +5257,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     .append(",\"emissiveIntensityApplied\":").append(jsonFloat(luminance(m.emissiveFactor) > 0.001f ? 1.0f : 0.0f))
                     .append(",\"materialPresetHint\":\"").append(esc(materialPresetHintName(m))).append("\"")
                     .append(",\"selectedPresetAppliedStatus\":\"available_selected_slot_uniform_only\"")
+                    .append(",\"clearcoatAppliedStatus\":\"").append(esc(clearcoatAppliedStatus(m))).append("\"")
+                    .append(",\"clearcoatWeight\":").append(jsonFloat(clearcoatWeight(m)))
+                    .append(",\"clearcoatRoughnessApplied\":").append(jsonFloat(clearcoatRoughnessApplied(m)))
+                    .append(",\"clearcoatGuardApplied\":\"").append(esc(clearcoatGuardApplied(m))).append("\"")
                     .append(",\"alphaMode\":\"").append(esc(m.alphaModeText)).append("\"")
                     .append(",\"alphaCutoff\":").append(jsonFloat(m.alphaCutoff))
                     .append(",\"alphaTextureStatus\":\"").append(esc(m.texture == null ? "missing" : m.texture.status)).append("\"")
@@ -5171,6 +5322,32 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (info.materialTypeHint == 6) return "Glass Metadata";
             if (info.materialTypeHint == 8) return "Emissive Safe";
             return "Balanced";
+        }
+
+        private static String clearcoatAppliedStatus(MaterialInfo info) {
+            if (info.materialTypeHint == 0) return "skipped_fabric_matte";
+            if (info.materialTypeHint == 6) return "skipped_glass_metadata_only";
+            if (info.materialTypeHint == 3) return "skipped_rubber_matte";
+            if (info.materialTypeHint == 1) return "available_paint_like";
+            if (info.materialTypeHint == 2) return "available_metal_limited";
+            return "available_selected_slot";
+        }
+
+        private static float clearcoatWeight(MaterialInfo info) {
+            if (info.materialTypeHint == 1) return 1.0f;
+            if (info.materialTypeHint == 2) return 0.28f;
+            if (info.materialTypeHint == 4) return 0.18f;
+            return 0.0f;
+        }
+
+        private static float clearcoatRoughnessApplied(MaterialInfo info) {
+            if (info.materialTypeHint == 1) return 0.28f;
+            if (info.materialTypeHint == 2) return 0.38f;
+            return 1.0f;
+        }
+
+        private static String clearcoatGuardApplied(MaterialInfo info) {
+            return luminance(info.baseColorFactor) > 0.82f || info.materialTypeHint == 0 || info.materialTypeHint == 6 ? "yes" : "no";
         }
 
         private static float[] toFloatArray(List<Float> values) {

@@ -1,5 +1,32 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P23 clearcoat paint layer lab
+
+P23 switches the active lab to `scene20_clearcoat_paint_layer_lab`.
+
+The texture/material binding path remains the existing per-material-slot Vulkan path. P23 adds clearcoat/paint layer values through uniforms/push constants only: `clearcoatIntensity`, `clearcoatRoughness`, and a shader-side Fresnel/view-angle highlight response. No new texture, cubemap loading, render pass, model reupload, tangent rebuild, transparent sorting, real glass/refraction/transmission, shadows, shadow maps, or CSM is added.
+
+Routing:
+
+- Car Paint preset and `paint_like` slots receive the full coat response.
+- `metal_like` slots receive only a limited controlled coat response.
+- `fabric_like` and rubber remain matte.
+- `glass_like` stays metadata only.
+- White/bright materials are guarded by the existing energy/luminance guard path plus coat guard diagnostics.
+
+Material tab:
+
+- Clearcoat slider `0.0-2.0`.
+- Clearcoat Rough slider `0.0-1.0`.
+- Existing preset, emissive, alpha, slot, calibration, gloss, and coat controls are preserved.
+
+Debug views added:
+
+- Clearcoat
+- Clearcoat Highlight
+- Paint Layer
+- Paint Energy Guard
+
 ## P22 emissive material presets lab
 
 P22 switches the active lab to `scene19_emissive_material_presets_lab`.

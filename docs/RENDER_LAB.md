@@ -2,6 +2,81 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene20 Clearcoat Paint Layer Lab
+
+Patch P23 switches the active lab to:
+
+```text
+scene20_clearcoat_paint_layer_lab
+Scene20 Clearcoat Paint Layer Lab
+```
+
+P23 preserves P22 emissive/presets, P21 alpha/cutout, P20 runtime restore/reload, P19 selected-slot controls, P18 directional sky/ground IBL, P17 gloss/calib/coat controls, Debug ZIP, and live FPS. It adds a single-pass, uniform-only clearcoat/paint layer foundation for car paint style gloss and view-angle highlights.
+
+Material tab additions:
+
+- Clearcoat slider, `0.0-2.0`, uniform-only.
+- Clearcoat Rough slider, `0.0-1.0`, uniform-only.
+- Existing Preset cycle/apply, Emissive, Alpha Cutoff, Metallic/Rough/Normal/AO, Calib/Gloss/Coat controls remain.
+
+Clearcoat routing:
+
+- `clearcoatIntensity` and `clearcoatRoughness` are push-constant uniforms.
+- `paint_like` and Car Paint preset receive the strongest coat response.
+- `metal_like` can receive a limited controlled coat response.
+- `fabric_like` and rubber stay matte unless a later explicit manual override is added.
+- `glass_like` remains metadata only; no real glass, refraction, transmission, transparent sorting, or extra pass.
+- No cubemap texture loading, no new render pass, no texture rebuild, no model reupload, no tangent rebuild while sliders move.
+
+Debug views added:
+
+```text
+Clearcoat
+Clearcoat Highlight
+Paint Layer
+Paint Energy Guard
+```
+
+Diagnostics added at top level and under `renderLab`:
+
+```text
+clearcoatStatus
+clearcoatMode
+clearcoatIntensity
+clearcoatRoughness
+clearcoatFresnelStatus
+clearcoatHighlightStatus
+clearcoatMaterialRoutingStatus
+clearcoatOverbrightGuardStatus
+clearcoatPerformanceStatus
+clearcoatAppliedStatus
+clearcoatWeight
+clearcoatRoughnessApplied
+clearcoatGuardApplied
+carPaintLayerStatus
+carPaintPresetV2Status
+carPaintClearcoatStatus
+paintLayerEnergyGuardStatus
+paintLayerMaterialHintStatus
+clearcoatSliderStatus
+clearcoatSliderValue
+clearcoatRoughnessSliderStatus
+clearcoatRoughnessSliderValue
+clearcoatUniformUpdateStatus
+clearcoatUiStatus
+clearcoatDebugViewStatus
+clearcoatHighlightDebugViewStatus
+paintLayerDebugViewStatus
+paintEnergyGuardDebugViewStatus
+p22EmissivePreservedStatus
+p22PresetsPreservedStatus
+p23PerformanceStatus
+clearcoatNoNewPassStatus
+clearcoatNoTextureRebuildStatus
+clearcoatNoModelReuploadStatus
+clearcoatNoTransparentSortingStatus
+```
+
 ## Scene19 Emissive Material Presets Lab
 
 Patch P22 switches the active lab to:

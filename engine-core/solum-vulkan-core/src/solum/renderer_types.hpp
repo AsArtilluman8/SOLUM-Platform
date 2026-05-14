@@ -71,6 +71,8 @@ struct MaterialConstants {
     float alphaCutoff = 0.5f;
     float emissiveIntensity = 0.0f;
     int materialPresetHint = 0;
+    float clearcoatIntensity = 0.72f;
+    float clearcoatRoughness = 0.28f;
 };
 
 inline const char* lightPresetName(int preset) {
@@ -131,6 +133,10 @@ inline const char* materialDebugViewName(int view) {
     if (view == 39) return "Preset Response";
     if (view == 40) return "Material Energy Guard";
     if (view == 41) return "Selected Slot Preset";
+    if (view == 42) return "Clearcoat";
+    if (view == 43) return "Clearcoat Highlight";
+    if (view == 44) return "Paint Layer";
+    if (view == 45) return "Paint Energy Guard";
     return "Final Shaded";
 }
 
@@ -537,6 +543,41 @@ struct ModelRenderState {
     std::string emissiveNoNewPassStatus = "ok";
     std::string presetNoModelReuploadStatus = "ok";
     std::string presetNoTextureRebuildStatus = "ok";
+    std::string clearcoatStatus = "available";
+    std::string clearcoatMode = "single_pass_uniform_clearcoat";
+    float clearcoatIntensity = 0.72f;
+    float clearcoatRoughness = 0.28f;
+    std::string clearcoatFresnelStatus = "ok_schlick_view_angle";
+    std::string clearcoatHighlightStatus = "ok_view_dependent";
+    std::string clearcoatMaterialRoutingStatus = "selected_slot_safe";
+    std::string clearcoatOverbrightGuardStatus = "ok";
+    std::string clearcoatPerformanceStatus = "ok_single_pass_no_texture_no_loop";
+    std::string clearcoatAppliedStatus = "not_applied";
+    float clearcoatWeight = 0.0f;
+    float clearcoatRoughnessApplied = 1.0f;
+    std::string clearcoatGuardApplied = "no";
+    std::string carPaintLayerStatus = "ok";
+    std::string carPaintPresetV2Status = "ok";
+    std::string carPaintClearcoatStatus = "available";
+    std::string paintLayerEnergyGuardStatus = "ok";
+    std::string paintLayerMaterialHintStatus = "selected_slot";
+    std::string clearcoatSliderStatus = "ok";
+    float clearcoatSliderValue = 0.72f;
+    std::string clearcoatRoughnessSliderStatus = "ok";
+    float clearcoatRoughnessSliderValue = 0.28f;
+    std::string clearcoatUniformUpdateStatus = "ok_uniform_only";
+    std::string clearcoatUiStatus = "ok_compact_material_tab";
+    std::string clearcoatDebugViewStatus = "shader_applied";
+    std::string clearcoatHighlightDebugViewStatus = "shader_applied";
+    std::string paintLayerDebugViewStatus = "shader_applied";
+    std::string paintEnergyGuardDebugViewStatus = "shader_applied";
+    std::string p22EmissivePreservedStatus = "ok";
+    std::string p22PresetsPreservedStatus = "ok";
+    std::string p23PerformanceStatus = "ok_single_pass_uniform_only";
+    std::string clearcoatNoNewPassStatus = "ok";
+    std::string clearcoatNoTextureRebuildStatus = "ok";
+    std::string clearcoatNoModelReuploadStatus = "ok";
+    std::string clearcoatNoTransparentSortingStatus = "ok";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;
     float fpsLastStable = 0.0f;

@@ -2,6 +2,26 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P23 — Clearcoat / Paint Layer v1
+
+Scope:
+
+- Scene20 Clearcoat Paint Layer Lab.
+- Active scene: `scene20_clearcoat_paint_layer_lab`.
+- Single-pass clearcoat/paint layer foundation with `clearcoatIntensity`, `clearcoatRoughness`, Fresnel, and view-dependent highlight.
+- Car Paint preset v2 routes stronger glossy paint values and clearcoat response.
+- Material tab adds Clearcoat and Clearcoat Rough sliders.
+- Debug views: Clearcoat, Clearcoat Highlight, Paint Layer, Paint Energy Guard.
+- P22 emissive/presets, P21 alpha/cutout, P20 runtime workflow, P19 slot controls, P18 IBL, P17 gloss/calib/coat, live FPS, and Debug ZIP preserved.
+
+Out of scope:
+
+- Real glass, refraction, transmission.
+- Shadows, shadow maps, CSM.
+- Skeletal animation.
+- OBJ/FBX import.
+- Extra render pass, cubemap loading, transparent sorting.
+
 ## Patch P22 — Emissive + Material Presets Lab
 
 Scope:

@@ -24,11 +24,12 @@ enum class RenderLabScene {
     Scene17RuntimeMaterialWorkflowLab,
     Scene18AlphaCutoutMaterialLab,
     Scene19EmissiveMaterialPresetsLab,
+    Scene20ClearcoatPaintLayerLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene19EmissiveMaterialPresetsLab;
+    RenderLabScene currentScene = RenderLabScene::Scene20ClearcoatPaintLayerLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -73,6 +74,7 @@ struct RenderLabState {
             case RenderLabScene::Scene17RuntimeMaterialWorkflowLab: return "scene17_runtime_material_workflow_lab";
             case RenderLabScene::Scene18AlphaCutoutMaterialLab: return "scene18_alpha_cutout_material_lab";
             case RenderLabScene::Scene19EmissiveMaterialPresetsLab: return "scene19_emissive_material_presets_lab";
+            case RenderLabScene::Scene20ClearcoatPaintLayerLab: return "scene20_clearcoat_paint_layer_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -100,6 +102,7 @@ struct RenderLabState {
             case RenderLabScene::Scene17RuntimeMaterialWorkflowLab: return "Scene17 Runtime Material Workflow Lab";
             case RenderLabScene::Scene18AlphaCutoutMaterialLab: return "Scene18 Alpha Cutout Material Lab";
             case RenderLabScene::Scene19EmissiveMaterialPresetsLab: return "Scene19 Emissive Material Presets Lab";
+            case RenderLabScene::Scene20ClearcoatPaintLayerLab: return "Scene20 Clearcoat Paint Layer Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }
@@ -454,6 +457,37 @@ struct RenderLabState {
         f << indent << "  \"emissiveNoNewPassStatus\": \"" << escapeJson(model.emissiveNoNewPassStatus) << "\",\n";
         f << indent << "  \"presetNoModelReuploadStatus\": \"" << escapeJson(model.presetNoModelReuploadStatus) << "\",\n";
         f << indent << "  \"presetNoTextureRebuildStatus\": \"" << escapeJson(model.presetNoTextureRebuildStatus) << "\",\n";
+        f << indent << "  \"clearcoatStatus\": \"" << escapeJson(model.clearcoatStatus) << "\",\n";
+        f << indent << "  \"clearcoatMode\": \"" << escapeJson(model.clearcoatMode) << "\",\n";
+        f << indent << "  \"clearcoatIntensity\": " << model.clearcoatIntensity << ",\n";
+        f << indent << "  \"clearcoatRoughness\": " << model.clearcoatRoughness << ",\n";
+        f << indent << "  \"clearcoatFresnelStatus\": \"" << escapeJson(model.clearcoatFresnelStatus) << "\",\n";
+        f << indent << "  \"clearcoatHighlightStatus\": \"" << escapeJson(model.clearcoatHighlightStatus) << "\",\n";
+        f << indent << "  \"clearcoatMaterialRoutingStatus\": \"" << escapeJson(model.clearcoatMaterialRoutingStatus) << "\",\n";
+        f << indent << "  \"clearcoatOverbrightGuardStatus\": \"" << escapeJson(model.clearcoatOverbrightGuardStatus) << "\",\n";
+        f << indent << "  \"clearcoatPerformanceStatus\": \"" << escapeJson(model.clearcoatPerformanceStatus) << "\",\n";
+        f << indent << "  \"carPaintLayerStatus\": \"" << escapeJson(model.carPaintLayerStatus) << "\",\n";
+        f << indent << "  \"carPaintPresetV2Status\": \"" << escapeJson(model.carPaintPresetV2Status) << "\",\n";
+        f << indent << "  \"carPaintClearcoatStatus\": \"" << escapeJson(model.carPaintClearcoatStatus) << "\",\n";
+        f << indent << "  \"paintLayerEnergyGuardStatus\": \"" << escapeJson(model.paintLayerEnergyGuardStatus) << "\",\n";
+        f << indent << "  \"paintLayerMaterialHintStatus\": \"" << escapeJson(model.paintLayerMaterialHintStatus) << "\",\n";
+        f << indent << "  \"clearcoatSliderStatus\": \"" << escapeJson(model.clearcoatSliderStatus) << "\",\n";
+        f << indent << "  \"clearcoatSliderValue\": " << model.clearcoatSliderValue << ",\n";
+        f << indent << "  \"clearcoatRoughnessSliderStatus\": \"" << escapeJson(model.clearcoatRoughnessSliderStatus) << "\",\n";
+        f << indent << "  \"clearcoatRoughnessSliderValue\": " << model.clearcoatRoughnessSliderValue << ",\n";
+        f << indent << "  \"clearcoatUniformUpdateStatus\": \"" << escapeJson(model.clearcoatUniformUpdateStatus) << "\",\n";
+        f << indent << "  \"clearcoatUiStatus\": \"" << escapeJson(model.clearcoatUiStatus) << "\",\n";
+        f << indent << "  \"clearcoatDebugViewStatus\": \"" << escapeJson(model.clearcoatDebugViewStatus) << "\",\n";
+        f << indent << "  \"clearcoatHighlightDebugViewStatus\": \"" << escapeJson(model.clearcoatHighlightDebugViewStatus) << "\",\n";
+        f << indent << "  \"paintLayerDebugViewStatus\": \"" << escapeJson(model.paintLayerDebugViewStatus) << "\",\n";
+        f << indent << "  \"paintEnergyGuardDebugViewStatus\": \"" << escapeJson(model.paintEnergyGuardDebugViewStatus) << "\",\n";
+        f << indent << "  \"p22EmissivePreservedStatus\": \"" << escapeJson(model.p22EmissivePreservedStatus) << "\",\n";
+        f << indent << "  \"p22PresetsPreservedStatus\": \"" << escapeJson(model.p22PresetsPreservedStatus) << "\",\n";
+        f << indent << "  \"p23PerformanceStatus\": \"" << escapeJson(model.p23PerformanceStatus) << "\",\n";
+        f << indent << "  \"clearcoatNoNewPassStatus\": \"" << escapeJson(model.clearcoatNoNewPassStatus) << "\",\n";
+        f << indent << "  \"clearcoatNoTextureRebuildStatus\": \"" << escapeJson(model.clearcoatNoTextureRebuildStatus) << "\",\n";
+        f << indent << "  \"clearcoatNoModelReuploadStatus\": \"" << escapeJson(model.clearcoatNoModelReuploadStatus) << "\",\n";
+        f << indent << "  \"clearcoatNoTransparentSortingStatus\": \"" << escapeJson(model.clearcoatNoTransparentSortingStatus) << "\",\n";
         f << indent << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << indent << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";
         f << indent << "  \"fpsSource\": \"" << escapeJson(model.fpsSource) << "\",\n";
@@ -497,6 +531,8 @@ struct RenderLabState {
         f << indent << "    \"emissiveFactor\": [" << material.emissiveFactor[0] << ", " << material.emissiveFactor[1] << ", " << material.emissiveFactor[2] << "],\n";
         f << indent << "    \"emissiveIntensity\": " << material.emissiveIntensity << ",\n";
         f << indent << "    \"materialPresetHint\": " << material.materialPresetHint << ",\n";
+        f << indent << "    \"clearcoatIntensity\": " << material.clearcoatIntensity << ",\n";
+        f << indent << "    \"clearcoatRoughness\": " << material.clearcoatRoughness << ",\n";
         f << indent << "    \"alphaMode\": \"OPAQUE\",\n";
         f << indent << "    \"alphaCutoff\": " << material.alphaCutoff << "\n";
         f << indent << "  },\n";

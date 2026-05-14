@@ -56,6 +56,8 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 248) float alphaCutoff;
     layout(offset = 252) float emissiveIntensity;
     layout(offset = 256) int materialPresetHint;
+    layout(offset = 260) float clearcoatIntensity;
+    layout(offset = 264) float clearcoatRoughness;
 } pc;
 
 float luminance(vec3 c) {
@@ -208,6 +210,15 @@ float paintGlossTargetWeight(int hint) {
     return 0.0;
 }
 
+float clearcoatMaterialWeight(int hint) {
+    float coat = clamp(pc.clearcoatIntensity, 0.0, 2.0);
+    if (hint == 0 || hint == 3 || hint == 6) return 0.0;
+    if (hint == 1 || pc.materialPresetHint == 1) return coat;
+    if (hint == 2) return coat * 0.28;
+    if (hint == 4) return coat * 0.18;
+    return 0.0;
+}
+
 float contactGroundingMask(vec3 localPos, vec3 normalDir) {
     float bottom = smoothstep(-0.92, -0.58, localPos.y);
     bottom = 1.0 - bottom;
@@ -227,7 +238,10 @@ void main() {
     float glossSlider = clamp(pc.glossSliderValue, 0.0, 1.0);
     float paintSlider = clamp(pc.paintGlossSliderValue, 0.0, 1.0);
     float paintTarget = paintGlossTargetWeight(hint);
+    float clearcoatWeight = clearcoatMaterialWeight(hint);
+    float clearcoatRough = clamp(pc.clearcoatRoughness, 0.04, 1.0);
     roughness = mix(roughness, clamp(0.76 - paintTarget * 0.64, 0.16, 0.76), 0.62 * paintTarget);
+    roughness = mix(roughness, clamp(0.42 - clearcoatWeight * 0.12, 0.18, 0.58), 0.20 * clamp(clearcoatWeight, 0.0, 1.0));
     roughness = clamp(mix(roughness, roughness * mix(1.22, 0.62, glossSlider), 0.64), 0.05, 1.0);
     float aoRaw = pc.occlusionTextureReady != 0 ? texture(occlusionTexture, inTexcoord0).r : 1.0;
     float calibrationVisual = clamp(0.28 + calibration * 0.72, 0.28, 1.0);
@@ -295,12 +309,19 @@ void main() {
     vec3 analyticSpecular = fresnel * iblSpecularColor * rim * mix(0.035, 0.22, metallic) * glossWeight * pc.reflectionIntensity;
     vec3 directSpecular = fresnel * (specDistribution * specGeometry / specDenom) * specEnergy * ndotl * sunColor * pc.sunIntensity;
     directSpecular *= mix(0.34, 1.0, glossWeight);
+    float clearcoatFresnel = 0.04 + 0.96 * pow(clamp(1.0 - max(dot(n, v), 0.0), 0.0, 1.0), 5.0);
+    float coatDistribution = distributionGGX(n, h, clearcoatRough);
+    float coatHighlight = coatDistribution * geometrySmith(n, v, l, clearcoatRough) / specDenom;
+    vec3 clearcoatLight = sunColor * pc.sunIntensity * ndotl * coatHighlight * clearcoatFresnel;
+    clearcoatLight += environmentColor(reflectionDir, clearcoatRough) * clearcoatFresnel * rim * pc.reflectionIntensity * 0.38;
+    clearcoatLight *= clearcoatWeight * mix(0.72, 1.20, paintSlider);
     vec3 specularLight = (directSpecular + analyticSpecular + iblSpecular) * pc.specularBoost;
     specularLight *= mix(0.55, 1.35, glossSlider);
     if (hint == 0) specularLight *= 0.55;
     specularLight *= mix(1.0, 1.36, paintTarget);
+    specularLight += clearcoatLight;
     float specLum = luminance(specularLight);
-    float specGuard = mix(1.45, 2.10, metallic) * mix(1.0, 0.72, calibration);
+    float specGuard = mix(1.45, 2.10, metallic) * mix(1.0, 0.72, calibration) + clearcoatWeight * 0.55;
     if (specLum > specGuard) specularLight *= mix(1.0, specGuard / max(specLum, 0.001), 0.55);
     vec3 emissiveColor = clamp(pc.emissiveFactor, vec3(0.0), vec3(1.0)) * clamp(pc.emissiveIntensity, 0.0, 2.0);
     float emissiveLum = luminance(emissiveColor);
@@ -452,6 +473,22 @@ void main() {
     }
     if (pc.activeDebugView == 41) {
         fragColor = vec4(materialPresetColor(pc.materialPresetHint) * mix(0.45, 1.0, clamp(pc.emissiveIntensity / 2.0, 0.0, 1.0)), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 42) {
+        fragColor = vec4(vec3(clamp(clearcoatWeight * 0.5, 0.0, 1.0)), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 43) {
+        fragColor = vec4(toneMap(clearcoatLight * pc.exposureValue * 4.0), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 44) {
+        fragColor = vec4(vec3(clamp(paintTarget + clearcoatWeight * 0.5, 0.0, 1.0), clamp(1.0 - roughness, 0.0, 1.0), clearcoatFresnel), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 45) {
+        fragColor = vec4(vec3(clamp(luminance(specularLight) / max(specGuard, 0.001), 0.0, 1.0)), 1.0);
         return;
     }
     rgb *= 1.0 - contactMask * clamp(pc.contactShadowIntensity, 0.0, 1.5) * 0.22;

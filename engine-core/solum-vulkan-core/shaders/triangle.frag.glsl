@@ -54,6 +54,8 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 240) int environmentPreset;
     layout(offset = 244) float horizonStrength;
     layout(offset = 248) float alphaCutoff;
+    layout(offset = 252) float emissiveIntensity;
+    layout(offset = 256) int materialPresetHint;
 } pc;
 
 float luminance(vec3 c) {
@@ -92,6 +94,17 @@ vec3 materialTypeColor(int hint) {
     if (hint == 6) return vec3(0.38, 0.78, 0.95);
     if (hint == 7) return vec3(0.94, 0.78, 0.28);
     return vec3(0.45, 0.48, 0.50);
+}
+
+vec3 materialPresetColor(int preset) {
+    if (preset == 1) return vec3(0.95, 0.28, 0.18);
+    if (preset == 2) return vec3(0.76, 0.82, 0.90);
+    if (preset == 3) return vec3(0.54, 0.42, 0.72);
+    if (preset == 4) return vec3(0.06, 0.07, 0.07);
+    if (preset == 5) return vec3(0.58, 0.62, 0.68);
+    if (preset == 6) return vec3(0.38, 0.80, 0.96);
+    if (preset == 7) return vec3(0.20, 0.86, 1.00);
+    return vec3(0.52, 0.62, 0.60);
 }
 
 vec3 toneMap(vec3 color) {
@@ -289,6 +302,9 @@ void main() {
     float specLum = luminance(specularLight);
     float specGuard = mix(1.45, 2.10, metallic) * mix(1.0, 0.72, calibration);
     if (specLum > specGuard) specularLight *= mix(1.0, specGuard / max(specLum, 0.001), 0.55);
+    vec3 emissiveColor = clamp(pc.emissiveFactor, vec3(0.0), vec3(1.0)) * clamp(pc.emissiveIntensity, 0.0, 2.0);
+    float emissiveLum = luminance(emissiveColor);
+    if (emissiveLum > 1.35) emissiveColor *= 1.35 / max(emissiveLum, 0.001);
     if (pc.activeDebugView == 6) {
         fragColor = vec4(toneMap(diffuseLight * pc.exposureValue), alpha);
         return;
@@ -318,7 +334,7 @@ void main() {
         return;
     }
     vec3 ambient = baseColor * (1.0 - metallic * 0.75) * mix(ambientColor * max(pc.ambientIntensity, pc.ambientFloor), iblDiffuseColor, 0.65);
-    vec3 rgb = (diffuseLight + ambient) * ao + specularLight + pc.emissiveFactor;
+    vec3 rgb = (diffuseLight + ambient) * ao + specularLight + emissiveColor;
     float contactMask = contactGroundingMask(inLocalPosition, n);
     if (pc.activeDebugView == 13) {
         fragColor = vec4(vec3(contactMask * clamp(pc.contactShadowIntensity / 1.5, 0.0, 1.0)), alpha);
@@ -418,13 +434,33 @@ void main() {
         fragColor = vec4(pc.alphaMode == 2 ? vec3(1.0, 0.45, 0.12) : (pc.alphaMode == 1 ? vec3(0.2, 0.9, 0.35) : vec3(0.25, 0.45, 0.9)), 1.0);
         return;
     }
+    if (pc.activeDebugView == 37) {
+        fragColor = vec4(toneMap(emissiveColor * max(pc.exposureValue, 1.0)), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 38) {
+        fragColor = vec4(materialPresetColor(pc.materialPresetHint), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 39) {
+        fragColor = vec4(vec3(clamp(1.0 - roughness, 0.0, 1.0), metallic, clamp(pc.emissiveIntensity / 2.0, 0.0, 1.0)), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 40) {
+        fragColor = vec4(vec3(clamp(luminance(rgb) / 2.1, 0.0, 1.0)), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 41) {
+        fragColor = vec4(materialPresetColor(pc.materialPresetHint) * mix(0.45, 1.0, clamp(pc.emissiveIntensity / 2.0, 0.0, 1.0)), 1.0);
+        return;
+    }
     rgb *= 1.0 - contactMask * clamp(pc.contactShadowIntensity, 0.0, 1.5) * 0.22;
     float diffuseLum = luminance(diffuseLight + ambient);
     float diffuseLimit = mix(2.4, 1.55, calibration);
     if (diffuseLum > diffuseLimit) rgb *= mix(1.0, diffuseLimit / max(diffuseLum, 0.001), 0.65 * calibration);
     float litLum = luminance(rgb);
     float guardLimit = mix(3.2, 2.1, calibration);
-    if (litLum > guardLimit && luminance(pc.emissiveFactor) <= 0.001) rgb *= guardLimit / max(litLum, 0.001);
+    if (litLum > guardLimit && emissiveLum <= 0.001) rgb *= guardLimit / max(litLum, 0.001);
     rgb *= pc.exposureValue;
     rgb = toneMap(rgb);
     fragColor = vec4(rgb, alpha);

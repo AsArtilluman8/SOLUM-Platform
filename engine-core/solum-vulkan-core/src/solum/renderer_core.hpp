@@ -13,6 +13,17 @@ enum PbrTextureKind {
     PbrTextureOcclusion = 3
 };
 
+enum MaterialPresetKind {
+    MaterialPresetBalanced = 0,
+    MaterialPresetCarPaint = 1,
+    MaterialPresetMetal = 2,
+    MaterialPresetFabric = 3,
+    MaterialPresetRubber = 4,
+    MaterialPresetPlastic = 5,
+    MaterialPresetGlassMetadata = 6,
+    MaterialPresetEmissiveSafe = 7
+};
+
 struct PbrMaterialTextureSet {
     TextureResource baseColor;
     TextureResource metallicRoughness;
@@ -116,6 +127,8 @@ struct RendererCore {
     float selectedSlotAoOverride = 1.0f;
     float selectedSlotGlossOverride = 0.0f;
     float selectedSlotCoatOverride = 0.0f;
+    float selectedSlotEmissiveIntensity = 0.0f;
+    int activeMaterialPreset = MaterialPresetBalanced;
 
     void setOutputRoot(const std::string& root) { outputRoot = root; diagnostics.outputRoot = root; }
 
@@ -139,6 +152,8 @@ struct RendererCore {
         model.horizonStrength = material.horizonStrength;
         model.paintGlossIntensity = material.paintGlossSliderValue;
         model.paintGlossRoughness = clampFloat(0.78f - material.paintGlossSliderValue * 0.58f, 0.20f, 0.78f);
+        model.emissiveIntensity = material.emissiveIntensity;
+        model.activeMaterialPreset = materialPresetName(material.materialPresetHint);
         model.exposureValue = material.exposureValue;
         model.ambientFloor = material.ambientFloor;
         model.brightnessPreset = brightnessPresetName(material.brightnessPreset);
@@ -183,6 +198,44 @@ struct RendererCore {
         model.alphaNoNewPassStatus = "ok";
         model.alphaNoTextureRebuildStatus = "ok";
         model.alphaNoModelReuploadStatus = "ok";
+        model.p21AlphaPreservedStatus = "ok";
+        model.emissiveMaterialStatus = "ok_metadata_supported";
+        model.emissiveMode = "factor_uniform_only_no_light_contribution";
+        model.emissiveIntensityStatus = "ok_clamped";
+        model.emissiveColorStatus = "ok_guarded";
+        model.emissiveOverbrightGuardStatus = "ok_clamped";
+        model.emissiveLightingContributionStatus = "not_real_light_source";
+        model.emissivePerformanceStatus = "ok_no_bloom_no_new_pass";
+        model.materialPresetStatus = "ok";
+        model.materialPresetMode = "selected_slot_uniform_only";
+        model.materialPresetAppliedSlot = selectedMaterialSlot;
+        model.materialPresetUiStatus = "ok_compact_material_tab";
+        model.materialPresetPerformanceStatus = "ok_no_model_reupload_no_texture_rebuild";
+        model.selectedSlotPresetStatus = "ok";
+        model.carPaintPresetStatus = "ok";
+        model.metalPresetStatus = "ok";
+        model.fabricPresetStatus = "ok";
+        model.rubberPresetStatus = "ok";
+        model.plasticPresetStatus = "ok";
+        model.glassMetadataPresetStatus = "metadata_only_no_real_glass";
+        model.emissivePresetStatus = "ok_safe_clamped";
+        model.materialPresetGuardStatus = "ok_energy_guarded";
+        model.presetCycleButtonStatus = "ok";
+        model.presetApplyButtonStatus = "ok";
+        model.emissiveSliderStatus = "ok";
+        model.emissiveUniformUpdateStatus = "ok_uniform_only";
+        model.materialResetButtonStatus = "ok";
+        model.materialUiScrollPreservedStatus = "ok";
+        model.emissiveDebugViewStatus = "shader_applied";
+        model.presetTypeDebugViewStatus = "shader_applied";
+        model.presetResponseDebugViewStatus = "shader_applied";
+        model.materialEnergyGuardDebugViewStatus = "shader_applied";
+        model.selectedSlotPresetDebugViewStatus = "shader_applied";
+        model.p22PerformanceStatus = "ok_no_new_pass_no_bloom_no_reupload";
+        model.emissiveNoBloomStatus = "ok";
+        model.emissiveNoNewPassStatus = "ok";
+        model.presetNoModelReuploadStatus = "ok";
+        model.presetNoTextureRebuildStatus = "ok";
         model.materialTypeHintStatus = "ok";
         model.materialSlotCalibrationStatus = "ok";
         model.calibrationUiStatus = "ok_compact_material_tab";
@@ -483,6 +536,10 @@ struct RendererCore {
         model.selectedSlotAoOverride = selectedSlotAoOverride;
         model.selectedSlotGlossOverride = selectedSlotGlossOverride;
         model.selectedSlotCoatOverride = selectedSlotCoatOverride;
+        model.emissiveIntensity = selectedSlotEmissiveIntensity;
+        model.activeMaterialPreset = materialPresetName(activeMaterialPreset);
+        model.materialPresetAppliedSlot = selectedMaterialSlot;
+        model.materialPresetAppliedStatus = slotCount > 0 ? "ok_selected_slot_uniform_only" : "not_applied_no_material_slot";
         model.selectedSlotOverrideApplied = slotCount > 0 ? "true_selected_slot_only" : "false_no_material_slot";
         model.selectedSlotResetStatus = "available_safe_reseed_from_slot";
         model.perMaterialUniformUpdateStatus = "ok_uniform_only";
@@ -497,6 +554,29 @@ struct RendererCore {
         model.slotRoughnessDebugViewStatus = "shader_applied";
         model.slotAoDebugViewStatus = "shader_applied";
         model.perMaterialOverridePerformanceStatus = "ok_no_extra_pass_no_upload";
+    }
+
+    void syncEmissivePresetState() {
+        uint32_t emissiveFactorCount = 0;
+        uint32_t emissiveTextureCount = 0;
+        for (const auto& slot : modelMaterialSlots) {
+            if (slot.emissiveFactor[0] > 0.001f || slot.emissiveFactor[1] > 0.001f || slot.emissiveFactor[2] > 0.001f) emissiveFactorCount++;
+            if (slot.emissiveTextureSlot >= 0) emissiveTextureCount++;
+        }
+        model.emissiveFactorStatus = emissiveFactorCount > 0 ? "ok_metadata_found" : "missing";
+        model.emissiveTextureStatus = emissiveTextureCount > 0 ? "metadata_only_not_sampled_no_extra_descriptor" : "missing";
+        model.emissiveMaterialStatus = emissiveFactorCount > 0 || emissiveTextureCount > 0 || selectedSlotEmissiveIntensity > 0.001f ? "ok_safe_emissive_supported" : "ok_metadata_supported";
+        model.emissiveIntensity = selectedSlotEmissiveIntensity;
+        model.emissiveIntensityStatus = "ok_clamped_0_2";
+        model.emissiveColorStatus = "ok_factor_clamped";
+        model.emissiveOverbrightGuardStatus = "ok_luminance_guarded";
+        model.emissiveLightingContributionStatus = "not_real_light_source";
+        model.emissivePerformanceStatus = "ok_no_bloom_no_extra_pass";
+        model.activeMaterialPreset = materialPresetName(activeMaterialPreset);
+        model.materialPresetStatus = "ok";
+        model.materialPresetMode = "selected_slot_uniform_only";
+        model.materialPresetAppliedSlot = selectedMaterialSlot;
+        model.selectedSlotPresetStatus = modelMaterialSlots.empty() ? "empty" : "ok_selected_slot";
     }
 
     void syncAlphaCutoutState() {
@@ -537,11 +617,11 @@ struct RendererCore {
         model.transparencyDeferredStatus = "ok_no_full_transparent_sorting_or_glass";
     }
 
-    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float environmentIntensity, int environmentPreset, float horizonStrength, int selectedSlot, float slotMetallic, float slotRoughness, float slotNormalScale, float slotAo, float slotGloss, float slotCoat, float alphaCutoffValue) {
+    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float environmentIntensity, int environmentPreset, float horizonStrength, int selectedSlot, float slotMetallic, float slotRoughness, float slotNormalScale, float slotAo, float slotGloss, float slotCoat, float alphaCutoffValue, float emissiveIntensity, int materialPreset) {
         applyLightPreset(lightPreset);
         material.sunIntensity = clampFloat(sunIntensity, 0.5f, 4.0f);
         material.ambientIntensity = clampFloat(ambientIntensity, 0.1f, 2.0f);
-        material.activeDebugView = ((activeDebugView % 37) + 37) % 37;
+        material.activeDebugView = ((activeDebugView % 42) + 42) % 42;
         material.toneMappingMode = ((toneMappingMode % 3) + 3) % 3;
         material.exposureValue = clampFloat(exposureValue, 0.8f, 3.0f);
         material.ambientFloor = clampFloat(ambientFloor, 0.0f, 0.35f);
@@ -557,6 +637,8 @@ struct RendererCore {
         material.environmentPreset = ((environmentPreset % 5) + 5) % 5;
         material.horizonStrength = clampFloat(horizonStrength, 0.0f, 1.0f);
         material.alphaCutoff = clampFloat(alphaCutoffValue, 0.0f, 1.0f);
+        material.emissiveIntensity = clampFloat(emissiveIntensity, 0.0f, 2.0f);
+        material.materialPresetHint = ((materialPreset % 8) + 8) % 8;
         selectedMaterialSlot = selectedSlot;
         selectedSlotMetallicOverride = clampFloat(slotMetallic, 0.0f, 1.0f);
         selectedSlotRoughnessOverride = clampFloat(slotRoughness, 0.0f, 1.0f);
@@ -564,11 +646,14 @@ struct RendererCore {
         selectedSlotAoOverride = clampFloat(slotAo, 0.0f, 1.5f);
         selectedSlotGlossOverride = clampFloat(slotGloss, 0.0f, 1.0f);
         selectedSlotCoatOverride = clampFloat(slotCoat, 0.0f, 1.0f);
+        selectedSlotEmissiveIntensity = material.emissiveIntensity;
+        activeMaterialPreset = material.materialPresetHint;
         syncLightingModelState();
         syncAlphaCutoutState();
+        syncEmissivePresetState();
         const bool ok = renderOneFrame();
         syncDiagnostics();
-        diagnostics.write(ok ? "valid" : diagnostics.status, ok ? "Scene18 alpha cutout material lab updated uniforms only." : diagnostics.reason);
+        diagnostics.write(ok ? "valid" : diagnostics.status, ok ? "Scene19 emissive material presets lab updated uniforms only." : diagnostics.reason);
         updateReadyStatus();
         return ok;
     }
@@ -905,7 +990,7 @@ struct RendererCore {
 
     void updateReadyStatus() {
         syncLightingModelState();
-        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene18 Alpha Cutout Material Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nModel render: " + model.drawStatus + "\nPrimitives rendered/skipped/total: " + std::to_string(model.primitiveCountRendered) + " / " + std::to_string(model.primitiveCountSkipped) + " / " + std::to_string(model.primitiveCountTotal) + "\nMaterials used: " + std::to_string(model.materialSlotCountRendered) + "\nSelected material slot: " + std::to_string(model.selectedMaterialSlot) + " / " + std::to_string(model.selectedMaterialSlotCount) + "\nPer-material override: " + model.selectedSlotOverrideApplied + "\nAlpha: " + model.alphaMaterialStatus + " cutoff=" + std::to_string(model.alphaCutoffValue) + "\nDouble sided: " + model.doubleSidedMaterialStatus + "\nInspector: " + model.inspectorUiMode + "\nLighting status: " + model.lightingStatus + "\nIBL mode: " + model.iblMode + "\nEnvironment: " + model.environmentPreset + " " + std::to_string(model.environmentIntensity) + "\nReflection intensity: " + std::to_string(model.reflectionIntensity) + "\nGrounding: " + model.contactGroundingStatus + " " + std::to_string(model.contactShadowIntensity) + "\nCalibration: " + model.calibrationPreset + " " + std::to_string(model.calibrationSliderValue) + "\nAlbedo guard: " + model.albedoEnergyStatus + " / " + model.luminanceGuardStatus + "\nMaterial hints: " + model.materialTypeHintStatus + "\nBRDF status: " + model.brdfStatus + "\nSpecular status: " + model.specularStatus + "\nSpecular boost: " + std::to_string(model.specularBoost) + "\nReflection foundation: " + model.reflectionFoundationStatus + "\nFresnel status: " + model.fresnelStatus + "\nF0 status: " + model.f0Status + "\nLight preset: " + model.lightPreset + "\nSun intensity: " + std::to_string(model.sunIntensity) + "\nAmbient intensity: " + std::to_string(model.ambientIntensity) + "\nExposure: " + std::to_string(model.exposureValue) + " " + model.brightnessPreset + "\nMaterial response status: " + model.materialResponseStatus + "\nActive debug view: " + model.activeDebugView + "\nBaseColor status: " + model.baseColorTextureStatus + "\nMetallicRoughness status: " + model.metallicRoughnessStatus + "\nTangent status: " + model.tangentStatus + "\nNormal status: " + model.normalMapStatus + " applied=" + model.normalMapAppliedStatus + "\nAO status: " + model.occlusionMapStatus + "\nPBR textures uploaded/fallback/skipped: " + std::to_string(model.uploadedPbrTextureCount) + " / " + std::to_string(model.pbrTextureFallbackCount) + " / " + std::to_string(model.skippedPbrTextureCount) + "\nFPS/frameMs: " + std::to_string(model.fpsCurrent) + " / " + std::to_string(model.frameTimeMs) + "\nDebug ZIP: " + model.debugZipStatus + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nTexture size: " + std::to_string(model.textureWidth) + "x" + std::to_string(model.textureHeight) + "\nFallback texture: " + std::string(model.textureFallbackUsed ? "yes" : "no") + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: validate Scene18 alpha cutout material lab";
+        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene19 Emissive Material Presets Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nModel render: " + model.drawStatus + "\nPrimitives rendered/skipped/total: " + std::to_string(model.primitiveCountRendered) + " / " + std::to_string(model.primitiveCountSkipped) + " / " + std::to_string(model.primitiveCountTotal) + "\nMaterials used: " + std::to_string(model.materialSlotCountRendered) + "\nSelected material slot: " + std::to_string(model.selectedMaterialSlot) + " / " + std::to_string(model.selectedMaterialSlotCount) + "\nPer-material override: " + model.selectedSlotOverrideApplied + "\nAlpha: " + model.alphaMaterialStatus + " cutoff=" + std::to_string(model.alphaCutoffValue) + "\nDouble sided: " + model.doubleSidedMaterialStatus + "\nInspector: " + model.inspectorUiMode + "\nLighting status: " + model.lightingStatus + "\nIBL mode: " + model.iblMode + "\nEnvironment: " + model.environmentPreset + " " + std::to_string(model.environmentIntensity) + "\nReflection intensity: " + std::to_string(model.reflectionIntensity) + "\nGrounding: " + model.contactGroundingStatus + " " + std::to_string(model.contactShadowIntensity) + "\nCalibration: " + model.calibrationPreset + " " + std::to_string(model.calibrationSliderValue) + "\nAlbedo guard: " + model.albedoEnergyStatus + " / " + model.luminanceGuardStatus + "\nMaterial hints: " + model.materialTypeHintStatus + "\nBRDF status: " + model.brdfStatus + "\nSpecular status: " + model.specularStatus + "\nSpecular boost: " + std::to_string(model.specularBoost) + "\nReflection foundation: " + model.reflectionFoundationStatus + "\nFresnel status: " + model.fresnelStatus + "\nF0 status: " + model.f0Status + "\nLight preset: " + model.lightPreset + "\nSun intensity: " + std::to_string(model.sunIntensity) + "\nAmbient intensity: " + std::to_string(model.ambientIntensity) + "\nExposure: " + std::to_string(model.exposureValue) + " " + model.brightnessPreset + "\nMaterial response status: " + model.materialResponseStatus + "\nActive debug view: " + model.activeDebugView + "\nBaseColor status: " + model.baseColorTextureStatus + "\nMetallicRoughness status: " + model.metallicRoughnessStatus + "\nTangent status: " + model.tangentStatus + "\nNormal status: " + model.normalMapStatus + " applied=" + model.normalMapAppliedStatus + "\nAO status: " + model.occlusionMapStatus + "\nPBR textures uploaded/fallback/skipped: " + std::to_string(model.uploadedPbrTextureCount) + " / " + std::to_string(model.pbrTextureFallbackCount) + " / " + std::to_string(model.skippedPbrTextureCount) + "\nFPS/frameMs: " + std::to_string(model.fpsCurrent) + " / " + std::to_string(model.frameTimeMs) + "\nDebug ZIP: " + model.debugZipStatus + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nTexture size: " + std::to_string(model.textureWidth) + "x" + std::to_string(model.textureHeight) + "\nFallback texture: " + std::string(model.textureFallbackUsed ? "yes" : "no") + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: validate Scene19 emissive material presets lab";
     }
 
     bool setCamera(float yawDeg, float pitchDeg, float distance, bool controlsActive) {
@@ -983,6 +1068,10 @@ struct RendererCore {
                     pc.material.roughnessFactor = slot.roughnessFactor;
                     pc.material.normalScale = slot.normalScale;
                     pc.material.occlusionStrength = slot.occlusionStrength;
+                    pc.material.emissiveFactor[0] = slot.emissiveFactor[0];
+                    pc.material.emissiveFactor[1] = slot.emissiveFactor[1];
+                    pc.material.emissiveFactor[2] = slot.emissiveFactor[2];
+                    pc.material.materialPresetHint = slot.materialPresetHint;
                     pc.material.alphaCutoff = clampFloat(slot.alphaCutoff, 0.0f, 1.0f);
                     if (range.materialSlot == selectedMaterialSlot) {
                         pc.material.metallicFactor = selectedSlotMetallicOverride;
@@ -992,11 +1081,14 @@ struct RendererCore {
                         pc.material.glossSliderValue = selectedSlotGlossOverride;
                         pc.material.paintGlossSliderValue = selectedSlotCoatOverride;
                         pc.material.alphaCutoff = material.alphaCutoff;
+                        pc.material.emissiveIntensity = selectedSlotEmissiveIntensity;
+                        pc.material.materialPresetHint = activeMaterialPreset;
                     } else {
                         pc.material.glossSliderValue = 0.0f;
                         pc.material.paintGlossSliderValue = 0.0f;
+                        pc.material.emissiveIntensity = 0.0f;
                     }
-                    if (material.activeDebugView >= 27 && material.activeDebugView <= 31 && range.materialSlot != selectedMaterialSlot) {
+                    if (((material.activeDebugView >= 27 && material.activeDebugView <= 31) || material.activeDebugView == 41) && range.materialSlot != selectedMaterialSlot) {
                         pc.material.activeDebugView = 0;
                     }
                     pc.material.alphaMode = slot.alphaMode;
@@ -1159,7 +1251,7 @@ struct RendererCore {
         }
         syncDiagnostics();
         syncAlphaCutoutState();
-        diagnostics.write("valid", "Scene18 Alpha Cutout Material Lab uploaded and drew first primitive.");
+        diagnostics.write("valid", "Scene19 Emissive Material Presets Lab uploaded and drew first primitive.");
         updateReadyStatus();
         return true;
     }
@@ -1233,6 +1325,8 @@ struct RendererCore {
             material.roughnessFactor = modelMaterialSlots[0].roughnessFactor;
             material.normalScale = modelMaterialSlots[0].normalScale;
             material.occlusionStrength = modelMaterialSlots[0].occlusionStrength;
+            for (int i = 0; i < 3; ++i) material.emissiveFactor[i] = modelMaterialSlots[0].emissiveFactor[i];
+            material.materialPresetHint = modelMaterialSlots[0].materialPresetHint;
             material.alphaMode = modelMaterialSlots[0].alphaMode;
             material.materialId = 0;
             model.metallicFactor = material.metallicFactor;
@@ -1262,7 +1356,8 @@ struct RendererCore {
         }
         syncDiagnostics();
         syncAlphaCutoutState();
-        diagnostics.write("valid", "Scene18 Alpha Cutout Material Lab uploaded and drew supported primitives.");
+        syncEmissivePresetState();
+        diagnostics.write("valid", "Scene19 Emissive Material Presets Lab uploaded and drew supported primitives.");
         updateReadyStatus();
         return true;
     }
@@ -1513,7 +1608,7 @@ struct RendererCore {
         model.textureFallbackUsed = true;
         model.reason = "no active model";
         syncDiagnostics();
-        diagnostics.write("valid", "Scene18 Alpha Cutout Material Lab initialized with cube fallback while waiting for active model upload.");
+        diagnostics.write("valid", "Scene19 Emissive Material Presets Lab initialized with cube fallback while waiting for active model upload.");
         updateReadyStatus();
         return true;
     }

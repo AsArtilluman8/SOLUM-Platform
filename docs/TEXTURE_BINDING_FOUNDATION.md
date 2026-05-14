@@ -1,10 +1,27 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
-## P21 alpha cutout and double-sided material polish
+## P22 emissive material presets lab
 
-P21 switches the active lab to `scene18_alpha_cutout_material_lab`.
+P22 switches the active lab to `scene19_emissive_material_presets_lab`.
 
-The texture/material binding path remains the existing per-material-slot Vulkan path. No new pass, transparent sorting, glass/refraction/transmission, texture rebuild, or model reupload is added for alpha slider changes.
+The texture/material binding path remains the existing per-material-slot Vulkan path. P22 adds safe emissive factor metadata and selected-slot presets through uniforms/push constants only. No bloom, real light contribution, new pass, transparent sorting, glass/refraction/transmission, texture rebuild, or model reupload is added for slider or preset changes.
+
+Presets:
+
+- Balanced
+- Car Paint
+- Metal
+- Fabric
+- Rubber
+- Plastic
+- Glass Metadata
+- Emissive Safe
+
+Emissive handling:
+
+- glTF `emissiveFactor` is recorded per material slot.
+- `emissiveTexture` is metadata-only unless an existing safe texture path is available.
+- emissive contribution is clamped in the final shaded path and does not illuminate other objects.
 
 Alpha/cutout foundation:
 

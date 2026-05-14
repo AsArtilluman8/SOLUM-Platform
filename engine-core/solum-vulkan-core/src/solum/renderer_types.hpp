@@ -69,6 +69,8 @@ struct MaterialConstants {
     int environmentPreset = 0;
     float horizonStrength = 0.55f;
     float alphaCutoff = 0.5f;
+    float emissiveIntensity = 0.0f;
+    int materialPresetHint = 0;
 };
 
 inline const char* lightPresetName(int preset) {
@@ -124,7 +126,23 @@ inline const char* materialDebugViewName(int view) {
     if (view == 34) return "Double Sided";
     if (view == 35) return "Cutout Hint";
     if (view == 36) return "Transparency Status";
+    if (view == 37) return "Emissive";
+    if (view == 38) return "Preset Type";
+    if (view == 39) return "Preset Response";
+    if (view == 40) return "Material Energy Guard";
+    if (view == 41) return "Selected Slot Preset";
     return "Final Shaded";
+}
+
+inline const char* materialPresetName(int preset) {
+    if (preset == 1) return "Car Paint";
+    if (preset == 2) return "Metal";
+    if (preset == 3) return "Fabric";
+    if (preset == 4) return "Rubber";
+    if (preset == 5) return "Plastic";
+    if (preset == 6) return "Glass Metadata";
+    if (preset == 7) return "Emissive Safe";
+    return "Balanced";
 }
 
 inline const char* calibrationPresetName(int preset) {
@@ -182,6 +200,9 @@ struct MaterialSlotState {
     int normalTextureSlot = -1;
     int occlusionTextureSlot = -1;
     int materialTypeHint = 4;
+    float emissiveFactor[3] = { 0.0f, 0.0f, 0.0f };
+    int emissiveTextureSlot = -1;
+    int materialPresetHint = 0;
 };
 
 struct ModelRenderState {
@@ -473,6 +494,49 @@ struct ModelRenderState {
     std::string alphaNoModelReuploadStatus = "ok";
     std::string p20RuntimeWorkflowPreservedStatus = "ok";
     std::string p19SlotControlsPreservedStatus = "ok";
+    std::string p21AlphaPreservedStatus = "ok";
+    std::string emissiveMaterialStatus = "ok_metadata_supported";
+    std::string emissiveMode = "factor_uniform_only_no_light_contribution";
+    std::string emissiveFactorStatus = "missing";
+    std::string emissiveTextureStatus = "missing";
+    float emissiveIntensity = 0.0f;
+    std::string emissiveIntensityStatus = "ok_clamped";
+    std::string emissiveColorStatus = "ok_guarded";
+    std::string emissiveOverbrightGuardStatus = "ok_clamped";
+    std::string emissiveLightingContributionStatus = "not_real_light_source";
+    std::string emissivePerformanceStatus = "ok_no_bloom_no_new_pass";
+    std::string materialPresetStatus = "ok";
+    std::string activeMaterialPreset = "Balanced";
+    std::string materialPresetMode = "selected_slot_uniform_only";
+    int materialPresetAppliedSlot = 0;
+    std::string materialPresetAppliedStatus = "not_applied";
+    std::string materialPresetUiStatus = "ok_compact_material_tab";
+    std::string materialPresetPerformanceStatus = "ok_no_model_reupload_no_texture_rebuild";
+    std::string selectedSlotPresetStatus = "ok";
+    std::string carPaintPresetStatus = "ok";
+    std::string metalPresetStatus = "ok";
+    std::string fabricPresetStatus = "ok";
+    std::string rubberPresetStatus = "ok";
+    std::string plasticPresetStatus = "ok";
+    std::string glassMetadataPresetStatus = "metadata_only_no_real_glass";
+    std::string emissivePresetStatus = "ok_safe_clamped";
+    std::string materialPresetGuardStatus = "ok_energy_guarded";
+    std::string presetCycleButtonStatus = "ok";
+    std::string presetApplyButtonStatus = "ok";
+    std::string emissiveSliderStatus = "ok";
+    std::string emissiveUniformUpdateStatus = "ok_uniform_only";
+    std::string materialResetButtonStatus = "ok";
+    std::string materialUiScrollPreservedStatus = "ok";
+    std::string emissiveDebugViewStatus = "shader_applied";
+    std::string presetTypeDebugViewStatus = "shader_applied";
+    std::string presetResponseDebugViewStatus = "shader_applied";
+    std::string materialEnergyGuardDebugViewStatus = "shader_applied";
+    std::string selectedSlotPresetDebugViewStatus = "shader_applied";
+    std::string p22PerformanceStatus = "ok_no_new_pass_no_bloom_no_reupload";
+    std::string emissiveNoBloomStatus = "ok";
+    std::string emissiveNoNewPassStatus = "ok";
+    std::string presetNoModelReuploadStatus = "ok";
+    std::string presetNoTextureRebuildStatus = "ok";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;
     float fpsLastStable = 0.0f;

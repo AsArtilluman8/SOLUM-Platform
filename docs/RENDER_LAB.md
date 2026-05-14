@@ -2,19 +2,21 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
-## Scene18 Alpha Cutout Material Lab
+## Scene19 Emissive Material Presets Lab
 
-Patch P21 switches the active lab to:
+Patch P22 switches the active lab to:
 
 ```text
-scene18_alpha_cutout_material_lab
-Scene18 Alpha Cutout Material Lab
+scene19_emissive_material_presets_lab
+Scene19 Emissive Material Presets Lab
 ```
 
-Scene18 preserves P20 runtime restore/reload, capped inspector scroll, dynamic inspector alpha, P19 selected-slot controls, P18 directional sky/ground IBL, P17 gloss/calib/coat controls, Debug ZIP, and live FPS. It adds alpha/cutout/double-sided material handling for static GLB material slots without glass, refraction, transparent sorting, a new pass, or texture/model rebuilds while sliding.
+P22 preserves P21 alpha/cutout, P20 runtime restore/reload, P19 selected-slot controls, P18 directional sky/ground IBL, P17 gloss/calib/coat controls, Debug ZIP, and live FPS. It adds safe glTF emissive metadata/factor handling and selected-slot material presets without real light contribution, bloom, glass, shadow maps, CSM, extra render passes, texture rebuilds, or model reupload while sliding.
 
 Material tab additions:
 
+- Preset cycle and Apply Preset controls.
+- Emissive slider, uniform-only.
 - Alpha Cutoff slider, uniform-only.
 - Alpha Mode debug cycle.
 - Double-sided debug view button.
@@ -54,6 +56,11 @@ Transparency Status
 Diagnostics added at top level and under `renderLab`:
 
 ```text
+emissiveMaterialStatus
+materialPresetStatus
+activeMaterialPreset
+emissiveSliderStatus
+p21AlphaPreservedStatus
 alphaMaterialStatus
 alphaModeSupportStatus
 alphaMaskStatus

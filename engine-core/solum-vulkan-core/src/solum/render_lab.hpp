@@ -23,11 +23,12 @@ enum class RenderLabScene {
     Scene16MaterialSlotEditorLab,
     Scene17RuntimeMaterialWorkflowLab,
     Scene18AlphaCutoutMaterialLab,
+    Scene19EmissiveMaterialPresetsLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene18AlphaCutoutMaterialLab;
+    RenderLabScene currentScene = RenderLabScene::Scene19EmissiveMaterialPresetsLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -71,6 +72,7 @@ struct RenderLabState {
             case RenderLabScene::Scene16MaterialSlotEditorLab: return "scene16_material_slot_editor_lab";
             case RenderLabScene::Scene17RuntimeMaterialWorkflowLab: return "scene17_runtime_material_workflow_lab";
             case RenderLabScene::Scene18AlphaCutoutMaterialLab: return "scene18_alpha_cutout_material_lab";
+            case RenderLabScene::Scene19EmissiveMaterialPresetsLab: return "scene19_emissive_material_presets_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -97,6 +99,7 @@ struct RenderLabState {
             case RenderLabScene::Scene16MaterialSlotEditorLab: return "Scene16 Material Slot Editor Lab";
             case RenderLabScene::Scene17RuntimeMaterialWorkflowLab: return "Scene17 Runtime Material Workflow Lab";
             case RenderLabScene::Scene18AlphaCutoutMaterialLab: return "Scene18 Alpha Cutout Material Lab";
+            case RenderLabScene::Scene19EmissiveMaterialPresetsLab: return "Scene19 Emissive Material Presets Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }
@@ -408,6 +411,49 @@ struct RenderLabState {
         f << indent << "  \"alphaNoModelReuploadStatus\": \"" << escapeJson(model.alphaNoModelReuploadStatus) << "\",\n";
         f << indent << "  \"p20RuntimeWorkflowPreservedStatus\": \"" << escapeJson(model.p20RuntimeWorkflowPreservedStatus) << "\",\n";
         f << indent << "  \"p19SlotControlsPreservedStatus\": \"" << escapeJson(model.p19SlotControlsPreservedStatus) << "\",\n";
+        f << indent << "  \"p21AlphaPreservedStatus\": \"" << escapeJson(model.p21AlphaPreservedStatus) << "\",\n";
+        f << indent << "  \"emissiveMaterialStatus\": \"" << escapeJson(model.emissiveMaterialStatus) << "\",\n";
+        f << indent << "  \"emissiveMode\": \"" << escapeJson(model.emissiveMode) << "\",\n";
+        f << indent << "  \"emissiveFactorStatus\": \"" << escapeJson(model.emissiveFactorStatus) << "\",\n";
+        f << indent << "  \"emissiveTextureStatus\": \"" << escapeJson(model.emissiveTextureStatus) << "\",\n";
+        f << indent << "  \"emissiveIntensity\": " << model.emissiveIntensity << ",\n";
+        f << indent << "  \"emissiveIntensityStatus\": \"" << escapeJson(model.emissiveIntensityStatus) << "\",\n";
+        f << indent << "  \"emissiveColorStatus\": \"" << escapeJson(model.emissiveColorStatus) << "\",\n";
+        f << indent << "  \"emissiveOverbrightGuardStatus\": \"" << escapeJson(model.emissiveOverbrightGuardStatus) << "\",\n";
+        f << indent << "  \"emissiveLightingContributionStatus\": \"" << escapeJson(model.emissiveLightingContributionStatus) << "\",\n";
+        f << indent << "  \"emissivePerformanceStatus\": \"" << escapeJson(model.emissivePerformanceStatus) << "\",\n";
+        f << indent << "  \"materialPresetStatus\": \"" << escapeJson(model.materialPresetStatus) << "\",\n";
+        f << indent << "  \"activeMaterialPreset\": \"" << escapeJson(model.activeMaterialPreset) << "\",\n";
+        f << indent << "  \"materialPresetMode\": \"" << escapeJson(model.materialPresetMode) << "\",\n";
+        f << indent << "  \"materialPresetAppliedSlot\": " << model.materialPresetAppliedSlot << ",\n";
+        f << indent << "  \"materialPresetAppliedStatus\": \"" << escapeJson(model.materialPresetAppliedStatus) << "\",\n";
+        f << indent << "  \"materialPresetUiStatus\": \"" << escapeJson(model.materialPresetUiStatus) << "\",\n";
+        f << indent << "  \"materialPresetPerformanceStatus\": \"" << escapeJson(model.materialPresetPerformanceStatus) << "\",\n";
+        f << indent << "  \"selectedSlotPresetStatus\": \"" << escapeJson(model.selectedSlotPresetStatus) << "\",\n";
+        f << indent << "  \"carPaintPresetStatus\": \"" << escapeJson(model.carPaintPresetStatus) << "\",\n";
+        f << indent << "  \"metalPresetStatus\": \"" << escapeJson(model.metalPresetStatus) << "\",\n";
+        f << indent << "  \"fabricPresetStatus\": \"" << escapeJson(model.fabricPresetStatus) << "\",\n";
+        f << indent << "  \"rubberPresetStatus\": \"" << escapeJson(model.rubberPresetStatus) << "\",\n";
+        f << indent << "  \"plasticPresetStatus\": \"" << escapeJson(model.plasticPresetStatus) << "\",\n";
+        f << indent << "  \"glassMetadataPresetStatus\": \"" << escapeJson(model.glassMetadataPresetStatus) << "\",\n";
+        f << indent << "  \"emissivePresetStatus\": \"" << escapeJson(model.emissivePresetStatus) << "\",\n";
+        f << indent << "  \"materialPresetGuardStatus\": \"" << escapeJson(model.materialPresetGuardStatus) << "\",\n";
+        f << indent << "  \"presetCycleButtonStatus\": \"" << escapeJson(model.presetCycleButtonStatus) << "\",\n";
+        f << indent << "  \"presetApplyButtonStatus\": \"" << escapeJson(model.presetApplyButtonStatus) << "\",\n";
+        f << indent << "  \"emissiveSliderStatus\": \"" << escapeJson(model.emissiveSliderStatus) << "\",\n";
+        f << indent << "  \"emissiveUniformUpdateStatus\": \"" << escapeJson(model.emissiveUniformUpdateStatus) << "\",\n";
+        f << indent << "  \"materialResetButtonStatus\": \"" << escapeJson(model.materialResetButtonStatus) << "\",\n";
+        f << indent << "  \"materialUiScrollPreservedStatus\": \"" << escapeJson(model.materialUiScrollPreservedStatus) << "\",\n";
+        f << indent << "  \"emissiveDebugViewStatus\": \"" << escapeJson(model.emissiveDebugViewStatus) << "\",\n";
+        f << indent << "  \"presetTypeDebugViewStatus\": \"" << escapeJson(model.presetTypeDebugViewStatus) << "\",\n";
+        f << indent << "  \"presetResponseDebugViewStatus\": \"" << escapeJson(model.presetResponseDebugViewStatus) << "\",\n";
+        f << indent << "  \"materialEnergyGuardDebugViewStatus\": \"" << escapeJson(model.materialEnergyGuardDebugViewStatus) << "\",\n";
+        f << indent << "  \"selectedSlotPresetDebugViewStatus\": \"" << escapeJson(model.selectedSlotPresetDebugViewStatus) << "\",\n";
+        f << indent << "  \"p22PerformanceStatus\": \"" << escapeJson(model.p22PerformanceStatus) << "\",\n";
+        f << indent << "  \"emissiveNoBloomStatus\": \"" << escapeJson(model.emissiveNoBloomStatus) << "\",\n";
+        f << indent << "  \"emissiveNoNewPassStatus\": \"" << escapeJson(model.emissiveNoNewPassStatus) << "\",\n";
+        f << indent << "  \"presetNoModelReuploadStatus\": \"" << escapeJson(model.presetNoModelReuploadStatus) << "\",\n";
+        f << indent << "  \"presetNoTextureRebuildStatus\": \"" << escapeJson(model.presetNoTextureRebuildStatus) << "\",\n";
         f << indent << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << indent << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";
         f << indent << "  \"fpsSource\": \"" << escapeJson(model.fpsSource) << "\",\n";
@@ -449,6 +495,8 @@ struct RenderLabState {
         f << indent << "    \"normalScale\": " << material.normalScale << ",\n";
         f << indent << "    \"occlusionStrength\": " << material.occlusionStrength << ",\n";
         f << indent << "    \"emissiveFactor\": [" << material.emissiveFactor[0] << ", " << material.emissiveFactor[1] << ", " << material.emissiveFactor[2] << "],\n";
+        f << indent << "    \"emissiveIntensity\": " << material.emissiveIntensity << ",\n";
+        f << indent << "    \"materialPresetHint\": " << material.materialPresetHint << ",\n";
         f << indent << "    \"alphaMode\": \"OPAQUE\",\n";
         f << indent << "    \"alphaCutoff\": " << material.alphaCutoff << "\n";
         f << indent << "  },\n";

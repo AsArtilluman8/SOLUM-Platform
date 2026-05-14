@@ -2,6 +2,25 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P22 — Emissive + Material Presets Lab
+
+Scope:
+
+- Scene19 Emissive Material Presets Lab.
+- Active scene: `scene19_emissive_material_presets_lab`.
+- glTF `emissiveFactor` metadata recorded and applied as guarded final-color contribution.
+- `emissiveTexture` status is diagnostics metadata-only unless an existing safe path is available.
+- Material presets added: Balanced, Car Paint, Metal, Fabric, Rubber, Plastic, Glass Metadata, Emissive Safe.
+- Material tab adds preset cycle/apply controls and Emissive slider.
+- Debug views: Emissive, Preset Type, Preset Response, Material Energy Guard, Selected Slot Preset.
+- P21 alpha/cutout, P20 runtime workflow, P19 slot controls, P18 IBL, P17 gloss/calib/coat, live FPS, and Debug ZIP preserved.
+
+Out of scope:
+
+- Glass, refraction, transmission.
+- Shadow maps, CSM, skeletal animation.
+- Transparent sorting, bloom, real emissive lighting contribution, or a new render pass.
+
 ## Patch P21 — Alpha / Cutout / Double-sided Material Polish
 
 Scope:
@@ -16,12 +35,6 @@ Scope:
 - Material tab adds Alpha Cutoff, Alpha Mode debug, Double-sided debug, and Reset Alpha controls.
 - Debug views: Alpha Mask, Alpha Mode, Double Sided, Cutout Hint, Transparency Status.
 - P20 runtime workflow, P19 slot controls, P18 IBL, P17 gloss/calib/coat, live FPS, and Debug ZIP preserved.
-
-Out of scope:
-
-- Glass, refraction, transmission.
-- Shadow maps, CSM, skeletal animation.
-- Transparent sorting or a new render pass.
 
 ## Patch P20 — Runtime UX Stability + Material Workflow Polish
 

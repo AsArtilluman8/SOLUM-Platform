@@ -2,6 +2,43 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P25 — Glass Material Foundation v1
+
+Scope:
+
+- Scene22 Glass Material Foundation Lab.
+- Active scene: `scene22_glass_material_foundation_lab`.
+- Safe single-pass glass-like material path for selected slot and `glass_like` hint.
+- Glass tint presets: Clear, Blue, Green, Smoke, Warm, Magic.
+- Glass opacity/fake transparency, Fresnel edge reflection, roughness clarity response, and fake thickness edge darkening.
+- P24 fake cubemap/procedural reflection probe used as glass reflection source.
+- Material tab adds Glass Enable, Glass Tint, Glass Opacity, Glass Edge, and Glass Rough controls.
+- `Glass Metadata` preset is now `Glass Foundation`.
+- Debug views: Glass Mask, Glass Opacity, Glass Fresnel, Glass Reflection, Glass Tint, Glass Safety Status.
+- P24 reflection, P23 clearcoat, P22 emissive/presets, P21 alpha/cutout, P20 runtime workflow, P19 slot controls, P18 IBL, and live FPS preserved.
+
+Out of scope:
+
+- Real refraction.
+- Screen-space refraction.
+- Full transparent sorting.
+- Shadows, shadow maps, CSM.
+- Skeletal animation.
+- OBJ/FBX import.
+
+Expected honest diagnostics:
+
+```text
+glassRefractionStatus = deferred_not_real_refraction
+glassSortingStatus = safe_no_full_transparent_sorting
+glassReflectionSourceStatus = p24_fake_cubemap_probe
+```
+
+Known issues:
+
+- Glass is safe fake opacity, not physically correct transparent rendering.
+- Moving FPS optimization remains deferred.
+
 ## Patch P24 — Better Environment Reflection / Fake Cubemap Probe + Motion Performance Guard
 
 Scope:

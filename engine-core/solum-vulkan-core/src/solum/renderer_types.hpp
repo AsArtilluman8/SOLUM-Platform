@@ -77,6 +77,11 @@ struct MaterialConstants {
     float reflectionSaturation = 1.12f;
     float motionReflectionScale = 1.0f;
     float motionClearcoatScale = 1.0f;
+    int glassEnabled = 0;
+    float glassOpacity = 0.44f;
+    float glassEdge = 1.15f;
+    float glassRoughness = 0.22f;
+    int glassTintPreset = 0;
 };
 
 inline const char* lightPresetName(int preset) {
@@ -148,6 +153,12 @@ inline const char* materialDebugViewName(int view) {
     if (view == 49) return "Reflection Energy Guard";
     if (view == 50) return "Clearcoat Reflection";
     if (view == 51) return "Motion Quality";
+    if (view == 52) return "Glass Mask";
+    if (view == 53) return "Glass Opacity";
+    if (view == 54) return "Glass Fresnel";
+    if (view == 55) return "Glass Reflection";
+    if (view == 56) return "Glass Tint";
+    if (view == 57) return "Glass Safety Status";
     return "Final Shaded";
 }
 
@@ -157,7 +168,7 @@ inline const char* materialPresetName(int preset) {
     if (preset == 3) return "Fabric";
     if (preset == 4) return "Rubber";
     if (preset == 5) return "Plastic";
-    if (preset == 6) return "Glass Metadata";
+    if (preset == 6) return "Glass Foundation";
     if (preset == 7) return "Emissive Safe";
     return "Balanced";
 }
@@ -535,7 +546,7 @@ struct ModelRenderState {
     std::string fabricPresetStatus = "ok";
     std::string rubberPresetStatus = "ok";
     std::string plasticPresetStatus = "ok";
-    std::string glassMetadataPresetStatus = "metadata_only_no_real_glass";
+    std::string glassMetadataPresetStatus = "glass_foundation_no_refraction";
     std::string emissivePresetStatus = "ok_safe_clamped";
     std::string materialPresetGuardStatus = "ok_energy_guarded";
     std::string presetCycleButtonStatus = "ok";
@@ -633,7 +644,7 @@ struct ModelRenderState {
     std::string metalReflectionStatus = "ok_tinted_stronger";
     std::string plasticReflectionStatus = "ok_glossy_limited";
     std::string rubberReflectionStatus = "ok_low_reflection";
-    std::string glassMetadataReflectionStatus = "metadata_only_no_real_glass";
+    std::string glassMetadataReflectionStatus = "foundation_single_pass_fake_transparency";
     std::string materialPresetReflectionStatus = "ok";
     std::string fakeCubemapDebugViewStatus = "shader_applied";
     std::string reflectionZonesDebugViewStatus = "shader_applied";
@@ -649,6 +660,62 @@ struct ModelRenderState {
     std::string reflectionNoModelReuploadStatus = "ok";
     std::string noFrameFileWriteStatus = "ok";
     std::string noFrameGlbParseStatus = "ok";
+    std::string glassMaterialStatus = "available";
+    std::string glassMode = "single_pass_fake_transparency_no_refraction";
+    float glassOpacity = 0.44f;
+    std::string glassTintStatus = "ok_preset_tint";
+    std::string glassTintColor = "0.92,0.98,1.00";
+    std::string glassFresnelStatus = "ok_schlick_edge";
+    std::string glassEdgeReflectionStatus = "ok_uniform_edge_boost";
+    std::string glassReflectionSourceStatus = "p24_fake_cubemap_probe";
+    std::string glassRoughnessResponseStatus = "ok_roughness_reduces_clarity";
+    std::string glassThicknessFakeStatus = "ok_edge_tint_darken";
+    std::string glassTransparencyMode = "safe_single_pass_fake_opacity";
+    std::string glassSortingStatus = "safe_no_full_transparent_sorting";
+    std::string glassRefractionStatus = "deferred_not_real_refraction";
+    std::string glassPerformanceStatus = "ok_uniform_shader_no_pass_no_sort";
+    std::string glassUiStatus = "ok_compact_material_tab";
+    std::string glassEnableButtonStatus = "ok";
+    std::string glassPresetStatus = "ok";
+    std::string activeGlassPreset = "Balanced";
+    std::string glassOpacitySliderStatus = "ok";
+    float glassOpacityValue = 0.44f;
+    std::string glassTintPresetStatus = "ok";
+    std::string activeGlassTintPreset = "Clear";
+    std::string glassEdgeSliderStatus = "ok";
+    float glassEdgeValue = 1.15f;
+    std::string glassRoughnessSliderStatus = "ok";
+    float glassRoughnessValue = 0.22f;
+    std::string glassUniformUpdateStatus = "ok_uniform_only";
+    std::string glassPresetIntegrationStatus = "ok_selected_slot_only";
+    int glassPresetAppliedSlot = 0;
+    std::string glassPresetAppliedStatus = "available";
+    std::string glassSelectedSlotRoutingStatus = "ok_selected_slot_or_glass_hint";
+    std::string glassFabricGuardStatus = "ok";
+    std::string glassMetalGuardStatus = "ok";
+    std::string glassCarPaintGuardStatus = "ok";
+    std::string glassVisualResponseStatus = "available";
+    std::string glassOpacityResponseStatus = "ok_base_surface_reduced";
+    std::string glassTintResponseStatus = "ok_tint_colors_surface";
+    std::string glassFresnelResponseStatus = "ok_grazing_angle_boost";
+    std::string glassReflectionResponseStatus = "ok_p24_probe_visible_guarded";
+    std::string glassEnergyGuardStatus = "ok_clamped";
+    std::string glassOverbrightGuardStatus = "ok";
+    std::string glassInvisibleGuardStatus = "ok_minimum_surface_kept";
+    std::string glassMaskDebugViewStatus = "shader_applied";
+    std::string glassOpacityDebugViewStatus = "shader_applied";
+    std::string glassFresnelDebugViewStatus = "shader_applied";
+    std::string glassReflectionDebugViewStatus = "shader_applied";
+    std::string glassTintDebugViewStatus = "shader_applied";
+    std::string glassSafetyDebugViewStatus = "shader_applied";
+    std::string p24ReflectionPreservedStatus = "ok";
+    std::string p25PerformanceStatus = "ok_single_pass_uniform_shader_math";
+    std::string glassNoRefractionPassStatus = "ok";
+    std::string glassNoScreenRefractionStatus = "ok";
+    std::string glassNoFullSortingStatus = "ok";
+    std::string glassNoTextureRebuildStatus = "ok";
+    std::string glassNoModelReuploadStatus = "ok";
+    std::string glassNoNewShadowPassStatus = "ok";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;
     float fpsLastStable = 0.0f;

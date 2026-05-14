@@ -26,11 +26,12 @@ enum class RenderLabScene {
     Scene19EmissiveMaterialPresetsLab,
     Scene20ClearcoatPaintLayerLab,
     Scene21BetterEnvironmentReflectionLab,
+    Scene22GlassMaterialFoundationLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene21BetterEnvironmentReflectionLab;
+    RenderLabScene currentScene = RenderLabScene::Scene22GlassMaterialFoundationLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -77,6 +78,7 @@ struct RenderLabState {
             case RenderLabScene::Scene19EmissiveMaterialPresetsLab: return "scene19_emissive_material_presets_lab";
             case RenderLabScene::Scene20ClearcoatPaintLayerLab: return "scene20_clearcoat_paint_layer_lab";
             case RenderLabScene::Scene21BetterEnvironmentReflectionLab: return "scene21_better_environment_reflection_lab";
+            case RenderLabScene::Scene22GlassMaterialFoundationLab: return "scene22_glass_material_foundation_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -106,12 +108,13 @@ struct RenderLabState {
             case RenderLabScene::Scene19EmissiveMaterialPresetsLab: return "Scene19 Emissive Material Presets Lab";
             case RenderLabScene::Scene20ClearcoatPaintLayerLab: return "Scene20 Clearcoat Paint Layer Lab";
             case RenderLabScene::Scene21BetterEnvironmentReflectionLab: return "Scene21 Better Environment Reflection Lab";
+            case RenderLabScene::Scene22GlassMaterialFoundationLab: return "Scene22 Glass Material Foundation Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }
     }
 
-    void writeJsonFields(std::ofstream& f, const char* indent = "  ") const {
+    void writeJsonFields(std::ostream& f, const char* indent = "  ") const {
         f << indent << "\"renderLab\": {\n";
         f << indent << "  \"schema\": \"solum.render_lab_state\",\n";
         f << indent << "  \"schemaVersion\": 1,\n";
@@ -551,6 +554,62 @@ struct RenderLabState {
         f << indent << "  \"reflectionNoModelReuploadStatus\": \"" << escapeJson(model.reflectionNoModelReuploadStatus) << "\",\n";
         f << indent << "  \"noFrameFileWriteStatus\": \"" << escapeJson(model.noFrameFileWriteStatus) << "\",\n";
         f << indent << "  \"noFrameGlbParseStatus\": \"" << escapeJson(model.noFrameGlbParseStatus) << "\",\n";
+        f << indent << "  \"glassMaterialStatus\": \"" << escapeJson(model.glassMaterialStatus) << "\",\n";
+        f << indent << "  \"glassMode\": \"" << escapeJson(model.glassMode) << "\",\n";
+        f << indent << "  \"glassOpacity\": " << model.glassOpacity << ",\n";
+        f << indent << "  \"glassTintStatus\": \"" << escapeJson(model.glassTintStatus) << "\",\n";
+        f << indent << "  \"glassTintColor\": \"" << escapeJson(model.glassTintColor) << "\",\n";
+        f << indent << "  \"glassFresnelStatus\": \"" << escapeJson(model.glassFresnelStatus) << "\",\n";
+        f << indent << "  \"glassEdgeReflectionStatus\": \"" << escapeJson(model.glassEdgeReflectionStatus) << "\",\n";
+        f << indent << "  \"glassReflectionSourceStatus\": \"" << escapeJson(model.glassReflectionSourceStatus) << "\",\n";
+        f << indent << "  \"glassRoughnessResponseStatus\": \"" << escapeJson(model.glassRoughnessResponseStatus) << "\",\n";
+        f << indent << "  \"glassThicknessFakeStatus\": \"" << escapeJson(model.glassThicknessFakeStatus) << "\",\n";
+        f << indent << "  \"glassTransparencyMode\": \"" << escapeJson(model.glassTransparencyMode) << "\",\n";
+        f << indent << "  \"glassSortingStatus\": \"" << escapeJson(model.glassSortingStatus) << "\",\n";
+        f << indent << "  \"glassRefractionStatus\": \"" << escapeJson(model.glassRefractionStatus) << "\",\n";
+        f << indent << "  \"glassPerformanceStatus\": \"" << escapeJson(model.glassPerformanceStatus) << "\",\n";
+        f << indent << "  \"glassUiStatus\": \"" << escapeJson(model.glassUiStatus) << "\",\n";
+        f << indent << "  \"glassEnableButtonStatus\": \"" << escapeJson(model.glassEnableButtonStatus) << "\",\n";
+        f << indent << "  \"glassPresetStatus\": \"" << escapeJson(model.glassPresetStatus) << "\",\n";
+        f << indent << "  \"activeGlassPreset\": \"" << escapeJson(model.activeGlassPreset) << "\",\n";
+        f << indent << "  \"glassOpacitySliderStatus\": \"" << escapeJson(model.glassOpacitySliderStatus) << "\",\n";
+        f << indent << "  \"glassOpacityValue\": " << model.glassOpacityValue << ",\n";
+        f << indent << "  \"glassTintPresetStatus\": \"" << escapeJson(model.glassTintPresetStatus) << "\",\n";
+        f << indent << "  \"activeGlassTintPreset\": \"" << escapeJson(model.activeGlassTintPreset) << "\",\n";
+        f << indent << "  \"glassEdgeSliderStatus\": \"" << escapeJson(model.glassEdgeSliderStatus) << "\",\n";
+        f << indent << "  \"glassEdgeValue\": " << model.glassEdgeValue << ",\n";
+        f << indent << "  \"glassRoughnessSliderStatus\": \"" << escapeJson(model.glassRoughnessSliderStatus) << "\",\n";
+        f << indent << "  \"glassRoughnessValue\": " << model.glassRoughnessValue << ",\n";
+        f << indent << "  \"glassUniformUpdateStatus\": \"" << escapeJson(model.glassUniformUpdateStatus) << "\",\n";
+        f << indent << "  \"glassPresetIntegrationStatus\": \"" << escapeJson(model.glassPresetIntegrationStatus) << "\",\n";
+        f << indent << "  \"glassPresetAppliedSlot\": " << model.glassPresetAppliedSlot << ",\n";
+        f << indent << "  \"glassPresetAppliedStatus\": \"" << escapeJson(model.glassPresetAppliedStatus) << "\",\n";
+        f << indent << "  \"glassSelectedSlotRoutingStatus\": \"" << escapeJson(model.glassSelectedSlotRoutingStatus) << "\",\n";
+        f << indent << "  \"glassFabricGuardStatus\": \"" << escapeJson(model.glassFabricGuardStatus) << "\",\n";
+        f << indent << "  \"glassMetalGuardStatus\": \"" << escapeJson(model.glassMetalGuardStatus) << "\",\n";
+        f << indent << "  \"glassCarPaintGuardStatus\": \"" << escapeJson(model.glassCarPaintGuardStatus) << "\",\n";
+        f << indent << "  \"glassVisualResponseStatus\": \"" << escapeJson(model.glassVisualResponseStatus) << "\",\n";
+        f << indent << "  \"glassOpacityResponseStatus\": \"" << escapeJson(model.glassOpacityResponseStatus) << "\",\n";
+        f << indent << "  \"glassTintResponseStatus\": \"" << escapeJson(model.glassTintResponseStatus) << "\",\n";
+        f << indent << "  \"glassFresnelResponseStatus\": \"" << escapeJson(model.glassFresnelResponseStatus) << "\",\n";
+        f << indent << "  \"glassReflectionResponseStatus\": \"" << escapeJson(model.glassReflectionResponseStatus) << "\",\n";
+        f << indent << "  \"glassEnergyGuardStatus\": \"" << escapeJson(model.glassEnergyGuardStatus) << "\",\n";
+        f << indent << "  \"glassOverbrightGuardStatus\": \"" << escapeJson(model.glassOverbrightGuardStatus) << "\",\n";
+        f << indent << "  \"glassInvisibleGuardStatus\": \"" << escapeJson(model.glassInvisibleGuardStatus) << "\",\n";
+        f << indent << "  \"glassMaskDebugViewStatus\": \"" << escapeJson(model.glassMaskDebugViewStatus) << "\",\n";
+        f << indent << "  \"glassOpacityDebugViewStatus\": \"" << escapeJson(model.glassOpacityDebugViewStatus) << "\",\n";
+        f << indent << "  \"glassFresnelDebugViewStatus\": \"" << escapeJson(model.glassFresnelDebugViewStatus) << "\",\n";
+        f << indent << "  \"glassReflectionDebugViewStatus\": \"" << escapeJson(model.glassReflectionDebugViewStatus) << "\",\n";
+        f << indent << "  \"glassTintDebugViewStatus\": \"" << escapeJson(model.glassTintDebugViewStatus) << "\",\n";
+        f << indent << "  \"glassSafetyDebugViewStatus\": \"" << escapeJson(model.glassSafetyDebugViewStatus) << "\",\n";
+        f << indent << "  \"p24ReflectionPreservedStatus\": \"" << escapeJson(model.p24ReflectionPreservedStatus) << "\",\n";
+        f << indent << "  \"p25PerformanceStatus\": \"" << escapeJson(model.p25PerformanceStatus) << "\",\n";
+        f << indent << "  \"glassNoRefractionPassStatus\": \"" << escapeJson(model.glassNoRefractionPassStatus) << "\",\n";
+        f << indent << "  \"glassNoScreenRefractionStatus\": \"" << escapeJson(model.glassNoScreenRefractionStatus) << "\",\n";
+        f << indent << "  \"glassNoFullSortingStatus\": \"" << escapeJson(model.glassNoFullSortingStatus) << "\",\n";
+        f << indent << "  \"glassNoTextureRebuildStatus\": \"" << escapeJson(model.glassNoTextureRebuildStatus) << "\",\n";
+        f << indent << "  \"glassNoModelReuploadStatus\": \"" << escapeJson(model.glassNoModelReuploadStatus) << "\",\n";
+        f << indent << "  \"glassNoNewShadowPassStatus\": \"" << escapeJson(model.glassNoNewShadowPassStatus) << "\",\n";
         f << indent << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << indent << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";
         f << indent << "  \"fpsSource\": \"" << escapeJson(model.fpsSource) << "\",\n";

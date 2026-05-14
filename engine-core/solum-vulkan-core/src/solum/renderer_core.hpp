@@ -221,7 +221,7 @@ struct RendererCore {
         model.fabricPresetStatus = "ok";
         model.rubberPresetStatus = "ok";
         model.plasticPresetStatus = "ok";
-        model.glassMetadataPresetStatus = "metadata_only_no_real_glass";
+        model.glassMetadataPresetStatus = "glass_foundation_no_refraction";
         model.emissivePresetStatus = "ok_safe_clamped";
         model.materialPresetGuardStatus = "ok_energy_guarded";
         model.presetCycleButtonStatus = "ok";
@@ -396,7 +396,7 @@ struct RendererCore {
         model.metalReflectionStatus = "ok_tinted_stronger";
         model.plasticReflectionStatus = "ok_glossy_limited";
         model.rubberReflectionStatus = "ok_low_reflection";
-        model.glassMetadataReflectionStatus = "metadata_only_no_real_glass";
+        model.glassMetadataReflectionStatus = "foundation_single_pass_fake_transparency";
         model.materialPresetReflectionStatus = "ok";
         model.fakeCubemapDebugViewStatus = "shader_applied";
         model.reflectionZonesDebugViewStatus = "shader_applied";
@@ -687,6 +687,95 @@ struct RendererCore {
         model.fabricMattePreserveStatus = fabricCount > 0 || selectedFabric ? "ok_fabric_matte_preserved" : "ok";
     }
 
+    const char* glassTintPresetName(int preset) const {
+        if (preset == 1) return "Blue";
+        if (preset == 2) return "Green";
+        if (preset == 3) return "Smoke";
+        if (preset == 4) return "Warm";
+        if (preset == 5) return "Magic";
+        return "Clear";
+    }
+
+    const char* glassTintColorString(int preset) const {
+        if (preset == 1) return "0.55,0.82,1.00";
+        if (preset == 2) return "0.55,1.00,0.72";
+        if (preset == 3) return "0.48,0.52,0.58";
+        if (preset == 4) return "1.00,0.78,0.52";
+        if (preset == 5) return "0.82,0.58,1.00";
+        return "0.92,0.98,1.00";
+    }
+
+    void syncGlassState() {
+        bool selectedGlass = false;
+        bool selectedFabric = false;
+        bool selectedMetal = false;
+        bool selectedPaint = false;
+        if (selectedMaterialSlot >= 0 && (size_t)selectedMaterialSlot < modelMaterialSlots.size()) {
+            const auto& slot = modelMaterialSlots[(size_t)selectedMaterialSlot];
+            selectedGlass = slot.materialTypeHint == 6;
+            selectedFabric = slot.materialTypeHint == 0;
+            selectedMetal = slot.materialTypeHint == 2;
+            selectedPaint = slot.materialTypeHint == 1;
+        }
+        const bool active = material.glassEnabled != 0 || selectedGlass || activeMaterialPreset == 6;
+        model.glassMaterialStatus = active ? "ok_foundation_single_pass" : "available";
+        model.glassMode = "single_pass_fake_transparency_no_refraction";
+        model.glassOpacity = material.glassOpacity;
+        model.glassTintStatus = "ok_preset_tint";
+        model.glassTintColor = glassTintColorString(material.glassTintPreset);
+        model.glassFresnelStatus = "ok_schlick_edge";
+        model.glassEdgeReflectionStatus = "ok_uniform_edge_boost";
+        model.glassReflectionSourceStatus = "p24_fake_cubemap_probe";
+        model.glassRoughnessResponseStatus = "ok_roughness_reduces_clarity";
+        model.glassThicknessFakeStatus = "ok_edge_tint_darken";
+        model.glassTransparencyMode = "safe_single_pass_fake_opacity";
+        model.glassSortingStatus = "safe_no_full_transparent_sorting";
+        model.glassRefractionStatus = "deferred_not_real_refraction";
+        model.glassPerformanceStatus = "ok_uniform_shader_no_pass_no_sort";
+        model.glassUiStatus = "ok_compact_material_tab";
+        model.glassEnableButtonStatus = "ok";
+        model.glassPresetStatus = "ok";
+        model.activeGlassPreset = active ? "Glass Foundation" : "Balanced";
+        model.glassOpacitySliderStatus = "ok";
+        model.glassOpacityValue = material.glassOpacity;
+        model.glassTintPresetStatus = "ok";
+        model.activeGlassTintPreset = glassTintPresetName(material.glassTintPreset);
+        model.glassEdgeSliderStatus = "ok";
+        model.glassEdgeValue = material.glassEdge;
+        model.glassRoughnessSliderStatus = "ok";
+        model.glassRoughnessValue = material.glassRoughness;
+        model.glassUniformUpdateStatus = "ok_uniform_only";
+        model.glassPresetIntegrationStatus = "ok_selected_slot_only";
+        model.glassPresetAppliedSlot = selectedMaterialSlot;
+        model.glassPresetAppliedStatus = active ? "ok_selected_slot_uniform_only" : "available";
+        model.glassSelectedSlotRoutingStatus = "ok_selected_slot_or_glass_hint";
+        model.glassFabricGuardStatus = selectedFabric ? "ok_guard_blocks_transparency" : "ok";
+        model.glassMetalGuardStatus = selectedMetal ? "ok_metal_preserved_unless_selected_glass_preset" : "ok";
+        model.glassCarPaintGuardStatus = selectedPaint ? "ok_car_paint_preserved_unless_selected_glass_preset" : "ok";
+        model.glassVisualResponseStatus = active ? "ok_visible_tint_opacity_edge_reflection" : "available";
+        model.glassOpacityResponseStatus = "ok_base_surface_reduced";
+        model.glassTintResponseStatus = "ok_tint_colors_surface";
+        model.glassFresnelResponseStatus = "ok_grazing_angle_boost";
+        model.glassReflectionResponseStatus = "ok_p24_probe_visible_guarded";
+        model.glassEnergyGuardStatus = "ok_clamped";
+        model.glassOverbrightGuardStatus = "ok";
+        model.glassInvisibleGuardStatus = "ok_minimum_surface_kept";
+        model.glassMaskDebugViewStatus = "shader_applied";
+        model.glassOpacityDebugViewStatus = "shader_applied";
+        model.glassFresnelDebugViewStatus = "shader_applied";
+        model.glassReflectionDebugViewStatus = "shader_applied";
+        model.glassTintDebugViewStatus = "shader_applied";
+        model.glassSafetyDebugViewStatus = "shader_applied";
+        model.p24ReflectionPreservedStatus = "ok";
+        model.p25PerformanceStatus = "ok_single_pass_uniform_shader_math";
+        model.glassNoRefractionPassStatus = "ok";
+        model.glassNoScreenRefractionStatus = "ok";
+        model.glassNoFullSortingStatus = "ok";
+        model.glassNoTextureRebuildStatus = "ok";
+        model.glassNoModelReuploadStatus = "ok";
+        model.glassNoNewShadowPassStatus = "ok";
+    }
+
     void syncAlphaCutoutState() {
         uint32_t maskCount = 0;
         uint32_t blendCount = 0;
@@ -725,11 +814,11 @@ struct RendererCore {
         model.transparencyDeferredStatus = "ok_no_full_transparent_sorting_or_glass";
     }
 
-    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, float reflectionContrast, float reflectionSaturation, float motionReflectionScale, float motionClearcoatScale, int selectedSlot, float slotMetallic, float slotRoughness, float slotNormalScale, float slotAo, float slotGloss, float slotCoat, float alphaCutoffValue, float emissiveIntensity, int materialPreset) {
+    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, float reflectionContrast, float reflectionSaturation, float motionReflectionScale, float motionClearcoatScale, int selectedSlot, float slotMetallic, float slotRoughness, float slotNormalScale, float slotAo, float slotGloss, float slotCoat, float alphaCutoffValue, float emissiveIntensity, int materialPreset, int glassEnabled, float glassOpacity, float glassEdge, float glassRoughness, int glassTintPreset) {
         applyLightPreset(lightPreset);
         material.sunIntensity = clampFloat(sunIntensity, 0.5f, 4.0f);
         material.ambientIntensity = clampFloat(ambientIntensity, 0.1f, 2.0f);
-        material.activeDebugView = ((activeDebugView % 52) + 52) % 52;
+        material.activeDebugView = ((activeDebugView % 58) + 58) % 58;
         material.toneMappingMode = ((toneMappingMode % 3) + 3) % 3;
         material.exposureValue = clampFloat(exposureValue, 0.8f, 3.0f);
         material.ambientFloor = clampFloat(ambientFloor, 0.0f, 0.35f);
@@ -753,6 +842,11 @@ struct RendererCore {
         material.alphaCutoff = clampFloat(alphaCutoffValue, 0.0f, 1.0f);
         material.emissiveIntensity = clampFloat(emissiveIntensity, 0.0f, 2.0f);
         material.materialPresetHint = ((materialPreset % 8) + 8) % 8;
+        material.glassEnabled = glassEnabled != 0 ? 1 : 0;
+        material.glassOpacity = clampFloat(glassOpacity, 0.0f, 1.0f);
+        material.glassEdge = clampFloat(glassEdge, 0.0f, 2.0f);
+        material.glassRoughness = clampFloat(glassRoughness, 0.0f, 1.0f);
+        material.glassTintPreset = ((glassTintPreset % 6) + 6) % 6;
         selectedMaterialSlot = selectedSlot;
         selectedSlotMetallicOverride = clampFloat(slotMetallic, 0.0f, 1.0f);
         selectedSlotRoughnessOverride = clampFloat(slotRoughness, 0.0f, 1.0f);
@@ -766,9 +860,10 @@ struct RendererCore {
         syncAlphaCutoutState();
         syncEmissivePresetState();
         syncClearcoatState();
+        syncGlassState();
         const bool ok = renderOneFrame();
         syncDiagnostics();
-        diagnostics.write(ok ? "valid" : diagnostics.status, ok ? "Scene21 better environment reflection lab updated uniforms only." : diagnostics.reason);
+        diagnostics.write(ok ? "valid" : diagnostics.status, ok ? "Scene22 glass material foundation lab updated uniforms only." : diagnostics.reason);
         updateReadyStatus();
         return ok;
     }
@@ -1105,7 +1200,8 @@ struct RendererCore {
 
     void updateReadyStatus() {
         syncLightingModelState();
-        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene21 Better Environment Reflection Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nModel render: " + model.drawStatus + "\nPrimitives rendered/skipped/total: " + std::to_string(model.primitiveCountRendered) + " / " + std::to_string(model.primitiveCountSkipped) + " / " + std::to_string(model.primitiveCountTotal) + "\nMaterials used: " + std::to_string(model.materialSlotCountRendered) + "\nSelected material slot: " + std::to_string(model.selectedMaterialSlot) + " / " + std::to_string(model.selectedMaterialSlotCount) + "\nPer-material override: " + model.selectedSlotOverrideApplied + "\nClearcoat: " + model.clearcoatStatus + " " + std::to_string(model.clearcoatIntensity) + "/" + std::to_string(model.clearcoatRoughness) + "\nAlpha: " + model.alphaMaterialStatus + " cutoff=" + std::to_string(model.alphaCutoffValue) + "\nDouble sided: " + model.doubleSidedMaterialStatus + "\nInspector: " + model.inspectorUiMode + "\nLighting status: " + model.lightingStatus + "\nIBL mode: " + model.iblMode + "\nEnvironment: " + model.environmentPreset + " " + std::to_string(model.environmentIntensity) + "\nReflection intensity: " + std::to_string(model.reflectionIntensity) + "\nGrounding: " + model.contactGroundingStatus + " " + std::to_string(model.contactShadowIntensity) + "\nCalibration: " + model.calibrationPreset + " " + std::to_string(model.calibrationSliderValue) + "\nAlbedo guard: " + model.albedoEnergyStatus + " / " + model.luminanceGuardStatus + "\nMaterial hints: " + model.materialTypeHintStatus + "\nBRDF status: " + model.brdfStatus + "\nSpecular status: " + model.specularStatus + "\nSpecular boost: " + std::to_string(model.specularBoost) + "\nReflection foundation: " + model.reflectionFoundationStatus + "\nFresnel status: " + model.fresnelStatus + "\nF0 status: " + model.f0Status + "\nLight preset: " + model.lightPreset + "\nSun intensity: " + std::to_string(model.sunIntensity) + "\nAmbient intensity: " + std::to_string(model.ambientIntensity) + "\nExposure: " + std::to_string(model.exposureValue) + " " + model.brightnessPreset + "\nMaterial response status: " + model.materialResponseStatus + "\nActive debug view: " + model.activeDebugView + "\nBaseColor status: " + model.baseColorTextureStatus + "\nMetallicRoughness status: " + model.metallicRoughnessStatus + "\nTangent status: " + model.tangentStatus + "\nNormal status: " + model.normalMapStatus + " applied=" + model.normalMapAppliedStatus + "\nAO status: " + model.occlusionMapStatus + "\nPBR textures uploaded/fallback/skipped: " + std::to_string(model.uploadedPbrTextureCount) + " / " + std::to_string(model.pbrTextureFallbackCount) + " / " + std::to_string(model.skippedPbrTextureCount) + "\nFPS/frameMs: " + std::to_string(model.fpsCurrent) + " / " + std::to_string(model.frameTimeMs) + "\nDebug ZIP: " + model.debugZipStatus + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nTexture size: " + std::to_string(model.textureWidth) + "x" + std::to_string(model.textureHeight) + "\nFallback texture: " + std::string(model.textureFallbackUsed ? "yes" : "no") + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: validate Scene21 better environment reflection lab";
+        syncGlassState();
+        status = "SOLUM Engine\nRenderer path: Android Native Vulkan\nGPU: " + diagnostics.gpuName + "\nType: " + diagnostics.gpuType + "\nAPI: " + diagnostics.apiVersion + "\nSwapchain: created\nRender pass: color+depth OK\nRenderer core: OK\nRender Lab: Scene22 Glass Material Foundation Lab\nVertex buffer: OK\nIndex buffer: OK\nCube draw: " + std::string(model.fallbackCubeVisible ? "OK/fallback visible" : "preserved/off") + "\nDepth: OK\nCamera: controls OK\nMaterial constants: OK\nMesh layout: OK\nActive model: " + model.activeModelName + "\nModel render: " + model.drawStatus + "\nPrimitives rendered/skipped/total: " + std::to_string(model.primitiveCountRendered) + " / " + std::to_string(model.primitiveCountSkipped) + " / " + std::to_string(model.primitiveCountTotal) + "\nMaterials used: " + std::to_string(model.materialSlotCountRendered) + "\nSelected material slot: " + std::to_string(model.selectedMaterialSlot) + " / " + std::to_string(model.selectedMaterialSlotCount) + "\nPer-material override: " + model.selectedSlotOverrideApplied + "\nGlass: " + model.glassMaterialStatus + " opacity=" + std::to_string(model.glassOpacity) + " source=" + model.glassReflectionSourceStatus + "\nClearcoat: " + model.clearcoatStatus + " " + std::to_string(model.clearcoatIntensity) + "/" + std::to_string(model.clearcoatRoughness) + "\nAlpha: " + model.alphaMaterialStatus + " cutoff=" + std::to_string(model.alphaCutoffValue) + "\nDouble sided: " + model.doubleSidedMaterialStatus + "\nInspector: " + model.inspectorUiMode + "\nLighting status: " + model.lightingStatus + "\nIBL mode: " + model.iblMode + "\nEnvironment: " + model.environmentPreset + " " + std::to_string(model.environmentIntensity) + "\nReflection intensity: " + std::to_string(model.reflectionIntensity) + "\nGrounding: " + model.contactGroundingStatus + " " + std::to_string(model.contactShadowIntensity) + "\nCalibration: " + model.calibrationPreset + " " + std::to_string(model.calibrationSliderValue) + "\nAlbedo guard: " + model.albedoEnergyStatus + " / " + model.luminanceGuardStatus + "\nMaterial hints: " + model.materialTypeHintStatus + "\nBRDF status: " + model.brdfStatus + "\nSpecular status: " + model.specularStatus + "\nSpecular boost: " + std::to_string(model.specularBoost) + "\nReflection foundation: " + model.reflectionFoundationStatus + "\nFresnel status: " + model.fresnelStatus + "\nF0 status: " + model.f0Status + "\nLight preset: " + model.lightPreset + "\nSun intensity: " + std::to_string(model.sunIntensity) + "\nAmbient intensity: " + std::to_string(model.ambientIntensity) + "\nExposure: " + std::to_string(model.exposureValue) + " " + model.brightnessPreset + "\nMaterial response status: " + model.materialResponseStatus + "\nActive debug view: " + model.activeDebugView + "\nBaseColor status: " + model.baseColorTextureStatus + "\nMetallicRoughness status: " + model.metallicRoughnessStatus + "\nTangent status: " + model.tangentStatus + "\nNormal status: " + model.normalMapStatus + " applied=" + model.normalMapAppliedStatus + "\nAO status: " + model.occlusionMapStatus + "\nPBR textures uploaded/fallback/skipped: " + std::to_string(model.uploadedPbrTextureCount) + " / " + std::to_string(model.pbrTextureFallbackCount) + " / " + std::to_string(model.skippedPbrTextureCount) + "\nFPS/frameMs: " + std::to_string(model.fpsCurrent) + " / " + std::to_string(model.frameTimeMs) + "\nDebug ZIP: " + model.debugZipStatus + "\nGPU Upload: " + model.gpuUploadStatus + "\nDraw Model: " + model.drawStatus + "\nTexture size: " + std::to_string(model.textureWidth) + "x" + std::to_string(model.textureHeight) + "\nFallback texture: " + std::string(model.textureFallbackUsed ? "yes" : "no") + "\nVertices / indices: " + std::to_string(model.uploadedVertexCount) + " / " + std::to_string(model.uploadedIndexCount) + "\nFallback cube: " + std::string(model.fallbackCubeVisible ? "on" : "off") + "\nReason: " + model.reason + "\nFrames rendered: " + std::to_string(framesRendered) + "\nNext: validate Scene22 glass material foundation lab";
     }
 
     bool setCamera(float yawDeg, float pitchDeg, float distance, bool controlsActive, float motionSpeed, float qualityBlend, float reflectionScale, float clearcoatScale, float movingFps, float stillFps) {
@@ -1213,10 +1309,12 @@ struct RendererCore {
                         pc.material.alphaCutoff = material.alphaCutoff;
                         pc.material.emissiveIntensity = selectedSlotEmissiveIntensity;
                         pc.material.materialPresetHint = activeMaterialPreset;
+                        pc.material.glassEnabled = (material.glassEnabled != 0 || activeMaterialPreset == 6) ? 1 : 0;
                     } else {
                         pc.material.glossSliderValue = 0.0f;
                         pc.material.paintGlossSliderValue = 0.0f;
                         pc.material.emissiveIntensity = 0.0f;
+                        pc.material.glassEnabled = slot.materialTypeHint == 6 ? 1 : 0;
                     }
                     if (((material.activeDebugView >= 27 && material.activeDebugView <= 31) || material.activeDebugView == 41) && range.materialSlot != selectedMaterialSlot) {
                         pc.material.activeDebugView = 0;
@@ -1381,7 +1479,7 @@ struct RendererCore {
         }
         syncDiagnostics();
         syncAlphaCutoutState();
-        diagnostics.write("valid", "Scene21 Better Environment Reflection Lab uploaded and drew first primitive.");
+        diagnostics.write("valid", "Scene22 Glass Material Foundation Lab uploaded and drew first primitive.");
         updateReadyStatus();
         return true;
     }
@@ -1487,7 +1585,7 @@ struct RendererCore {
         syncDiagnostics();
         syncAlphaCutoutState();
         syncEmissivePresetState();
-        diagnostics.write("valid", "Scene21 Better Environment Reflection Lab uploaded and drew supported primitives.");
+        diagnostics.write("valid", "Scene22 Glass Material Foundation Lab uploaded and drew supported primitives.");
         updateReadyStatus();
         return true;
     }
@@ -1738,7 +1836,7 @@ struct RendererCore {
         model.textureFallbackUsed = true;
         model.reason = "no active model";
         syncDiagnostics();
-        diagnostics.write("valid", "Scene21 Better Environment Reflection Lab initialized with cube fallback while waiting for active model upload.");
+        diagnostics.write("valid", "Scene22 Glass Material Foundation Lab initialized with cube fallback while waiting for active model upload.");
         updateReadyStatus();
         return true;
     }

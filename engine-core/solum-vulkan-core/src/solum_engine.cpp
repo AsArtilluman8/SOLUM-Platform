@@ -5,6 +5,7 @@
 #include <android/native_window.h>
 #include <string>
 #include <vector>
+#include <sstream>
 
 #include "solum/renderer_core.hpp"
 
@@ -101,11 +102,16 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetLi
     jfloat selectedSlotCoatOverride,
     jfloat alphaCutoffValue,
     jfloat emissiveIntensity,
-    jint materialPreset
+    jint materialPreset,
+    jint glassEnabled,
+    jfloat glassOpacity,
+    jfloat glassEdge,
+    jfloat glassRoughness,
+    jint glassTintPreset
 ) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) return;
-    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPreset, calibrationStrength, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPreset, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, selectedSlotGlossOverride, selectedSlotCoatOverride, alphaCutoffValue, emissiveIntensity, materialPreset);
+    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPreset, calibrationStrength, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPreset, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, selectedSlotGlossOverride, selectedSlotCoatOverride, alphaCutoffValue, emissiveIntensity, materialPreset, glassEnabled, glassOpacity, glassEdge, glassRoughness, glassTintPreset);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdateUiDiagnostics(
@@ -148,6 +154,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdat
     renderer->model.debugZipPath = pathChars ? pathChars : "";
     renderer->model.debugZipIncludedFiles = filesChars ? filesChars : "";
     renderer->model.debugZipReason = reasonChars ? reasonChars : "";
+    renderer->syncGlassState();
     renderer->syncDiagnostics();
     if (fpsSourceChars) env->ReleaseStringUTFChars(fpsSource, fpsSourceChars);
     if (fpsStatusChars) env->ReleaseStringUTFChars(fpsStatus, fpsStatusChars);
@@ -161,8 +168,15 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdat
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) {
-        return env->NewStringUTF("{\"currentScene\":\"scene21_better_environment_reflection_lab\",\"currentLabScene\":\"scene21_better_environment_reflection_lab\",\"currentLabSceneName\":\"Scene21 Better Environment Reflection Lab\",\"status\":\"native_handle_missing\",\"clearcoatStatus\":\"available\",\"clearcoatSliderStatus\":\"not_applied\",\"carPaintPresetV2Status\":\"not_applied\",\"p22EmissivePreservedStatus\":\"unknown_native_handle_missing\",\"lightingStatus\":\"failed\",\"lightingControlStatus\":\"failed\",\"lightingUiMode\":\"compact_sliders\",\"inspectorUiStatus\":\"ok\",\"inspectorUiMode\":\"tabbed_compact_inspector\",\"activeInspectorTab\":\"Assets\",\"assetsTabStatus\":\"ok_import_scan_export_summary\",\"cameraTabStatus\":\"ok_camera_info_reset_zoom\",\"lightingTabStatus\":\"ok_sliders_environment_controls\",\"materialTabStatus\":\"ok_slot_controls\",\"debugTabStatus\":\"ok_fps_zip_status\",\"fpsStatus\":\"not_ready\",\"fpsUpdateMode\":\"java_choreographer_live\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
+        return env->NewStringUTF("{\"currentScene\":\"scene22_glass_material_foundation_lab\",\"currentLabScene\":\"scene22_glass_material_foundation_lab\",\"currentLabSceneName\":\"Scene22 Glass Material Foundation Lab\",\"status\":\"native_handle_missing\",\"glassMaterialStatus\":\"available\",\"glassRefractionStatus\":\"deferred_not_real_refraction\",\"glassSortingStatus\":\"safe_no_full_transparent_sorting\",\"glassReflectionSourceStatus\":\"p24_fake_cubemap_probe\",\"clearcoatStatus\":\"available\",\"clearcoatSliderStatus\":\"not_applied\",\"carPaintPresetV2Status\":\"not_applied\",\"p22EmissivePreservedStatus\":\"unknown_native_handle_missing\",\"lightingStatus\":\"failed\",\"lightingControlStatus\":\"failed\",\"lightingUiMode\":\"compact_sliders\",\"inspectorUiStatus\":\"ok\",\"inspectorUiMode\":\"tabbed_compact_inspector\",\"activeInspectorTab\":\"Assets\",\"assetsTabStatus\":\"ok_import_scan_export_summary\",\"cameraTabStatus\":\"ok_camera_info_reset_zoom\",\"lightingTabStatus\":\"ok_sliders_environment_controls\",\"materialTabStatus\":\"ok_slot_controls\",\"debugTabStatus\":\"ok_fps_zip_status\",\"fpsStatus\":\"not_ready\",\"fpsUpdateMode\":\"java_choreographer_live\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
     }
+    renderer->syncDiagnostics();
+    std::ostringstream out;
+    renderer->diagnostics.renderLab.writeJsonFields(out, "");
+    std::string labeled = out.str();
+    size_t start = labeled.find('{');
+    std::string compact = start == std::string::npos ? "{}" : labeled.substr(start);
+    return env->NewStringUTF(compact.c_str());
     std::string json = std::string("{\"currentScene\":\"") + renderer->diagnostics.renderLab.sceneId()
         + "\",\"currentLabScene\":\"" + renderer->diagnostics.renderLab.sceneId()
         + "\",\"currentLabSceneName\":\"" + renderer->diagnostics.renderLab.sceneName()

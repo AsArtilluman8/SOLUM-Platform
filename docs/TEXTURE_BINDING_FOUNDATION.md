@@ -1,5 +1,41 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P25 glass material foundation lab
+
+P25 switches the active lab to `scene22_glass_material_foundation_lab`.
+
+The texture/material binding path remains the existing per-material-slot Vulkan path. P25 adds glass foundation uniforms and shader math only: glass enable, opacity, tint preset, edge/Fresnel strength, and roughness response. The P24 procedural fake cubemap probe remains the reflection source.
+
+Routing:
+
+- Glass preset applies to selected slot only.
+- Imported `glass_like` materials can use the same safe glass branch.
+- Fabric stays matte and non-transparent.
+- Metal and car paint remain preserved unless the selected slot explicitly receives Glass Foundation.
+- Clearcoat, emissive, alpha/cutout, IBL, selected-slot overrides, and runtime reload/restore paths remain intact.
+
+Deferred:
+
+- real refraction;
+- screen-space refraction;
+- full transparent sorting;
+- extra render pass;
+- shadow pass/shadow maps/CSM.
+
+Debug views:
+
+- Glass Mask
+- Glass Opacity
+- Glass Fresnel
+- Glass Reflection
+- Glass Tint
+- Glass Safety Status
+
+Preset naming:
+
+- `Glass Metadata` is now `Glass Foundation`.
+- The implementation remains honest safe fake opacity, not physically correct transparent glass.
+
 ## P24 better environment reflection lab
 
 P24 switches the active lab to `scene21_better_environment_reflection_lab`.

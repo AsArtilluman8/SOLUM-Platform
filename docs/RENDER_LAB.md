@@ -2,6 +2,62 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene22 Glass Material Foundation Lab
+
+Patch P25 switches the active lab to:
+
+```text
+scene22_glass_material_foundation_lab
+Scene22 Glass Material Foundation Lab
+```
+
+P25 preserves P24 fake cubemap/procedural reflection probe, P23 clearcoat, P22 emissive/presets, P21 alpha/cutout, P20 runtime restore/reload/scroll workflow, P19 selected-slot controls, P18 IBL, Debug ZIP, and live FPS.
+
+Glass foundation:
+
+- Single-pass safe glass-like material path for selected slot and `glass_like` hint.
+- Tint presets: Clear, Blue, Green, Smoke, Warm, Magic.
+- Fake opacity reduces base surface strength without real transparent sorting.
+- Fresnel/edge reflection uses the P24 procedural fake cubemap probe.
+- Roughness reduces glass clarity/reflection intensity.
+- Fake thickness darkens/tints edges.
+- No real refraction, no screen-space refraction, no full transparent sorting, no new shadow pass.
+
+Material controls added:
+
+- Glass Enable.
+- Glass Tint preset cycle.
+- Glass Opacity slider `0.0-1.0`.
+- Glass Edge slider `0.0-2.0`.
+- Glass Rough slider `0.0-1.0`.
+
+Debug views added:
+
+```text
+Glass Mask
+Glass Opacity
+Glass Fresnel
+Glass Reflection
+Glass Tint
+Glass Safety Status
+```
+
+Required honest diagnostics:
+
+```text
+glassRefractionStatus = deferred_not_real_refraction
+glassSortingStatus = safe_no_full_transparent_sorting
+glassReflectionSourceStatus = p24_fake_cubemap_probe
+```
+
+Performance constraints:
+
+- no refraction pass;
+- no screen-space refraction;
+- no transparent sorting overhaul;
+- no texture rebuild/model reupload/tangent rebuild while sliders move;
+- no Java frame-loop allocations, GLB parsing, or file writes.
+
 ## Scene21 Better Environment Reflection Lab
 
 Patch P24 switches the active lab to:

@@ -2,6 +2,29 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P24 — Better Environment Reflection / Fake Cubemap Probe + Motion Performance Guard
+
+Scope:
+
+- Scene21 Better Environment Reflection Lab.
+- Active scene: `scene21_better_environment_reflection_lab`.
+- Procedural directional fake cubemap probe with sky, horizon, ground, side/rim, and glint zones.
+- Reflection contrast and saturation controls.
+- Environment zone presets: Studio, Outdoor, Warm Room, Cold Room, Sunset, Cave.
+- Car Paint and Metal presets receive stronger/tinted reflection response.
+- Fabric remains matte; Glass Metadata remains metadata only.
+- Camera motion guard reduces reflection/clearcoat scale while dragging and restores quality smoothly.
+- P23 clearcoat, P22 emissive/presets, P21 alpha/cutout, P20 runtime workflow, P19 slot controls, P18 IBL, and live FPS preserved.
+
+Out of scope:
+
+- Real cubemap textures, render-to-cubemap, or extra render pass.
+- Real glass, refraction, transmission.
+- Shadows, shadow maps, CSM.
+- Skeletal animation.
+- OBJ/FBX import.
+- Full adaptive renderer.
+
 ## Patch P23 — Clearcoat / Paint Layer v1
 
 Scope:

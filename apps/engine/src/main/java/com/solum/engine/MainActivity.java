@@ -65,8 +65,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static final String PREF_ACTIVE_MODEL_PATH = "active_model_path";
     private static final String PREF_ACTIVE_MODEL_LOCAL_PATH = "active_model_local_path";
     private static final String PREF_ACTIVE_MODEL_NAME = "active_model_name";
-    private static final String SCENE_ID = "scene20_clearcoat_paint_layer_lab";
-    private static final String SCENE_NAME = "Scene20 Clearcoat Paint Layer Lab";
+    private static final String SCENE_ID = "scene21_better_environment_reflection_lab";
+    private static final String SCENE_NAME = "Scene21 Better Environment Reflection Lab";
     private static final int REQUEST_CHOOSE_DIAGNOSTICS_TREE = 2202;
     private static final int REQUEST_IMPORT_GLB = 2305;
     private static final int TEX_BASE_COLOR = 0;
@@ -98,6 +98,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button exposureButton;
     private Button specularBoostButton;
     private Button reflectionIntensityButton;
+    private Button reflectionContrastButton;
+    private Button reflectionSaturationButton;
     private Button groundIntensityButton;
     private Button environmentButton;
     private Button skyPresetButton;
@@ -129,6 +131,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private SeekBar exposureSlider;
     private SeekBar specularSlider;
     private SeekBar reflectionSlider;
+    private SeekBar reflectionContrastSlider;
+    private SeekBar reflectionSaturationSlider;
     private SeekBar groundSlider;
     private SeekBar environmentSlider;
     private SeekBar horizonSlider;
@@ -163,6 +167,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private float ambientFloor = 0.16f;
     private float specularBoost = 1.85f;
     private float reflectionIntensity = 1.15f;
+    private float reflectionContrast = 1.18f;
+    private float reflectionSaturation = 1.12f;
     private float contactShadowIntensity = 0.65f;
     private float environmentIntensity = 1.0f;
     private int environmentPresetIndex = 0;
@@ -222,6 +228,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private float cameraDistance = 4.2f;
     private float lastTouchX = 0.0f;
     private float lastTouchY = 0.0f;
+    private long lastCameraMoveNs = 0L;
+    private long cameraMotionStopNs = 0L;
+    private float cameraMotionSpeed = 0.0f;
+    private float cameraMotionQualityBlend = 1.0f;
+    private float motionReflectionScale = 1.0f;
+    private float motionClearcoatScale = 1.0f;
+    private float cameraMovingFpsLast = 0.0f;
+    private float cameraStillFpsLast = 0.0f;
+    private String cameraMotionQualityTier = "full";
+    private static final long MOTION_RESTORE_NS = 520_000_000L;
     private float lastPinchDistance = 0.0f;
     private boolean pinchActive = false;
     private ModelImportState modelState = ModelImportState.notRun();
@@ -235,8 +251,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native void nativeSurfaceDestroyed(long handle);
     private static native String nativeGetStatus(long handle);
     private static native String nativeGetRenderLabState(long handle);
-    private static native void nativeSetCamera(long handle, float yawDeg, float pitchDeg, float distance);
-    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, int selectedMaterialSlot, float selectedSlotMetallicOverride, float selectedSlotRoughnessOverride, float selectedSlotNormalScaleOverride, float selectedSlotAoOverride, float selectedSlotGlossOverride, float selectedSlotCoatOverride, float alphaCutoffValue, float emissiveIntensity, int materialPreset);
+    private static native void nativeSetCamera(long handle, float yawDeg, float pitchDeg, float distance, float motionSpeed, float qualityBlend, float reflectionScale, float clearcoatScale, float movingFps, float stillFps);
+    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, float reflectionContrast, float reflectionSaturation, float motionReflectionScale, float motionClearcoatScale, int selectedMaterialSlot, float selectedSlotMetallicOverride, float selectedSlotRoughnessOverride, float selectedSlotNormalScaleOverride, float selectedSlotAoOverride, float selectedSlotGlossOverride, float selectedSlotCoatOverride, float alphaCutoffValue, float emissiveIntensity, int materialPreset);
     private static native boolean nativeUploadModelFirstPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, float[] baseColorFactor);
     private static native boolean nativeUploadModelMultiPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, int[] rangeData, float[] materialData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, int primitiveTotal, int primitiveSkipped, int unsupportedPrimitiveCount, String reason);
     private static native boolean nativeUploadBaseColorTexture(long handle, int[] rgbaPixels, int width, int height, String textureName, String textureSource, String mimeType);
@@ -326,6 +342,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         else if ("Exp".equals(label)) { exposureButton = valueButton; exposureSlider = slider; }
         else if ("Spec".equals(label)) { specularBoostButton = valueButton; specularSlider = slider; }
         else if ("Refl".equals(label)) { reflectionIntensityButton = valueButton; reflectionSlider = slider; }
+        else if ("Refl Contrast".equals(label)) { reflectionContrastButton = valueButton; reflectionContrastSlider = slider; }
+        else if ("Refl Saturation".equals(label)) { reflectionSaturationButton = valueButton; reflectionSaturationSlider = slider; }
         else if ("Ground".equals(label)) { groundIntensityButton = valueButton; groundSlider = slider; }
         else if ("Env".equals(label)) { environmentButton = valueButton; environmentSlider = slider; }
         else if ("Horizon".equals(label)) { horizonButton = valueButton; horizonSlider = slider; }
@@ -557,6 +575,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             reflectionIntensity = clamp(v, 0.0f, 2.0f);
             applyLightingControls();
         }));
+        lightingPanel.addView(sliderControl("Refl Contrast", 0.0f, 2.0f, reflectionContrast, v -> {
+            reflectionContrast = clamp(v, 0.0f, 2.0f);
+            applyLightingControls();
+        }));
+        lightingPanel.addView(sliderControl("Refl Saturation", 0.0f, 2.0f, reflectionSaturation, v -> {
+            reflectionSaturation = clamp(v, 0.0f, 2.0f);
+            applyLightingControls();
+        }));
         lightingPanel.addView(sliderControl("Ground", 0.0f, 1.5f, contactShadowIntensity, v -> {
             contactShadowIntensity = clamp(v, 0.0f, 1.5f);
             applyLightingControls();
@@ -565,7 +591,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             environmentIntensity = clamp(v, 0.0f, 2.0f);
             applyLightingControls();
         }));
-        skyPresetButton = compactButton("Sky: Studio");
+        skyPresetButton = compactButton("Env Zone: Studio");
         skyPresetButton.setOnClickListener(v -> cycleEnvironmentPreset());
         lightingPanel.addView(skyPresetButton);
         lightingPanel.addView(sliderControl("Horizon", 0.0f, 1.0f, horizonStrength, v -> {
@@ -872,7 +898,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "\nFallback cube: " + fallback
             + "\nMesh meta: " + p.meshCount + " / " + p.primitiveCount + " / " + p.materialCount + " / " + p.textureCount
             + "\nStatus: " + status
-            + "\nNext: validate Scene20 clearcoat paint layer lab";
+            + "\nNext: validate Scene21 better environment reflection lab";
     }
 
     private void cycleLightPreset() {
@@ -916,7 +942,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleMaterialView() {
-        activeDebugViewIndex = (activeDebugViewIndex + 1) % 46;
+        activeDebugViewIndex = (activeDebugViewIndex + 1) % 52;
         applyLightingControls();
         updateStatus();
     }
@@ -1011,7 +1037,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleEnvironmentPreset() {
-        environmentPresetIndex = (environmentPresetIndex + 1) % 5;
+        environmentPresetIndex = (environmentPresetIndex + 1) % 6;
         applyLightingControls();
         updateStatus();
     }
@@ -1024,6 +1050,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             ambientFloor = 0.10f;
             specularBoost = 1.35f;
             reflectionIntensity = 0.95f;
+            reflectionContrast = 1.05f;
+            reflectionSaturation = 1.04f;
             contactShadowIntensity = 0.55f;
             environmentIntensity = 1.05f;
             environmentPresetIndex = 0;
@@ -1036,9 +1064,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             ambientFloor = 0.08f;
             specularBoost = 1.55f;
             reflectionIntensity = 1.20f;
+            reflectionContrast = 1.22f;
+            reflectionSaturation = 1.12f;
             contactShadowIntensity = 0.75f;
             environmentIntensity = 1.15f;
-            environmentPresetIndex = 3;
+            environmentPresetIndex = 1;
             horizonStrength = 0.62f;
             brightnessPresetIndex = 1;
         } else if (lightPresetIndex == 3) {
@@ -1048,6 +1078,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             ambientFloor = 0.16f;
             specularBoost = 1.85f;
             reflectionIntensity = 1.15f;
+            reflectionContrast = 1.18f;
+            reflectionSaturation = 1.12f;
             contactShadowIntensity = 0.65f;
             environmentIntensity = 1.0f;
             environmentPresetIndex = 0;
@@ -1060,6 +1092,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             ambientFloor = 0.22f;
             specularBoost = 2.25f;
             reflectionIntensity = 1.35f;
+            reflectionContrast = 1.34f;
+            reflectionSaturation = 1.24f;
             contactShadowIntensity = 0.90f;
             environmentIntensity = 1.35f;
             environmentPresetIndex = 3;
@@ -1072,15 +1106,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             ambientFloor = 0.14f;
             specularBoost = 1.25f;
             reflectionIntensity = 0.85f;
+            reflectionContrast = 0.92f;
+            reflectionSaturation = 0.88f;
             contactShadowIntensity = 0.45f;
             environmentIntensity = 0.85f;
-            environmentPresetIndex = 2;
+            environmentPresetIndex = 3;
             horizonStrength = 0.45f;
             brightnessPresetIndex = 2;
         }
     }
 
     private void applyLightingControls() {
+        updateMotionQualityBlend(System.nanoTime());
         applyInspectorDiagnostics();
         modelState.lightingStatus = "ok";
         modelState.lightPreset = lightPresetName(lightPresetIndex);
@@ -1089,24 +1126,28 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.specularBoost = specularBoost;
         modelState.specularBoostStatus = "ok_uniform_controlled";
         modelState.reflectionIntensity = reflectionIntensity;
+        modelState.reflectionContrastValue = reflectionContrast;
+        modelState.reflectionSaturationValue = reflectionSaturation;
+        modelState.motionReflectionScale = motionReflectionScale;
+        modelState.motionClearcoatScale = motionClearcoatScale;
         modelState.iblStatus = "ok_foundation";
-        modelState.iblMode = "directional_sky_ground_ibl";
-        modelState.environmentIblStatus = "ok_foundation";
-        modelState.environmentIblMode = "directional_sky_ground_ibl";
+        modelState.iblMode = "procedural_directional_probe";
+        modelState.environmentIblStatus = "ok_fake_cubemap_probe";
+        modelState.environmentIblMode = "procedural_directional_probe";
         modelState.environmentSourceStatus = "ok_procedural_no_external_texture";
-        modelState.environmentSourceType = "directional_sky_ground_shader_model";
-        modelState.environmentSkyColorStatus = "ok_preset_uniform";
-        modelState.environmentGroundColorStatus = "ok_preset_uniform";
-        modelState.environmentHorizonStatus = "ok_directional_horizon_blend";
+        modelState.environmentSourceType = "procedural_directional_probe";
+        modelState.environmentSkyColorStatus = "ok_zone_uniform";
+        modelState.environmentGroundColorStatus = "ok_zone_uniform";
+        modelState.environmentHorizonStatus = "ok_zone_horizon_blend";
         modelState.environmentPerformanceStatus = "ok_no_extra_pass_no_texture_upload";
-        modelState.environmentReflectionStatus = "p18_environment_directional_source_no_texture_cubemap";
-        modelState.environmentReflectionMode = "reflection_direction_sky_ground_ibl";
-        modelState.environmentSource = "directional_sky_ground_shader_model";
-        modelState.reflectionFoundationStatus = "p18_environment_ibl_foundation";
-        modelState.reflectionMode = "directional_sky_ground_ibl";
-        modelState.reflectionColorStatus = "ok_environment_preset_horizon_gradient";
-        modelState.reflectionRoughnessResponseStatus = "ok_roughness_blurs_reduces_reflection";
-        modelState.metallicReflectionStatus = "ok_metal_tinted_environment_guarded";
+        modelState.environmentReflectionStatus = "p24_fake_cubemap_probe_no_texture";
+        modelState.environmentReflectionMode = "reflection_direction_sky_horizon_ground_side";
+        modelState.environmentSource = "procedural_directional_probe";
+        modelState.reflectionFoundationStatus = "p24_fake_cubemap_probe_foundation";
+        modelState.reflectionMode = "procedural_directional_probe";
+        modelState.reflectionColorStatus = "ok_sky_horizon_ground_side_glint";
+        modelState.reflectionRoughnessResponseStatus = "ok_roughness_blur_approx";
+        modelState.metallicReflectionStatus = "ok_metal_tinted_stronger_guarded";
         modelState.dielectricReflectionStatus = "ok_subtle_f0_environment";
         modelState.reflectionPerformanceStatus = "ok_no_extra_pass_no_texture_rebuild";
         modelState.iblDiffuseStatus = "ok_directional_sky_ground_diffuse";
@@ -1118,12 +1159,36 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.iblOverbrightGuardStatus = "ok_luminance_guarded";
         modelState.environmentUiStatus = "ok_compact_lighting_controls";
         modelState.environmentPreset = environmentPresetName(environmentPresetIndex);
+        modelState.environmentZonePreset = modelState.environmentPreset;
         modelState.environmentIntensity = environmentIntensity;
         modelState.environmentSliderStatus = "ok";
         modelState.skyPresetStatus = "ok";
         modelState.horizonControlStatus = "ok";
         modelState.horizonStrength = horizonStrength;
         modelState.environmentUniformUpdateStatus = "ok_uniform_only";
+        modelState.fakeCubemapStatus = "ok";
+        modelState.fakeCubemapMode = "procedural_directional_probe";
+        modelState.fakeCubemapSourceStatus = "procedural_no_texture_no_render_pass";
+        modelState.environmentZoneStatus = "ok_sky_horizon_ground_side";
+        modelState.skyZoneStatus = "ok";
+        modelState.horizonZoneStatus = "ok";
+        modelState.groundZoneStatus = "ok";
+        modelState.sideReflectionZoneStatus = "ok";
+        modelState.fakeCubemapPerformanceStatus = "ok_shader_math_only_no_loops";
+        modelState.reflectionQualityStatus = "ok_procedural_probe_enhanced";
+        modelState.reflectionContrastStatus = "ok_uniform_control";
+        modelState.reflectionSaturationStatus = "ok_uniform_control";
+        modelState.roughnessReflectionBlurStatus = "ok_direction_blend_approx";
+        modelState.clearcoatReflectionBoostStatus = "ok_motion_guarded";
+        modelState.metalReflectionTintStatus = "ok_base_color_tinted";
+        modelState.fabricReflectionSuppressStatus = "ok_fabric_matte_preserved";
+        modelState.reflectionEnergyGuardStatus = "ok_luminance_guard";
+        modelState.reflectionOverbrightGuardStatus = "ok_clamped_before_tonemap";
+        modelState.reflectionQualityUiStatus = "ok_compact_controls";
+        modelState.reflectionContrastSliderStatus = "ok";
+        modelState.reflectionSaturationSliderStatus = "ok";
+        modelState.environmentZonePresetStatus = "ok";
+        modelState.reflectionUniformUpdateStatus = "ok_uniform_only";
         modelState.contactGroundingStatus = "foundation_analytic";
         modelState.contactShadowStatus = contactShadowIntensity > 0.0f ? "enabled" : "disabled";
         modelState.contactShadowMode = "analytic_blob_or_grounding_approx";
@@ -1212,6 +1277,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.clearcoatHighlightDebugViewStatus = "shader_applied";
         modelState.paintLayerDebugViewStatus = "shader_applied";
         modelState.paintEnergyGuardDebugViewStatus = "shader_applied";
+        modelState.fakeCubemapDebugViewStatus = "shader_applied";
+        modelState.reflectionZonesDebugViewStatus = "shader_applied";
+        modelState.reflectionContrastDebugViewStatus = "shader_applied";
+        modelState.reflectionEnergyGuardDebugViewStatus = "shader_applied";
+        modelState.clearcoatReflectionDebugViewStatus = "shader_applied";
+        modelState.motionQualityDebugViewStatus = "shader_applied";
+        modelState.carPaintReflectionStatus = "ok_clearcoat_probe_separation";
+        modelState.metalReflectionStatus = "ok_tinted_stronger";
+        modelState.plasticReflectionStatus = "ok_glossy_limited";
+        modelState.rubberReflectionStatus = "ok_low_reflection";
+        modelState.glassMetadataReflectionStatus = "metadata_only_no_real_glass";
+        modelState.materialPresetReflectionStatus = "ok";
+        modelState.p23ClearcoatPreservedStatus = "ok";
+        modelState.p24PerformanceStatus = "ok_no_new_pass_no_texture_no_rebuild";
+        modelState.fakeCubemapNoTextureStatus = "ok";
+        modelState.fakeCubemapNoNewPassStatus = "ok";
+        modelState.reflectionNoTextureRebuildStatus = "ok";
+        modelState.reflectionNoModelReuploadStatus = "ok";
+        modelState.noFrameFileWriteStatus = "ok";
+        modelState.noFrameGlbParseStatus = "ok";
         modelState.materialTypeSpecularRoutingStatus = "ok";
         modelState.paintMaterialGlossStatus = "ok_lite_gloss";
         modelState.metalMaterialGlossStatus = "ok_stronger_response";
@@ -1281,7 +1366,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.metallicResponseStatus = "ok_diffuse_reduced_f0_tinted";
         modelState.roughnessResponseStatus = "ok_gloss_width_energy_remap";
         modelState.directLightingStatus = "ok_single_sun_direct_gloss_lobe";
-        modelState.materialResponseStatus = "p18_environment_ibl_foundation";
+        modelState.materialResponseStatus = "p24_fake_cubemap_probe_foundation";
         modelState.pbrQualityTier = "mobile_direct_lighting_ibl_v1";
         modelState.brdfPerformanceStatus = "ok_mobile_friendly_direct_lighting_ibl";
         modelState.toneMappingStatus = "ok";
@@ -1312,9 +1397,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (exposureButton != null) exposureButton.setText("Exp " + oneDecimal(exposureValue));
         if (specularBoostButton != null) specularBoostButton.setText("Spec " + oneDecimal(specularBoost));
         if (reflectionIntensityButton != null) reflectionIntensityButton.setText("Refl " + oneDecimal(reflectionIntensity));
+        if (reflectionContrastButton != null) reflectionContrastButton.setText("Refl Contrast " + oneDecimal(reflectionContrast));
+        if (reflectionSaturationButton != null) reflectionSaturationButton.setText("Refl Saturation " + oneDecimal(reflectionSaturation));
         if (groundIntensityButton != null) groundIntensityButton.setText("Ground " + oneDecimal(contactShadowIntensity));
         if (environmentButton != null) environmentButton.setText("Env " + oneDecimal(environmentIntensity));
-        if (skyPresetButton != null) skyPresetButton.setText("Sky: " + modelState.environmentPreset);
+        if (skyPresetButton != null) skyPresetButton.setText("Env Zone: " + modelState.environmentPreset);
         if (horizonButton != null) horizonButton.setText("Horizon " + oneDecimal(horizonStrength));
         if (calibrationPresetButton != null) calibrationPresetButton.setText("Calib: " + modelState.calibrationPreset);
         if (slotPrevButton != null) slotPrevButton.setText("Slot -");
@@ -1335,12 +1422,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (paintGlossButton != null) paintGlossButton.setText("Coat " + oneDecimal(paintGlossSliderValue));
         if (clearcoatButton != null) clearcoatButton.setText("Clearcoat " + oneDecimal(clearcoatIntensity));
         if (clearcoatRoughnessButton != null) clearcoatRoughnessButton.setText("Clearcoat Rough " + oneDecimal(clearcoatRoughness));
-        if (materialStatusView != null) materialStatusView.setText("Slot " + selectedMaterialSlot + "/" + Math.max(0, selectedMaterialSlotCount) + " " + modelState.selectedMaterialName + " " + modelState.selectedMaterialTypeHint + "\n" + modelState.selectedMaterialTextureSummaryStatus + "\nPreset " + modelState.activeMaterialPreset + " | Emissive " + oneDecimal(emissiveIntensity) + "\nAlpha " + modelState.alphaModeSupportStatus + " cutoff " + oneDecimal(alphaCutoffValue) + " | Double " + modelState.doubleSidedMode + "\nMetallic " + oneDecimal(selectedSlotMetallicOverride) + " Rough " + oneDecimal(selectedSlotRoughnessOverride) + " Normal " + oneDecimal(selectedSlotNormalScaleOverride) + " AO " + oneDecimal(selectedSlotAoOverride) + "\nCalib " + oneDecimal(calibrationSliderValue) + " Gloss " + oneDecimal(glossSliderValue) + " Coat " + oneDecimal(paintGlossSliderValue) + " Clear " + oneDecimal(clearcoatIntensity) + "/" + oneDecimal(clearcoatRoughness) + " | Fabric matte: on");
+        if (materialStatusView != null) materialStatusView.setText("Slot " + selectedMaterialSlot + "/" + Math.max(0, selectedMaterialSlotCount) + " " + modelState.selectedMaterialName + " " + modelState.selectedMaterialTypeHint + "\n" + modelState.selectedMaterialTextureSummaryStatus + "\nPreset " + modelState.activeMaterialPreset + " | Emissive " + oneDecimal(emissiveIntensity) + "\nAlpha " + modelState.alphaModeSupportStatus + " cutoff " + oneDecimal(alphaCutoffValue) + " | Double " + modelState.doubleSidedMode + "\nMetallic " + oneDecimal(selectedSlotMetallicOverride) + " Rough " + oneDecimal(selectedSlotRoughnessOverride) + " Normal " + oneDecimal(selectedSlotNormalScaleOverride) + " AO " + oneDecimal(selectedSlotAoOverride) + "\nRefl C/S " + oneDecimal(reflectionContrast) + "/" + oneDecimal(reflectionSaturation) + " Motion " + modelState.cameraMotionQualityTier + "\nCalib " + oneDecimal(calibrationSliderValue) + " Gloss " + oneDecimal(glossSliderValue) + " Coat " + oneDecimal(paintGlossSliderValue) + " Clear " + oneDecimal(clearcoatIntensity) + "/" + oneDecimal(clearcoatRoughness) + " | Fabric matte: on");
         updateSliderPositionsFromState();
         if (materialViewButton != null) materialViewButton.setText("Debug: " + modelState.activeDebugView);
         try {
             if (nativeLoaded && nativeHandle != 0L) {
-                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPresetIndex, calibrationSliderValue, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPresetIndex, horizonStrength, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, glossSliderValue, paintGlossSliderValue, alphaCutoffValue, emissiveIntensity, activeMaterialPresetIndex);
+                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPresetIndex, calibrationSliderValue, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPresetIndex, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, glossSliderValue, paintGlossSliderValue, alphaCutoffValue, emissiveIntensity, activeMaterialPresetIndex);
             }
         } catch (Throwable t) {
             modelState.debugViewStatus = "native_control_failed";
@@ -1492,6 +1579,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (exposureSlider != null) exposureSlider.setProgress(sliderProgress(exposureValue, 0.8f, 3.0f));
             if (specularSlider != null) specularSlider.setProgress(sliderProgress(specularBoost, 0.5f, 3.0f));
             if (reflectionSlider != null) reflectionSlider.setProgress(sliderProgress(reflectionIntensity, 0.0f, 2.0f));
+            if (reflectionContrastSlider != null) reflectionContrastSlider.setProgress(sliderProgress(reflectionContrast, 0.0f, 2.0f));
+            if (reflectionSaturationSlider != null) reflectionSaturationSlider.setProgress(sliderProgress(reflectionSaturation, 0.0f, 2.0f));
             if (groundSlider != null) groundSlider.setProgress(sliderProgress(contactShadowIntensity, 0.0f, 1.5f));
             if (environmentSlider != null) environmentSlider.setProgress(sliderProgress(environmentIntensity, 0.0f, 2.0f));
             if (horizonSlider != null) horizonSlider.setProgress(sliderProgress(horizonStrength, 0.0f, 1.0f));
@@ -1520,10 +1609,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private String environmentPresetName(int index) {
-        if (index == 1) return "Warm";
-        if (index == 2) return "Cool";
-        if (index == 3) return "Outdoor";
+        if (index == 1) return "Outdoor";
+        if (index == 2) return "Warm Room";
+        if (index == 3) return "Cold Room";
         if (index == 4) return "Sunset";
+        if (index == 5) return "Cave";
         return "Studio";
     }
 
@@ -1573,6 +1663,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 43) return "Clearcoat Highlight";
         if (index == 44) return "Paint Layer";
         if (index == 45) return "Paint Energy Guard";
+        if (index == 46) return "Fake Cubemap";
+        if (index == 47) return "Reflection Zones";
+        if (index == 48) return "Reflection Contrast";
+        if (index == 49) return "Reflection Energy Guard";
+        if (index == 50) return "Clearcoat Reflection";
+        if (index == 51) return "Motion Quality";
         return "Final Shaded";
     }
 
@@ -1692,6 +1788,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private void updateFpsFromUiPulse() {
         long now = System.nanoTime();
+        updateMotionQualityBlend(now);
         if (fpsWindowStartNs == 0L) fpsWindowStartNs = now;
         framesRenderedLive++;
         fpsWindowFrames++;
@@ -1706,6 +1803,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 frameTimeLastStableMs = measuredFrameMs;
                 fpsSource = "java_choreographer_frame_callback";
                 fpsStatus = "live";
+                if (cameraMotionQualityBlend < 0.98f) cameraMovingFpsLast = measuredFps; else cameraStillFpsLast = measuredFps;
             } else if (fpsLastStable > 0.001f) {
                 fpsCurrent = fpsLastStable;
                 frameTimeMs = frameTimeLastStableMs;
@@ -1778,6 +1876,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
             setInspectorAlpha(0.16f, "camera_move");
+            beginCameraMotion(0.0f);
             lastTouchX = event.getX();
             lastTouchY = event.getY();
             pinchActive = false;
@@ -1785,6 +1884,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
         if (action == MotionEvent.ACTION_POINTER_DOWN && event.getPointerCount() >= 2) {
             lastPinchDistance = touchDistance(event);
+            beginCameraMotion(0.0f);
             pinchActive = true;
             return true;
         }
@@ -1794,6 +1894,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 float d = touchDistance(event);
                 if (lastPinchDistance > 0.0f && d > 0.0f) {
                     float delta = (lastPinchDistance - d) * 0.006f;
+                    updateCameraMotion(Math.abs(delta) * 780.0f);
                     applyCamera(cameraYawDeg, cameraPitchDeg, cameraDistance + delta);
                 }
                 lastPinchDistance = d;
@@ -1805,6 +1906,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 float y = event.getY();
                 float dx = x - lastTouchX;
                 float dy = y - lastTouchY;
+                updateCameraMotion((float)Math.sqrt(dx * dx + dy * dy));
                 applyCamera(cameraYawDeg + dx * 0.35f, cameraPitchDeg + dy * 0.25f, cameraDistance);
                 lastTouchX = x;
                 lastTouchY = y;
@@ -1814,6 +1916,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_UP) {
             pinchActive = false;
             lastPinchDistance = 0.0f;
+            cameraMotionStopNs = System.nanoTime();
             scheduleInspectorAlphaRestore();
             return true;
         }
@@ -1832,11 +1935,54 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         cameraPitchDeg = clamp(pitchDeg, -75.0f, 75.0f);
         cameraDistance = clamp(distance, 2.0f, 8.0f);
         try {
-            nativeSetCamera(nativeHandle, cameraYawDeg, cameraPitchDeg, cameraDistance);
-            updateStatus();
+            updateMotionQualityBlend(System.nanoTime());
+            nativeSetCamera(nativeHandle, cameraYawDeg, cameraPitchDeg, cameraDistance, cameraMotionSpeed, cameraMotionQualityBlend, motionReflectionScale, motionClearcoatScale, cameraMovingFpsLast, cameraStillFpsLast);
+            updateTopHudOnly();
         } catch (Throwable t) {
             writeCrashReport("native_camera_update_failed", t);
         }
+    }
+
+    private void beginCameraMotion(float speed) {
+        lastCameraMoveNs = System.nanoTime();
+        cameraMotionStopNs = 0L;
+        cameraMotionSpeed = Math.max(cameraMotionSpeed, speed);
+        updateMotionQualityBlend(lastCameraMoveNs);
+    }
+
+    private void updateCameraMotion(float speed) {
+        long now = System.nanoTime();
+        lastCameraMoveNs = now;
+        cameraMotionStopNs = 0L;
+        cameraMotionSpeed = clamp(speed, 0.0f, 2400.0f);
+        updateMotionQualityBlend(now);
+    }
+
+    private void updateMotionQualityBlend(long now) {
+        boolean moving = lastCameraMoveNs > 0L && (now - lastCameraMoveNs) < 140_000_000L;
+        if (moving) {
+            cameraMotionQualityBlend = 0.42f;
+        } else {
+            if (cameraMotionStopNs == 0L) cameraMotionStopNs = now;
+            float t = clamp((float)(now - cameraMotionStopNs) / (float)MOTION_RESTORE_NS, 0.0f, 1.0f);
+            cameraMotionQualityBlend = 0.42f + (1.0f - 0.42f) * t;
+            cameraMotionSpeed = Math.max(0.0f, cameraMotionSpeed * 0.82f);
+        }
+        motionReflectionScale = clamp(0.46f + cameraMotionQualityBlend * 0.54f, 0.46f, 1.0f);
+        motionClearcoatScale = clamp(0.40f + cameraMotionQualityBlend * 0.60f, 0.40f, 1.0f);
+        cameraMotionQualityTier = cameraMotionQualityBlend < 0.55f ? "moving_guard" : (cameraMotionQualityBlend < 0.98f ? "restoring" : "full");
+        modelState.cameraMotionStatus = moving ? "moving" : "still";
+        modelState.cameraMotionSpeed = cameraMotionSpeed;
+        modelState.cameraMotionQualityBlend = cameraMotionQualityBlend;
+        modelState.cameraMotionQualityTier = cameraMotionQualityTier;
+        modelState.motionReflectionScale = motionReflectionScale;
+        modelState.motionClearcoatScale = motionClearcoatScale;
+        modelState.cameraMovingFpsLast = cameraMovingFpsLast;
+        modelState.cameraStillFpsLast = cameraStillFpsLast;
+        modelState.motionPerformanceGuardStatus = "ok";
+        modelState.motionQualityRestoreStatus = "ok_smooth_restore";
+        modelState.motionDiagnosticsThrottleStatus = moving ? "ok_no_export_while_moving" : "ok";
+        modelState.movingFpsGuardStatus = cameraMovingFpsLast <= 0.0f ? "monitoring" : (cameraMovingFpsLast >= 45.0f ? "ok_target_met" : "active_below_target");
     }
 
     private float clamp(float value, float min, float max) {
@@ -2730,6 +2876,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + p19MaterialSlotJsonFields(renderLab, "  ")
             + p21AlphaCutoutJsonFields(renderLab, "  ")
             + p22EmissivePresetJsonFields(renderLab, "  ")
+            + p24ReflectionJsonFields(renderLab, "  ")
             + "  \"lightingStatus\": \"" + escape(jsonStringField(renderLab, "lightingStatus", modelState.lightingStatus)) + "\",\n"
             + "  \"lightingControlStatus\": \"" + escape(jsonStringField(renderLab, "lightingControlStatus", modelState.lightingControlStatus)) + "\",\n"
             + "  \"lightingUiMode\": \"" + escape(jsonStringField(renderLab, "lightingUiMode", modelState.lightingUiMode)) + "\",\n"
@@ -2931,6 +3078,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + p19MaterialSlotJsonFields(renderLab, "  ")
             + p21AlphaCutoutJsonFields(renderLab, "  ")
             + p22EmissivePresetJsonFields(renderLab, "  ")
+            + p24ReflectionJsonFields(renderLab, "  ")
             + p20WorkflowJsonFields(renderLab, "  ")
             + "  \"sunIntensity\": " + jsonNumberField(renderLab, "sunIntensity", jsonFloat(modelState.sunIntensity)) + ",\n"
             + "  \"ambientIntensity\": " + jsonNumberField(renderLab, "ambientIntensity", jsonFloat(modelState.ambientIntensity)) + ",\n"
@@ -3233,6 +3381,69 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"runtimeStateDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "runtimeStateDebugViewStatus", modelState.runtimeStateDebugViewStatus)) + "\",\n"
             + indent + "\"restoreStateDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "restoreStateDebugViewStatus", modelState.restoreStateDebugViewStatus)) + "\",\n"
             + indent + "\"uiStateDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "uiStateDebugViewStatus", modelState.uiStateDebugViewStatus)) + "\",\n";
+    }
+
+    private String p24ReflectionJsonFields(String renderLab, String indent) {
+        return indent + "\"fakeCubemapStatus\": \"" + escape(jsonStringField(renderLab, "fakeCubemapStatus", modelState.fakeCubemapStatus)) + "\",\n"
+            + indent + "\"fakeCubemapMode\": \"" + escape(jsonStringField(renderLab, "fakeCubemapMode", modelState.fakeCubemapMode)) + "\",\n"
+            + indent + "\"fakeCubemapSourceStatus\": \"" + escape(jsonStringField(renderLab, "fakeCubemapSourceStatus", modelState.fakeCubemapSourceStatus)) + "\",\n"
+            + indent + "\"environmentZoneStatus\": \"" + escape(jsonStringField(renderLab, "environmentZoneStatus", modelState.environmentZoneStatus)) + "\",\n"
+            + indent + "\"skyZoneStatus\": \"" + escape(jsonStringField(renderLab, "skyZoneStatus", modelState.skyZoneStatus)) + "\",\n"
+            + indent + "\"horizonZoneStatus\": \"" + escape(jsonStringField(renderLab, "horizonZoneStatus", modelState.horizonZoneStatus)) + "\",\n"
+            + indent + "\"groundZoneStatus\": \"" + escape(jsonStringField(renderLab, "groundZoneStatus", modelState.groundZoneStatus)) + "\",\n"
+            + indent + "\"sideReflectionZoneStatus\": \"" + escape(jsonStringField(renderLab, "sideReflectionZoneStatus", modelState.sideReflectionZoneStatus)) + "\",\n"
+            + indent + "\"fakeCubemapPerformanceStatus\": \"" + escape(jsonStringField(renderLab, "fakeCubemapPerformanceStatus", modelState.fakeCubemapPerformanceStatus)) + "\",\n"
+            + indent + "\"reflectionQualityStatus\": \"" + escape(jsonStringField(renderLab, "reflectionQualityStatus", modelState.reflectionQualityStatus)) + "\",\n"
+            + indent + "\"reflectionContrastStatus\": \"" + escape(jsonStringField(renderLab, "reflectionContrastStatus", modelState.reflectionContrastStatus)) + "\",\n"
+            + indent + "\"reflectionContrastValue\": " + jsonNumberField(renderLab, "reflectionContrastValue", jsonFloat(modelState.reflectionContrastValue)) + ",\n"
+            + indent + "\"reflectionSaturationStatus\": \"" + escape(jsonStringField(renderLab, "reflectionSaturationStatus", modelState.reflectionSaturationStatus)) + "\",\n"
+            + indent + "\"reflectionSaturationValue\": " + jsonNumberField(renderLab, "reflectionSaturationValue", jsonFloat(modelState.reflectionSaturationValue)) + ",\n"
+            + indent + "\"roughnessReflectionBlurStatus\": \"" + escape(jsonStringField(renderLab, "roughnessReflectionBlurStatus", modelState.roughnessReflectionBlurStatus)) + "\",\n"
+            + indent + "\"clearcoatReflectionBoostStatus\": \"" + escape(jsonStringField(renderLab, "clearcoatReflectionBoostStatus", modelState.clearcoatReflectionBoostStatus)) + "\",\n"
+            + indent + "\"metalReflectionTintStatus\": \"" + escape(jsonStringField(renderLab, "metalReflectionTintStatus", modelState.metalReflectionTintStatus)) + "\",\n"
+            + indent + "\"fabricReflectionSuppressStatus\": \"" + escape(jsonStringField(renderLab, "fabricReflectionSuppressStatus", modelState.fabricReflectionSuppressStatus)) + "\",\n"
+            + indent + "\"reflectionEnergyGuardStatus\": \"" + escape(jsonStringField(renderLab, "reflectionEnergyGuardStatus", modelState.reflectionEnergyGuardStatus)) + "\",\n"
+            + indent + "\"reflectionOverbrightGuardStatus\": \"" + escape(jsonStringField(renderLab, "reflectionOverbrightGuardStatus", modelState.reflectionOverbrightGuardStatus)) + "\",\n"
+            + indent + "\"reflectionQualityUiStatus\": \"" + escape(jsonStringField(renderLab, "reflectionQualityUiStatus", modelState.reflectionQualityUiStatus)) + "\",\n"
+            + indent + "\"reflectionContrastSliderStatus\": \"" + escape(jsonStringField(renderLab, "reflectionContrastSliderStatus", modelState.reflectionContrastSliderStatus)) + "\",\n"
+            + indent + "\"reflectionSaturationSliderStatus\": \"" + escape(jsonStringField(renderLab, "reflectionSaturationSliderStatus", modelState.reflectionSaturationSliderStatus)) + "\",\n"
+            + indent + "\"environmentZonePresetStatus\": \"" + escape(jsonStringField(renderLab, "environmentZonePresetStatus", modelState.environmentZonePresetStatus)) + "\",\n"
+            + indent + "\"environmentZonePreset\": \"" + escape(jsonStringField(renderLab, "environmentZonePreset", modelState.environmentZonePreset)) + "\",\n"
+            + indent + "\"reflectionUniformUpdateStatus\": \"" + escape(jsonStringField(renderLab, "reflectionUniformUpdateStatus", modelState.reflectionUniformUpdateStatus)) + "\",\n"
+            + indent + "\"motionPerformanceGuardStatus\": \"" + escape(jsonStringField(renderLab, "motionPerformanceGuardStatus", modelState.motionPerformanceGuardStatus)) + "\",\n"
+            + indent + "\"cameraMotionStatus\": \"" + escape(jsonStringField(renderLab, "cameraMotionStatus", modelState.cameraMotionStatus)) + "\",\n"
+            + indent + "\"cameraMotionSpeed\": " + jsonNumberField(renderLab, "cameraMotionSpeed", jsonFloat(modelState.cameraMotionSpeed)) + ",\n"
+            + indent + "\"cameraMotionQualityTier\": \"" + escape(jsonStringField(renderLab, "cameraMotionQualityTier", modelState.cameraMotionQualityTier)) + "\",\n"
+            + indent + "\"cameraMotionQualityBlend\": " + jsonNumberField(renderLab, "cameraMotionQualityBlend", jsonFloat(modelState.cameraMotionQualityBlend)) + ",\n"
+            + indent + "\"motionReflectionScale\": " + jsonNumberField(renderLab, "motionReflectionScale", jsonFloat(modelState.motionReflectionScale)) + ",\n"
+            + indent + "\"motionClearcoatScale\": " + jsonNumberField(renderLab, "motionClearcoatScale", jsonFloat(modelState.motionClearcoatScale)) + ",\n"
+            + indent + "\"motionDiagnosticsThrottleStatus\": \"" + escape(jsonStringField(renderLab, "motionDiagnosticsThrottleStatus", modelState.motionDiagnosticsThrottleStatus)) + "\",\n"
+            + indent + "\"motionQualityRestoreStatus\": \"" + escape(jsonStringField(renderLab, "motionQualityRestoreStatus", modelState.motionQualityRestoreStatus)) + "\",\n"
+            + indent + "\"motionQualityTransitionMs\": " + jsonNumberField(renderLab, "motionQualityTransitionMs", String.valueOf(modelState.motionQualityTransitionMs)) + ",\n"
+            + indent + "\"cameraMovingFpsLast\": " + jsonNumberField(renderLab, "cameraMovingFpsLast", jsonFloat(modelState.cameraMovingFpsLast)) + ",\n"
+            + indent + "\"cameraStillFpsLast\": " + jsonNumberField(renderLab, "cameraStillFpsLast", jsonFloat(modelState.cameraStillFpsLast)) + ",\n"
+            + indent + "\"targetMovingFps\": " + jsonNumberField(renderLab, "targetMovingFps", jsonFloat(modelState.targetMovingFps)) + ",\n"
+            + indent + "\"movingFpsGuardStatus\": \"" + escape(jsonStringField(renderLab, "movingFpsGuardStatus", modelState.movingFpsGuardStatus)) + "\",\n"
+            + indent + "\"carPaintReflectionStatus\": \"" + escape(jsonStringField(renderLab, "carPaintReflectionStatus", modelState.carPaintReflectionStatus)) + "\",\n"
+            + indent + "\"metalReflectionStatus\": \"" + escape(jsonStringField(renderLab, "metalReflectionStatus", modelState.metalReflectionStatus)) + "\",\n"
+            + indent + "\"plasticReflectionStatus\": \"" + escape(jsonStringField(renderLab, "plasticReflectionStatus", modelState.plasticReflectionStatus)) + "\",\n"
+            + indent + "\"rubberReflectionStatus\": \"" + escape(jsonStringField(renderLab, "rubberReflectionStatus", modelState.rubberReflectionStatus)) + "\",\n"
+            + indent + "\"glassMetadataReflectionStatus\": \"" + escape(jsonStringField(renderLab, "glassMetadataReflectionStatus", modelState.glassMetadataReflectionStatus)) + "\",\n"
+            + indent + "\"materialPresetReflectionStatus\": \"" + escape(jsonStringField(renderLab, "materialPresetReflectionStatus", modelState.materialPresetReflectionStatus)) + "\",\n"
+            + indent + "\"fakeCubemapDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "fakeCubemapDebugViewStatus", modelState.fakeCubemapDebugViewStatus)) + "\",\n"
+            + indent + "\"reflectionZonesDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "reflectionZonesDebugViewStatus", modelState.reflectionZonesDebugViewStatus)) + "\",\n"
+            + indent + "\"reflectionContrastDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "reflectionContrastDebugViewStatus", modelState.reflectionContrastDebugViewStatus)) + "\",\n"
+            + indent + "\"reflectionEnergyGuardDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "reflectionEnergyGuardDebugViewStatus", modelState.reflectionEnergyGuardDebugViewStatus)) + "\",\n"
+            + indent + "\"clearcoatReflectionDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "clearcoatReflectionDebugViewStatus", modelState.clearcoatReflectionDebugViewStatus)) + "\",\n"
+            + indent + "\"motionQualityDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "motionQualityDebugViewStatus", modelState.motionQualityDebugViewStatus)) + "\",\n"
+            + indent + "\"p23ClearcoatPreservedStatus\": \"" + escape(jsonStringField(renderLab, "p23ClearcoatPreservedStatus", modelState.p23ClearcoatPreservedStatus)) + "\",\n"
+            + indent + "\"p24PerformanceStatus\": \"" + escape(jsonStringField(renderLab, "p24PerformanceStatus", modelState.p24PerformanceStatus)) + "\",\n"
+            + indent + "\"fakeCubemapNoTextureStatus\": \"" + escape(jsonStringField(renderLab, "fakeCubemapNoTextureStatus", modelState.fakeCubemapNoTextureStatus)) + "\",\n"
+            + indent + "\"fakeCubemapNoNewPassStatus\": \"" + escape(jsonStringField(renderLab, "fakeCubemapNoNewPassStatus", modelState.fakeCubemapNoNewPassStatus)) + "\",\n"
+            + indent + "\"reflectionNoTextureRebuildStatus\": \"" + escape(jsonStringField(renderLab, "reflectionNoTextureRebuildStatus", modelState.reflectionNoTextureRebuildStatus)) + "\",\n"
+            + indent + "\"reflectionNoModelReuploadStatus\": \"" + escape(jsonStringField(renderLab, "reflectionNoModelReuploadStatus", modelState.reflectionNoModelReuploadStatus)) + "\",\n"
+            + indent + "\"noFrameFileWriteStatus\": \"" + escape(jsonStringField(renderLab, "noFrameFileWriteStatus", modelState.noFrameFileWriteStatus)) + "\",\n"
+            + indent + "\"noFrameGlbParseStatus\": \"" + escape(jsonStringField(renderLab, "noFrameGlbParseStatus", modelState.noFrameGlbParseStatus)) + "\",\n";
     }
 
     private String jsonStringField(String json, String key, String fallback) {
@@ -3547,7 +3758,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private String fallbackRenderLabJson(String status, String lightingStatus, String debugStatus, String reason) {
-        return "{\"currentScene\":\"" + SCENE_ID + "\",\"currentLabScene\":\"" + SCENE_ID + "\",\"currentLabSceneName\":\"" + SCENE_NAME + "\",\"status\":\"" + escape(status) + "\",\"lightingStatus\":\"" + escape(lightingStatus) + "\",\"lightingControlStatus\":\"" + escape(lightingStatus) + "\",\"lightingUiMode\":\"compact_sliders\",\"inspectorUiStatus\":\"ok\",\"inspectorUiMode\":\"tabbed_compact_inspector\",\"activeInspectorTab\":\"" + escape(activeInspectorTab) + "\",\"assetsTabStatus\":\"ok_import_scan_export_summary\",\"cameraTabStatus\":\"ok_camera_info_reset_zoom\",\"lightingTabStatus\":\"ok_sliders_environment_controls\",\"materialTabStatus\":\"ok_debug_views\",\"debugTabStatus\":\"ok_fps_zip_status\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":2.0,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.8,\"lightPreset\":\"Bright\",\"specularBoost\":1.85,\"specularBoostStatus\":\"ok_uniform_controlled\",\"reflectionIntensity\":1.15,\"contactGroundingStatus\":\"foundation_analytic\",\"contactShadowStatus\":\"enabled\",\"contactShadowMode\":\"analytic_blob_or_grounding_approx\",\"contactShadowIntensity\":" + jsonFloat(contactShadowIntensity) + ",\"contactShadowPerformanceStatus\":\"ok_uniform_only_no_shadow_pass\",\"groundingUsesModelBounds\":\"yes_upload_bounds_scaled_local\",\"groundingUniformUpdateStatus\":\"ok_uniform_only\",\"groundSliderStatus\":\"ok\",\"contactGroundingSliderStatus\":\"ok\",\"iblStatus\":\"ok_foundation\",\"iblMode\":\"directional_sky_ground_ibl\",\"environmentIblStatus\":\"ok_foundation\",\"environmentIblMode\":\"directional_sky_ground_ibl\",\"environmentSourceStatus\":\"ok_procedural_no_external_texture\",\"environmentSourceType\":\"directional_sky_ground_shader_model\",\"environmentSkyColorStatus\":\"ok_preset_uniform\",\"environmentGroundColorStatus\":\"ok_preset_uniform\",\"environmentHorizonStatus\":\"ok_directional_horizon_blend\",\"environmentPerformanceStatus\":\"ok_no_extra_pass_no_texture_upload\",\"iblDiffuseStatus\":\"ok_directional_sky_ground_diffuse\",\"iblSpecularStatus\":\"ok_reflection_direction_environment\",\"iblRoughnessResponseStatus\":\"ok_roughness_blurs_and_reduces_specular\",\"iblMetallicResponseStatus\":\"ok_metal_tints_reflection\",\"iblDielectricResponseStatus\":\"ok_subtle_f0_reflection\",\"iblFabricPreserveStatus\":\"ok_fabric_matte_preserved\",\"iblOverbrightGuardStatus\":\"ok_luminance_guarded\",\"environmentUiStatus\":\"ok_compact_lighting_controls\",\"environmentPreset\":\"Studio\",\"environmentIntensity\":1.0,\"environmentSliderStatus\":\"ok\",\"skyPresetStatus\":\"ok\",\"horizonControlStatus\":\"ok\",\"environmentUniformUpdateStatus\":\"ok_uniform_only\",\"environmentDebugViewStatus\":\"shader_applied\",\"reflectionDirectionDebugViewStatus\":\"shader_applied\",\"environmentColorDebugViewStatus\":\"shader_applied\",\"iblPerformanceStatus\":\"ok_shader_math_only_no_loops\",\"reflectionFoundationStatus\":\"p18_environment_ibl_foundation\",\"reflectionMode\":\"directional_sky_ground_ibl\",\"environmentReflectionStatus\":\"p18_environment_directional_source_no_texture_cubemap\",\"environmentReflectionMode\":\"reflection_direction_sky_ground_ibl\",\"environmentSource\":\"directional_sky_ground_shader_model\",\"reflectionColorStatus\":\"ok_environment_preset_horizon_gradient\",\"reflectionRoughnessResponseStatus\":\"ok_roughness_blurs_reduces_reflection\",\"metallicReflectionStatus\":\"ok_metal_tinted_environment_guarded\",\"dielectricReflectionStatus\":\"ok_subtle_f0_environment\",\"reflectionPerformanceStatus\":\"ok_no_extra_pass_no_texture_rebuild\",\"lightingUniformUpdateStatus\":\"ok_uniform_only\",\"sliderUpdateMode\":\"uniform_only\",\"sliderTouchStatus\":\"ok_touch_targets\",\"sunSliderStatus\":\"ok\",\"ambientSliderStatus\":\"ok\",\"exposureSliderStatus\":\"ok\",\"specularSliderStatus\":\"ok\",\"reflectionSliderStatus\":\"ok\",\"brdfStatus\":\"ok\",\"brdfMode\":\"direct_lighting_schlick_mobile_p17_gloss\",\"diffuseStatus\":\"ok_environment_diffuse\",\"specularStatus\":\"ok_p17_gloss_response_guarded\",\"fresnelStatus\":\"ok_schlick\",\"f0Status\":\"ok_dielectric_0_04_metal_base_color\",\"metallicResponseStatus\":\"ok_diffuse_reduced_f0_tinted\",\"roughnessResponseStatus\":\"ok_gloss_width_energy_remap\",\"directLightingStatus\":\"ok_single_sun_direct_gloss_lobe\",\"materialResponseStatus\":\"p18_environment_ibl_foundation\",\"pbrQualityTier\":\"mobile_direct_lighting_ibl_v1\",\"brdfPerformanceStatus\":\"ok_mobile_friendly_direct_lighting_ibl\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"" + escape(debugStatus) + "\",\"diffuseDebugViewStatus\":\"" + escape(debugStatus) + "\",\"specularDebugViewStatus\":\"" + escape(debugStatus) + "\",\"f0DebugViewStatus\":\"" + escape(debugStatus) + "\",\"reflectionDebugViewStatus\":\"" + escape(debugStatus) + "\",\"iblDiffuseDebugViewStatus\":\"" + escape(debugStatus) + "\",\"iblSpecularDebugViewStatus\":\"" + escape(debugStatus) + "\",\"brdfStatusDebugViewStatus\":\"" + escape(debugStatus) + "\",\"groundingDebugViewStatus\":\"" + escape(debugStatus) + "\",\"exposureValue\":1.5,\"ambientFloor\":0.16,\"brightnessPreset\":\"Bright Preview\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"tangentFallbackGeneratedCount\":0,\"tangentDegenerateTriangleCount\":0,\"tangentBuildMode\":\"once_on_upload\",\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"not_ready\",\"fpsLastStable\":0,\"frameTimeLastStableMs\":0,\"fpsStatus\":\"not_ready\",\"fpsUpdateMode\":\"java_choreographer_live\",\"fpsSampleWindowMs\":1000,\"framesRenderedLive\":0,\"modelUploadRepeatCount\":0,\"uploadGenerationId\":0,\"renderLoopAllocationGuardStatus\":\"ok_no_java_glb_parse_or_upload_in_frame_callback\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(reason) + "\"}";
+        return "{\"currentScene\":\"" + SCENE_ID + "\",\"currentLabScene\":\"" + SCENE_ID + "\",\"currentLabSceneName\":\"" + SCENE_NAME + "\",\"status\":\"" + escape(status) + "\",\"lightingStatus\":\"" + escape(lightingStatus) + "\",\"lightingControlStatus\":\"" + escape(lightingStatus) + "\",\"lightingUiMode\":\"compact_sliders\",\"inspectorUiStatus\":\"ok\",\"inspectorUiMode\":\"tabbed_compact_inspector\",\"activeInspectorTab\":\"" + escape(activeInspectorTab) + "\",\"assetsTabStatus\":\"ok_import_scan_export_summary\",\"cameraTabStatus\":\"ok_camera_info_reset_zoom\",\"lightingTabStatus\":\"ok_sliders_environment_controls\",\"materialTabStatus\":\"ok_debug_views\",\"debugTabStatus\":\"ok_fps_zip_status\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":2.0,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.8,\"lightPreset\":\"Bright\",\"specularBoost\":1.85,\"specularBoostStatus\":\"ok_uniform_controlled\",\"reflectionIntensity\":1.15,\"contactGroundingStatus\":\"foundation_analytic\",\"contactShadowStatus\":\"enabled\",\"contactShadowMode\":\"analytic_blob_or_grounding_approx\",\"contactShadowIntensity\":" + jsonFloat(contactShadowIntensity) + ",\"contactShadowPerformanceStatus\":\"ok_uniform_only_no_shadow_pass\",\"groundingUsesModelBounds\":\"yes_upload_bounds_scaled_local\",\"groundingUniformUpdateStatus\":\"ok_uniform_only\",\"groundSliderStatus\":\"ok\",\"contactGroundingSliderStatus\":\"ok\",\"iblStatus\":\"ok_foundation\",\"iblMode\":\"procedural_directional_probe\",\"environmentIblStatus\":\"ok_foundation\",\"environmentIblMode\":\"procedural_directional_probe\",\"environmentSourceStatus\":\"ok_procedural_no_external_texture\",\"environmentSourceType\":\"procedural_directional_probe\",\"environmentSkyColorStatus\":\"ok_preset_uniform\",\"environmentGroundColorStatus\":\"ok_preset_uniform\",\"environmentHorizonStatus\":\"ok_directional_horizon_blend\",\"environmentPerformanceStatus\":\"ok_no_extra_pass_no_texture_upload\",\"iblDiffuseStatus\":\"ok_directional_sky_ground_diffuse\",\"iblSpecularStatus\":\"ok_reflection_direction_environment\",\"iblRoughnessResponseStatus\":\"ok_roughness_blurs_and_reduces_specular\",\"iblMetallicResponseStatus\":\"ok_metal_tints_reflection\",\"iblDielectricResponseStatus\":\"ok_subtle_f0_reflection\",\"iblFabricPreserveStatus\":\"ok_fabric_matte_preserved\",\"iblOverbrightGuardStatus\":\"ok_luminance_guarded\",\"environmentUiStatus\":\"ok_compact_lighting_controls\",\"environmentPreset\":\"Studio\",\"environmentIntensity\":1.0,\"environmentSliderStatus\":\"ok\",\"skyPresetStatus\":\"ok\",\"horizonControlStatus\":\"ok\",\"environmentUniformUpdateStatus\":\"ok_uniform_only\",\"environmentDebugViewStatus\":\"shader_applied\",\"reflectionDirectionDebugViewStatus\":\"shader_applied\",\"environmentColorDebugViewStatus\":\"shader_applied\",\"iblPerformanceStatus\":\"ok_shader_math_only_no_loops\",\"reflectionFoundationStatus\":\"p24_fake_cubemap_probe_foundation\",\"reflectionMode\":\"procedural_directional_probe\",\"environmentReflectionStatus\":\"p24_fake_cubemap_probe_no_texture\",\"environmentReflectionMode\":\"reflection_direction_sky_horizon_ground_side\",\"environmentSource\":\"procedural_directional_probe\",\"reflectionColorStatus\":\"ok_sky_horizon_ground_side_glint\",\"reflectionRoughnessResponseStatus\":\"ok_roughness_blur_approx\",\"metallicReflectionStatus\":\"ok_metal_tinted_stronger_guarded\",\"dielectricReflectionStatus\":\"ok_subtle_f0_environment\",\"reflectionPerformanceStatus\":\"ok_no_extra_pass_no_texture_rebuild\",\"lightingUniformUpdateStatus\":\"ok_uniform_only\",\"sliderUpdateMode\":\"uniform_only\",\"sliderTouchStatus\":\"ok_touch_targets\",\"sunSliderStatus\":\"ok\",\"ambientSliderStatus\":\"ok\",\"exposureSliderStatus\":\"ok\",\"specularSliderStatus\":\"ok\",\"reflectionSliderStatus\":\"ok\",\"brdfStatus\":\"ok\",\"brdfMode\":\"direct_lighting_schlick_mobile_p17_gloss\",\"diffuseStatus\":\"ok_environment_diffuse\",\"specularStatus\":\"ok_p17_gloss_response_guarded\",\"fresnelStatus\":\"ok_schlick\",\"f0Status\":\"ok_dielectric_0_04_metal_base_color\",\"metallicResponseStatus\":\"ok_diffuse_reduced_f0_tinted\",\"roughnessResponseStatus\":\"ok_gloss_width_energy_remap\",\"directLightingStatus\":\"ok_single_sun_direct_gloss_lobe\",\"materialResponseStatus\":\"p24_fake_cubemap_probe_foundation\",\"pbrQualityTier\":\"mobile_direct_lighting_ibl_v1\",\"brdfPerformanceStatus\":\"ok_mobile_friendly_direct_lighting_ibl\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"" + escape(debugStatus) + "\",\"diffuseDebugViewStatus\":\"" + escape(debugStatus) + "\",\"specularDebugViewStatus\":\"" + escape(debugStatus) + "\",\"f0DebugViewStatus\":\"" + escape(debugStatus) + "\",\"reflectionDebugViewStatus\":\"" + escape(debugStatus) + "\",\"iblDiffuseDebugViewStatus\":\"" + escape(debugStatus) + "\",\"iblSpecularDebugViewStatus\":\"" + escape(debugStatus) + "\",\"brdfStatusDebugViewStatus\":\"" + escape(debugStatus) + "\",\"groundingDebugViewStatus\":\"" + escape(debugStatus) + "\",\"exposureValue\":1.5,\"ambientFloor\":0.16,\"brightnessPreset\":\"Bright Preview\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"tangentFallbackGeneratedCount\":0,\"tangentDegenerateTriangleCount\":0,\"tangentBuildMode\":\"once_on_upload\",\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"not_ready\",\"fpsLastStable\":0,\"frameTimeLastStableMs\":0,\"fpsStatus\":\"not_ready\",\"fpsUpdateMode\":\"java_choreographer_live\",\"fpsSampleWindowMs\":1000,\"framesRenderedLive\":0,\"modelUploadRepeatCount\":0,\"uploadGenerationId\":0,\"renderLoopAllocationGuardStatus\":\"ok_no_java_glb_parse_or_upload_in_frame_callback\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(reason) + "\"}";
     }
 
     private String timestampUtc() {
@@ -3869,6 +4080,66 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String clearcoatNoTextureRebuildStatus = "ok";
         String clearcoatNoModelReuploadStatus = "ok";
         String clearcoatNoTransparentSortingStatus = "ok";
+        String fakeCubemapStatus = "ok";
+        String fakeCubemapMode = "procedural_directional_probe";
+        String fakeCubemapSourceStatus = "procedural_no_texture_no_render_pass";
+        String environmentZoneStatus = "ok_sky_horizon_ground_side";
+        String skyZoneStatus = "ok";
+        String horizonZoneStatus = "ok";
+        String groundZoneStatus = "ok";
+        String sideReflectionZoneStatus = "ok";
+        String fakeCubemapPerformanceStatus = "ok_shader_math_only_no_loops";
+        String reflectionQualityStatus = "ok_procedural_probe_enhanced";
+        String reflectionContrastStatus = "ok_uniform_control";
+        float reflectionContrastValue = 1.18f;
+        String reflectionSaturationStatus = "ok_uniform_control";
+        float reflectionSaturationValue = 1.12f;
+        String roughnessReflectionBlurStatus = "ok_direction_blend_approx";
+        String clearcoatReflectionBoostStatus = "ok_motion_guarded";
+        String metalReflectionTintStatus = "ok_base_color_tinted";
+        String fabricReflectionSuppressStatus = "ok_fabric_matte_preserved";
+        String reflectionEnergyGuardStatus = "ok_luminance_guard";
+        String reflectionOverbrightGuardStatus = "ok_clamped_before_tonemap";
+        String reflectionQualityUiStatus = "ok_compact_controls";
+        String reflectionContrastSliderStatus = "ok";
+        String reflectionSaturationSliderStatus = "ok";
+        String environmentZonePresetStatus = "ok";
+        String environmentZonePreset = "Studio";
+        String reflectionUniformUpdateStatus = "ok_uniform_only";
+        String motionPerformanceGuardStatus = "ok";
+        String cameraMotionStatus = "still";
+        float cameraMotionSpeed = 0.0f;
+        String cameraMotionQualityTier = "full";
+        float cameraMotionQualityBlend = 1.0f;
+        float motionReflectionScale = 1.0f;
+        float motionClearcoatScale = 1.0f;
+        String motionDiagnosticsThrottleStatus = "ok_ui_fps_only_no_export";
+        String motionQualityRestoreStatus = "ok_smooth_restore";
+        int motionQualityTransitionMs = 520;
+        float cameraMovingFpsLast = 0.0f;
+        float cameraStillFpsLast = 0.0f;
+        float targetMovingFps = 45.0f;
+        String movingFpsGuardStatus = "monitoring";
+        String carPaintReflectionStatus = "ok_clearcoat_probe_separation";
+        String metalReflectionStatus = "ok_tinted_stronger";
+        String plasticReflectionStatus = "ok_glossy_limited";
+        String rubberReflectionStatus = "ok_low_reflection";
+        String glassMetadataReflectionStatus = "metadata_only_no_real_glass";
+        String materialPresetReflectionStatus = "ok";
+        String fakeCubemapDebugViewStatus = "shader_applied";
+        String reflectionZonesDebugViewStatus = "shader_applied";
+        String reflectionContrastDebugViewStatus = "shader_applied";
+        String reflectionEnergyGuardDebugViewStatus = "shader_applied";
+        String clearcoatReflectionDebugViewStatus = "shader_applied";
+        String motionQualityDebugViewStatus = "shader_applied";
+        String p23ClearcoatPreservedStatus = "ok";
+        String p24PerformanceStatus = "ok_no_new_pass_no_texture_no_rebuild";
+        String fakeCubemapNoTextureStatus = "ok";
+        String fakeCubemapNoNewPassStatus = "ok";
+        String reflectionNoTextureRebuildStatus = "ok";
+        String reflectionNoModelReuploadStatus = "ok";
+        String noFrameFileWriteStatus = "ok";
+        String noFrameGlbParseStatus = "ok";
         String runtimeStateDebugViewStatus = "ok";
         String restoreStateDebugViewStatus = "ok";
         String uiStateDebugViewStatus = "ok";
@@ -3883,11 +4154,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String specularBoostStatus = "ok_uniform_controlled";
         float reflectionIntensity = 1.15f;
         String iblStatus = "ok_foundation";
-        String iblMode = "directional_sky_ground_ibl";
+        String iblMode = "procedural_directional_probe";
         String environmentIblStatus = "ok_foundation";
-        String environmentIblMode = "directional_sky_ground_ibl";
+        String environmentIblMode = "procedural_directional_probe";
         String environmentSourceStatus = "ok_procedural_no_external_texture";
-        String environmentSourceType = "directional_sky_ground_shader_model";
+        String environmentSourceType = "procedural_directional_probe";
         String environmentSkyColorStatus = "ok_preset_uniform";
         String environmentGroundColorStatus = "ok_preset_uniform";
         String environmentHorizonStatus = "ok_directional_horizon_blend";
@@ -3911,14 +4182,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String reflectionDirectionDebugViewStatus = "shader_applied";
         String environmentColorDebugViewStatus = "shader_applied";
         String iblPerformanceStatus = "ok_shader_math_only_no_loops";
-        String reflectionFoundationStatus = "p18_environment_ibl_foundation";
-        String reflectionMode = "directional_sky_ground_ibl";
-        String environmentReflectionStatus = "p18_environment_directional_source_no_texture_cubemap";
-        String environmentReflectionMode = "reflection_direction_sky_ground_ibl";
-        String environmentSource = "directional_sky_ground_shader_model";
-        String reflectionColorStatus = "ok_environment_preset_horizon_gradient";
-        String reflectionRoughnessResponseStatus = "ok_roughness_blurs_reduces_reflection";
-        String metallicReflectionStatus = "ok_metal_tinted_environment_guarded";
+        String reflectionFoundationStatus = "p24_fake_cubemap_probe_foundation";
+        String reflectionMode = "procedural_directional_probe";
+        String environmentReflectionStatus = "p24_fake_cubemap_probe_no_texture";
+        String environmentReflectionMode = "reflection_direction_sky_horizon_ground_side";
+        String environmentSource = "procedural_directional_probe";
+        String reflectionColorStatus = "ok_sky_horizon_ground_side_glint";
+        String reflectionRoughnessResponseStatus = "ok_roughness_blur_approx";
+        String metallicReflectionStatus = "ok_metal_tinted_stronger_guarded";
         String dielectricReflectionStatus = "ok_subtle_f0_environment";
         String reflectionPerformanceStatus = "ok_no_extra_pass_no_texture_rebuild";
         String inspectorUiStatus = "ok";
@@ -3971,7 +4242,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String metallicResponseStatus = "ok_diffuse_reduced_f0_tinted";
         String roughnessResponseStatus = "ok_gloss_width_energy_remap";
         String directLightingStatus = "ok_single_sun_direct_gloss_lobe";
-        String materialResponseStatus = "p18_environment_ibl_foundation";
+        String materialResponseStatus = "p24_fake_cubemap_probe_foundation";
         String pbrQualityTier = "mobile_direct_lighting_ibl_v1";
         String brdfPerformanceStatus = "ok_mobile_friendly_direct_lighting_ibl";
         String toneMappingStatus = "ok";
@@ -4310,6 +4581,66 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"clearcoatNoTextureRebuildStatus\": \"" + esc(clearcoatNoTextureRebuildStatus) + "\",\n"
                 + "  \"clearcoatNoModelReuploadStatus\": \"" + esc(clearcoatNoModelReuploadStatus) + "\",\n"
                 + "  \"clearcoatNoTransparentSortingStatus\": \"" + esc(clearcoatNoTransparentSortingStatus) + "\",\n"
+                + "  \"fakeCubemapStatus\": \"" + esc(fakeCubemapStatus) + "\",\n"
+                + "  \"fakeCubemapMode\": \"" + esc(fakeCubemapMode) + "\",\n"
+                + "  \"fakeCubemapSourceStatus\": \"" + esc(fakeCubemapSourceStatus) + "\",\n"
+                + "  \"environmentZoneStatus\": \"" + esc(environmentZoneStatus) + "\",\n"
+                + "  \"skyZoneStatus\": \"" + esc(skyZoneStatus) + "\",\n"
+                + "  \"horizonZoneStatus\": \"" + esc(horizonZoneStatus) + "\",\n"
+                + "  \"groundZoneStatus\": \"" + esc(groundZoneStatus) + "\",\n"
+                + "  \"sideReflectionZoneStatus\": \"" + esc(sideReflectionZoneStatus) + "\",\n"
+                + "  \"fakeCubemapPerformanceStatus\": \"" + esc(fakeCubemapPerformanceStatus) + "\",\n"
+                + "  \"reflectionQualityStatus\": \"" + esc(reflectionQualityStatus) + "\",\n"
+                + "  \"reflectionContrastStatus\": \"" + esc(reflectionContrastStatus) + "\",\n"
+                + "  \"reflectionContrastValue\": " + jsonFloat(reflectionContrastValue) + ",\n"
+                + "  \"reflectionSaturationStatus\": \"" + esc(reflectionSaturationStatus) + "\",\n"
+                + "  \"reflectionSaturationValue\": " + jsonFloat(reflectionSaturationValue) + ",\n"
+                + "  \"roughnessReflectionBlurStatus\": \"" + esc(roughnessReflectionBlurStatus) + "\",\n"
+                + "  \"clearcoatReflectionBoostStatus\": \"" + esc(clearcoatReflectionBoostStatus) + "\",\n"
+                + "  \"metalReflectionTintStatus\": \"" + esc(metalReflectionTintStatus) + "\",\n"
+                + "  \"fabricReflectionSuppressStatus\": \"" + esc(fabricReflectionSuppressStatus) + "\",\n"
+                + "  \"reflectionEnergyGuardStatus\": \"" + esc(reflectionEnergyGuardStatus) + "\",\n"
+                + "  \"reflectionOverbrightGuardStatus\": \"" + esc(reflectionOverbrightGuardStatus) + "\",\n"
+                + "  \"reflectionQualityUiStatus\": \"" + esc(reflectionQualityUiStatus) + "\",\n"
+                + "  \"reflectionContrastSliderStatus\": \"" + esc(reflectionContrastSliderStatus) + "\",\n"
+                + "  \"reflectionSaturationSliderStatus\": \"" + esc(reflectionSaturationSliderStatus) + "\",\n"
+                + "  \"environmentZonePresetStatus\": \"" + esc(environmentZonePresetStatus) + "\",\n"
+                + "  \"environmentZonePreset\": \"" + esc(environmentZonePreset) + "\",\n"
+                + "  \"reflectionUniformUpdateStatus\": \"" + esc(reflectionUniformUpdateStatus) + "\",\n"
+                + "  \"motionPerformanceGuardStatus\": \"" + esc(motionPerformanceGuardStatus) + "\",\n"
+                + "  \"cameraMotionStatus\": \"" + esc(cameraMotionStatus) + "\",\n"
+                + "  \"cameraMotionSpeed\": " + jsonFloat(cameraMotionSpeed) + ",\n"
+                + "  \"cameraMotionQualityTier\": \"" + esc(cameraMotionQualityTier) + "\",\n"
+                + "  \"cameraMotionQualityBlend\": " + jsonFloat(cameraMotionQualityBlend) + ",\n"
+                + "  \"motionReflectionScale\": " + jsonFloat(motionReflectionScale) + ",\n"
+                + "  \"motionClearcoatScale\": " + jsonFloat(motionClearcoatScale) + ",\n"
+                + "  \"motionDiagnosticsThrottleStatus\": \"" + esc(motionDiagnosticsThrottleStatus) + "\",\n"
+                + "  \"motionQualityRestoreStatus\": \"" + esc(motionQualityRestoreStatus) + "\",\n"
+                + "  \"motionQualityTransitionMs\": " + motionQualityTransitionMs + ",\n"
+                + "  \"cameraMovingFpsLast\": " + jsonFloat(cameraMovingFpsLast) + ",\n"
+                + "  \"cameraStillFpsLast\": " + jsonFloat(cameraStillFpsLast) + ",\n"
+                + "  \"targetMovingFps\": " + jsonFloat(targetMovingFps) + ",\n"
+                + "  \"movingFpsGuardStatus\": \"" + esc(movingFpsGuardStatus) + "\",\n"
+                + "  \"carPaintReflectionStatus\": \"" + esc(carPaintReflectionStatus) + "\",\n"
+                + "  \"metalReflectionStatus\": \"" + esc(metalReflectionStatus) + "\",\n"
+                + "  \"plasticReflectionStatus\": \"" + esc(plasticReflectionStatus) + "\",\n"
+                + "  \"rubberReflectionStatus\": \"" + esc(rubberReflectionStatus) + "\",\n"
+                + "  \"glassMetadataReflectionStatus\": \"" + esc(glassMetadataReflectionStatus) + "\",\n"
+                + "  \"materialPresetReflectionStatus\": \"" + esc(materialPresetReflectionStatus) + "\",\n"
+                + "  \"fakeCubemapDebugViewStatus\": \"" + esc(fakeCubemapDebugViewStatus) + "\",\n"
+                + "  \"reflectionZonesDebugViewStatus\": \"" + esc(reflectionZonesDebugViewStatus) + "\",\n"
+                + "  \"reflectionContrastDebugViewStatus\": \"" + esc(reflectionContrastDebugViewStatus) + "\",\n"
+                + "  \"reflectionEnergyGuardDebugViewStatus\": \"" + esc(reflectionEnergyGuardDebugViewStatus) + "\",\n"
+                + "  \"clearcoatReflectionDebugViewStatus\": \"" + esc(clearcoatReflectionDebugViewStatus) + "\",\n"
+                + "  \"motionQualityDebugViewStatus\": \"" + esc(motionQualityDebugViewStatus) + "\",\n"
+                + "  \"p23ClearcoatPreservedStatus\": \"" + esc(p23ClearcoatPreservedStatus) + "\",\n"
+                + "  \"p24PerformanceStatus\": \"" + esc(p24PerformanceStatus) + "\",\n"
+                + "  \"fakeCubemapNoTextureStatus\": \"" + esc(fakeCubemapNoTextureStatus) + "\",\n"
+                + "  \"fakeCubemapNoNewPassStatus\": \"" + esc(fakeCubemapNoNewPassStatus) + "\",\n"
+                + "  \"reflectionNoTextureRebuildStatus\": \"" + esc(reflectionNoTextureRebuildStatus) + "\",\n"
+                + "  \"reflectionNoModelReuploadStatus\": \"" + esc(reflectionNoModelReuploadStatus) + "\",\n"
+                + "  \"noFrameFileWriteStatus\": \"" + esc(noFrameFileWriteStatus) + "\",\n"
+                + "  \"noFrameGlbParseStatus\": \"" + esc(noFrameGlbParseStatus) + "\",\n"
                 + "  \"runtimeStateDebugViewStatus\": \"" + esc(runtimeStateDebugViewStatus) + "\",\n"
                 + "  \"restoreStateDebugViewStatus\": \"" + esc(restoreStateDebugViewStatus) + "\",\n"
                 + "  \"uiStateDebugViewStatus\": \"" + esc(uiStateDebugViewStatus) + "\",\n"

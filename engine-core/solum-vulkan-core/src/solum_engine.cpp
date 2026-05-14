@@ -58,10 +58,10 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
     return env->NewStringUTF(renderer ? renderer->status.c_str() : "SOLUM Engine\nNo native handle");
 }
 
-extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetCamera(JNIEnv*, jclass, jlong handle, jfloat yawDeg, jfloat pitchDeg, jfloat distance) {
+extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetCamera(JNIEnv*, jclass, jlong handle, jfloat yawDeg, jfloat pitchDeg, jfloat distance, jfloat motionSpeed, jfloat qualityBlend, jfloat reflectionScale, jfloat clearcoatScale, jfloat movingFps, jfloat stillFps) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) return;
-    renderer->setCamera(yawDeg, pitchDeg, distance, true);
+    renderer->setCamera(yawDeg, pitchDeg, distance, true, motionSpeed, qualityBlend, reflectionScale, clearcoatScale, movingFps, stillFps);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetLightingControls(
@@ -88,6 +88,10 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetLi
     jfloat environmentIntensity,
     jint environmentPreset,
     jfloat horizonStrength,
+    jfloat reflectionContrast,
+    jfloat reflectionSaturation,
+    jfloat motionReflectionScale,
+    jfloat motionClearcoatScale,
     jint selectedMaterialSlot,
     jfloat selectedSlotMetallicOverride,
     jfloat selectedSlotRoughnessOverride,
@@ -101,7 +105,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetLi
 ) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) return;
-    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPreset, calibrationStrength, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPreset, horizonStrength, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, selectedSlotGlossOverride, selectedSlotCoatOverride, alphaCutoffValue, emissiveIntensity, materialPreset);
+    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPreset, calibrationStrength, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPreset, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, selectedSlotGlossOverride, selectedSlotCoatOverride, alphaCutoffValue, emissiveIntensity, materialPreset);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdateUiDiagnostics(
@@ -157,7 +161,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdat
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) {
-        return env->NewStringUTF("{\"currentScene\":\"scene20_clearcoat_paint_layer_lab\",\"currentLabScene\":\"scene20_clearcoat_paint_layer_lab\",\"currentLabSceneName\":\"Scene20 Clearcoat Paint Layer Lab\",\"status\":\"native_handle_missing\",\"clearcoatStatus\":\"available\",\"clearcoatSliderStatus\":\"not_applied\",\"carPaintPresetV2Status\":\"not_applied\",\"p22EmissivePreservedStatus\":\"unknown_native_handle_missing\",\"lightingStatus\":\"failed\",\"lightingControlStatus\":\"failed\",\"lightingUiMode\":\"compact_sliders\",\"inspectorUiStatus\":\"ok\",\"inspectorUiMode\":\"tabbed_compact_inspector\",\"activeInspectorTab\":\"Assets\",\"assetsTabStatus\":\"ok_import_scan_export_summary\",\"cameraTabStatus\":\"ok_camera_info_reset_zoom\",\"lightingTabStatus\":\"ok_sliders_environment_controls\",\"materialTabStatus\":\"ok_slot_controls\",\"debugTabStatus\":\"ok_fps_zip_status\",\"fpsStatus\":\"not_ready\",\"fpsUpdateMode\":\"java_choreographer_live\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
+        return env->NewStringUTF("{\"currentScene\":\"scene21_better_environment_reflection_lab\",\"currentLabScene\":\"scene21_better_environment_reflection_lab\",\"currentLabSceneName\":\"Scene21 Better Environment Reflection Lab\",\"status\":\"native_handle_missing\",\"clearcoatStatus\":\"available\",\"clearcoatSliderStatus\":\"not_applied\",\"carPaintPresetV2Status\":\"not_applied\",\"p22EmissivePreservedStatus\":\"unknown_native_handle_missing\",\"lightingStatus\":\"failed\",\"lightingControlStatus\":\"failed\",\"lightingUiMode\":\"compact_sliders\",\"inspectorUiStatus\":\"ok\",\"inspectorUiMode\":\"tabbed_compact_inspector\",\"activeInspectorTab\":\"Assets\",\"assetsTabStatus\":\"ok_import_scan_export_summary\",\"cameraTabStatus\":\"ok_camera_info_reset_zoom\",\"lightingTabStatus\":\"ok_sliders_environment_controls\",\"materialTabStatus\":\"ok_slot_controls\",\"debugTabStatus\":\"ok_fps_zip_status\",\"fpsStatus\":\"not_ready\",\"fpsUpdateMode\":\"java_choreographer_live\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
     }
     std::string json = std::string("{\"currentScene\":\"") + renderer->diagnostics.renderLab.sceneId()
         + "\",\"currentLabScene\":\"" + renderer->diagnostics.renderLab.sceneId()
@@ -480,6 +484,66 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"metallicReflectionStatus\":\"" + solum::escapeJson(renderer->model.metallicReflectionStatus) + "\""
         + ",\"dielectricReflectionStatus\":\"" + solum::escapeJson(renderer->model.dielectricReflectionStatus) + "\""
         + ",\"reflectionPerformanceStatus\":\"" + solum::escapeJson(renderer->model.reflectionPerformanceStatus) + "\""
+        + ",\"fakeCubemapStatus\":\"" + solum::escapeJson(renderer->model.fakeCubemapStatus) + "\""
+        + ",\"fakeCubemapMode\":\"" + solum::escapeJson(renderer->model.fakeCubemapMode) + "\""
+        + ",\"fakeCubemapSourceStatus\":\"" + solum::escapeJson(renderer->model.fakeCubemapSourceStatus) + "\""
+        + ",\"environmentZoneStatus\":\"" + solum::escapeJson(renderer->model.environmentZoneStatus) + "\""
+        + ",\"skyZoneStatus\":\"" + solum::escapeJson(renderer->model.skyZoneStatus) + "\""
+        + ",\"horizonZoneStatus\":\"" + solum::escapeJson(renderer->model.horizonZoneStatus) + "\""
+        + ",\"groundZoneStatus\":\"" + solum::escapeJson(renderer->model.groundZoneStatus) + "\""
+        + ",\"sideReflectionZoneStatus\":\"" + solum::escapeJson(renderer->model.sideReflectionZoneStatus) + "\""
+        + ",\"fakeCubemapPerformanceStatus\":\"" + solum::escapeJson(renderer->model.fakeCubemapPerformanceStatus) + "\""
+        + ",\"reflectionQualityStatus\":\"" + solum::escapeJson(renderer->model.reflectionQualityStatus) + "\""
+        + ",\"reflectionContrastStatus\":\"" + solum::escapeJson(renderer->model.reflectionContrastStatus) + "\""
+        + ",\"reflectionContrastValue\":" + std::to_string(renderer->model.reflectionContrastValue)
+        + ",\"reflectionSaturationStatus\":\"" + solum::escapeJson(renderer->model.reflectionSaturationStatus) + "\""
+        + ",\"reflectionSaturationValue\":" + std::to_string(renderer->model.reflectionSaturationValue)
+        + ",\"roughnessReflectionBlurStatus\":\"" + solum::escapeJson(renderer->model.roughnessReflectionBlurStatus) + "\""
+        + ",\"clearcoatReflectionBoostStatus\":\"" + solum::escapeJson(renderer->model.clearcoatReflectionBoostStatus) + "\""
+        + ",\"metalReflectionTintStatus\":\"" + solum::escapeJson(renderer->model.metalReflectionTintStatus) + "\""
+        + ",\"fabricReflectionSuppressStatus\":\"" + solum::escapeJson(renderer->model.fabricReflectionSuppressStatus) + "\""
+        + ",\"reflectionEnergyGuardStatus\":\"" + solum::escapeJson(renderer->model.reflectionEnergyGuardStatus) + "\""
+        + ",\"reflectionOverbrightGuardStatus\":\"" + solum::escapeJson(renderer->model.reflectionOverbrightGuardStatus) + "\""
+        + ",\"reflectionQualityUiStatus\":\"" + solum::escapeJson(renderer->model.reflectionQualityUiStatus) + "\""
+        + ",\"reflectionContrastSliderStatus\":\"" + solum::escapeJson(renderer->model.reflectionContrastSliderStatus) + "\""
+        + ",\"reflectionSaturationSliderStatus\":\"" + solum::escapeJson(renderer->model.reflectionSaturationSliderStatus) + "\""
+        + ",\"environmentZonePresetStatus\":\"" + solum::escapeJson(renderer->model.environmentZonePresetStatus) + "\""
+        + ",\"environmentZonePreset\":\"" + solum::escapeJson(renderer->model.environmentZonePreset) + "\""
+        + ",\"reflectionUniformUpdateStatus\":\"" + solum::escapeJson(renderer->model.reflectionUniformUpdateStatus) + "\""
+        + ",\"motionPerformanceGuardStatus\":\"" + solum::escapeJson(renderer->model.motionPerformanceGuardStatus) + "\""
+        + ",\"cameraMotionStatus\":\"" + solum::escapeJson(renderer->model.cameraMotionStatus) + "\""
+        + ",\"cameraMotionSpeed\":" + std::to_string(renderer->model.cameraMotionSpeed)
+        + ",\"cameraMotionQualityTier\":\"" + solum::escapeJson(renderer->model.cameraMotionQualityTier) + "\""
+        + ",\"cameraMotionQualityBlend\":" + std::to_string(renderer->model.cameraMotionQualityBlend)
+        + ",\"motionReflectionScale\":" + std::to_string(renderer->model.motionReflectionScale)
+        + ",\"motionClearcoatScale\":" + std::to_string(renderer->model.motionClearcoatScale)
+        + ",\"motionDiagnosticsThrottleStatus\":\"" + solum::escapeJson(renderer->model.motionDiagnosticsThrottleStatus) + "\""
+        + ",\"motionQualityRestoreStatus\":\"" + solum::escapeJson(renderer->model.motionQualityRestoreStatus) + "\""
+        + ",\"motionQualityTransitionMs\":" + std::to_string(renderer->model.motionQualityTransitionMs)
+        + ",\"cameraMovingFpsLast\":" + std::to_string(renderer->model.cameraMovingFpsLast)
+        + ",\"cameraStillFpsLast\":" + std::to_string(renderer->model.cameraStillFpsLast)
+        + ",\"targetMovingFps\":" + std::to_string(renderer->model.targetMovingFps)
+        + ",\"movingFpsGuardStatus\":\"" + solum::escapeJson(renderer->model.movingFpsGuardStatus) + "\""
+        + ",\"carPaintReflectionStatus\":\"" + solum::escapeJson(renderer->model.carPaintReflectionStatus) + "\""
+        + ",\"metalReflectionStatus\":\"" + solum::escapeJson(renderer->model.metalReflectionStatus) + "\""
+        + ",\"plasticReflectionStatus\":\"" + solum::escapeJson(renderer->model.plasticReflectionStatus) + "\""
+        + ",\"rubberReflectionStatus\":\"" + solum::escapeJson(renderer->model.rubberReflectionStatus) + "\""
+        + ",\"glassMetadataReflectionStatus\":\"" + solum::escapeJson(renderer->model.glassMetadataReflectionStatus) + "\""
+        + ",\"materialPresetReflectionStatus\":\"" + solum::escapeJson(renderer->model.materialPresetReflectionStatus) + "\""
+        + ",\"fakeCubemapDebugViewStatus\":\"" + solum::escapeJson(renderer->model.fakeCubemapDebugViewStatus) + "\""
+        + ",\"reflectionZonesDebugViewStatus\":\"" + solum::escapeJson(renderer->model.reflectionZonesDebugViewStatus) + "\""
+        + ",\"reflectionContrastDebugViewStatus\":\"" + solum::escapeJson(renderer->model.reflectionContrastDebugViewStatus) + "\""
+        + ",\"reflectionEnergyGuardDebugViewStatus\":\"" + solum::escapeJson(renderer->model.reflectionEnergyGuardDebugViewStatus) + "\""
+        + ",\"clearcoatReflectionDebugViewStatus\":\"" + solum::escapeJson(renderer->model.clearcoatReflectionDebugViewStatus) + "\""
+        + ",\"motionQualityDebugViewStatus\":\"" + solum::escapeJson(renderer->model.motionQualityDebugViewStatus) + "\""
+        + ",\"p23ClearcoatPreservedStatus\":\"" + solum::escapeJson(renderer->model.p23ClearcoatPreservedStatus) + "\""
+        + ",\"p24PerformanceStatus\":\"" + solum::escapeJson(renderer->model.p24PerformanceStatus) + "\""
+        + ",\"fakeCubemapNoTextureStatus\":\"" + solum::escapeJson(renderer->model.fakeCubemapNoTextureStatus) + "\""
+        + ",\"fakeCubemapNoNewPassStatus\":\"" + solum::escapeJson(renderer->model.fakeCubemapNoNewPassStatus) + "\""
+        + ",\"reflectionNoTextureRebuildStatus\":\"" + solum::escapeJson(renderer->model.reflectionNoTextureRebuildStatus) + "\""
+        + ",\"reflectionNoModelReuploadStatus\":\"" + solum::escapeJson(renderer->model.reflectionNoModelReuploadStatus) + "\""
+        + ",\"noFrameFileWriteStatus\":\"" + solum::escapeJson(renderer->model.noFrameFileWriteStatus) + "\""
+        + ",\"noFrameGlbParseStatus\":\"" + solum::escapeJson(renderer->model.noFrameGlbParseStatus) + "\""
         + ",\"inspectorUiStatus\":\"" + solum::escapeJson(renderer->model.inspectorUiStatus) + "\""
         + ",\"inspectorUiMode\":\"" + solum::escapeJson(renderer->model.inspectorUiMode) + "\""
         + ",\"activeInspectorTab\":\"" + solum::escapeJson(renderer->model.activeInspectorTab) + "\""

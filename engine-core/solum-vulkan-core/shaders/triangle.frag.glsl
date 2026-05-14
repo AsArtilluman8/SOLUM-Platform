@@ -58,6 +58,10 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 256) int materialPresetHint;
     layout(offset = 260) float clearcoatIntensity;
     layout(offset = 264) float clearcoatRoughness;
+    layout(offset = 268) float reflectionContrast;
+    layout(offset = 272) float reflectionSaturation;
+    layout(offset = 276) float motionReflectionScale;
+    layout(offset = 280) float motionClearcoatScale;
 } pc;
 
 float luminance(vec3 c) {
@@ -144,47 +148,75 @@ float geometrySmith(vec3 n, vec3 v, vec3 l, float roughness) {
     return geometrySchlickGGX(max(dot(n, v), 0.0), roughness) * geometrySchlickGGX(max(dot(n, l), 0.0), roughness);
 }
 
-void environmentPalette(out vec3 groundColor, out vec3 horizonColor, out vec3 skyColor, out vec3 accentColor) {
+vec3 saturateReflection(vec3 color, float saturation) {
+    float lum = luminance(color);
+    return mix(vec3(lum), color, clamp(saturation, 0.0, 2.0));
+}
+
+vec3 contrastReflection(vec3 color, float contrast) {
+    vec3 pivot = vec3(0.42);
+    return max(vec3(0.0), pivot + (color - pivot) * clamp(contrast, 0.0, 2.0));
+}
+
+void environmentPalette(out vec3 groundColor, out vec3 horizonColor, out vec3 skyColor, out vec3 sideColor, out vec3 glintColor) {
     if (pc.environmentPreset == 1) {
+        groundColor = vec3(0.23, 0.31, 0.19);
+        horizonColor = vec3(0.70, 0.78, 0.84);
+        skyColor = vec3(0.48, 0.72, 1.00);
+        sideColor = vec3(0.84, 0.78, 0.56);
+        glintColor = vec3(1.00, 0.92, 0.62);
+    } else if (pc.environmentPreset == 2) {
         groundColor = vec3(0.34, 0.29, 0.24);
         horizonColor = vec3(0.74, 0.58, 0.42);
         skyColor = vec3(0.98, 0.86, 0.68);
-        accentColor = vec3(0.58, 0.34, 0.20);
-    } else if (pc.environmentPreset == 2) {
+        sideColor = vec3(0.78, 0.42, 0.24);
+        glintColor = vec3(1.00, 0.72, 0.38);
+    } else if (pc.environmentPreset == 3) {
         groundColor = vec3(0.20, 0.25, 0.30);
         horizonColor = vec3(0.48, 0.62, 0.76);
         skyColor = vec3(0.72, 0.86, 1.00);
-        accentColor = vec3(0.25, 0.48, 0.70);
-    } else if (pc.environmentPreset == 3) {
-        groundColor = vec3(0.25, 0.32, 0.22);
-        horizonColor = vec3(0.66, 0.76, 0.82);
-        skyColor = vec3(0.55, 0.76, 1.00);
-        accentColor = vec3(0.78, 0.72, 0.48);
+        sideColor = vec3(0.28, 0.55, 0.84);
+        glintColor = vec3(0.58, 0.80, 1.00);
     } else if (pc.environmentPreset == 4) {
         groundColor = vec3(0.28, 0.20, 0.24);
         horizonColor = vec3(0.88, 0.45, 0.30);
         skyColor = vec3(0.34, 0.42, 0.70);
-        accentColor = vec3(1.00, 0.58, 0.25);
+        sideColor = vec3(1.00, 0.42, 0.20);
+        glintColor = vec3(1.00, 0.74, 0.28);
+    } else if (pc.environmentPreset == 5) {
+        groundColor = vec3(0.08, 0.09, 0.10);
+        horizonColor = vec3(0.18, 0.21, 0.26);
+        skyColor = vec3(0.26, 0.32, 0.44);
+        sideColor = vec3(0.16, 0.24, 0.30);
+        glintColor = vec3(0.38, 0.50, 0.62);
     } else {
         groundColor = vec3(0.30, 0.28, 0.26);
         horizonColor = vec3(0.58, 0.64, 0.70);
         skyColor = vec3(0.82, 0.88, 0.96);
-        accentColor = vec3(0.46, 0.50, 0.56);
+        sideColor = vec3(0.72, 0.76, 0.82);
+        glintColor = vec3(1.00, 0.96, 0.84);
     }
 }
 
 vec3 environmentColor(vec3 dir, float roughness) {
     float sky = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
+    float side = pow(clamp(1.0 - abs(dir.x), 0.0, 1.0), 1.8) * (1.0 - smoothstep(0.65, 1.0, abs(dir.y)));
     vec3 groundColor;
     vec3 horizonColor;
     vec3 skyColor;
-    vec3 accentColor;
-    environmentPalette(groundColor, horizonColor, skyColor, accentColor);
-    vec3 sharpColor = mix(mix(groundColor, horizonColor, smoothstep(0.0, 0.55, sky)), skyColor, smoothstep(0.45, 1.0, sky));
+    vec3 sideColor;
+    vec3 glintColor;
+    environmentPalette(groundColor, horizonColor, skyColor, sideColor, glintColor);
+    vec3 sharpColor = mix(mix(groundColor, horizonColor, smoothstep(0.0, 0.52, sky)), skyColor, smoothstep(0.44, 1.0, sky));
     float horizonLine = 1.0 - smoothstep(0.035, 0.22, abs(dir.y - 0.08));
-    sharpColor += accentColor * horizonLine * (1.0 - roughness) * clamp(pc.horizonStrength, 0.0, 1.0);
+    float glint = pow(max(dot(normalize(dir), normalize(vec3(0.58, 0.22, 0.78))), 0.0), mix(14.0, 5.0, roughness));
+    sharpColor = mix(sharpColor, sideColor, side * (1.0 - roughness * 0.72) * 0.55);
+    sharpColor += glintColor * horizonLine * (1.0 - roughness) * clamp(pc.horizonStrength, 0.0, 1.0);
+    sharpColor += glintColor * glint * (1.0 - roughness) * 0.42;
     vec3 blurredColor = mix(mix(groundColor, horizonColor, 0.45), mix(horizonColor, skyColor, 0.55), sky);
-    return mix(sharpColor, blurredColor, clamp(roughness, 0.0, 1.0)) * clamp(pc.environmentIntensity, 0.0, 2.0);
+    vec3 color = mix(sharpColor, blurredColor, clamp(roughness, 0.0, 1.0));
+    color = contrastReflection(saturateReflection(color, pc.reflectionSaturation), pc.reflectionContrast);
+    return color * clamp(pc.environmentIntensity, 0.0, 2.0);
 }
 
 float materialGlossWeight(int hint, float metallic, float roughness) {
@@ -305,16 +337,20 @@ void main() {
     vec3 iblSpecularColor = environmentColor(reflectionDir, roughness);
     float reflectionRoughnessEnergy = mix(1.08, 0.18, roughness);
     float reflectionMaterialWeight = mix(0.16, 1.12, metallic) * max(glossWeight, 0.16);
-    vec3 iblSpecular = fresnel * iblSpecularColor * reflectionRoughnessEnergy * reflectionMaterialWeight * pc.reflectionIntensity;
-    vec3 analyticSpecular = fresnel * iblSpecularColor * rim * mix(0.035, 0.22, metallic) * glossWeight * pc.reflectionIntensity;
+    float motionReflection = clamp(pc.motionReflectionScale, 0.38, 1.0);
+    float motionClearcoat = clamp(pc.motionClearcoatScale, 0.35, 1.0);
+    vec3 metalTint = mix(vec3(1.0), baseColor, metallic * 0.58);
+    if (hint == 0) metalTint *= 0.22;
+    vec3 iblSpecular = fresnel * iblSpecularColor * metalTint * reflectionRoughnessEnergy * reflectionMaterialWeight * pc.reflectionIntensity * motionReflection;
+    vec3 analyticSpecular = fresnel * iblSpecularColor * metalTint * rim * mix(0.035, 0.24, metallic) * glossWeight * pc.reflectionIntensity * motionReflection;
     vec3 directSpecular = fresnel * (specDistribution * specGeometry / specDenom) * specEnergy * ndotl * sunColor * pc.sunIntensity;
     directSpecular *= mix(0.34, 1.0, glossWeight);
     float clearcoatFresnel = 0.04 + 0.96 * pow(clamp(1.0 - max(dot(n, v), 0.0), 0.0, 1.0), 5.0);
     float coatDistribution = distributionGGX(n, h, clearcoatRough);
     float coatHighlight = coatDistribution * geometrySmith(n, v, l, clearcoatRough) / specDenom;
     vec3 clearcoatLight = sunColor * pc.sunIntensity * ndotl * coatHighlight * clearcoatFresnel;
-    clearcoatLight += environmentColor(reflectionDir, clearcoatRough) * clearcoatFresnel * rim * pc.reflectionIntensity * 0.38;
-    clearcoatLight *= clearcoatWeight * mix(0.72, 1.20, paintSlider);
+    clearcoatLight += environmentColor(reflectionDir, clearcoatRough) * clearcoatFresnel * rim * pc.reflectionIntensity * motionReflection * 0.56;
+    clearcoatLight *= clearcoatWeight * mix(0.86, 1.42, paintSlider) * motionClearcoat;
     vec3 specularLight = (directSpecular + analyticSpecular + iblSpecular) * pc.specularBoost;
     specularLight *= mix(0.55, 1.35, glossSlider);
     if (hint == 0) specularLight *= 0.55;
@@ -489,6 +525,30 @@ void main() {
     }
     if (pc.activeDebugView == 45) {
         fragColor = vec4(vec3(clamp(luminance(specularLight) / max(specGuard, 0.001), 0.0, 1.0)), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 46) {
+        fragColor = vec4(toneMap(environmentColor(reflectionDir, roughness) * pc.exposureValue), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 47) {
+        fragColor = vec4(vec3(clamp(reflectionDir.y * 0.5 + 0.5, 0.0, 1.0), clamp(1.0 - abs(reflectionDir.y), 0.0, 1.0), clamp(abs(reflectionDir.x), 0.0, 1.0)), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 48) {
+        fragColor = vec4(toneMap(iblSpecularColor * pc.reflectionContrast), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 49) {
+        fragColor = vec4(vec3(clamp(luminance(specularLight) / max(specGuard, 0.001), 0.0, 1.0)), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 50) {
+        fragColor = vec4(toneMap(clearcoatLight * pc.exposureValue * 4.0), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 51) {
+        fragColor = vec4(vec3(motionReflection, motionClearcoat, clamp(pc.motionReflectionScale, 0.0, 1.0)), 1.0);
         return;
     }
     rgb *= 1.0 - contactMask * clamp(pc.contactShadowIntensity, 0.0, 1.5) * 0.22;

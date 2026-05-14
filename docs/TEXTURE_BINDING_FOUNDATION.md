@@ -1,5 +1,32 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P24 better environment reflection lab
+
+P24 switches the active lab to `scene21_better_environment_reflection_lab`.
+
+The texture/material binding path remains the existing per-material-slot Vulkan path. P24 adds fake cubemap/procedural directional probe reflection through uniforms and shader math only: `reflectionContrast`, `reflectionSaturation`, `motionReflectionScale`, `motionClearcoatScale`, and six environment zone presets. No cubemap texture, render-to-cubemap, extra render pass, texture rebuild, model reupload, tangent rebuild, real glass/refraction/transmission, shadows, shadow maps, or CSM is added.
+
+Reflection zones:
+
+- Sky, horizon, ground, side/rim, and glint colors are blended from reflection direction.
+- Roughness blends sharp and blurred procedural colors.
+- Contrast and saturation are uniform-only controls.
+- Energy guards keep bright reflections from clipping before tonemapping.
+
+Routing:
+
+- Car Paint and `paint_like` slots receive clearer clearcoat/reflection separation.
+- `metal_like` slots receive stronger tinted reflection.
+- Glossy plastic receives a limited reflection response.
+- Rubber remains low-reflection.
+- `fabric_like` remains matte.
+- `glass_like` stays metadata only.
+
+Motion guard:
+
+- Camera drag reduces reflection and clearcoat scales through push constants only.
+- Quality restores smoothly after movement without model upload, texture rebuild, JSON/file writes, or GLB parsing per frame.
+
 ## P23 clearcoat paint layer lab
 
 P23 switches the active lab to `scene20_clearcoat_paint_layer_lab`.

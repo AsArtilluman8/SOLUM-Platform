@@ -73,6 +73,10 @@ struct MaterialConstants {
     int materialPresetHint = 0;
     float clearcoatIntensity = 0.72f;
     float clearcoatRoughness = 0.28f;
+    float reflectionContrast = 1.18f;
+    float reflectionSaturation = 1.12f;
+    float motionReflectionScale = 1.0f;
+    float motionClearcoatScale = 1.0f;
 };
 
 inline const char* lightPresetName(int preset) {
@@ -84,10 +88,11 @@ inline const char* lightPresetName(int preset) {
 }
 
 inline const char* environmentPresetName(int preset) {
-    if (preset == 1) return "Warm";
-    if (preset == 2) return "Cool";
-    if (preset == 3) return "Outdoor";
+    if (preset == 1) return "Outdoor";
+    if (preset == 2) return "Warm Room";
+    if (preset == 3) return "Cold Room";
     if (preset == 4) return "Sunset";
+    if (preset == 5) return "Cave";
     return "Studio";
 }
 
@@ -137,6 +142,12 @@ inline const char* materialDebugViewName(int view) {
     if (view == 43) return "Clearcoat Highlight";
     if (view == 44) return "Paint Layer";
     if (view == 45) return "Paint Energy Guard";
+    if (view == 46) return "Fake Cubemap";
+    if (view == 47) return "Reflection Zones";
+    if (view == 48) return "Reflection Contrast";
+    if (view == 49) return "Reflection Energy Guard";
+    if (view == 50) return "Clearcoat Reflection";
+    if (view == 51) return "Motion Quality";
     return "Final Shaded";
 }
 
@@ -269,11 +280,11 @@ struct ModelRenderState {
     std::string specularBoostStatus = "ok_uniform_controlled";
     float reflectionIntensity = 1.15f;
     std::string iblStatus = "ok_foundation";
-    std::string iblMode = "directional_sky_ground_ibl";
+    std::string iblMode = "procedural_directional_probe";
     std::string environmentIblStatus = "ok_foundation";
-    std::string environmentIblMode = "directional_sky_ground_ibl";
+    std::string environmentIblMode = "procedural_directional_probe";
     std::string environmentSourceStatus = "ok_procedural_no_external_texture";
-    std::string environmentSourceType = "directional_sky_ground_shader_model";
+    std::string environmentSourceType = "procedural_directional_probe";
     std::string environmentSkyColorStatus = "ok_preset_uniform";
     std::string environmentGroundColorStatus = "ok_preset_uniform";
     std::string environmentHorizonStatus = "ok_directional_horizon_blend";
@@ -297,14 +308,14 @@ struct ModelRenderState {
     std::string reflectionDirectionDebugViewStatus = "shader_applied";
     std::string environmentColorDebugViewStatus = "shader_applied";
     std::string iblPerformanceStatus = "ok_shader_math_only_no_loops";
-    std::string reflectionFoundationStatus = "p18_environment_ibl_foundation";
-    std::string reflectionMode = "directional_sky_ground_ibl";
-    std::string environmentReflectionStatus = "p18_environment_directional_source_no_texture_cubemap";
-    std::string environmentReflectionMode = "reflection_direction_sky_ground_ibl";
-    std::string environmentSource = "directional_sky_ground_shader_model";
-    std::string reflectionColorStatus = "ok_environment_preset_horizon_gradient";
-    std::string reflectionRoughnessResponseStatus = "ok_roughness_blurs_reduces_reflection";
-    std::string metallicReflectionStatus = "ok_metal_tinted_environment_guarded";
+    std::string reflectionFoundationStatus = "p24_fake_cubemap_probe_foundation";
+    std::string reflectionMode = "procedural_directional_probe";
+    std::string environmentReflectionStatus = "p24_fake_cubemap_probe_no_texture";
+    std::string environmentReflectionMode = "reflection_direction_sky_horizon_ground_side";
+    std::string environmentSource = "procedural_directional_probe";
+    std::string reflectionColorStatus = "ok_sky_horizon_ground_side_glint";
+    std::string reflectionRoughnessResponseStatus = "ok_roughness_blur_approx";
+    std::string metallicReflectionStatus = "ok_metal_tinted_stronger_guarded";
     std::string dielectricReflectionStatus = "ok_subtle_f0_environment";
     std::string reflectionPerformanceStatus = "ok_no_extra_pass_no_texture_rebuild";
     std::string inspectorUiStatus = "ok";
@@ -343,7 +354,7 @@ struct ModelRenderState {
     std::string metallicResponseStatus = "ok_diffuse_reduced_f0_tinted";
     std::string roughnessResponseStatus = "ok_gloss_width_energy_remap";
     std::string directLightingStatus = "ok_single_sun_direct_gloss_lobe";
-    std::string materialResponseStatus = "p18_environment_ibl_foundation";
+    std::string materialResponseStatus = "p24_fake_cubemap_probe_foundation";
     std::string pbrQualityTier = "mobile_direct_lighting_ibl_v1";
     std::string brdfPerformanceStatus = "ok_mobile_friendly_direct_lighting_ibl";
     std::string toneMappingStatus = "ok";
@@ -578,6 +589,66 @@ struct ModelRenderState {
     std::string clearcoatNoTextureRebuildStatus = "ok";
     std::string clearcoatNoModelReuploadStatus = "ok";
     std::string clearcoatNoTransparentSortingStatus = "ok";
+    std::string fakeCubemapStatus = "ok";
+    std::string fakeCubemapMode = "procedural_directional_probe";
+    std::string fakeCubemapSourceStatus = "procedural_no_texture_no_render_pass";
+    std::string environmentZoneStatus = "ok_sky_horizon_ground_side";
+    std::string skyZoneStatus = "ok";
+    std::string horizonZoneStatus = "ok";
+    std::string groundZoneStatus = "ok";
+    std::string sideReflectionZoneStatus = "ok";
+    std::string fakeCubemapPerformanceStatus = "ok_shader_math_only_no_loops";
+    std::string reflectionQualityStatus = "ok_procedural_probe_enhanced";
+    std::string reflectionContrastStatus = "ok_uniform_control";
+    float reflectionContrastValue = 1.18f;
+    std::string reflectionSaturationStatus = "ok_uniform_control";
+    float reflectionSaturationValue = 1.12f;
+    std::string roughnessReflectionBlurStatus = "ok_direction_blend_approx";
+    std::string clearcoatReflectionBoostStatus = "ok_motion_guarded";
+    std::string metalReflectionTintStatus = "ok_base_color_tinted";
+    std::string fabricReflectionSuppressStatus = "ok_fabric_matte_preserved";
+    std::string reflectionEnergyGuardStatus = "ok_luminance_guard";
+    std::string reflectionOverbrightGuardStatus = "ok_clamped_before_tonemap";
+    std::string reflectionQualityUiStatus = "ok_compact_controls";
+    std::string reflectionContrastSliderStatus = "ok";
+    std::string reflectionSaturationSliderStatus = "ok";
+    std::string environmentZonePresetStatus = "ok";
+    std::string environmentZonePreset = "Studio";
+    std::string reflectionUniformUpdateStatus = "ok_uniform_only";
+    std::string motionPerformanceGuardStatus = "ok";
+    std::string cameraMotionStatus = "still";
+    float cameraMotionSpeed = 0.0f;
+    std::string cameraMotionQualityTier = "full";
+    float cameraMotionQualityBlend = 1.0f;
+    float motionReflectionScale = 1.0f;
+    float motionClearcoatScale = 1.0f;
+    std::string motionDiagnosticsThrottleStatus = "ok_ui_fps_only_no_export";
+    std::string motionQualityRestoreStatus = "ok_smooth_restore";
+    uint32_t motionQualityTransitionMs = 520;
+    float cameraMovingFpsLast = 0.0f;
+    float cameraStillFpsLast = 0.0f;
+    float targetMovingFps = 45.0f;
+    std::string movingFpsGuardStatus = "monitoring";
+    std::string carPaintReflectionStatus = "ok_clearcoat_probe_separation";
+    std::string metalReflectionStatus = "ok_tinted_stronger";
+    std::string plasticReflectionStatus = "ok_glossy_limited";
+    std::string rubberReflectionStatus = "ok_low_reflection";
+    std::string glassMetadataReflectionStatus = "metadata_only_no_real_glass";
+    std::string materialPresetReflectionStatus = "ok";
+    std::string fakeCubemapDebugViewStatus = "shader_applied";
+    std::string reflectionZonesDebugViewStatus = "shader_applied";
+    std::string reflectionContrastDebugViewStatus = "shader_applied";
+    std::string reflectionEnergyGuardDebugViewStatus = "shader_applied";
+    std::string clearcoatReflectionDebugViewStatus = "shader_applied";
+    std::string motionQualityDebugViewStatus = "shader_applied";
+    std::string p23ClearcoatPreservedStatus = "ok";
+    std::string p24PerformanceStatus = "ok_no_new_pass_no_texture_no_rebuild";
+    std::string fakeCubemapNoTextureStatus = "ok";
+    std::string fakeCubemapNoNewPassStatus = "ok";
+    std::string reflectionNoTextureRebuildStatus = "ok";
+    std::string reflectionNoModelReuploadStatus = "ok";
+    std::string noFrameFileWriteStatus = "ok";
+    std::string noFrameGlbParseStatus = "ok";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;
     float fpsLastStable = 0.0f;

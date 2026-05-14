@@ -2,6 +2,116 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene21 Better Environment Reflection Lab
+
+Patch P24 switches the active lab to:
+
+```text
+scene21_better_environment_reflection_lab
+Scene21 Better Environment Reflection Lab
+```
+
+P24 preserves P23 clearcoat, P22 emissive/presets, P21 alpha/cutout, P20 runtime restore/reload, P19 selected-slot controls, P18 procedural IBL, Debug ZIP, and live FPS. It adds a single-pass fake cubemap/procedural directional probe for richer reflection zones and a first camera-motion performance guard.
+
+Reflection foundation:
+
+- No real cubemap texture loading, no render-to-cubemap, and no extra pass.
+- The shader blends sky, horizon, ground, side/rim, and glint zones from the reflection direction.
+- Presets: Studio, Outdoor, Warm Room, Cold Room, Sunset, Cave.
+- Metal and car paint receive stronger tinted reflections and clearcoat separation.
+- Fabric remains matte; rubber remains low-reflection.
+- `glass_like` stays metadata only; no refraction, transmission, transparent sorting, or real glass.
+
+Controls:
+
+- Reflection Contrast slider, `0.0-2.0`, uniform-only.
+- Reflection Saturation slider, `0.0-2.0`, uniform-only.
+- Environment Zone preset button cycles Studio / Outdoor / Warm Room / Cold Room / Sunset / Cave.
+- Existing Env, Sky/Horizon, Clearcoat, Emissive, Alpha, and material slot controls remain capped and scrollable.
+
+Motion guard:
+
+- Camera drag updates `cameraMotionSpeed`, `cameraMotionQualityTier`, and `cameraMotionQualityBlend`.
+- While moving, reflection and clearcoat scales are reduced by uniform values only.
+- Quality restores smoothly over about `520 ms`.
+- No model reupload, texture rebuild, per-frame GLB parsing, or per-frame file/JSON writes.
+
+Debug views added:
+
+```text
+Fake Cubemap
+Reflection Zones
+Reflection Contrast
+Reflection Energy Guard
+Clearcoat Reflection
+Motion Quality
+```
+
+Diagnostics added at top level and under `renderLab`:
+
+```text
+fakeCubemapStatus
+fakeCubemapMode
+fakeCubemapSourceStatus
+environmentZoneStatus
+skyZoneStatus
+horizonZoneStatus
+groundZoneStatus
+sideReflectionZoneStatus
+fakeCubemapPerformanceStatus
+reflectionQualityStatus
+reflectionContrastStatus
+reflectionSaturationStatus
+roughnessReflectionBlurStatus
+clearcoatReflectionBoostStatus
+metalReflectionTintStatus
+fabricReflectionSuppressStatus
+reflectionEnergyGuardStatus
+reflectionOverbrightGuardStatus
+reflectionQualityUiStatus
+reflectionContrastSliderStatus
+reflectionContrastValue
+reflectionSaturationSliderStatus
+reflectionSaturationValue
+environmentZonePresetStatus
+environmentZonePreset
+reflectionUniformUpdateStatus
+motionPerformanceGuardStatus
+cameraMotionStatus
+cameraMotionSpeed
+cameraMotionQualityTier
+cameraMotionQualityBlend
+motionReflectionScale
+motionClearcoatScale
+motionDiagnosticsThrottleStatus
+motionQualityRestoreStatus
+motionQualityTransitionMs
+cameraMovingFpsLast
+cameraStillFpsLast
+targetMovingFps
+movingFpsGuardStatus
+carPaintReflectionStatus
+metalReflectionStatus
+plasticReflectionStatus
+rubberReflectionStatus
+glassMetadataReflectionStatus
+materialPresetReflectionStatus
+fakeCubemapDebugViewStatus
+reflectionZonesDebugViewStatus
+reflectionContrastDebugViewStatus
+reflectionEnergyGuardDebugViewStatus
+clearcoatReflectionDebugViewStatus
+motionQualityDebugViewStatus
+p23ClearcoatPreservedStatus
+p24PerformanceStatus
+fakeCubemapNoTextureStatus
+fakeCubemapNoNewPassStatus
+reflectionNoTextureRebuildStatus
+reflectionNoModelReuploadStatus
+noFrameFileWriteStatus
+noFrameGlbParseStatus
+```
+
 ## Scene20 Clearcoat Paint Layer Lab
 
 Patch P23 switches the active lab to:

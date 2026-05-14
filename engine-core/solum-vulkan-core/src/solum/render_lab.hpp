@@ -25,11 +25,12 @@ enum class RenderLabScene {
     Scene18AlphaCutoutMaterialLab,
     Scene19EmissiveMaterialPresetsLab,
     Scene20ClearcoatPaintLayerLab,
+    Scene21BetterEnvironmentReflectionLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene20ClearcoatPaintLayerLab;
+    RenderLabScene currentScene = RenderLabScene::Scene21BetterEnvironmentReflectionLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -75,6 +76,7 @@ struct RenderLabState {
             case RenderLabScene::Scene18AlphaCutoutMaterialLab: return "scene18_alpha_cutout_material_lab";
             case RenderLabScene::Scene19EmissiveMaterialPresetsLab: return "scene19_emissive_material_presets_lab";
             case RenderLabScene::Scene20ClearcoatPaintLayerLab: return "scene20_clearcoat_paint_layer_lab";
+            case RenderLabScene::Scene21BetterEnvironmentReflectionLab: return "scene21_better_environment_reflection_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -103,6 +105,7 @@ struct RenderLabState {
             case RenderLabScene::Scene18AlphaCutoutMaterialLab: return "Scene18 Alpha Cutout Material Lab";
             case RenderLabScene::Scene19EmissiveMaterialPresetsLab: return "Scene19 Emissive Material Presets Lab";
             case RenderLabScene::Scene20ClearcoatPaintLayerLab: return "Scene20 Clearcoat Paint Layer Lab";
+            case RenderLabScene::Scene21BetterEnvironmentReflectionLab: return "Scene21 Better Environment Reflection Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }
@@ -488,6 +491,66 @@ struct RenderLabState {
         f << indent << "  \"clearcoatNoTextureRebuildStatus\": \"" << escapeJson(model.clearcoatNoTextureRebuildStatus) << "\",\n";
         f << indent << "  \"clearcoatNoModelReuploadStatus\": \"" << escapeJson(model.clearcoatNoModelReuploadStatus) << "\",\n";
         f << indent << "  \"clearcoatNoTransparentSortingStatus\": \"" << escapeJson(model.clearcoatNoTransparentSortingStatus) << "\",\n";
+        f << indent << "  \"fakeCubemapStatus\": \"" << escapeJson(model.fakeCubemapStatus) << "\",\n";
+        f << indent << "  \"fakeCubemapMode\": \"" << escapeJson(model.fakeCubemapMode) << "\",\n";
+        f << indent << "  \"fakeCubemapSourceStatus\": \"" << escapeJson(model.fakeCubemapSourceStatus) << "\",\n";
+        f << indent << "  \"environmentZoneStatus\": \"" << escapeJson(model.environmentZoneStatus) << "\",\n";
+        f << indent << "  \"skyZoneStatus\": \"" << escapeJson(model.skyZoneStatus) << "\",\n";
+        f << indent << "  \"horizonZoneStatus\": \"" << escapeJson(model.horizonZoneStatus) << "\",\n";
+        f << indent << "  \"groundZoneStatus\": \"" << escapeJson(model.groundZoneStatus) << "\",\n";
+        f << indent << "  \"sideReflectionZoneStatus\": \"" << escapeJson(model.sideReflectionZoneStatus) << "\",\n";
+        f << indent << "  \"fakeCubemapPerformanceStatus\": \"" << escapeJson(model.fakeCubemapPerformanceStatus) << "\",\n";
+        f << indent << "  \"reflectionQualityStatus\": \"" << escapeJson(model.reflectionQualityStatus) << "\",\n";
+        f << indent << "  \"reflectionContrastStatus\": \"" << escapeJson(model.reflectionContrastStatus) << "\",\n";
+        f << indent << "  \"reflectionContrastValue\": " << model.reflectionContrastValue << ",\n";
+        f << indent << "  \"reflectionSaturationStatus\": \"" << escapeJson(model.reflectionSaturationStatus) << "\",\n";
+        f << indent << "  \"reflectionSaturationValue\": " << model.reflectionSaturationValue << ",\n";
+        f << indent << "  \"roughnessReflectionBlurStatus\": \"" << escapeJson(model.roughnessReflectionBlurStatus) << "\",\n";
+        f << indent << "  \"clearcoatReflectionBoostStatus\": \"" << escapeJson(model.clearcoatReflectionBoostStatus) << "\",\n";
+        f << indent << "  \"metalReflectionTintStatus\": \"" << escapeJson(model.metalReflectionTintStatus) << "\",\n";
+        f << indent << "  \"fabricReflectionSuppressStatus\": \"" << escapeJson(model.fabricReflectionSuppressStatus) << "\",\n";
+        f << indent << "  \"reflectionEnergyGuardStatus\": \"" << escapeJson(model.reflectionEnergyGuardStatus) << "\",\n";
+        f << indent << "  \"reflectionOverbrightGuardStatus\": \"" << escapeJson(model.reflectionOverbrightGuardStatus) << "\",\n";
+        f << indent << "  \"reflectionQualityUiStatus\": \"" << escapeJson(model.reflectionQualityUiStatus) << "\",\n";
+        f << indent << "  \"reflectionContrastSliderStatus\": \"" << escapeJson(model.reflectionContrastSliderStatus) << "\",\n";
+        f << indent << "  \"reflectionSaturationSliderStatus\": \"" << escapeJson(model.reflectionSaturationSliderStatus) << "\",\n";
+        f << indent << "  \"environmentZonePresetStatus\": \"" << escapeJson(model.environmentZonePresetStatus) << "\",\n";
+        f << indent << "  \"environmentZonePreset\": \"" << escapeJson(model.environmentZonePreset) << "\",\n";
+        f << indent << "  \"reflectionUniformUpdateStatus\": \"" << escapeJson(model.reflectionUniformUpdateStatus) << "\",\n";
+        f << indent << "  \"motionPerformanceGuardStatus\": \"" << escapeJson(model.motionPerformanceGuardStatus) << "\",\n";
+        f << indent << "  \"cameraMotionStatus\": \"" << escapeJson(model.cameraMotionStatus) << "\",\n";
+        f << indent << "  \"cameraMotionSpeed\": " << model.cameraMotionSpeed << ",\n";
+        f << indent << "  \"cameraMotionQualityTier\": \"" << escapeJson(model.cameraMotionQualityTier) << "\",\n";
+        f << indent << "  \"cameraMotionQualityBlend\": " << model.cameraMotionQualityBlend << ",\n";
+        f << indent << "  \"motionReflectionScale\": " << model.motionReflectionScale << ",\n";
+        f << indent << "  \"motionClearcoatScale\": " << model.motionClearcoatScale << ",\n";
+        f << indent << "  \"motionDiagnosticsThrottleStatus\": \"" << escapeJson(model.motionDiagnosticsThrottleStatus) << "\",\n";
+        f << indent << "  \"motionQualityRestoreStatus\": \"" << escapeJson(model.motionQualityRestoreStatus) << "\",\n";
+        f << indent << "  \"motionQualityTransitionMs\": " << model.motionQualityTransitionMs << ",\n";
+        f << indent << "  \"cameraMovingFpsLast\": " << model.cameraMovingFpsLast << ",\n";
+        f << indent << "  \"cameraStillFpsLast\": " << model.cameraStillFpsLast << ",\n";
+        f << indent << "  \"targetMovingFps\": " << model.targetMovingFps << ",\n";
+        f << indent << "  \"movingFpsGuardStatus\": \"" << escapeJson(model.movingFpsGuardStatus) << "\",\n";
+        f << indent << "  \"carPaintReflectionStatus\": \"" << escapeJson(model.carPaintReflectionStatus) << "\",\n";
+        f << indent << "  \"metalReflectionStatus\": \"" << escapeJson(model.metalReflectionStatus) << "\",\n";
+        f << indent << "  \"plasticReflectionStatus\": \"" << escapeJson(model.plasticReflectionStatus) << "\",\n";
+        f << indent << "  \"rubberReflectionStatus\": \"" << escapeJson(model.rubberReflectionStatus) << "\",\n";
+        f << indent << "  \"glassMetadataReflectionStatus\": \"" << escapeJson(model.glassMetadataReflectionStatus) << "\",\n";
+        f << indent << "  \"materialPresetReflectionStatus\": \"" << escapeJson(model.materialPresetReflectionStatus) << "\",\n";
+        f << indent << "  \"fakeCubemapDebugViewStatus\": \"" << escapeJson(model.fakeCubemapDebugViewStatus) << "\",\n";
+        f << indent << "  \"reflectionZonesDebugViewStatus\": \"" << escapeJson(model.reflectionZonesDebugViewStatus) << "\",\n";
+        f << indent << "  \"reflectionContrastDebugViewStatus\": \"" << escapeJson(model.reflectionContrastDebugViewStatus) << "\",\n";
+        f << indent << "  \"reflectionEnergyGuardDebugViewStatus\": \"" << escapeJson(model.reflectionEnergyGuardDebugViewStatus) << "\",\n";
+        f << indent << "  \"clearcoatReflectionDebugViewStatus\": \"" << escapeJson(model.clearcoatReflectionDebugViewStatus) << "\",\n";
+        f << indent << "  \"motionQualityDebugViewStatus\": \"" << escapeJson(model.motionQualityDebugViewStatus) << "\",\n";
+        f << indent << "  \"p23ClearcoatPreservedStatus\": \"" << escapeJson(model.p23ClearcoatPreservedStatus) << "\",\n";
+        f << indent << "  \"p24PerformanceStatus\": \"" << escapeJson(model.p24PerformanceStatus) << "\",\n";
+        f << indent << "  \"fakeCubemapNoTextureStatus\": \"" << escapeJson(model.fakeCubemapNoTextureStatus) << "\",\n";
+        f << indent << "  \"fakeCubemapNoNewPassStatus\": \"" << escapeJson(model.fakeCubemapNoNewPassStatus) << "\",\n";
+        f << indent << "  \"reflectionNoTextureRebuildStatus\": \"" << escapeJson(model.reflectionNoTextureRebuildStatus) << "\",\n";
+        f << indent << "  \"reflectionNoModelReuploadStatus\": \"" << escapeJson(model.reflectionNoModelReuploadStatus) << "\",\n";
+        f << indent << "  \"noFrameFileWriteStatus\": \"" << escapeJson(model.noFrameFileWriteStatus) << "\",\n";
+        f << indent << "  \"noFrameGlbParseStatus\": \"" << escapeJson(model.noFrameGlbParseStatus) << "\",\n";
         f << indent << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << indent << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";
         f << indent << "  \"fpsSource\": \"" << escapeJson(model.fpsSource) << "\",\n";
@@ -533,6 +596,10 @@ struct RenderLabState {
         f << indent << "    \"materialPresetHint\": " << material.materialPresetHint << ",\n";
         f << indent << "    \"clearcoatIntensity\": " << material.clearcoatIntensity << ",\n";
         f << indent << "    \"clearcoatRoughness\": " << material.clearcoatRoughness << ",\n";
+        f << indent << "    \"reflectionContrast\": " << material.reflectionContrast << ",\n";
+        f << indent << "    \"reflectionSaturation\": " << material.reflectionSaturation << ",\n";
+        f << indent << "    \"motionReflectionScale\": " << material.motionReflectionScale << ",\n";
+        f << indent << "    \"motionClearcoatScale\": " << material.motionClearcoatScale << ",\n";
         f << indent << "    \"alphaMode\": \"OPAQUE\",\n";
         f << indent << "    \"alphaCutoff\": " << material.alphaCutoff << "\n";
         f << indent << "  },\n";

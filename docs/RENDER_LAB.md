@@ -13,6 +13,104 @@ scene24_transparent_glass_pass_lab
 Scene24 Transparent Glass Pass Lab
 ```
 
+## P27B — Universal Material Role + Transparent Glass Routing Fix
+
+Scene24 keeps the P27 transparent glass pass, but routing is no longer tied blindly to `selectedMaterialSlot`.
+
+Material Role foundation:
+
+```text
+Roles: Glass, Paint, Metal, Fabric, Rubber, Plastic, Emissive, Unknown
+Detection: material name + alpha metadata + existing materialTypeHint + metallic/emissive factors
+No asset-specific slot hardcode.
+```
+
+Transparent Glass routing:
+
+```text
+Fake Safe: P26 fake glass fallback.
+Transparent v1: selected slot only when role=Glass, otherwise best Glass candidate.
+Auto: best Glass candidate.
+Manual override: Assign Selected As Glass.
+```
+
+New Material tab controls:
+
+```text
+Selected: slot/name/role
+Active Glass: slot/name/role/source
+Select Glass Candidate
+Assign Selected As Glass
+Clear Manual Role
+```
+
+Diagnostics added:
+
+```text
+materialRoleSystemStatus
+materialRoleDetectionMode
+selectedMaterialRole
+selectedMaterialRoleConfidence
+selectedMaterialRoleSource
+materialRoleCandidateCount
+glassCandidateCount
+bestGlassCandidateSlot
+bestGlassCandidateName
+bestGlassCandidateConfidence
+bestGlassCandidateSource
+materialRoleNoHardcodeStatus = ok_no_asset_specific_slot_hardcode
+transparentGlassRoutingStatus
+transparentGlassRoutingMode
+activeTransparentGlassSlot
+activeTransparentGlassMaterialName
+activeTransparentGlassMaterialRole
+activeTransparentGlassRoleSource
+activeTransparentGlassSlotSource
+transparentGlassSelectedSlotAllowedStatus
+transparentGlassSelectedSlotRejectedStatus
+transparentGlassAutoDetectStatus
+transparentGlassManualOverrideStatus
+transparentGlassFallbackReason
+transparentGlassWrongSlotGuardStatus = ok_non_glass_slots_not_transparent_by_default
+materialRoleUiStatus
+selectedSlotRoleSummaryUiStatus
+activeGlassSlotSummaryUiStatus
+selectGlassCandidateButtonStatus
+assignSelectedAsGlassButtonStatus
+clearManualRoleButtonStatus
+selectedSlotHighlightToggleStatus
+transparentGlassSkippedNonGlassCount
+transparentGlassSkippedFabricCount
+transparentGlassSkippedMetalCount
+transparentGlassSkippedPaintCount
+p27TransparentPassPreservedStatus
+p27bPerformanceStatus
+p27bNoExtraHeavyPassStatus
+p27bNoTextureRebuildStatus
+p27bNoModelReuploadStatus
+p27bNoFrameGlbParseStatus
+p27bNoFrameFileWriteStatus
+p27bNoShadowStatus
+p27bNoRealMirrorStatus
+p27bNoSsrStatus
+p27bNoRealRefractionStatus
+materialRoleDebugViewStatus
+glassCandidateDebugViewStatus
+activeGlassSlotDebugViewStatus
+transparentRoutingDebugViewStatus
+wrongSlotGuardDebugViewStatus
+```
+
+Debug views added:
+
+```text
+Material Role
+Glass Candidate
+Active Glass Slot
+Transparent Routing
+Wrong Slot Guard
+```
+
 P27 preserves P26 polished fake glass, P25 glass foundation, P24 fake cubemap/procedural reflection, P23 clearcoat, P22 emissive/presets, P21 alpha/cutout, P20 runtime workflow, P19 selected-slot controls, P18 IBL, Debug ZIP, and live FPS.
 
 Transparent glass pass v1:

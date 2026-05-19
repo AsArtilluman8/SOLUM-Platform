@@ -856,3 +856,34 @@ fallbackCubeVisible
 ```
 
 Texture failure must not mark `drawStatus` failed when mesh draw still works.
+
+## P27B Material Role Routing Note
+
+Transparent glass routing now depends on universal material role classification, not asset-specific slot numbers.
+
+```text
+Glass candidates:
+- material name contains glass/window/windshield/crystal/transparent
+- alphaMode BLEND/MASK or alpha < 1 when not protected by paint/metal/fabric/rubber/emissive role
+- existing glass_like hint
+
+Protected roles:
+- Paint
+- Metal
+- Fabric
+- Rubber
+- Emissive
+```
+
+Scene24 transparent pass uses `activeTransparentGlassSlot`.
+`selectedMaterialSlot` remains the editor control target, but it is not made transparent unless role=Glass or the user presses `Assign Selected As Glass`.
+
+Required diagnostics:
+
+```text
+materialRoleSystemStatus
+materialRoleNoHardcodeStatus
+transparentGlassWrongSlotGuardStatus
+activeTransparentGlassSlot
+p27bPerformanceStatus
+```

@@ -2433,3 +2433,40 @@ Shader/pipeline proof should be separated from vertex buffer and mesh upload. Th
 ### Next
 
 If P06 build/runtime succeeds: P07 — vertex buffer + simple mesh upload path.
+
+---
+
+## Patch P27B — Universal Material Role + Transparent Glass Routing Fix
+
+### Goal
+
+Fix P27 transparent glass routing so transparent v1 never blindly applies to `selectedMaterialSlot`.
+
+### Changed
+
+- Added universal material role foundation:
+  Glass, Paint, Metal, Fabric, Rubber, Plastic, Emissive, Unknown.
+- Added best Glass candidate routing for Transparent v1 / Auto.
+- Added manual model-independent override:
+  `Assign Selected As Glass` / `Clear Manual Role`.
+- Added Material tab summaries:
+  `Selected: slot/name/role` and `Active Glass: slot/name/role/source`.
+- Added debug views:
+  Material Role, Glass Candidate, Active Glass Slot, Transparent Routing, Wrong Slot Guard.
+- Preserved P27 transparent pass, P26 fake fallback, P25/P24/P23/P22/P21/P20/P19/P18 systems.
+
+### Safety
+
+```text
+materialRoleNoHardcodeStatus = ok_no_asset_specific_slot_hardcode
+transparentGlassWrongSlotGuardStatus = ok_non_glass_slots_not_transparent_by_default
+transparentGlassRoutingMode = auto_best_glass_candidate / manual_override / transparent_v1_selected_glass_or_best_candidate
+```
+
+### Deferred
+
+- No full transparent sorting.
+- No real refraction.
+- No real mirror.
+- No SSR.
+- No shadows.

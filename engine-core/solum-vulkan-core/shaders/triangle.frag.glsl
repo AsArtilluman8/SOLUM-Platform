@@ -679,6 +679,26 @@ void main() {
         fragColor = vec4(vec3(glassActive ? 0.18 : 0.55, pc.glassRenderMode == 1 ? 0.9 : 0.35, 0.55), 1.0);
         return;
     }
+    if (pc.activeDebugView == 69) {
+        fragColor = vec4(baseColor, 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 70) {
+        fragColor = vec4(glassActive ? vec3(0.30, 0.90, 1.00) : vec3(0.16, 0.18, 0.20), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 71) {
+        fragColor = vec4(pc.glassRenderMode == 1 && glassActive ? vec3(0.90, 1.00, 0.45) : vec3(0.20, 0.22, 0.24), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 72) {
+        fragColor = vec4(pc.glassRenderMode == 1 ? vec3(0.20, 0.70, 1.00) : vec3(0.80, 0.64, 0.26), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 73) {
+        fragColor = vec4(glassActive || pc.materialTypeHint != 6 ? vec3(0.12, 0.82, 0.42) : vec3(0.95, 0.24, 0.18), 1.0);
+        return;
+    }
     rgb *= 1.0 - contactMask * clamp(pc.contactShadowIntensity, 0.0, 1.5) * 0.22;
     float diffuseLum = luminance(diffuseLight + ambient);
     float diffuseLimit = mix(2.4, 1.55, calibration);

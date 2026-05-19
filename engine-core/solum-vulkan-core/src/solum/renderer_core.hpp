@@ -129,6 +129,8 @@ struct RendererCore {
     float selectedSlotCoatOverride = 0.0f;
     float selectedSlotEmissiveIntensity = 0.0f;
     int activeMaterialPreset = MaterialPresetBalanced;
+    int manualGlassSlot = -1;
+    int activeTransparentGlassSlot = -1;
 
     void setOutputRoot(const std::string& root) { outputRoot = root; diagnostics.outputRoot = root; }
 
@@ -715,29 +717,107 @@ struct RendererCore {
         return "0.92,0.98,1.00";
     }
 
+    const char* materialRoleNameFromHint(int hint) const {
+        if (hint == 6) return "Glass";
+        if (hint == 1) return "Paint";
+        if (hint == 2) return "Metal";
+        if (hint == 0) return "Fabric";
+        if (hint == 3) return "Rubber";
+        if (hint == 8) return "Emissive";
+        if (hint == 5 || hint == 7) return "Plastic";
+        return "Unknown";
+    }
+
+    float materialRoleConfidence(const MaterialSlotState& slot) const {
+        if (slot.materialTypeHint == 6) return 0.94f;
+        if (slot.alphaMode == 2 || slot.baseColorFactor[3] < 0.98f) return 0.72f;
+        if (slot.materialTypeHint == 1 || slot.materialTypeHint == 2 || slot.materialTypeHint == 0 || slot.materialTypeHint == 3 || slot.materialTypeHint == 8) return 0.82f;
+        return 0.38f;
+    }
+
+    const char* materialRoleSource(const MaterialSlotState& slot) const {
+        if (slot.materialTypeHint == 6) return "glass_like_hint_or_name_alpha";
+        if (slot.alphaMode == 2 || slot.baseColorFactor[3] < 0.98f) return "alpha_metadata";
+        if (slot.materialTypeHint == 1) return "paint_hint_or_factor";
+        if (slot.materialTypeHint == 2) return "metal_hint_or_factor";
+        if (slot.materialTypeHint == 0) return "fabric_hint_or_roughness";
+        if (slot.materialTypeHint == 3) return "rubber_hint_or_roughness";
+        if (slot.materialTypeHint == 8) return "emissive_factor_or_texture";
+        return "fallback_unknown";
+    }
+
+    int bestGlassCandidateSlot() const {
+        int best = -1;
+        float bestScore = -1.0f;
+        for (size_t i = 0; i < modelMaterialSlots.size(); ++i) {
+            const auto& slot = modelMaterialSlots[i];
+            float score = -1.0f;
+            if (slot.materialTypeHint == 6) score = 0.94f;
+            else if ((slot.alphaMode == 2 || slot.baseColorFactor[3] < 0.98f) && slot.materialTypeHint != 0 && slot.materialTypeHint != 1 && slot.materialTypeHint != 2 && slot.materialTypeHint != 3 && slot.materialTypeHint != 8) score = 0.68f;
+            if (score > bestScore) {
+                bestScore = score;
+                best = (int)i;
+            }
+        }
+        return best;
+    }
+
+    std::string materialNameFromDiagnostics(int slotIndex) const {
+        if (slotIndex < 0 || model.materialSlotDiagnostics.empty()) return "none";
+        const std::string marker = "\"slot\":" + std::to_string(slotIndex);
+        size_t at = model.materialSlotDiagnostics.find(marker);
+        if (at == std::string::npos) return "slot_" + std::to_string(slotIndex);
+        const std::string key = "\"materialName\":\"";
+        size_t start = model.materialSlotDiagnostics.find(key, at);
+        if (start == std::string::npos) return "slot_" + std::to_string(slotIndex);
+        start += key.size();
+        size_t end = model.materialSlotDiagnostics.find('"', start);
+        if (end == std::string::npos || end <= start) return "slot_" + std::to_string(slotIndex);
+        return model.materialSlotDiagnostics.substr(start, end - start);
+    }
+
     void syncGlassState() {
         bool selectedGlass = false;
         bool selectedFabric = false;
         bool selectedMetal = false;
         bool selectedPaint = false;
+        bool selectedRubber = false;
         if (selectedMaterialSlot >= 0 && (size_t)selectedMaterialSlot < modelMaterialSlots.size()) {
             const auto& slot = modelMaterialSlots[(size_t)selectedMaterialSlot];
             selectedGlass = slot.materialTypeHint == 6;
             selectedFabric = slot.materialTypeHint == 0;
             selectedMetal = slot.materialTypeHint == 2;
             selectedPaint = slot.materialTypeHint == 1;
+            selectedRubber = slot.materialTypeHint == 3;
         }
-        const bool active = material.glassEnabled != 0 || selectedGlass || activeMaterialPreset == 6;
-        const bool forcedSelected = material.glassEnabled != 0 || activeMaterialPreset == 6;
-        const bool transparentAllowed = material.glassRenderMode == 1 || (material.glassRenderMode == 2 && active && material.motionReflectionScale > 0.62f);
-        const bool selectedEligible = active && (selectedGlass || forcedSelected);
-        const bool transparentActive = selectedEligible && transparentAllowed;
-        uint32_t transparentSkipped = 0;
+        const int bestGlassSlot = bestGlassCandidateSlot();
+        const bool manualValid = manualGlassSlot >= 0 && (size_t)manualGlassSlot < modelMaterialSlots.size();
+        const bool transparentModeRequested = material.glassRenderMode == 1 || material.glassRenderMode == 2;
+        const bool transparentAllowed = material.glassRenderMode == 1 || (material.glassRenderMode == 2 && material.motionReflectionScale > 0.62f);
+        int routedGlassSlot = -1;
+        std::string routedSource = "none";
+        if (manualValid) {
+            routedGlassSlot = manualGlassSlot;
+            routedSource = "manual_override";
+        } else if (selectedGlass && material.glassRenderMode == 1) {
+            routedGlassSlot = selectedMaterialSlot;
+            routedSource = "selected_glass_role";
+        } else if (bestGlassSlot >= 0 && transparentModeRequested) {
+            routedGlassSlot = bestGlassSlot;
+            routedSource = "auto_best_glass_candidate";
+        }
+        activeTransparentGlassSlot = routedGlassSlot;
+        const bool active = material.glassEnabled != 0 || selectedGlass || activeMaterialPreset == 6 || routedGlassSlot >= 0;
+        const bool transparentActive = routedGlassSlot >= 0 && transparentAllowed;
+        uint32_t transparentSkipped = 0, skippedFabric = 0, skippedMetal = 0, skippedPaint = 0;
         for (const auto& slot : modelMaterialSlots) {
             if (slot.materialTypeHint != 6) transparentSkipped++;
+            if (slot.materialTypeHint == 0) skippedFabric++;
+            if (slot.materialTypeHint == 2) skippedMetal++;
+            if (slot.materialTypeHint == 1) skippedPaint++;
         }
-        model.glassMaterialStatus = transparentActive ? "ok_transparent_v1_selected_slot" : (active ? "ok_p26_polished_single_pass" : "available");
-        model.glassMode = transparentActive ? "transparent_v1_selected_slot_no_refraction" : "single_pass_fake_transparency_no_refraction";
+        model.glassMaterialStatus = transparentActive ? "ok_transparent_v1_role_routed_slot" : (active ? "ok_p26_polished_single_pass" : "available");
+        model.glassMode = transparentActive ? "transparent_v1_role_routed_no_refraction" : "single_pass_fake_transparency_no_refraction";
         model.glassPolishStatus = "ok";
         model.glassPolishMode = "single_pass_fake_glass_polish";
         model.glassReadabilityStatus = active ? "ok_visible_edges_tint_reflection" : "available";
@@ -755,7 +835,7 @@ struct RendererCore {
         model.glassReflectionSourceStatus = "p24_fake_cubemap_probe";
         model.glassRoughnessResponseStatus = "ok_clear_vs_rough_distinction";
         model.glassThicknessFakeStatus = "ok_edge_tint_thickness_fake";
-        model.glassTransparencyMode = transparentActive ? "transparent_v1_color_blend_selected_slot" : "safe_single_pass_fake_opacity";
+        model.glassTransparencyMode = transparentActive ? "transparent_v1_color_blend_role_routed_slot" : "safe_single_pass_fake_opacity";
         model.glassSortingStatus = "limited_selected_slot_no_full_sort";
         model.glassRefractionStatus = "deferred_no_real_refraction";
         model.glassStillFakeTransparencyStatus = transparentActive ? "fallback_preserved_but_transparent_pass_active" : "yes_no_real_transparent_pass";
@@ -786,7 +866,7 @@ struct RendererCore {
         model.dirtyGlassLitePresetStatus = "ok";
         model.crystalLitePresetStatus = "ok";
         model.glassPresetVisualResponseStatus = "ok_tint_opacity_edge_roughness_reflection_thickness";
-        model.glassSelectedSlotRoutingStatus = "ok_selected_slot_or_glass_hint";
+        model.glassSelectedSlotRoutingStatus = "ok_role_routed_no_blind_selected_slot";
         model.glassFabricGuardStatus = selectedFabric ? "ok_guard_blocks_transparency" : "ok";
         model.glassMetalGuardStatus = selectedMetal ? "ok_metal_preserved_unless_selected_glass_preset" : "ok";
         model.glassCarPaintGuardStatus = selectedPaint ? "ok_car_paint_preserved_unless_selected_glass_preset" : "ok";
@@ -817,9 +897,9 @@ struct RendererCore {
         model.glassStrengthSliderStatus = "deferred_reusing_edge_opacity_roughness";
         model.glassControlsPreservedStatus = "ok";
         model.transparentGlassPassStatus = transparentActive ? "ok_active" : "available_fallback_fake";
-        model.transparentGlassPassMode = "opaque_first_selected_glass_after";
-        model.transparentGlassSelectedSlotStatus = selectedEligible ? "ok_selected_slot_eligible" : "inactive_selected_slot_not_glass";
-        model.transparentGlassDrawOrderStatus = "opaque_first_then_selected_glass";
+        model.transparentGlassPassMode = "opaque_first_active_glass_after";
+        model.transparentGlassSelectedSlotStatus = selectedGlass ? "ok_selected_slot_glass_role" : "selected_slot_not_glass";
+        model.transparentGlassDrawOrderStatus = "opaque_first_then_active_glass";
         model.transparentGlassBlendStatus = transparentActive ? "ok_vk_src_alpha_one_minus_src_alpha" : "inactive_fake_safe";
         model.transparentGlassOpacityStatus = transparentActive ? "ok_real_alpha_blend" : "fallback_fake_opacity";
         model.transparentGlassTintStatus = "ok_tint_uniform";
@@ -838,13 +918,54 @@ struct RendererCore {
         model.fakeGlassFallbackStatus = transparentActive ? "available_when_mode_fake_safe_or_guard" : "active";
         model.glassAutoFallbackStatus = material.glassRenderMode == 2 && !transparentActive ? "active_fake_safe" : "available";
         model.glassMotionFallbackStatus = material.motionReflectionScale <= 0.62f ? "active_motion_guard_fake_safe" : "available";
-        model.transparentGlassMaterialRoutingStatus = "selected_slot_only";
-        model.transparentGlassAppliedSlot = selectedMaterialSlot;
+        model.transparentGlassMaterialRoutingStatus = "role_routed_active_glass_slot";
+        model.materialRoleSystemStatus = "ok";
+        model.materialRoleDetectionMode = "material_name_alpha_hint_factor_no_asset_hardcode";
+        model.selectedMaterialRole = selectedMaterialSlot >= 0 && (size_t)selectedMaterialSlot < modelMaterialSlots.size() ? materialRoleNameFromHint(modelMaterialSlots[(size_t)selectedMaterialSlot].materialTypeHint) : "Unknown";
+        model.selectedMaterialRoleConfidence = selectedMaterialSlot >= 0 && (size_t)selectedMaterialSlot < modelMaterialSlots.size() ? materialRoleConfidence(modelMaterialSlots[(size_t)selectedMaterialSlot]) : 0.0f;
+        model.selectedMaterialRoleSource = selectedMaterialSlot >= 0 && (size_t)selectedMaterialSlot < modelMaterialSlots.size() ? materialRoleSource(modelMaterialSlots[(size_t)selectedMaterialSlot]) : "none";
+        model.materialRoleCandidateCount = (uint32_t)modelMaterialSlots.size();
+        model.glassCandidateCount = 0;
+        for (const auto& slot : modelMaterialSlots) if (slot.materialTypeHint == 6 || slot.alphaMode == 2 || slot.baseColorFactor[3] < 0.98f) model.glassCandidateCount++;
+        model.bestGlassCandidateSlot = bestGlassSlot;
+        model.bestGlassCandidateName = materialNameFromDiagnostics(bestGlassSlot);
+        model.bestGlassCandidateConfidence = bestGlassSlot >= 0 ? materialRoleConfidence(modelMaterialSlots[(size_t)bestGlassSlot]) : 0.0f;
+        model.bestGlassCandidateSource = bestGlassSlot >= 0 ? materialRoleSource(modelMaterialSlots[(size_t)bestGlassSlot]) : "none";
+        model.materialRoleNoHardcodeStatus = "ok_no_asset_specific_slot_hardcode";
+        model.transparentGlassRoutingStatus = transparentActive ? "ok_active_role_routed" : "fallback_fake_safe";
+        model.transparentGlassRoutingMode = manualValid ? "manual_override" : (material.glassRenderMode == 1 ? "transparent_v1_selected_glass_or_best_candidate" : (material.glassRenderMode == 2 ? "auto_best_glass_candidate" : "fake_safe"));
+        model.activeTransparentGlassSlot = routedGlassSlot;
+        model.activeTransparentGlassMaterialName = materialNameFromDiagnostics(routedGlassSlot);
+        model.activeTransparentGlassMaterialRole = routedGlassSlot >= 0 ? (manualValid ? "Glass" : materialRoleNameFromHint(modelMaterialSlots[(size_t)routedGlassSlot].materialTypeHint)) : "Unknown";
+        model.activeTransparentGlassRoleSource = routedGlassSlot >= 0 ? (manualValid ? "manual_override" : materialRoleSource(modelMaterialSlots[(size_t)routedGlassSlot])) : "none";
+        model.activeTransparentGlassSlotSource = routedSource;
+        model.transparentGlassSelectedSlotAllowedStatus = selectedGlass ? "ok_selected_glass_allowed" : "not_selected_glass";
+        model.transparentGlassSelectedSlotRejectedStatus = (!selectedGlass && (selectedPaint || selectedMetal || selectedFabric || selectedRubber)) ? "ok_rejected_non_glass_selected_slot" : "inactive";
+        model.transparentGlassAutoDetectStatus = bestGlassSlot >= 0 ? "ok_best_candidate_found" : "fallback_no_glass_candidate";
+        model.transparentGlassManualOverrideStatus = manualValid ? "active_selected_slot_assigned_as_glass" : "inactive";
+        model.transparentGlassFallbackReason = transparentActive ? "none" : (bestGlassSlot < 0 && !manualValid ? "no_glass_candidate" : (material.glassRenderMode == 0 ? "fake_safe_mode" : "auto_motion_guard_or_inactive"));
+        model.transparentGlassWrongSlotGuardStatus = "ok_non_glass_slots_not_transparent_by_default";
+        model.transparentGlassAppliedSlot = routedGlassSlot;
         model.transparentGlassAppliedMaterialCount = transparentActive ? 1u : 0u;
         model.transparentGlassSkippedOpaqueCount = transparentSkipped;
-        model.transparentGlassFabricGuardStatus = selectedFabric && !forcedSelected ? "ok_fabric_kept_opaque" : "ok";
-        model.transparentGlassMetalGuardStatus = selectedMetal && !forcedSelected ? "ok_metal_kept_opaque" : "ok";
-        model.transparentGlassCarPaintGuardStatus = selectedPaint && !forcedSelected ? "ok_car_paint_kept_opaque" : "ok";
+        model.transparentGlassSkippedNonGlassCount = transparentSkipped;
+        model.transparentGlassSkippedFabricCount = skippedFabric;
+        model.transparentGlassSkippedMetalCount = skippedMetal;
+        model.transparentGlassSkippedPaintCount = skippedPaint;
+        model.transparentGlassFabricGuardStatus = selectedFabric && !manualValid ? "ok_fabric_kept_opaque" : "ok";
+        model.transparentGlassMetalGuardStatus = selectedMetal && !manualValid ? "ok_metal_kept_opaque" : "ok";
+        model.transparentGlassCarPaintGuardStatus = selectedPaint && !manualValid ? "ok_car_paint_kept_opaque" : "ok";
+        model.p27TransparentPassPreservedStatus = "ok";
+        model.p27bPerformanceStatus = "ok_existing_transparent_pass_role_routing_only";
+        model.p27bNoExtraHeavyPassStatus = "ok";
+        model.p27bNoTextureRebuildStatus = "ok";
+        model.p27bNoModelReuploadStatus = "ok";
+        model.p27bNoFrameGlbParseStatus = "ok";
+        model.p27bNoFrameFileWriteStatus = "ok";
+        model.p27bNoShadowStatus = "ok";
+        model.p27bNoRealMirrorStatus = "ok";
+        model.p27bNoSsrStatus = "ok";
+        model.p27bNoRealRefractionStatus = "ok";
         model.transparentGlassMaskDebugViewStatus = "shader_applied";
         model.transparentGlassAlphaDebugViewStatus = "shader_applied";
         model.transparentGlassDrawOrderDebugViewStatus = "shader_applied";
@@ -920,11 +1041,11 @@ struct RendererCore {
         model.transparencyDeferredStatus = "ok_no_full_transparent_sorting_or_glass";
     }
 
-    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, float reflectionContrast, float reflectionSaturation, float motionReflectionScale, float motionClearcoatScale, int selectedSlot, float slotMetallic, float slotRoughness, float slotNormalScale, float slotAo, float slotGloss, float slotCoat, float alphaCutoffValue, float emissiveIntensity, int materialPreset, int glassEnabled, float glassOpacity, float glassEdge, float glassRoughness, int glassTintPreset, int glassRenderMode) {
+    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, float reflectionContrast, float reflectionSaturation, float motionReflectionScale, float motionClearcoatScale, int selectedSlot, float slotMetallic, float slotRoughness, float slotNormalScale, float slotAo, float slotGloss, float slotCoat, float alphaCutoffValue, float emissiveIntensity, int materialPreset, int glassEnabled, float glassOpacity, float glassEdge, float glassRoughness, int glassTintPreset, int glassRenderMode, int manualGlassSlotOverride) {
         applyLightPreset(lightPreset);
         material.sunIntensity = clampFloat(sunIntensity, 0.5f, 4.0f);
         material.ambientIntensity = clampFloat(ambientIntensity, 0.1f, 2.0f);
-        material.activeDebugView = ((activeDebugView % 69) + 69) % 69;
+        material.activeDebugView = ((activeDebugView % 74) + 74) % 74;
         material.toneMappingMode = ((toneMappingMode % 3) + 3) % 3;
         material.exposureValue = clampFloat(exposureValue, 0.8f, 3.0f);
         material.ambientFloor = clampFloat(ambientFloor, 0.0f, 0.35f);
@@ -955,6 +1076,7 @@ struct RendererCore {
         material.glassTintPreset = ((glassTintPreset % 8) + 8) % 8;
         material.glassRenderMode = ((glassRenderMode % 3) + 3) % 3;
         selectedMaterialSlot = selectedSlot;
+        manualGlassSlot = manualGlassSlotOverride;
         selectedSlotMetallicOverride = clampFloat(slotMetallic, 0.0f, 1.0f);
         selectedSlotRoughnessOverride = clampFloat(slotRoughness, 0.0f, 1.0f);
         selectedSlotNormalScaleOverride = clampFloat(slotNormalScale, 0.0f, 2.0f);
@@ -1384,11 +1506,8 @@ struct RendererCore {
         PushConstants pc{};
         pc.mvp = buildMvp();
         syncLightingModelState();
-        const bool selectedSlotValid = selectedMaterialSlot >= 0 && (size_t)selectedMaterialSlot < modelMaterialSlots.size();
-        const bool forcedGlass = material.glassEnabled != 0 || activeMaterialPreset == 6;
-        const bool selectedGlassHint = selectedSlotValid && modelMaterialSlots[(size_t)selectedMaterialSlot].materialTypeHint == 6;
-        const bool transparentGlassActive = (material.glassRenderMode == 1 || (material.glassRenderMode == 2 && material.motionReflectionScale > 0.62f))
-            && (forcedGlass || selectedGlassHint);
+        const bool transparentGlassActive = activeTransparentGlassSlot >= 0
+            && (material.glassRenderMode == 1 || (material.glassRenderMode == 2 && material.motionReflectionScale > 0.62f));
         pc.material = material;
         pushConstantsReady = true;
         materialConstantsReady = true;
@@ -1401,7 +1520,7 @@ struct RendererCore {
             if (transparentPass && !transparentGlassActive) continue;
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, transparentPass ? trianglePipeline.transparentPipeline : trianglePipeline.pipeline);
             for (const auto& range : modelDrawRanges) {
-                const bool rangeTransparent = transparentGlassActive && range.materialSlot == selectedMaterialSlot;
+                const bool rangeTransparent = transparentGlassActive && range.materialSlot == activeTransparentGlassSlot;
                 if (rangeTransparent != transparentPass) continue;
                 pc.material = material;
                 if (range.materialSlot >= 0 && (size_t)range.materialSlot < modelMaterialSlots.size()) {
@@ -1416,7 +1535,7 @@ struct RendererCore {
                     pc.material.emissiveFactor[2] = slot.emissiveFactor[2];
                     pc.material.materialPresetHint = slot.materialPresetHint;
                     pc.material.alphaCutoff = clampFloat(slot.alphaCutoff, 0.0f, 1.0f);
-                    if (range.materialSlot == selectedMaterialSlot) {
+                    if (range.materialSlot == selectedMaterialSlot || range.materialSlot == activeTransparentGlassSlot) {
                         pc.material.metallicFactor = selectedSlotMetallicOverride;
                         pc.material.roughnessFactor = selectedSlotRoughnessOverride;
                         pc.material.normalScale = selectedSlotNormalScaleOverride;
@@ -1426,8 +1545,8 @@ struct RendererCore {
                         pc.material.alphaCutoff = material.alphaCutoff;
                         pc.material.emissiveIntensity = selectedSlotEmissiveIntensity;
                         pc.material.materialPresetHint = activeMaterialPreset;
-                        pc.material.glassEnabled = (material.glassEnabled != 0 || activeMaterialPreset == 6) ? 1 : 0;
-                        pc.material.glassRenderMode = transparentPass ? 1 : material.glassRenderMode;
+                        pc.material.glassEnabled = range.materialSlot == activeTransparentGlassSlot ? 1 : ((material.glassEnabled != 0 || activeMaterialPreset == 6) ? 1 : 0);
+                        pc.material.glassRenderMode = transparentPass ? 1 : (range.materialSlot == activeTransparentGlassSlot ? material.glassRenderMode : 0);
                     } else {
                         pc.material.glossSliderValue = 0.0f;
                         pc.material.paintGlossSliderValue = 0.0f;

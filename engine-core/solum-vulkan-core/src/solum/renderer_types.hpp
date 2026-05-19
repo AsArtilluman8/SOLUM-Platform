@@ -171,6 +171,11 @@ inline const char* materialDebugViewName(int view) {
     if (view == 66) return "Transparent Glass Draw Order";
     if (view == 67) return "Transparent Glass Fallback";
     if (view == 68) return "Transparent Glass Safety";
+    if (view == 69) return "Material Role";
+    if (view == 70) return "Glass Candidate";
+    if (view == 71) return "Active Glass Slot";
+    if (view == 72) return "Transparent Routing";
+    if (view == 73) return "Wrong Slot Guard";
     return "Final Shaded";
 }
 
@@ -200,6 +205,7 @@ inline const char* materialTypeHintName(int hint) {
     if (hint == 5) return "cutout_like";
     if (hint == 6) return "glass_like";
     if (hint == 7) return "decal_like";
+    if (hint == 8) return "emissive_like";
     return "unknown";
 }
 
@@ -800,6 +806,58 @@ struct ModelRenderState {
     int transparentGlassAppliedSlot = 0;
     uint32_t transparentGlassAppliedMaterialCount = 0;
     uint32_t transparentGlassSkippedOpaqueCount = 0;
+    std::string materialRoleSystemStatus = "ok";
+    std::string materialRoleDetectionMode = "metadata_name_alpha_hint_factor";
+    std::string selectedMaterialRole = "Unknown";
+    float selectedMaterialRoleConfidence = 0.0f;
+    std::string selectedMaterialRoleSource = "none";
+    uint32_t materialRoleCandidateCount = 0;
+    uint32_t glassCandidateCount = 0;
+    int bestGlassCandidateSlot = -1;
+    std::string bestGlassCandidateName = "none";
+    float bestGlassCandidateConfidence = 0.0f;
+    std::string bestGlassCandidateSource = "none";
+    std::string materialRoleNoHardcodeStatus = "ok_no_asset_specific_slot_hardcode";
+    std::string transparentGlassRoutingStatus = "available";
+    std::string transparentGlassRoutingMode = "auto_best_glass_candidate";
+    int activeTransparentGlassSlot = -1;
+    std::string activeTransparentGlassMaterialName = "none";
+    std::string activeTransparentGlassMaterialRole = "Unknown";
+    std::string activeTransparentGlassRoleSource = "none";
+    std::string activeTransparentGlassSlotSource = "none";
+    std::string transparentGlassSelectedSlotAllowedStatus = "inactive";
+    std::string transparentGlassSelectedSlotRejectedStatus = "inactive";
+    std::string transparentGlassAutoDetectStatus = "available";
+    std::string transparentGlassManualOverrideStatus = "inactive";
+    std::string transparentGlassFallbackReason = "none";
+    std::string transparentGlassWrongSlotGuardStatus = "ok_non_glass_slots_not_transparent_by_default";
+    std::string materialRoleUiStatus = "ok_minimal_material_tab";
+    std::string selectedSlotRoleSummaryUiStatus = "ok";
+    std::string activeGlassSlotSummaryUiStatus = "ok";
+    std::string selectGlassCandidateButtonStatus = "ok";
+    std::string assignSelectedAsGlassButtonStatus = "ok";
+    std::string clearManualRoleButtonStatus = "ok";
+    std::string selectedSlotHighlightToggleStatus = "diagnostic_only_deferred";
+    uint32_t transparentGlassSkippedNonGlassCount = 0;
+    uint32_t transparentGlassSkippedFabricCount = 0;
+    uint32_t transparentGlassSkippedMetalCount = 0;
+    uint32_t transparentGlassSkippedPaintCount = 0;
+    std::string p27TransparentPassPreservedStatus = "ok";
+    std::string p27bPerformanceStatus = "ok_existing_transparent_pass_only";
+    std::string p27bNoExtraHeavyPassStatus = "ok";
+    std::string p27bNoTextureRebuildStatus = "ok";
+    std::string p27bNoModelReuploadStatus = "ok";
+    std::string p27bNoFrameGlbParseStatus = "ok";
+    std::string p27bNoFrameFileWriteStatus = "ok";
+    std::string p27bNoShadowStatus = "ok";
+    std::string p27bNoRealMirrorStatus = "ok";
+    std::string p27bNoSsrStatus = "ok";
+    std::string p27bNoRealRefractionStatus = "ok";
+    std::string materialRoleDebugViewStatus = "shader_applied";
+    std::string glassCandidateDebugViewStatus = "shader_applied";
+    std::string activeGlassSlotDebugViewStatus = "shader_applied";
+    std::string transparentRoutingDebugViewStatus = "shader_applied";
+    std::string wrongSlotGuardDebugViewStatus = "shader_applied";
     std::string transparentGlassFabricGuardStatus = "ok";
     std::string transparentGlassMetalGuardStatus = "ok";
     std::string transparentGlassCarPaintGuardStatus = "ok";

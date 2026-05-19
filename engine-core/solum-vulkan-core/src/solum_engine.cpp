@@ -108,11 +108,12 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetLi
     jfloat glassEdge,
     jfloat glassRoughness,
     jint glassTintPreset,
-    jint glassRenderMode
+    jint glassRenderMode,
+    jint manualGlassSlotOverride
 ) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) return;
-    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPreset, calibrationStrength, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPreset, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, selectedSlotGlossOverride, selectedSlotCoatOverride, alphaCutoffValue, emissiveIntensity, materialPreset, glassEnabled, glassOpacity, glassEdge, glassRoughness, glassTintPreset, glassRenderMode);
+    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPreset, calibrationStrength, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPreset, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, selectedSlotGlossOverride, selectedSlotCoatOverride, alphaCutoffValue, emissiveIntensity, materialPreset, glassEnabled, glassOpacity, glassEdge, glassRoughness, glassTintPreset, glassRenderMode, manualGlassSlotOverride);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdateUiDiagnostics(
@@ -644,6 +645,58 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"transparentGlassAppliedSlot\":" + std::to_string(renderer->model.transparentGlassAppliedSlot)
         + ",\"transparentGlassAppliedMaterialCount\":" + std::to_string(renderer->model.transparentGlassAppliedMaterialCount)
         + ",\"transparentGlassSkippedOpaqueCount\":" + std::to_string(renderer->model.transparentGlassSkippedOpaqueCount)
+        + ",\"materialRoleSystemStatus\":\"" + solum::escapeJson(renderer->model.materialRoleSystemStatus) + "\""
+        + ",\"materialRoleDetectionMode\":\"" + solum::escapeJson(renderer->model.materialRoleDetectionMode) + "\""
+        + ",\"selectedMaterialRole\":\"" + solum::escapeJson(renderer->model.selectedMaterialRole) + "\""
+        + ",\"selectedMaterialRoleConfidence\":" + std::to_string(renderer->model.selectedMaterialRoleConfidence)
+        + ",\"selectedMaterialRoleSource\":\"" + solum::escapeJson(renderer->model.selectedMaterialRoleSource) + "\""
+        + ",\"materialRoleCandidateCount\":" + std::to_string(renderer->model.materialRoleCandidateCount)
+        + ",\"glassCandidateCount\":" + std::to_string(renderer->model.glassCandidateCount)
+        + ",\"bestGlassCandidateSlot\":" + std::to_string(renderer->model.bestGlassCandidateSlot)
+        + ",\"bestGlassCandidateName\":\"" + solum::escapeJson(renderer->model.bestGlassCandidateName) + "\""
+        + ",\"bestGlassCandidateConfidence\":" + std::to_string(renderer->model.bestGlassCandidateConfidence)
+        + ",\"bestGlassCandidateSource\":\"" + solum::escapeJson(renderer->model.bestGlassCandidateSource) + "\""
+        + ",\"materialRoleNoHardcodeStatus\":\"" + solum::escapeJson(renderer->model.materialRoleNoHardcodeStatus) + "\""
+        + ",\"transparentGlassRoutingStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassRoutingStatus) + "\""
+        + ",\"transparentGlassRoutingMode\":\"" + solum::escapeJson(renderer->model.transparentGlassRoutingMode) + "\""
+        + ",\"activeTransparentGlassSlot\":" + std::to_string(renderer->model.activeTransparentGlassSlot)
+        + ",\"activeTransparentGlassMaterialName\":\"" + solum::escapeJson(renderer->model.activeTransparentGlassMaterialName) + "\""
+        + ",\"activeTransparentGlassMaterialRole\":\"" + solum::escapeJson(renderer->model.activeTransparentGlassMaterialRole) + "\""
+        + ",\"activeTransparentGlassRoleSource\":\"" + solum::escapeJson(renderer->model.activeTransparentGlassRoleSource) + "\""
+        + ",\"activeTransparentGlassSlotSource\":\"" + solum::escapeJson(renderer->model.activeTransparentGlassSlotSource) + "\""
+        + ",\"transparentGlassSelectedSlotAllowedStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassSelectedSlotAllowedStatus) + "\""
+        + ",\"transparentGlassSelectedSlotRejectedStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassSelectedSlotRejectedStatus) + "\""
+        + ",\"transparentGlassAutoDetectStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassAutoDetectStatus) + "\""
+        + ",\"transparentGlassManualOverrideStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassManualOverrideStatus) + "\""
+        + ",\"transparentGlassFallbackReason\":\"" + solum::escapeJson(renderer->model.transparentGlassFallbackReason) + "\""
+        + ",\"transparentGlassWrongSlotGuardStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassWrongSlotGuardStatus) + "\""
+        + ",\"materialRoleUiStatus\":\"" + solum::escapeJson(renderer->model.materialRoleUiStatus) + "\""
+        + ",\"selectedSlotRoleSummaryUiStatus\":\"" + solum::escapeJson(renderer->model.selectedSlotRoleSummaryUiStatus) + "\""
+        + ",\"activeGlassSlotSummaryUiStatus\":\"" + solum::escapeJson(renderer->model.activeGlassSlotSummaryUiStatus) + "\""
+        + ",\"selectGlassCandidateButtonStatus\":\"" + solum::escapeJson(renderer->model.selectGlassCandidateButtonStatus) + "\""
+        + ",\"assignSelectedAsGlassButtonStatus\":\"" + solum::escapeJson(renderer->model.assignSelectedAsGlassButtonStatus) + "\""
+        + ",\"clearManualRoleButtonStatus\":\"" + solum::escapeJson(renderer->model.clearManualRoleButtonStatus) + "\""
+        + ",\"selectedSlotHighlightToggleStatus\":\"" + solum::escapeJson(renderer->model.selectedSlotHighlightToggleStatus) + "\""
+        + ",\"transparentGlassSkippedNonGlassCount\":" + std::to_string(renderer->model.transparentGlassSkippedNonGlassCount)
+        + ",\"transparentGlassSkippedFabricCount\":" + std::to_string(renderer->model.transparentGlassSkippedFabricCount)
+        + ",\"transparentGlassSkippedMetalCount\":" + std::to_string(renderer->model.transparentGlassSkippedMetalCount)
+        + ",\"transparentGlassSkippedPaintCount\":" + std::to_string(renderer->model.transparentGlassSkippedPaintCount)
+        + ",\"p27TransparentPassPreservedStatus\":\"" + solum::escapeJson(renderer->model.p27TransparentPassPreservedStatus) + "\""
+        + ",\"p27bPerformanceStatus\":\"" + solum::escapeJson(renderer->model.p27bPerformanceStatus) + "\""
+        + ",\"p27bNoExtraHeavyPassStatus\":\"" + solum::escapeJson(renderer->model.p27bNoExtraHeavyPassStatus) + "\""
+        + ",\"p27bNoTextureRebuildStatus\":\"" + solum::escapeJson(renderer->model.p27bNoTextureRebuildStatus) + "\""
+        + ",\"p27bNoModelReuploadStatus\":\"" + solum::escapeJson(renderer->model.p27bNoModelReuploadStatus) + "\""
+        + ",\"p27bNoFrameGlbParseStatus\":\"" + solum::escapeJson(renderer->model.p27bNoFrameGlbParseStatus) + "\""
+        + ",\"p27bNoFrameFileWriteStatus\":\"" + solum::escapeJson(renderer->model.p27bNoFrameFileWriteStatus) + "\""
+        + ",\"p27bNoShadowStatus\":\"" + solum::escapeJson(renderer->model.p27bNoShadowStatus) + "\""
+        + ",\"p27bNoRealMirrorStatus\":\"" + solum::escapeJson(renderer->model.p27bNoRealMirrorStatus) + "\""
+        + ",\"p27bNoSsrStatus\":\"" + solum::escapeJson(renderer->model.p27bNoSsrStatus) + "\""
+        + ",\"p27bNoRealRefractionStatus\":\"" + solum::escapeJson(renderer->model.p27bNoRealRefractionStatus) + "\""
+        + ",\"materialRoleDebugViewStatus\":\"" + solum::escapeJson(renderer->model.materialRoleDebugViewStatus) + "\""
+        + ",\"glassCandidateDebugViewStatus\":\"" + solum::escapeJson(renderer->model.glassCandidateDebugViewStatus) + "\""
+        + ",\"activeGlassSlotDebugViewStatus\":\"" + solum::escapeJson(renderer->model.activeGlassSlotDebugViewStatus) + "\""
+        + ",\"transparentRoutingDebugViewStatus\":\"" + solum::escapeJson(renderer->model.transparentRoutingDebugViewStatus) + "\""
+        + ",\"wrongSlotGuardDebugViewStatus\":\"" + solum::escapeJson(renderer->model.wrongSlotGuardDebugViewStatus) + "\""
         + ",\"transparentGlassFabricGuardStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassFabricGuardStatus) + "\""
         + ",\"transparentGlassMetalGuardStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassMetalGuardStatus) + "\""
         + ",\"transparentGlassCarPaintGuardStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassCarPaintGuardStatus) + "\""

@@ -28,11 +28,12 @@ enum class RenderLabScene {
     Scene21BetterEnvironmentReflectionLab,
     Scene22GlassMaterialFoundationLab,
     Scene23GlassReflectionPolishLab,
+    Scene24TransparentGlassPassLab,
     Scene06PerformanceLab
 };
 
 struct RenderLabState {
-    RenderLabScene currentScene = RenderLabScene::Scene23GlassReflectionPolishLab;
+    RenderLabScene currentScene = RenderLabScene::Scene24TransparentGlassPassLab;
     bool cubeReady = false;
     bool depthReady = false;
     bool cameraReady = false;
@@ -81,6 +82,7 @@ struct RenderLabState {
             case RenderLabScene::Scene21BetterEnvironmentReflectionLab: return "scene21_better_environment_reflection_lab";
             case RenderLabScene::Scene22GlassMaterialFoundationLab: return "scene22_glass_material_foundation_lab";
             case RenderLabScene::Scene23GlassReflectionPolishLab: return "scene23_glass_reflection_polish_lab";
+            case RenderLabScene::Scene24TransparentGlassPassLab: return "scene24_transparent_glass_pass_lab";
             case RenderLabScene::Scene06PerformanceLab: return "scene06_performance_lab";
             default: return "unknown";
         }
@@ -112,6 +114,7 @@ struct RenderLabState {
             case RenderLabScene::Scene21BetterEnvironmentReflectionLab: return "Scene21 Better Environment Reflection Lab";
             case RenderLabScene::Scene22GlassMaterialFoundationLab: return "Scene22 Glass Material Foundation Lab";
             case RenderLabScene::Scene23GlassReflectionPolishLab: return "Scene23 Glass Reflection Polish Lab";
+            case RenderLabScene::Scene24TransparentGlassPassLab: return "Scene24 Transparent Glass Pass Lab";
             case RenderLabScene::Scene06PerformanceLab: return "Scene06 Performance Lab";
             default: return "Unknown";
         }
@@ -659,6 +662,48 @@ struct RenderLabState {
         f << indent << "  \"p26NoTextureRebuildStatus\": \"" << escapeJson(model.p26NoTextureRebuildStatus) << "\",\n";
         f << indent << "  \"p26NoModelReuploadStatus\": \"" << escapeJson(model.p26NoModelReuploadStatus) << "\",\n";
         f << indent << "  \"p26NoNewShadowPassStatus\": \"" << escapeJson(model.p26NoNewShadowPassStatus) << "\",\n";
+        f << indent << "  \"transparentGlassPassStatus\": \"" << escapeJson(model.transparentGlassPassStatus) << "\",\n";
+        f << indent << "  \"transparentGlassPassMode\": \"" << escapeJson(model.transparentGlassPassMode) << "\",\n";
+        f << indent << "  \"transparentGlassSelectedSlotStatus\": \"" << escapeJson(model.transparentGlassSelectedSlotStatus) << "\",\n";
+        f << indent << "  \"transparentGlassDrawOrderStatus\": \"" << escapeJson(model.transparentGlassDrawOrderStatus) << "\",\n";
+        f << indent << "  \"transparentGlassBlendStatus\": \"" << escapeJson(model.transparentGlassBlendStatus) << "\",\n";
+        f << indent << "  \"transparentGlassOpacityStatus\": \"" << escapeJson(model.transparentGlassOpacityStatus) << "\",\n";
+        f << indent << "  \"transparentGlassTintStatus\": \"" << escapeJson(model.transparentGlassTintStatus) << "\",\n";
+        f << indent << "  \"transparentGlassFresnelStatus\": \"" << escapeJson(model.transparentGlassFresnelStatus) << "\",\n";
+        f << indent << "  \"transparentGlassReflectionStatus\": \"" << escapeJson(model.transparentGlassReflectionStatus) << "\",\n";
+        f << indent << "  \"transparentGlassSortingStatus\": \"" << escapeJson(model.transparentGlassSortingStatus) << "\",\n";
+        f << indent << "  \"transparentGlassRefractionStatus\": \"" << escapeJson(model.transparentGlassRefractionStatus) << "\",\n";
+        f << indent << "  \"transparentGlassFallbackStatus\": \"" << escapeJson(model.transparentGlassFallbackStatus) << "\",\n";
+        f << indent << "  \"transparentGlassPerformanceStatus\": \"" << escapeJson(model.transparentGlassPerformanceStatus) << "\",\n";
+        f << indent << "  \"transparentGlassUiStatus\": \"" << escapeJson(model.transparentGlassUiStatus) << "\",\n";
+        f << indent << "  \"glassRenderModeStatus\": \"" << escapeJson(model.glassRenderModeStatus) << "\",\n";
+        f << indent << "  \"activeGlassRenderMode\": \"" << escapeJson(model.activeGlassRenderMode) << "\",\n";
+        f << indent << "  \"transparentGlassToggleStatus\": \"" << escapeJson(model.transparentGlassToggleStatus) << "\",\n";
+        f << indent << "  \"glassModeSummaryUiStatus\": \"" << escapeJson(model.glassModeSummaryUiStatus) << "\",\n";
+        f << indent << "  \"p26GlassPolishPreservedStatus\": \"" << escapeJson(model.p26GlassPolishPreservedStatus) << "\",\n";
+        f << indent << "  \"fakeGlassFallbackStatus\": \"" << escapeJson(model.fakeGlassFallbackStatus) << "\",\n";
+        f << indent << "  \"glassAutoFallbackStatus\": \"" << escapeJson(model.glassAutoFallbackStatus) << "\",\n";
+        f << indent << "  \"glassMotionFallbackStatus\": \"" << escapeJson(model.glassMotionFallbackStatus) << "\",\n";
+        f << indent << "  \"transparentGlassMaterialRoutingStatus\": \"" << escapeJson(model.transparentGlassMaterialRoutingStatus) << "\",\n";
+        f << indent << "  \"transparentGlassAppliedSlot\": " << model.transparentGlassAppliedSlot << ",\n";
+        f << indent << "  \"transparentGlassAppliedMaterialCount\": " << model.transparentGlassAppliedMaterialCount << ",\n";
+        f << indent << "  \"transparentGlassSkippedOpaqueCount\": " << model.transparentGlassSkippedOpaqueCount << ",\n";
+        f << indent << "  \"transparentGlassFabricGuardStatus\": \"" << escapeJson(model.transparentGlassFabricGuardStatus) << "\",\n";
+        f << indent << "  \"transparentGlassMetalGuardStatus\": \"" << escapeJson(model.transparentGlassMetalGuardStatus) << "\",\n";
+        f << indent << "  \"transparentGlassCarPaintGuardStatus\": \"" << escapeJson(model.transparentGlassCarPaintGuardStatus) << "\",\n";
+        f << indent << "  \"transparentGlassMaskDebugViewStatus\": \"" << escapeJson(model.transparentGlassMaskDebugViewStatus) << "\",\n";
+        f << indent << "  \"transparentGlassAlphaDebugViewStatus\": \"" << escapeJson(model.transparentGlassAlphaDebugViewStatus) << "\",\n";
+        f << indent << "  \"transparentGlassDrawOrderDebugViewStatus\": \"" << escapeJson(model.transparentGlassDrawOrderDebugViewStatus) << "\",\n";
+        f << indent << "  \"transparentGlassFallbackDebugViewStatus\": \"" << escapeJson(model.transparentGlassFallbackDebugViewStatus) << "\",\n";
+        f << indent << "  \"transparentGlassSafetyDebugViewStatus\": \"" << escapeJson(model.transparentGlassSafetyDebugViewStatus) << "\",\n";
+        f << indent << "  \"p27PerformanceStatus\": \"" << escapeJson(model.p27PerformanceStatus) << "\",\n";
+        f << indent << "  \"p27NoShadowStatus\": \"" << escapeJson(model.p27NoShadowStatus) << "\",\n";
+        f << indent << "  \"p27NoRaytraceStatus\": \"" << escapeJson(model.p27NoRaytraceStatus) << "\",\n";
+        f << indent << "  \"p27NoSsrStatus\": \"" << escapeJson(model.p27NoSsrStatus) << "\",\n";
+        f << indent << "  \"p27NoRealMirrorStatus\": \"" << escapeJson(model.p27NoRealMirrorStatus) << "\",\n";
+        f << indent << "  \"p27NoScreenRefractionStatus\": \"" << escapeJson(model.p27NoScreenRefractionStatus) << "\",\n";
+        f << indent << "  \"p27NoTextureRebuildStatus\": \"" << escapeJson(model.p27NoTextureRebuildStatus) << "\",\n";
+        f << indent << "  \"p27NoModelReuploadStatus\": \"" << escapeJson(model.p27NoModelReuploadStatus) << "\",\n";
         f << indent << "  \"glassNoRefractionPassStatus\": \"" << escapeJson(model.glassNoRefractionPassStatus) << "\",\n";
         f << indent << "  \"glassNoScreenRefractionStatus\": \"" << escapeJson(model.glassNoScreenRefractionStatus) << "\",\n";
         f << indent << "  \"glassNoFullSortingStatus\": \"" << escapeJson(model.glassNoFullSortingStatus) << "\",\n";

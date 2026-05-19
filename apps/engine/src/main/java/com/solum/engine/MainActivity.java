@@ -65,8 +65,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static final String PREF_ACTIVE_MODEL_PATH = "active_model_path";
     private static final String PREF_ACTIVE_MODEL_LOCAL_PATH = "active_model_local_path";
     private static final String PREF_ACTIVE_MODEL_NAME = "active_model_name";
-    private static final String SCENE_ID = "scene23_glass_reflection_polish_lab";
-    private static final String SCENE_NAME = "Scene23 Glass Reflection Polish Lab";
+    private static final String SCENE_ID = "scene24_transparent_glass_pass_lab";
+    private static final String SCENE_NAME = "Scene24 Transparent Glass Pass Lab";
     private static final int REQUEST_CHOOSE_DIAGNOSTICS_TREE = 2202;
     private static final int REQUEST_IMPORT_GLB = 2305;
     private static final int TEX_BASE_COLOR = 0;
@@ -123,6 +123,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button presetCycleButton;
     private Button presetApplyButton;
     private Button glassEnableButton;
+    private Button glassRenderModeButton;
     private Button glassTintPresetButton;
     private Button glassDebugButton;
     private Button emissiveDebugButton;
@@ -203,6 +204,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private float glassEdge = 1.55f;
     private float glassRoughness = 0.14f;
     private int glassTintPresetIndex = 0;
+    private int glassRenderModeIndex = 2;
     private int brightnessPresetIndex = 3;
     private int activeDebugViewIndex = 0;
     private int toneMappingModeIndex = 1;
@@ -266,7 +268,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native String nativeGetStatus(long handle);
     private static native String nativeGetRenderLabState(long handle);
     private static native void nativeSetCamera(long handle, float yawDeg, float pitchDeg, float distance, float motionSpeed, float qualityBlend, float reflectionScale, float clearcoatScale, float movingFps, float stillFps);
-    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, float reflectionContrast, float reflectionSaturation, float motionReflectionScale, float motionClearcoatScale, int selectedMaterialSlot, float selectedSlotMetallicOverride, float selectedSlotRoughnessOverride, float selectedSlotNormalScaleOverride, float selectedSlotAoOverride, float selectedSlotGlossOverride, float selectedSlotCoatOverride, float alphaCutoffValue, float emissiveIntensity, int materialPreset, int glassEnabled, float glassOpacity, float glassEdge, float glassRoughness, int glassTintPreset);
+    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, float reflectionContrast, float reflectionSaturation, float motionReflectionScale, float motionClearcoatScale, int selectedMaterialSlot, float selectedSlotMetallicOverride, float selectedSlotRoughnessOverride, float selectedSlotNormalScaleOverride, float selectedSlotAoOverride, float selectedSlotGlossOverride, float selectedSlotCoatOverride, float alphaCutoffValue, float emissiveIntensity, int materialPreset, int glassEnabled, float glassOpacity, float glassEdge, float glassRoughness, int glassTintPreset, int glassRenderMode);
     private static native boolean nativeUploadModelFirstPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, float[] baseColorFactor);
     private static native boolean nativeUploadModelMultiPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, int[] rangeData, float[] materialData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, int primitiveTotal, int primitiveSkipped, int unsupportedPrimitiveCount, String reason);
     private static native boolean nativeUploadBaseColorTexture(long handle, int[] rgbaPixels, int width, int height, String textureName, String textureSource, String mimeType);
@@ -658,6 +660,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         glassEnableButton = compactButton("Glass Enable");
         glassEnableButton.setOnClickListener(v -> toggleGlassEnabled());
         materialPanel.addView(glassEnableButton);
+        glassRenderModeButton = compactButton("Glass Render: Auto");
+        glassRenderModeButton.setOnClickListener(v -> cycleGlassRenderMode());
+        materialPanel.addView(glassRenderModeButton);
         glassTintPresetButton = compactButton("Glass Tint: Clear");
         glassTintPresetButton.setOnClickListener(v -> cycleGlassTintPreset());
         materialPanel.addView(glassTintPresetButton);
@@ -936,7 +941,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "\nFallback cube: " + fallback
             + "\nMesh meta: " + p.meshCount + " / " + p.primitiveCount + " / " + p.materialCount + " / " + p.textureCount
             + "\nStatus: " + status
-            + "\nNext: validate Scene23 glass reflection polish lab";
+            + "\nNext: validate Scene24 transparent glass pass lab";
     }
 
     private void cycleLightPreset() {
@@ -980,7 +985,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleMaterialView() {
-        activeDebugViewIndex = (activeDebugViewIndex + 1) % 64;
+        activeDebugViewIndex = (activeDebugViewIndex + 1) % 69;
         applyLightingControls();
         updateStatus();
     }
@@ -1028,6 +1033,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         updateStatus();
     }
 
+    private void cycleGlassRenderMode() {
+        glassRenderModeIndex = (glassRenderModeIndex + 1) % 3;
+        applyLightingControls();
+        updateStatus();
+    }
+
+    private String glassRenderModeName(int mode) {
+        if (mode == 0) return "Fake Safe";
+        if (mode == 1) return "Transparent v1";
+        return "Auto";
+    }
+
     private void cycleGlassTintPreset() {
         glassTintPresetIndex = (glassTintPresetIndex + 1) % 8;
         glassEnabled = true;
@@ -1038,7 +1055,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleGlassDebugView() {
-        activeDebugViewIndex = activeDebugViewIndex < 58 || activeDebugViewIndex > 63 ? 58 : 58 + ((activeDebugViewIndex - 57) % 6);
+        activeDebugViewIndex = activeDebugViewIndex < 52 || activeDebugViewIndex > 68 ? 52 : 52 + ((activeDebugViewIndex - 51) % 17);
         applyLightingControls();
         updateStatus();
     }
@@ -1518,6 +1535,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (presetCycleButton != null) presetCycleButton.setText("Preset: " + modelState.activeMaterialPreset);
         if (presetApplyButton != null) presetApplyButton.setText(materialPresetPendingApply ? "Apply Preset *" : "Apply Preset");
         if (glassEnableButton != null) glassEnableButton.setText(glassEnabled ? "Glass On" : "Glass Enable");
+        if (glassRenderModeButton != null) glassRenderModeButton.setText("Glass Render: " + glassRenderModeName(glassRenderModeIndex));
         if (glassTintPresetButton != null) glassTintPresetButton.setText("Glass Tint: " + glassTintPresetName(glassTintPresetIndex));
         if (glassOpacityButton != null) glassOpacityButton.setText("Glass Opacity " + oneDecimal(glassOpacity));
         if (glassEdgeButton != null) glassEdgeButton.setText("Glass Edge " + oneDecimal(glassEdge));
@@ -1532,12 +1550,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (paintGlossButton != null) paintGlossButton.setText("Coat " + oneDecimal(paintGlossSliderValue));
         if (clearcoatButton != null) clearcoatButton.setText("Clearcoat " + oneDecimal(clearcoatIntensity));
         if (clearcoatRoughnessButton != null) clearcoatRoughnessButton.setText("Clearcoat Rough " + oneDecimal(clearcoatRoughness));
-        if (materialStatusView != null) materialStatusView.setText("Slot " + selectedMaterialSlot + "/" + Math.max(0, selectedMaterialSlotCount) + " " + modelState.selectedMaterialName + " " + modelState.selectedMaterialTypeHint + "\n" + modelState.selectedMaterialTextureSummaryStatus + "\nPreset " + modelState.activeMaterialPreset + " | Glass " + (glassEnabled ? "on" : "off") + " " + glassTintPresetName(glassTintPresetIndex) + " " + oneDecimal(glassOpacity) + "/" + oneDecimal(glassEdge) + "/" + oneDecimal(glassRoughness) + "\nAlpha " + modelState.alphaModeSupportStatus + " cutoff " + oneDecimal(alphaCutoffValue) + " | Double " + modelState.doubleSidedMode + "\nMetallic " + oneDecimal(selectedSlotMetallicOverride) + " Rough " + oneDecimal(selectedSlotRoughnessOverride) + " Normal " + oneDecimal(selectedSlotNormalScaleOverride) + " AO " + oneDecimal(selectedSlotAoOverride) + "\nRefl C/S " + oneDecimal(reflectionContrast) + "/" + oneDecimal(reflectionSaturation) + " Motion " + modelState.cameraMotionQualityTier + "\nCalib " + oneDecimal(calibrationSliderValue) + " Gloss " + oneDecimal(glossSliderValue) + " Coat " + oneDecimal(paintGlossSliderValue) + " Clear " + oneDecimal(clearcoatIntensity) + "/" + oneDecimal(clearcoatRoughness) + " | Fabric/metal guards on");
+        if (materialStatusView != null) materialStatusView.setText("Slot " + selectedMaterialSlot + "/" + Math.max(0, selectedMaterialSlotCount) + " " + modelState.selectedMaterialName + " " + modelState.selectedMaterialTypeHint + "\n" + modelState.selectedMaterialTextureSummaryStatus + "\nGlass: " + glassRenderModeName(glassRenderModeIndex) + " | Slot: " + selectedMaterialSlot + " | " + (glassEnabled ? "on" : "off") + " " + glassTintPresetName(glassTintPresetIndex) + " " + oneDecimal(glassOpacity) + "/" + oneDecimal(glassEdge) + "/" + oneDecimal(glassRoughness) + "\nAlpha " + modelState.alphaModeSupportStatus + " cutoff " + oneDecimal(alphaCutoffValue) + " | Double " + modelState.doubleSidedMode + "\nMetallic " + oneDecimal(selectedSlotMetallicOverride) + " Rough " + oneDecimal(selectedSlotRoughnessOverride) + " Normal " + oneDecimal(selectedSlotNormalScaleOverride) + " AO " + oneDecimal(selectedSlotAoOverride) + "\nRefl C/S " + oneDecimal(reflectionContrast) + "/" + oneDecimal(reflectionSaturation) + " Motion " + modelState.cameraMotionQualityTier + "\nCalib " + oneDecimal(calibrationSliderValue) + " Gloss " + oneDecimal(glossSliderValue) + " Coat " + oneDecimal(paintGlossSliderValue) + " Clear " + oneDecimal(clearcoatIntensity) + "/" + oneDecimal(clearcoatRoughness) + " | Fabric/metal guards on");
         updateSliderPositionsFromState();
         if (materialViewButton != null) materialViewButton.setText("Debug: " + modelState.activeDebugView);
         try {
             if (nativeLoaded && nativeHandle != 0L) {
-                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPresetIndex, calibrationSliderValue, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPresetIndex, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, glossSliderValue, paintGlossSliderValue, alphaCutoffValue, emissiveIntensity, activeMaterialPresetIndex, glassEnabled ? 1 : 0, glassOpacity, glassEdge, glassRoughness, glassTintPresetIndex);
+                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPresetIndex, calibrationSliderValue, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPresetIndex, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, glossSliderValue, paintGlossSliderValue, alphaCutoffValue, emissiveIntensity, activeMaterialPresetIndex, glassEnabled ? 1 : 0, glassOpacity, glassEdge, glassRoughness, glassTintPresetIndex, glassRenderModeIndex);
             }
         } catch (Throwable t) {
             modelState.debugViewStatus = "native_control_failed";
@@ -1551,8 +1569,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         boolean selectedMetal = selectedSlot != null && "metal_like".equals(selectedSlot.optString("materialTypeHint", ""));
         boolean selectedPaint = selectedSlot != null && "paint_like".equals(selectedSlot.optString("materialTypeHint", ""));
         boolean active = glassEnabled || selectedGlassHint || activeMaterialPresetIndex == 6;
-        modelState.glassMaterialStatus = active ? "ok_p26_polished_single_pass" : "available";
-        modelState.glassMode = "single_pass_fake_transparency_no_refraction";
+        boolean forcedSelected = glassEnabled || activeMaterialPresetIndex == 6;
+        boolean transparentActive = active && (forcedSelected || selectedGlassHint) && (glassRenderModeIndex == 1 || (glassRenderModeIndex == 2 && motionReflectionScale > 0.62f));
+        modelState.glassMaterialStatus = transparentActive ? "ok_transparent_v1_selected_slot" : (active ? "ok_p26_polished_single_pass" : "available");
+        modelState.glassMode = transparentActive ? "transparent_v1_selected_slot_no_refraction" : "single_pass_fake_transparency_no_refraction";
         modelState.glassPolishStatus = "ok";
         modelState.glassPolishMode = "single_pass_fake_glass_polish";
         modelState.glassReadabilityStatus = active ? "ok_visible_edges_tint_reflection" : "available";
@@ -1570,11 +1590,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.glassReflectionSourceStatus = "p24_fake_cubemap_probe";
         modelState.glassRoughnessResponseStatus = "ok_clear_vs_rough_distinction";
         modelState.glassThicknessFakeStatus = "ok_edge_tint_thickness_fake";
-        modelState.glassTransparencyMode = "safe_single_pass_fake_opacity";
-        modelState.glassSortingStatus = "safe_no_full_transparent_sorting";
-        modelState.glassRefractionStatus = "deferred_not_real_refraction";
-        modelState.glassStillFakeTransparencyStatus = "yes_no_real_transparent_pass";
-        modelState.glassPerformanceStatus = "ok_uniform_shader_no_pass_no_sort";
+        modelState.glassTransparencyMode = transparentActive ? "transparent_v1_color_blend_selected_slot" : "safe_single_pass_fake_opacity";
+        modelState.glassSortingStatus = "limited_selected_slot_no_full_sort";
+        modelState.glassRefractionStatus = "deferred_no_real_refraction";
+        modelState.glassStillFakeTransparencyStatus = transparentActive ? "fallback_preserved_but_transparent_pass_active" : "yes_no_real_transparent_pass";
+        modelState.glassPerformanceStatus = transparentActive ? "ok_one_extra_selected_slot_draw_no_sort" : "ok_uniform_shader_no_pass_no_sort";
         modelState.glassUiStatus = "ok_compact_material_tab";
         modelState.glassEnableButtonStatus = "ok";
         modelState.glassPresetStatus = "ok";
@@ -1631,6 +1651,48 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.glassSummaryUiStatus = "ok_compact_summary";
         modelState.glassStrengthSliderStatus = "deferred_reusing_edge_opacity_roughness";
         modelState.glassControlsPreservedStatus = "ok";
+        modelState.transparentGlassPassStatus = transparentActive ? "ok_active" : "available_fallback_fake";
+        modelState.transparentGlassPassMode = "opaque_first_selected_glass_after";
+        modelState.transparentGlassSelectedSlotStatus = active ? "ok_selected_slot_eligible" : "inactive_selected_slot_not_glass";
+        modelState.transparentGlassDrawOrderStatus = "opaque_first_then_selected_glass";
+        modelState.transparentGlassBlendStatus = transparentActive ? "ok_vk_src_alpha_one_minus_src_alpha" : "inactive_fake_safe";
+        modelState.transparentGlassOpacityStatus = transparentActive ? "ok_real_alpha_blend" : "fallback_fake_opacity";
+        modelState.transparentGlassTintStatus = "ok_tint_uniform";
+        modelState.transparentGlassFresnelStatus = "ok_edge_reflection_preserved";
+        modelState.transparentGlassReflectionStatus = "ok_p26_p24_probe_preserved";
+        modelState.transparentGlassSortingStatus = "limited_selected_slot_no_full_sort";
+        modelState.transparentGlassRefractionStatus = "deferred_no_real_refraction";
+        modelState.transparentGlassFallbackStatus = transparentActive ? "p26_fake_available_when_disabled" : "active_p26_fake_glass";
+        modelState.transparentGlassPerformanceStatus = transparentActive ? "ok_extra_selected_slot_draw_only" : "ok_no_extra_draw";
+        modelState.transparentGlassUiStatus = "ok_minimal_material_tab";
+        modelState.glassRenderModeStatus = "ok_fake_safe_transparent_v1_auto";
+        modelState.activeGlassRenderMode = glassRenderModeName(glassRenderModeIndex);
+        modelState.transparentGlassToggleStatus = "ok";
+        modelState.glassModeSummaryUiStatus = "ok";
+        modelState.p26GlassPolishPreservedStatus = "ok";
+        modelState.fakeGlassFallbackStatus = transparentActive ? "available_when_mode_fake_safe_or_guard" : "active";
+        modelState.glassAutoFallbackStatus = glassRenderModeIndex == 2 && !transparentActive ? "active_fake_safe" : "available";
+        modelState.glassMotionFallbackStatus = motionReflectionScale <= 0.62f ? "active_motion_guard_fake_safe" : "available";
+        modelState.transparentGlassMaterialRoutingStatus = "selected_slot_only";
+        modelState.transparentGlassAppliedSlot = selectedMaterialSlot;
+        modelState.transparentGlassAppliedMaterialCount = transparentActive ? 1 : 0;
+        modelState.transparentGlassSkippedOpaqueCount = Math.max(0, modelState.materialSlotCount - (transparentActive ? 1 : 0));
+        modelState.transparentGlassFabricGuardStatus = selectedFabric && !forcedSelected ? "ok_fabric_kept_opaque" : "ok";
+        modelState.transparentGlassMetalGuardStatus = selectedMetal && !forcedSelected ? "ok_metal_kept_opaque" : "ok";
+        modelState.transparentGlassCarPaintGuardStatus = selectedPaint && !forcedSelected ? "ok_car_paint_kept_opaque" : "ok";
+        modelState.transparentGlassMaskDebugViewStatus = "shader_applied";
+        modelState.transparentGlassAlphaDebugViewStatus = "shader_applied";
+        modelState.transparentGlassDrawOrderDebugViewStatus = "shader_applied";
+        modelState.transparentGlassFallbackDebugViewStatus = "shader_applied";
+        modelState.transparentGlassSafetyDebugViewStatus = "shader_applied";
+        modelState.p27PerformanceStatus = transparentActive ? "ok_selected_slot_extra_draw_only" : "ok_fake_safe_no_extra_draw";
+        modelState.p27NoShadowStatus = "ok";
+        modelState.p27NoRaytraceStatus = "ok";
+        modelState.p27NoSsrStatus = "ok";
+        modelState.p27NoRealMirrorStatus = "ok";
+        modelState.p27NoScreenRefractionStatus = "ok";
+        modelState.p27NoTextureRebuildStatus = "ok";
+        modelState.p27NoModelReuploadStatus = "ok";
         modelState.clearcoatPolishStatus = "ok";
         modelState.clearcoatHighlightPolishStatus = "ok_clearer_guarded_highlight";
         modelState.clearcoatReflectionSeparationStatus = "ok_layer_separated_from_base";
@@ -1904,6 +1966,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 61) return "Glass Reflection Polish";
         if (index == 62) return "Clearcoat Polish";
         if (index == 63) return "Paint Reflection";
+        if (index == 64) return "Transparent Glass Mask";
+        if (index == 65) return "Transparent Glass Alpha";
+        if (index == 66) return "Transparent Glass Draw Order";
+        if (index == 67) return "Transparent Glass Fallback";
+        if (index == 68) return "Transparent Glass Safety";
         return "Final Shaded";
     }
 
@@ -3786,6 +3853,48 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"p26NoTextureRebuildStatus\": \"" + escape(jsonStringField(renderLab, "p26NoTextureRebuildStatus", modelState.p26NoTextureRebuildStatus)) + "\",\n"
             + indent + "\"p26NoModelReuploadStatus\": \"" + escape(jsonStringField(renderLab, "p26NoModelReuploadStatus", modelState.p26NoModelReuploadStatus)) + "\",\n"
             + indent + "\"p26NoNewShadowPassStatus\": \"" + escape(jsonStringField(renderLab, "p26NoNewShadowPassStatus", modelState.p26NoNewShadowPassStatus)) + "\",\n"
+            + indent + "\"transparentGlassPassStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassPassStatus", modelState.transparentGlassPassStatus)) + "\",\n"
+            + indent + "\"transparentGlassPassMode\": \"" + escape(jsonStringField(renderLab, "transparentGlassPassMode", modelState.transparentGlassPassMode)) + "\",\n"
+            + indent + "\"transparentGlassSelectedSlotStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassSelectedSlotStatus", modelState.transparentGlassSelectedSlotStatus)) + "\",\n"
+            + indent + "\"transparentGlassDrawOrderStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassDrawOrderStatus", modelState.transparentGlassDrawOrderStatus)) + "\",\n"
+            + indent + "\"transparentGlassBlendStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassBlendStatus", modelState.transparentGlassBlendStatus)) + "\",\n"
+            + indent + "\"transparentGlassOpacityStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassOpacityStatus", modelState.transparentGlassOpacityStatus)) + "\",\n"
+            + indent + "\"transparentGlassTintStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassTintStatus", modelState.transparentGlassTintStatus)) + "\",\n"
+            + indent + "\"transparentGlassFresnelStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassFresnelStatus", modelState.transparentGlassFresnelStatus)) + "\",\n"
+            + indent + "\"transparentGlassReflectionStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassReflectionStatus", modelState.transparentGlassReflectionStatus)) + "\",\n"
+            + indent + "\"transparentGlassSortingStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassSortingStatus", modelState.transparentGlassSortingStatus)) + "\",\n"
+            + indent + "\"transparentGlassRefractionStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassRefractionStatus", modelState.transparentGlassRefractionStatus)) + "\",\n"
+            + indent + "\"transparentGlassFallbackStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassFallbackStatus", modelState.transparentGlassFallbackStatus)) + "\",\n"
+            + indent + "\"transparentGlassPerformanceStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassPerformanceStatus", modelState.transparentGlassPerformanceStatus)) + "\",\n"
+            + indent + "\"transparentGlassUiStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassUiStatus", modelState.transparentGlassUiStatus)) + "\",\n"
+            + indent + "\"glassRenderModeStatus\": \"" + escape(jsonStringField(renderLab, "glassRenderModeStatus", modelState.glassRenderModeStatus)) + "\",\n"
+            + indent + "\"activeGlassRenderMode\": \"" + escape(jsonStringField(renderLab, "activeGlassRenderMode", modelState.activeGlassRenderMode)) + "\",\n"
+            + indent + "\"transparentGlassToggleStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassToggleStatus", modelState.transparentGlassToggleStatus)) + "\",\n"
+            + indent + "\"glassModeSummaryUiStatus\": \"" + escape(jsonStringField(renderLab, "glassModeSummaryUiStatus", modelState.glassModeSummaryUiStatus)) + "\",\n"
+            + indent + "\"p26GlassPolishPreservedStatus\": \"" + escape(jsonStringField(renderLab, "p26GlassPolishPreservedStatus", modelState.p26GlassPolishPreservedStatus)) + "\",\n"
+            + indent + "\"fakeGlassFallbackStatus\": \"" + escape(jsonStringField(renderLab, "fakeGlassFallbackStatus", modelState.fakeGlassFallbackStatus)) + "\",\n"
+            + indent + "\"glassAutoFallbackStatus\": \"" + escape(jsonStringField(renderLab, "glassAutoFallbackStatus", modelState.glassAutoFallbackStatus)) + "\",\n"
+            + indent + "\"glassMotionFallbackStatus\": \"" + escape(jsonStringField(renderLab, "glassMotionFallbackStatus", modelState.glassMotionFallbackStatus)) + "\",\n"
+            + indent + "\"transparentGlassMaterialRoutingStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassMaterialRoutingStatus", modelState.transparentGlassMaterialRoutingStatus)) + "\",\n"
+            + indent + "\"transparentGlassAppliedSlot\": " + jsonNumberField(renderLab, "transparentGlassAppliedSlot", String.valueOf(modelState.transparentGlassAppliedSlot)) + ",\n"
+            + indent + "\"transparentGlassAppliedMaterialCount\": " + jsonNumberField(renderLab, "transparentGlassAppliedMaterialCount", String.valueOf(modelState.transparentGlassAppliedMaterialCount)) + ",\n"
+            + indent + "\"transparentGlassSkippedOpaqueCount\": " + jsonNumberField(renderLab, "transparentGlassSkippedOpaqueCount", String.valueOf(modelState.transparentGlassSkippedOpaqueCount)) + ",\n"
+            + indent + "\"transparentGlassFabricGuardStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassFabricGuardStatus", modelState.transparentGlassFabricGuardStatus)) + "\",\n"
+            + indent + "\"transparentGlassMetalGuardStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassMetalGuardStatus", modelState.transparentGlassMetalGuardStatus)) + "\",\n"
+            + indent + "\"transparentGlassCarPaintGuardStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassCarPaintGuardStatus", modelState.transparentGlassCarPaintGuardStatus)) + "\",\n"
+            + indent + "\"transparentGlassMaskDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassMaskDebugViewStatus", modelState.transparentGlassMaskDebugViewStatus)) + "\",\n"
+            + indent + "\"transparentGlassAlphaDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassAlphaDebugViewStatus", modelState.transparentGlassAlphaDebugViewStatus)) + "\",\n"
+            + indent + "\"transparentGlassDrawOrderDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassDrawOrderDebugViewStatus", modelState.transparentGlassDrawOrderDebugViewStatus)) + "\",\n"
+            + indent + "\"transparentGlassFallbackDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassFallbackDebugViewStatus", modelState.transparentGlassFallbackDebugViewStatus)) + "\",\n"
+            + indent + "\"transparentGlassSafetyDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassSafetyDebugViewStatus", modelState.transparentGlassSafetyDebugViewStatus)) + "\",\n"
+            + indent + "\"p27PerformanceStatus\": \"" + escape(jsonStringField(renderLab, "p27PerformanceStatus", modelState.p27PerformanceStatus)) + "\",\n"
+            + indent + "\"p27NoShadowStatus\": \"" + escape(jsonStringField(renderLab, "p27NoShadowStatus", modelState.p27NoShadowStatus)) + "\",\n"
+            + indent + "\"p27NoRaytraceStatus\": \"" + escape(jsonStringField(renderLab, "p27NoRaytraceStatus", modelState.p27NoRaytraceStatus)) + "\",\n"
+            + indent + "\"p27NoSsrStatus\": \"" + escape(jsonStringField(renderLab, "p27NoSsrStatus", modelState.p27NoSsrStatus)) + "\",\n"
+            + indent + "\"p27NoRealMirrorStatus\": \"" + escape(jsonStringField(renderLab, "p27NoRealMirrorStatus", modelState.p27NoRealMirrorStatus)) + "\",\n"
+            + indent + "\"p27NoScreenRefractionStatus\": \"" + escape(jsonStringField(renderLab, "p27NoScreenRefractionStatus", modelState.p27NoScreenRefractionStatus)) + "\",\n"
+            + indent + "\"p27NoTextureRebuildStatus\": \"" + escape(jsonStringField(renderLab, "p27NoTextureRebuildStatus", modelState.p27NoTextureRebuildStatus)) + "\",\n"
+            + indent + "\"p27NoModelReuploadStatus\": \"" + escape(jsonStringField(renderLab, "p27NoModelReuploadStatus", modelState.p27NoModelReuploadStatus)) + "\",\n"
             + indent + "\"glassNoRefractionPassStatus\": \"" + escape(jsonStringField(renderLab, "glassNoRefractionPassStatus", modelState.glassNoRefractionPassStatus)) + "\",\n"
             + indent + "\"glassNoScreenRefractionStatus\": \"" + escape(jsonStringField(renderLab, "glassNoScreenRefractionStatus", modelState.glassNoScreenRefractionStatus)) + "\",\n"
             + indent + "\"glassNoFullSortingStatus\": \"" + escape(jsonStringField(renderLab, "glassNoFullSortingStatus", modelState.glassNoFullSortingStatus)) + "\",\n"
@@ -4590,6 +4699,48 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String p26NoTextureRebuildStatus = "ok";
         String p26NoModelReuploadStatus = "ok";
         String p26NoNewShadowPassStatus = "ok";
+        String transparentGlassPassStatus = "ok_selected_slot_transparent_pass";
+        String transparentGlassPassMode = "opaque_first_selected_glass_after";
+        String transparentGlassSelectedSlotStatus = "available";
+        String transparentGlassDrawOrderStatus = "opaque_first_then_selected_glass";
+        String transparentGlassBlendStatus = "ok_vk_src_alpha_one_minus_src_alpha";
+        String transparentGlassOpacityStatus = "ok_real_color_blend_alpha";
+        String transparentGlassTintStatus = "ok_shader_tint";
+        String transparentGlassFresnelStatus = "ok_edge_reflection_visible";
+        String transparentGlassReflectionStatus = "ok_p26_fake_probe_preserved";
+        String transparentGlassSortingStatus = "limited_selected_slot_no_full_sort";
+        String transparentGlassRefractionStatus = "deferred_no_real_refraction";
+        String transparentGlassFallbackStatus = "p26_fake_glass_available";
+        String transparentGlassPerformanceStatus = "ok_one_extra_selected_slot_draw_when_active";
+        String transparentGlassUiStatus = "ok_minimal_material_tab";
+        String glassRenderModeStatus = "ok_fake_transparent_auto";
+        String activeGlassRenderMode = "Auto";
+        String transparentGlassToggleStatus = "ok";
+        String glassModeSummaryUiStatus = "ok";
+        String p26GlassPolishPreservedStatus = "ok";
+        String fakeGlassFallbackStatus = "available";
+        String glassAutoFallbackStatus = "available_motion_or_non_glass";
+        String glassMotionFallbackStatus = "available_motion_guard";
+        String transparentGlassMaterialRoutingStatus = "selected_slot_only";
+        int transparentGlassAppliedSlot = 0;
+        int transparentGlassAppliedMaterialCount = 0;
+        int transparentGlassSkippedOpaqueCount = 0;
+        String transparentGlassFabricGuardStatus = "ok";
+        String transparentGlassMetalGuardStatus = "ok";
+        String transparentGlassCarPaintGuardStatus = "ok";
+        String transparentGlassMaskDebugViewStatus = "shader_applied";
+        String transparentGlassAlphaDebugViewStatus = "shader_applied";
+        String transparentGlassDrawOrderDebugViewStatus = "shader_applied";
+        String transparentGlassFallbackDebugViewStatus = "shader_applied";
+        String transparentGlassSafetyDebugViewStatus = "shader_applied";
+        String p27PerformanceStatus = "ok_selected_slot_extra_draw_only";
+        String p27NoShadowStatus = "ok";
+        String p27NoRaytraceStatus = "ok";
+        String p27NoSsrStatus = "ok";
+        String p27NoRealMirrorStatus = "ok";
+        String p27NoScreenRefractionStatus = "ok";
+        String p27NoTextureRebuildStatus = "ok";
+        String p27NoModelReuploadStatus = "ok";
         String glassNoRefractionPassStatus = "ok";
         String glassNoScreenRefractionStatus = "ok";
         String glassNoFullSortingStatus = "ok";

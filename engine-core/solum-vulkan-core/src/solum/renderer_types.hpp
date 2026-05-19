@@ -82,6 +82,7 @@ struct MaterialConstants {
     float glassEdge = 1.55f;
     float glassRoughness = 0.14f;
     int glassTintPreset = 0;
+    int glassRenderMode = 2;
 };
 
 inline const char* lightPresetName(int preset) {
@@ -165,6 +166,11 @@ inline const char* materialDebugViewName(int view) {
     if (view == 61) return "Glass Reflection Polish";
     if (view == 62) return "Clearcoat Polish";
     if (view == 63) return "Paint Reflection";
+    if (view == 64) return "Transparent Glass Mask";
+    if (view == 65) return "Transparent Glass Alpha";
+    if (view == 66) return "Transparent Glass Draw Order";
+    if (view == 67) return "Transparent Glass Fallback";
+    if (view == 68) return "Transparent Glass Safety";
     return "Final Shaded";
 }
 
@@ -768,6 +774,48 @@ struct ModelRenderState {
     std::string p26NoTextureRebuildStatus = "ok";
     std::string p26NoModelReuploadStatus = "ok";
     std::string p26NoNewShadowPassStatus = "ok";
+    std::string transparentGlassPassStatus = "ok_selected_slot_transparent_pass";
+    std::string transparentGlassPassMode = "opaque_first_selected_glass_after";
+    std::string transparentGlassSelectedSlotStatus = "available";
+    std::string transparentGlassDrawOrderStatus = "opaque_first_then_selected_glass";
+    std::string transparentGlassBlendStatus = "ok_vk_src_alpha_one_minus_src_alpha";
+    std::string transparentGlassOpacityStatus = "ok_real_color_blend_alpha";
+    std::string transparentGlassTintStatus = "ok_shader_tint";
+    std::string transparentGlassFresnelStatus = "ok_edge_reflection_visible";
+    std::string transparentGlassReflectionStatus = "ok_p26_fake_probe_preserved";
+    std::string transparentGlassSortingStatus = "limited_selected_slot_no_full_sort";
+    std::string transparentGlassRefractionStatus = "deferred_no_real_refraction";
+    std::string transparentGlassFallbackStatus = "p26_fake_glass_available";
+    std::string transparentGlassPerformanceStatus = "ok_one_extra_selected_slot_draw_when_active";
+    std::string transparentGlassUiStatus = "ok_minimal_material_tab";
+    std::string glassRenderModeStatus = "ok_fake_transparent_auto";
+    std::string activeGlassRenderMode = "Auto";
+    std::string transparentGlassToggleStatus = "ok";
+    std::string glassModeSummaryUiStatus = "ok";
+    std::string p26GlassPolishPreservedStatus = "ok";
+    std::string fakeGlassFallbackStatus = "available";
+    std::string glassAutoFallbackStatus = "available_motion_or_non_glass";
+    std::string glassMotionFallbackStatus = "available_motion_guard";
+    std::string transparentGlassMaterialRoutingStatus = "selected_slot_only";
+    int transparentGlassAppliedSlot = 0;
+    uint32_t transparentGlassAppliedMaterialCount = 0;
+    uint32_t transparentGlassSkippedOpaqueCount = 0;
+    std::string transparentGlassFabricGuardStatus = "ok";
+    std::string transparentGlassMetalGuardStatus = "ok";
+    std::string transparentGlassCarPaintGuardStatus = "ok";
+    std::string transparentGlassMaskDebugViewStatus = "shader_applied";
+    std::string transparentGlassAlphaDebugViewStatus = "shader_applied";
+    std::string transparentGlassDrawOrderDebugViewStatus = "shader_applied";
+    std::string transparentGlassFallbackDebugViewStatus = "shader_applied";
+    std::string transparentGlassSafetyDebugViewStatus = "shader_applied";
+    std::string p27PerformanceStatus = "ok_selected_slot_extra_draw_only";
+    std::string p27NoShadowStatus = "ok";
+    std::string p27NoRaytraceStatus = "ok";
+    std::string p27NoSsrStatus = "ok";
+    std::string p27NoRealMirrorStatus = "ok";
+    std::string p27NoScreenRefractionStatus = "ok";
+    std::string p27NoTextureRebuildStatus = "ok";
+    std::string p27NoModelReuploadStatus = "ok";
     std::string glassNoRefractionPassStatus = "ok";
     std::string glassNoScreenRefractionStatus = "ok";
     std::string glassNoFullSortingStatus = "ok";

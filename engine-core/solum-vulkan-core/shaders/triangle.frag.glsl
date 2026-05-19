@@ -67,6 +67,7 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 292) float glassEdge;
     layout(offset = 296) float glassRoughness;
     layout(offset = 300) int glassTintPreset;
+    layout(offset = 304) int glassRenderMode;
 } pc;
 
 float luminance(vec3 c) {
@@ -403,12 +404,14 @@ void main() {
     float glassOpacity = clamp(glassOpacityInput, 0.0, 1.0);
     float glassCurve = 1.0 - (1.0 - glassOpacity) * (1.0 - glassOpacity);
     float glassSurface = clamp(mix(0.32, 0.88, glassCurve), 0.28, 0.92);
+    float transparentGlassAlpha = clamp(mix(0.16, 0.76, glassOpacity) + glassFresnel * 0.16 + roughness * 0.10, 0.12, 0.92);
     if (glassActive) {
         vec3 thicknessTint = mix(glassTint * 0.58, glassTint * 1.16, glassFresnel);
         diffuseLight *= glassSurface * 0.30;
         specularLight = specularLight * 0.36 + glassReflection * 1.28;
         specularLight += thicknessTint * glassFresnel * clamp(glassEdgeInput, 0.0, 2.0) * 0.26;
         baseColor = mix(baseColor * mix(0.48, 0.82, glassCurve), thicknessTint, glassThickness * 0.34);
+        if (pc.glassRenderMode == 1) alpha = transparentGlassAlpha;
     }
     specularLight *= mix(1.0, 1.36, paintTarget);
     specularLight += clearcoatLight;
@@ -654,6 +657,26 @@ void main() {
     }
     if (pc.activeDebugView == 63) {
         fragColor = vec4(toneMap((iblSpecular + clearcoatLight) * pc.exposureValue * 2.0), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 64) {
+        fragColor = vec4(glassActive && pc.glassRenderMode == 1 ? vec3(0.10, 0.85, 1.0) : vec3(0.04), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 65) {
+        fragColor = vec4(vec3(glassActive ? transparentGlassAlpha : 1.0), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 66) {
+        fragColor = vec4(pc.glassRenderMode == 1 ? vec3(0.2, 0.85, 0.4) : vec3(0.75, 0.55, 0.20), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 67) {
+        fragColor = vec4(pc.glassRenderMode == 1 ? vec3(0.08, 0.30, 0.58) : vec3(0.75, 0.42, 0.18), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 68) {
+        fragColor = vec4(vec3(glassActive ? 0.18 : 0.55, pc.glassRenderMode == 1 ? 0.9 : 0.35, 0.55), 1.0);
         return;
     }
     rgb *= 1.0 - contactMask * clamp(pc.contactShadowIntensity, 0.0, 1.5) * 0.22;

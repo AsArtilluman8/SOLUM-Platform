@@ -1,5 +1,49 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P27 transparent glass pass lab
+
+P27 switches the active lab to `scene24_transparent_glass_pass_lab`.
+
+The texture/material binding path remains the existing per-material-slot Vulkan path. P27 adds a second selected-slot draw route for transparent glass v1: opaque primitives draw first, then the selected glass-eligible slot can draw with a transparent pipeline using alpha blending and no depth writes.
+
+Routing:
+
+- Glass-like slots are eligible.
+- Selected slot can be forced to glass through Glass Enable or Glass Foundation preset.
+- Fabric, metal, and car paint remain opaque unless the selected slot is intentionally forced.
+- Fake Safe mode preserves the P26 polished fake glass path.
+- Auto mode can fall back to fake glass during motion guard or non-eligible selection.
+
+Deferred:
+
+- real refraction;
+- screen-space refraction;
+- full transparent sorting;
+- real mirror;
+- SSR/raytracing;
+- shadows, shadow maps, CSM.
+
+Debug views:
+
+- Transparent Glass Mask
+- Transparent Glass Alpha
+- Transparent Glass Draw Order
+- Transparent Glass Fallback
+- Transparent Glass Safety
+
+Preserved:
+
+- P26 fake glass polish.
+- P25 glass foundation.
+- P24 procedural reflection.
+- P23 clearcoat.
+- P22 emissive/presets.
+- P21 alpha/cutout.
+- P20 runtime workflow.
+- P19 slot controls.
+- P18 IBL.
+- live FPS.
+
 ## P26 glass reflection polish lab
 
 P26 switches the active lab to `scene23_glass_reflection_polish_lab`.

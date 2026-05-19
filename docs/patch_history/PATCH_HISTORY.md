@@ -2,6 +2,44 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P27 — Transparent Glass Pass v1
+
+Scope:
+
+- Scene24 Transparent Glass Pass Lab.
+- Active scene: `scene24_transparent_glass_pass_lab`.
+- Added selected-slot transparent glass pass v1: opaque draw first, selected glass-eligible slot after opaque draw.
+- Transparent pipeline uses alpha blending with depth test on and depth write off.
+- Glass opacity now blends with background/model behind the selected glass slot in Transparent v1.
+- Glass tint, edge/Fresnel reflection, roughness response, and P26/P24 reflection polish remain visible.
+- Material tab adds Glass Render Mode: Fake Safe / Transparent v1 / Auto.
+- Added Transparent Glass Mask, Alpha, Draw Order, Fallback, and Safety debug views.
+- P26 fake glass fallback, P25 glass, P24 reflection, P23 clearcoat, P22 emissive/presets, P21 alpha/cutout, P20 runtime workflow, P19 slot controls, P18 IBL, and live FPS preserved.
+
+Out of scope:
+
+- Real refraction.
+- Screen-space refraction.
+- Real mirror.
+- Full transparent sorting.
+- Shadows, shadow maps, CSM.
+- Raytracing, SSR.
+- Skeletal animation.
+- OBJ/FBX import.
+
+Expected honest diagnostics:
+
+```text
+transparentGlassPassMode = opaque_first_selected_glass_after
+transparentGlassRefractionStatus = deferred_no_real_refraction
+transparentGlassSortingStatus = limited_selected_slot_no_full_sort
+```
+
+Known issues:
+
+- Transparent pass is limited to selected-slot routing, not world transparent sorting.
+- Auto mode may fall back to P26 fake glass during motion guard or non-glass selection.
+
 ## Patch P26 — Glass / Reflection / Clearcoat Polish
 
 Scope:

@@ -2,6 +2,109 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene24 Transparent Glass Pass Lab
+
+Patch: P27 — Transparent Glass Pass v1
+
+Current scene:
+
+```text
+scene24_transparent_glass_pass_lab
+Scene24 Transparent Glass Pass Lab
+```
+
+P27 preserves P26 polished fake glass, P25 glass foundation, P24 fake cubemap/procedural reflection, P23 clearcoat, P22 emissive/presets, P21 alpha/cutout, P20 runtime workflow, P19 selected-slot controls, P18 IBL, Debug ZIP, and live FPS.
+
+Transparent glass pass v1:
+
+- Opaque primitives draw first.
+- One selected glass-eligible material slot can draw again after opaque primitives through a transparent Vulkan pipeline.
+- Transparent pipeline uses alpha blending and disables depth writes while keeping depth testing.
+- Glass opacity controls real blended surface alpha in Transparent v1.
+- Glass tint, P26 edge/Fresnel reflection, P24 reflection source, and roughness response remain visible.
+- `Fake Safe` keeps the P26 fake glass path.
+- `Auto` can fall back to fake glass during motion guard or when the selected slot is not glass-eligible.
+
+Limits:
+
+- No full transparent world sorting.
+- No real refraction.
+- No screen-space refraction.
+- No real mirror, SSR, raytracing, shadow pass, shadow maps, or CSM.
+- No texture rebuild, model reupload, GLB parse, or file writes in the frame loop.
+
+Material tab:
+
+- Glass Enable is preserved.
+- Glass Render Mode cycles Fake Safe / Transparent v1 / Auto.
+- Existing Glass preset, opacity, tint, edge, rough, and clearcoat controls remain.
+- Compact summary shows glass mode and selected slot.
+
+Debug views added:
+
+```text
+Transparent Glass Mask
+Transparent Glass Alpha
+Transparent Glass Draw Order
+Transparent Glass Fallback
+Transparent Glass Safety
+```
+
+Required honest diagnostics:
+
+```text
+transparentGlassPassMode = opaque_first_selected_glass_after
+transparentGlassRefractionStatus = deferred_no_real_refraction
+transparentGlassSortingStatus = limited_selected_slot_no_full_sort
+```
+
+Diagnostics added at top level and under `renderLab`:
+
+```text
+transparentGlassPassStatus
+transparentGlassPassMode
+transparentGlassSelectedSlotStatus
+transparentGlassDrawOrderStatus
+transparentGlassBlendStatus
+transparentGlassOpacityStatus
+transparentGlassTintStatus
+transparentGlassFresnelStatus
+transparentGlassReflectionStatus
+transparentGlassSortingStatus
+transparentGlassRefractionStatus
+transparentGlassFallbackStatus
+transparentGlassPerformanceStatus
+transparentGlassUiStatus
+glassRenderModeStatus
+activeGlassRenderMode
+transparentGlassToggleStatus
+glassModeSummaryUiStatus
+p26GlassPolishPreservedStatus
+fakeGlassFallbackStatus
+glassAutoFallbackStatus
+glassMotionFallbackStatus
+transparentGlassMaterialRoutingStatus
+transparentGlassAppliedSlot
+transparentGlassAppliedMaterialCount
+transparentGlassSkippedOpaqueCount
+transparentGlassFabricGuardStatus
+transparentGlassMetalGuardStatus
+transparentGlassCarPaintGuardStatus
+transparentGlassMaskDebugViewStatus
+transparentGlassAlphaDebugViewStatus
+transparentGlassDrawOrderDebugViewStatus
+transparentGlassFallbackDebugViewStatus
+transparentGlassSafetyDebugViewStatus
+p27PerformanceStatus
+p27NoShadowStatus
+p27NoRaytraceStatus
+p27NoSsrStatus
+p27NoRealMirrorStatus
+p27NoScreenRefractionStatus
+p27NoTextureRebuildStatus
+p27NoModelReuploadStatus
+```
+
 ## Scene23 Glass Reflection Polish Lab
 
 Patch: P26 — Glass / Reflection / Clearcoat Polish

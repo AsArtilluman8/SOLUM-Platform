@@ -107,11 +107,12 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetLi
     jfloat glassOpacity,
     jfloat glassEdge,
     jfloat glassRoughness,
-    jint glassTintPreset
+    jint glassTintPreset,
+    jint glassRenderMode
 ) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) return;
-    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPreset, calibrationStrength, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPreset, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, selectedSlotGlossOverride, selectedSlotCoatOverride, alphaCutoffValue, emissiveIntensity, materialPreset, glassEnabled, glassOpacity, glassEdge, glassRoughness, glassTintPreset);
+    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPreset, calibrationStrength, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPreset, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, selectedSlotGlossOverride, selectedSlotCoatOverride, alphaCutoffValue, emissiveIntensity, materialPreset, glassEnabled, glassOpacity, glassEdge, glassRoughness, glassTintPreset, glassRenderMode);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdateUiDiagnostics(
@@ -168,7 +169,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdat
 extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGetRenderLabState(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) {
-        return env->NewStringUTF("{\"currentScene\":\"scene23_glass_reflection_polish_lab\",\"currentLabScene\":\"scene23_glass_reflection_polish_lab\",\"currentLabSceneName\":\"Scene23 Glass Reflection Polish Lab\",\"status\":\"native_handle_missing\",\"glassPolishStatus\":\"ok\",\"glassPolishMode\":\"single_pass_fake_glass_polish\",\"glassReadabilityStatus\":\"available\",\"glassStillFakeTransparencyStatus\":\"yes_no_real_transparent_pass\",\"glassMaterialStatus\":\"available\",\"glassRefractionStatus\":\"deferred_not_real_refraction\",\"glassSortingStatus\":\"safe_no_full_transparent_sorting\",\"glassReflectionSourceStatus\":\"p24_fake_cubemap_probe\",\"clearcoatPolishStatus\":\"ok\",\"clearcoatStatus\":\"available\",\"clearcoatSliderStatus\":\"not_applied\",\"carPaintPolishStatus\":\"ok\",\"carPaintPresetV2Status\":\"not_applied\",\"p25GlassPreservedStatus\":\"ok\",\"p24ReflectionPreservedStatus\":\"ok\",\"p23ClearcoatPreservedStatus\":\"ok\",\"p22EmissivePreservedStatus\":\"unknown_native_handle_missing\",\"p26NoRealRefractionStatus\":\"ok_deferred\",\"lightingStatus\":\"failed\",\"lightingControlStatus\":\"failed\",\"lightingUiMode\":\"compact_sliders\",\"inspectorUiStatus\":\"ok\",\"inspectorUiMode\":\"tabbed_compact_inspector\",\"activeInspectorTab\":\"Assets\",\"assetsTabStatus\":\"ok_import_scan_export_summary\",\"cameraTabStatus\":\"ok_camera_info_reset_zoom\",\"lightingTabStatus\":\"ok_sliders_environment_controls\",\"materialTabStatus\":\"ok_slot_controls\",\"debugTabStatus\":\"ok_fps_zip_status\",\"fpsStatus\":\"not_ready\",\"fpsUpdateMode\":\"java_choreographer_live\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
+        return env->NewStringUTF("{\"currentScene\":\"scene24_transparent_glass_pass_lab\",\"currentLabScene\":\"scene24_transparent_glass_pass_lab\",\"currentLabSceneName\":\"Scene24 Transparent Glass Pass Lab\",\"status\":\"native_handle_missing\",\"transparentGlassPassStatus\":\"native_handle_missing\",\"transparentGlassPassMode\":\"opaque_first_selected_glass_after\",\"transparentGlassBlendStatus\":\"native_handle_missing\",\"transparentGlassRefractionStatus\":\"deferred_no_real_refraction\",\"transparentGlassSortingStatus\":\"limited_selected_slot_no_full_sort\",\"p26GlassPolishPreservedStatus\":\"ok\",\"glassPolishStatus\":\"ok\",\"glassPolishMode\":\"single_pass_fake_glass_polish\",\"glassReadabilityStatus\":\"available\",\"glassStillFakeTransparencyStatus\":\"yes_no_real_transparent_pass\",\"glassMaterialStatus\":\"available\",\"glassRefractionStatus\":\"deferred_no_real_refraction\",\"glassSortingStatus\":\"limited_selected_slot_no_full_sort\",\"glassReflectionSourceStatus\":\"p24_fake_cubemap_probe\",\"clearcoatPolishStatus\":\"ok\",\"clearcoatStatus\":\"available\",\"clearcoatSliderStatus\":\"not_applied\",\"carPaintPolishStatus\":\"ok\",\"carPaintPresetV2Status\":\"not_applied\",\"p25GlassPreservedStatus\":\"ok\",\"p24ReflectionPreservedStatus\":\"ok\",\"p23ClearcoatPreservedStatus\":\"ok\",\"p22EmissivePreservedStatus\":\"unknown_native_handle_missing\",\"p26NoRealRefractionStatus\":\"ok_deferred\",\"lightingStatus\":\"failed\",\"lightingControlStatus\":\"failed\",\"lightingUiMode\":\"compact_sliders\",\"inspectorUiStatus\":\"ok\",\"inspectorUiMode\":\"tabbed_compact_inspector\",\"activeInspectorTab\":\"Assets\",\"assetsTabStatus\":\"ok_import_scan_export_summary\",\"cameraTabStatus\":\"ok_camera_info_reset_zoom\",\"lightingTabStatus\":\"ok_sliders_environment_controls\",\"materialTabStatus\":\"ok_slot_controls\",\"debugTabStatus\":\"ok_fps_zip_status\",\"fpsStatus\":\"not_ready\",\"fpsUpdateMode\":\"java_choreographer_live\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"modelRenderMode\":\"multi_primitive_static\"}");
     }
     renderer->syncDiagnostics();
     std::ostringstream out;
@@ -617,6 +618,48 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"environmentColorDebugViewStatus\":\"" + solum::escapeJson(renderer->model.environmentColorDebugViewStatus) + "\""
         + ",\"brdfStatusDebugViewStatus\":\"" + solum::escapeJson(renderer->model.brdfStatusDebugViewStatus) + "\""
         + ",\"groundingDebugViewStatus\":\"" + solum::escapeJson(renderer->model.groundingDebugViewStatus) + "\""
+        + ",\"transparentGlassPassStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassPassStatus) + "\""
+        + ",\"transparentGlassPassMode\":\"" + solum::escapeJson(renderer->model.transparentGlassPassMode) + "\""
+        + ",\"transparentGlassSelectedSlotStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassSelectedSlotStatus) + "\""
+        + ",\"transparentGlassDrawOrderStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassDrawOrderStatus) + "\""
+        + ",\"transparentGlassBlendStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassBlendStatus) + "\""
+        + ",\"transparentGlassOpacityStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassOpacityStatus) + "\""
+        + ",\"transparentGlassTintStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassTintStatus) + "\""
+        + ",\"transparentGlassFresnelStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassFresnelStatus) + "\""
+        + ",\"transparentGlassReflectionStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassReflectionStatus) + "\""
+        + ",\"transparentGlassSortingStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassSortingStatus) + "\""
+        + ",\"transparentGlassRefractionStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassRefractionStatus) + "\""
+        + ",\"transparentGlassFallbackStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassFallbackStatus) + "\""
+        + ",\"transparentGlassPerformanceStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassPerformanceStatus) + "\""
+        + ",\"transparentGlassUiStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassUiStatus) + "\""
+        + ",\"glassRenderModeStatus\":\"" + solum::escapeJson(renderer->model.glassRenderModeStatus) + "\""
+        + ",\"activeGlassRenderMode\":\"" + solum::escapeJson(renderer->model.activeGlassRenderMode) + "\""
+        + ",\"transparentGlassToggleStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassToggleStatus) + "\""
+        + ",\"glassModeSummaryUiStatus\":\"" + solum::escapeJson(renderer->model.glassModeSummaryUiStatus) + "\""
+        + ",\"p26GlassPolishPreservedStatus\":\"" + solum::escapeJson(renderer->model.p26GlassPolishPreservedStatus) + "\""
+        + ",\"fakeGlassFallbackStatus\":\"" + solum::escapeJson(renderer->model.fakeGlassFallbackStatus) + "\""
+        + ",\"glassAutoFallbackStatus\":\"" + solum::escapeJson(renderer->model.glassAutoFallbackStatus) + "\""
+        + ",\"glassMotionFallbackStatus\":\"" + solum::escapeJson(renderer->model.glassMotionFallbackStatus) + "\""
+        + ",\"transparentGlassMaterialRoutingStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassMaterialRoutingStatus) + "\""
+        + ",\"transparentGlassAppliedSlot\":" + std::to_string(renderer->model.transparentGlassAppliedSlot)
+        + ",\"transparentGlassAppliedMaterialCount\":" + std::to_string(renderer->model.transparentGlassAppliedMaterialCount)
+        + ",\"transparentGlassSkippedOpaqueCount\":" + std::to_string(renderer->model.transparentGlassSkippedOpaqueCount)
+        + ",\"transparentGlassFabricGuardStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassFabricGuardStatus) + "\""
+        + ",\"transparentGlassMetalGuardStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassMetalGuardStatus) + "\""
+        + ",\"transparentGlassCarPaintGuardStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassCarPaintGuardStatus) + "\""
+        + ",\"transparentGlassMaskDebugViewStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassMaskDebugViewStatus) + "\""
+        + ",\"transparentGlassAlphaDebugViewStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassAlphaDebugViewStatus) + "\""
+        + ",\"transparentGlassDrawOrderDebugViewStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassDrawOrderDebugViewStatus) + "\""
+        + ",\"transparentGlassFallbackDebugViewStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassFallbackDebugViewStatus) + "\""
+        + ",\"transparentGlassSafetyDebugViewStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassSafetyDebugViewStatus) + "\""
+        + ",\"p27PerformanceStatus\":\"" + solum::escapeJson(renderer->model.p27PerformanceStatus) + "\""
+        + ",\"p27NoShadowStatus\":\"" + solum::escapeJson(renderer->model.p27NoShadowStatus) + "\""
+        + ",\"p27NoRaytraceStatus\":\"" + solum::escapeJson(renderer->model.p27NoRaytraceStatus) + "\""
+        + ",\"p27NoSsrStatus\":\"" + solum::escapeJson(renderer->model.p27NoSsrStatus) + "\""
+        + ",\"p27NoRealMirrorStatus\":\"" + solum::escapeJson(renderer->model.p27NoRealMirrorStatus) + "\""
+        + ",\"p27NoScreenRefractionStatus\":\"" + solum::escapeJson(renderer->model.p27NoScreenRefractionStatus) + "\""
+        + ",\"p27NoTextureRebuildStatus\":\"" + solum::escapeJson(renderer->model.p27NoTextureRebuildStatus) + "\""
+        + ",\"p27NoModelReuploadStatus\":\"" + solum::escapeJson(renderer->model.p27NoModelReuploadStatus) + "\""
         + ",\"fpsCurrent\":" + std::to_string(renderer->model.fpsCurrent)
         + ",\"frameTimeMs\":" + std::to_string(renderer->model.frameTimeMs)
         + ",\"fpsSource\":\"" + solum::escapeJson(renderer->model.fpsSource) + "\""

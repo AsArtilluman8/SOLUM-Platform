@@ -124,7 +124,20 @@ vec3 glassTintColor(int preset) {
     if (preset == 3) return vec3(0.48, 0.52, 0.58);
     if (preset == 4) return vec3(1.00, 0.78, 0.52);
     if (preset == 5) return vec3(0.82, 0.58, 1.00);
+    if (preset == 6) return vec3(0.70, 0.74, 0.72);
+    if (preset == 7) return vec3(0.86, 0.98, 1.00);
     return vec3(0.92, 0.98, 1.00);
+}
+
+vec4 glassPresetParams(int preset) {
+    if (preset == 1) return vec4(0.52, 1.55, 0.16, 1.18);
+    if (preset == 2) return vec4(0.54, 1.48, 0.18, 1.12);
+    if (preset == 3) return vec4(0.68, 1.30, 0.42, 0.82);
+    if (preset == 4) return vec4(0.58, 1.42, 0.20, 1.06);
+    if (preset == 5) return vec4(0.50, 1.85, 0.18, 1.34);
+    if (preset == 6) return vec4(0.74, 1.12, 0.54, 0.72);
+    if (preset == 7) return vec4(0.42, 1.95, 0.08, 1.45);
+    return vec4(0.50, 1.62, 0.10, 1.28);
 }
 
 vec3 toneMap(vec3 color) {
@@ -175,25 +188,25 @@ vec3 contrastReflection(vec3 color, float contrast) {
 void environmentPalette(out vec3 groundColor, out vec3 horizonColor, out vec3 skyColor, out vec3 sideColor, out vec3 glintColor) {
     if (pc.environmentPreset == 1) {
         groundColor = vec3(0.23, 0.31, 0.19);
-        horizonColor = vec3(0.70, 0.78, 0.84);
-        skyColor = vec3(0.48, 0.72, 1.00);
-        sideColor = vec3(0.84, 0.78, 0.56);
+        horizonColor = vec3(0.76, 0.84, 0.92);
+        skyColor = vec3(0.42, 0.72, 1.00);
+        sideColor = vec3(0.96, 0.82, 0.48);
         glintColor = vec3(1.00, 0.92, 0.62);
     } else if (pc.environmentPreset == 2) {
         groundColor = vec3(0.34, 0.29, 0.24);
-        horizonColor = vec3(0.74, 0.58, 0.42);
+        horizonColor = vec3(0.82, 0.60, 0.38);
         skyColor = vec3(0.98, 0.86, 0.68);
-        sideColor = vec3(0.78, 0.42, 0.24);
+        sideColor = vec3(0.92, 0.42, 0.18);
         glintColor = vec3(1.00, 0.72, 0.38);
     } else if (pc.environmentPreset == 3) {
         groundColor = vec3(0.20, 0.25, 0.30);
-        horizonColor = vec3(0.48, 0.62, 0.76);
+        horizonColor = vec3(0.52, 0.68, 0.86);
         skyColor = vec3(0.72, 0.86, 1.00);
-        sideColor = vec3(0.28, 0.55, 0.84);
+        sideColor = vec3(0.22, 0.62, 0.96);
         glintColor = vec3(0.58, 0.80, 1.00);
     } else if (pc.environmentPreset == 4) {
         groundColor = vec3(0.28, 0.20, 0.24);
-        horizonColor = vec3(0.88, 0.45, 0.30);
+        horizonColor = vec3(0.98, 0.48, 0.26);
         skyColor = vec3(0.34, 0.42, 0.70);
         sideColor = vec3(1.00, 0.42, 0.20);
         glintColor = vec3(1.00, 0.74, 0.28);
@@ -205,7 +218,7 @@ void environmentPalette(out vec3 groundColor, out vec3 horizonColor, out vec3 sk
         glintColor = vec3(0.38, 0.50, 0.62);
     } else {
         groundColor = vec3(0.30, 0.28, 0.26);
-        horizonColor = vec3(0.58, 0.64, 0.70);
+        horizonColor = vec3(0.64, 0.70, 0.78);
         skyColor = vec3(0.82, 0.88, 0.96);
         sideColor = vec3(0.72, 0.76, 0.82);
         glintColor = vec3(1.00, 0.96, 0.84);
@@ -214,7 +227,7 @@ void environmentPalette(out vec3 groundColor, out vec3 horizonColor, out vec3 sk
 
 vec3 environmentColor(vec3 dir, float roughness) {
     float sky = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
-    float side = pow(clamp(1.0 - abs(dir.x), 0.0, 1.0), 1.8) * (1.0 - smoothstep(0.65, 1.0, abs(dir.y)));
+    float side = pow(clamp(1.0 - abs(dir.x), 0.0, 1.0), 1.25) * (1.0 - smoothstep(0.62, 1.0, abs(dir.y)));
     vec3 groundColor;
     vec3 horizonColor;
     vec3 skyColor;
@@ -222,11 +235,12 @@ vec3 environmentColor(vec3 dir, float roughness) {
     vec3 glintColor;
     environmentPalette(groundColor, horizonColor, skyColor, sideColor, glintColor);
     vec3 sharpColor = mix(mix(groundColor, horizonColor, smoothstep(0.0, 0.52, sky)), skyColor, smoothstep(0.44, 1.0, sky));
-    float horizonLine = 1.0 - smoothstep(0.035, 0.22, abs(dir.y - 0.08));
+    float horizonLine = 1.0 - smoothstep(0.028, 0.24, abs(dir.y - 0.08));
     float glint = pow(max(dot(normalize(dir), normalize(vec3(0.58, 0.22, 0.78))), 0.0), mix(14.0, 5.0, roughness));
-    sharpColor = mix(sharpColor, sideColor, side * (1.0 - roughness * 0.72) * 0.55);
-    sharpColor += glintColor * horizonLine * (1.0 - roughness) * clamp(pc.horizonStrength, 0.0, 1.0);
-    sharpColor += glintColor * glint * (1.0 - roughness) * 0.42;
+    float rimSide = pow(clamp(1.0 - abs(dir.z), 0.0, 1.0), 1.4) * (1.0 - roughness * 0.55);
+    sharpColor = mix(sharpColor, sideColor, clamp(side * (1.0 - roughness * 0.62) * 0.72 + rimSide * 0.18, 0.0, 0.82));
+    sharpColor += glintColor * horizonLine * (1.0 - roughness * 0.65) * clamp(pc.horizonStrength, 0.0, 1.0) * 1.18;
+    sharpColor += glintColor * glint * (1.0 - roughness) * 0.50;
     vec3 blurredColor = mix(mix(groundColor, horizonColor, 0.45), mix(horizonColor, skyColor, 0.55), sky);
     vec3 color = mix(sharpColor, blurredColor, clamp(roughness, 0.0, 1.0));
     color = contrastReflection(saturateReflection(color, pc.reflectionSaturation), pc.reflectionContrast);
@@ -281,8 +295,13 @@ void main() {
     float roughnessRaw = clamp(pc.roughnessFactor * mr.g, 0.04, 1.0);
     float metallic = clamp(pc.metallicFactor * mr.b, 0.0, 1.0);
     bool glassActive = hint == 6 || pc.materialPresetHint == 6 || pc.glassEnabled != 0;
+    vec4 glassParams = glassPresetParams(pc.glassTintPreset);
+    float glassOpacityInput = max(pc.glassOpacity, glassParams.x);
+    float glassEdgeInput = max(pc.glassEdge, glassParams.y);
+    float glassRoughInput = clamp(mix(pc.glassRoughness, glassParams.z, 0.38), 0.04, 1.0);
+    float glassReflectionInput = glassParams.w;
     float roughness = remapRoughness(roughnessRaw, metallic, hint, calibration);
-    if (glassActive) roughness = clamp(mix(roughness, pc.glassRoughness, 0.78), 0.04, 1.0);
+    if (glassActive) roughness = clamp(mix(roughness, glassRoughInput, 0.84), 0.04, 1.0);
     float glossSlider = clamp(pc.glossSliderValue, 0.0, 1.0);
     float paintSlider = clamp(pc.paintGlossSliderValue, 0.0, 1.0);
     float paintTarget = paintGlossTargetWeight(hint);
@@ -305,7 +324,7 @@ void main() {
     vec3 glassTint = glassTintColor(pc.glassTintPreset);
     if (glassActive) {
         metallic = 0.0;
-        baseColor = mix(baseColor, glassTint, 0.62);
+        baseColor = mix(baseColor, glassTint, 0.72);
     }
     if (pc.activeDebugView == 1) {
         fragColor = vec4(rawBaseColor, alpha);
@@ -375,15 +394,21 @@ void main() {
     vec3 specularLight = (directSpecular + analyticSpecular + iblSpecular) * pc.specularBoost;
     specularLight *= mix(0.55, 1.35, glossSlider);
     if (hint == 0) specularLight *= 0.55;
-    float glassFresnel = pow(clamp(1.0 - max(dot(n, v), 0.0), 0.0, 1.0), 5.0);
-    vec3 glassReflection = environmentColor(reflectionDir, roughness) * (0.18 + glassFresnel * clamp(pc.glassEdge, 0.0, 2.0)) * mix(1.0, 0.32, roughness) * pc.reflectionIntensity * motionReflection;
-    float glassOpacity = clamp(pc.glassOpacity, 0.0, 1.0);
-    float glassSurface = mix(0.20, 0.82, glassOpacity);
+    float ndotv = max(dot(n, v), 0.0);
+    float glassFresnelBase = pow(clamp(1.0 - ndotv, 0.0, 1.0), 3.2);
+    float glassFresnel = clamp(glassFresnelBase * mix(0.92, 1.55, clamp(glassEdgeInput * 0.5, 0.0, 1.0)) + 0.06, 0.0, 1.0);
+    float glassThickness = clamp(glassFresnel * 0.72 + (1.0 - ndotv) * 0.22, 0.0, 1.0);
+    vec3 glassZone = environmentColor(reflectionDir, clamp(roughness * 0.72, 0.02, 1.0));
+    vec3 glassReflection = glassZone * (0.24 + glassFresnel * clamp(glassEdgeInput, 0.0, 2.0)) * mix(1.18, 0.42, roughness) * pc.reflectionIntensity * glassReflectionInput * motionReflection;
+    float glassOpacity = clamp(glassOpacityInput, 0.0, 1.0);
+    float glassCurve = 1.0 - (1.0 - glassOpacity) * (1.0 - glassOpacity);
+    float glassSurface = clamp(mix(0.32, 0.88, glassCurve), 0.28, 0.92);
     if (glassActive) {
-        diffuseLight *= glassSurface * 0.42;
-        specularLight = specularLight * 0.48 + glassReflection * 1.15;
-        specularLight += glassTint * glassFresnel * clamp(pc.glassEdge, 0.0, 2.0) * 0.18;
-        baseColor *= mix(0.58, 0.86, glassOpacity) - glassFresnel * 0.12;
+        vec3 thicknessTint = mix(glassTint * 0.58, glassTint * 1.16, glassFresnel);
+        diffuseLight *= glassSurface * 0.30;
+        specularLight = specularLight * 0.36 + glassReflection * 1.28;
+        specularLight += thicknessTint * glassFresnel * clamp(glassEdgeInput, 0.0, 2.0) * 0.26;
+        baseColor = mix(baseColor * mix(0.48, 0.82, glassCurve), thicknessTint, glassThickness * 0.34);
     }
     specularLight *= mix(1.0, 1.36, paintTarget);
     specularLight += clearcoatLight;
@@ -605,6 +630,30 @@ void main() {
     }
     if (pc.activeDebugView == 57) {
         fragColor = vec4(glassActive ? vec3(0.1, 0.9, 0.55) : vec3(0.35, 0.42, 0.48), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 58) {
+        fragColor = vec4(vec3(glassFresnel, glassThickness, glassReflectionInput * 0.5), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 59) {
+        fragColor = vec4(vec3(glassFresnel), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 60) {
+        fragColor = vec4(vec3(glassThickness), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 61) {
+        fragColor = vec4(toneMap(glassReflection * pc.exposureValue), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 62) {
+        fragColor = vec4(toneMap(clearcoatLight * pc.exposureValue * 4.0), 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 63) {
+        fragColor = vec4(toneMap((iblSpecular + clearcoatLight) * pc.exposureValue * 2.0), 1.0);
         return;
     }
     rgb *= 1.0 - contactMask * clamp(pc.contactShadowIntensity, 0.0, 1.5) * 0.22;

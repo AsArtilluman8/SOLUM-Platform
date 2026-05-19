@@ -426,6 +426,17 @@ struct RuntimeDiagnostics {
         f << "  \"reflectionNoModelReuploadStatus\": \"" << escapeJson(model.reflectionNoModelReuploadStatus) << "\",\n";
         f << "  \"noFrameFileWriteStatus\": \"" << escapeJson(model.noFrameFileWriteStatus) << "\",\n";
         f << "  \"noFrameGlbParseStatus\": \"" << escapeJson(model.noFrameGlbParseStatus) << "\",\n";
+        f << "  \"glassPolishStatus\": \"" << escapeJson(model.glassPolishStatus) << "\",\n";
+        f << "  \"glassPolishMode\": \"" << escapeJson(model.glassPolishMode) << "\",\n";
+        f << "  \"glassReadabilityStatus\": \"" << escapeJson(model.glassReadabilityStatus) << "\",\n";
+        f << "  \"glassStillFakeTransparencyStatus\": \"" << escapeJson(model.glassStillFakeTransparencyStatus) << "\",\n";
+        f << "  \"glassPresetPolishStatus\": \"" << escapeJson(model.glassPresetPolishStatus) << "\",\n";
+        f << "  \"activeGlassPreset\": \"" << escapeJson(model.activeGlassPreset) << "\",\n";
+        f << "  \"clearcoatPolishStatus\": \"" << escapeJson(model.clearcoatPolishStatus) << "\",\n";
+        f << "  \"carPaintPolishStatus\": \"" << escapeJson(model.carPaintPolishStatus) << "\",\n";
+        f << "  \"p26ReflectionPolishStatus\": \"" << escapeJson(model.p26ReflectionPolishStatus) << "\",\n";
+        f << "  \"p25GlassPreservedStatus\": \"" << escapeJson(model.p25GlassPreservedStatus) << "\",\n";
+        f << "  \"p26NoRealRefractionStatus\": \"" << escapeJson(model.p26NoRealRefractionStatus) << "\",\n";
         f << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";
         f << "  \"fpsSource\": \"" << escapeJson(model.fpsSource) << "\",\n";

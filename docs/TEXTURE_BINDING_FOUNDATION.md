@@ -1,5 +1,45 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P26 glass reflection polish lab
+
+P26 switches the active lab to `scene23_glass_reflection_polish_lab`.
+
+The texture/material binding path remains the existing per-material-slot Vulkan path. P26 changes shader math and uniform-driven diagnostics only: stronger fake glass Fresnel, preset tint/opacity/edge/roughness/thickness response, P24 procedural reflection contrast polish, and clearer clearcoat/car paint separation.
+
+No new descriptor, texture rebuild, model reupload, transparent pass, real refraction pass, screen-space refraction, real mirror pass, full transparent sorting overhaul, or shadow pass is added.
+
+Glass presets:
+
+- Clear Glass
+- Blue Glass
+- Green Glass
+- Smoke Glass
+- Warm Glass
+- Magic Glass
+- Dirty Glass Lite
+- Crystal Lite
+
+Debug views:
+
+- Glass Polish
+- Glass Edge
+- Glass Thickness Fake
+- Glass Reflection Polish
+- Clearcoat Polish
+- Paint Reflection
+
+Preserved:
+
+- P25 glass foundation controls.
+- P24 procedural fake cubemap/reflection controls.
+- P23 clearcoat.
+- P22 emissive/presets.
+- P21 alpha/cutout.
+- P20 runtime workflow.
+- P19 slot controls.
+- P18 IBL.
+- live FPS.
+
 ## P25 glass material foundation lab
 
 P25 switches the active lab to `scene22_glass_material_foundation_lab`.

@@ -2,6 +2,39 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P26 — Glass / Reflection / Clearcoat Polish
+
+Scope:
+
+- Scene23 Glass Reflection Polish Lab.
+- Active scene: `scene23_glass_reflection_polish_lab`.
+- Polished fake single-pass glass readability with stronger Fresnel, fake thickness, opacity curve, tint blend, roughness separation, and guarded P24 reflection response.
+- Added Clear Glass, Blue Glass, Green Glass, Smoke Glass, Warm Glass, Magic Glass, Dirty Glass Lite, and Crystal Lite preset behavior.
+- Improved clearcoat/car paint highlight and reflection separation without fabric contamination.
+- Polished procedural reflection zone contrast and side/rim response.
+- Added P26 diagnostics for glass polish, presets, clearcoat/car paint polish, reflection polish, UI preservation, debug views, preservation, and performance guards.
+- P25 glass, P24 reflection, P23 clearcoat, P22 emissive/presets, P21 alpha/cutout, P20 runtime workflow, P19 slot controls, P18 IBL, and live FPS preserved.
+
+Out of scope:
+
+- Real refraction.
+- Screen-space refraction.
+- Real mirror.
+- Full transparent sorting.
+- Shadows, shadow maps, CSM.
+- Skeletal animation.
+- OBJ/FBX import.
+
+Expected honest diagnostics:
+
+```text
+glassStillFakeTransparencyStatus = yes_no_real_transparent_pass
+glassPolishMode = single_pass_fake_glass_polish
+p26NoRealRefractionStatus = ok_deferred
+p26NoMirrorPassStatus = ok_deferred
+p26NoFullSortingStatus = ok_deferred
+```
+
 ## Patch P25 — Glass Material Foundation v1
 
 Scope:

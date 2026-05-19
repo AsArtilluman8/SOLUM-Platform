@@ -2,6 +2,152 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene23 Glass Reflection Polish Lab
+
+Patch: P26 — Glass / Reflection / Clearcoat Polish
+
+Current scene:
+
+```text
+scene23_glass_reflection_polish_lab
+Scene23 Glass Reflection Polish Lab
+```
+
+P26 preserves P25 glass foundation, P24 fake cubemap/procedural reflection controls, P23 clearcoat, P22 emissive/presets, P21 alpha/cutout, P20 runtime restore/reload/UI cap/scroll/alpha, P19 selected-slot controls, P18 IBL, Debug ZIP, and live FPS.
+
+Implementation boundaries:
+
+- Single-pass fake glass polish only.
+- No real transparent pass.
+- No real refraction or screen-space refraction.
+- No real mirror.
+- No full transparent sorting overhaul.
+- No shadow pass, shadow maps, or CSM.
+
+Glass polish:
+
+- Stronger Schlick/Fresnel edge response.
+- Tint blends more visibly into the retained surface.
+- Fake thickness uses edge darken/brighten tint.
+- Opacity curve keeps a minimum readable surface so glass cannot disappear.
+- Clear glass and rough/dirty glass now separate more clearly.
+- Glass reflection uses the existing P24 procedural probe with guarded boost.
+
+Glass presets:
+
+Clear Glass / Blue Glass / Green Glass / Smoke Glass / Warm Glass / Magic Glass / Dirty Glass Lite / Crystal Lite.
+
+Presets affect tint, opacity, edge strength, roughness, reflection weight, and fake thickness.
+
+Clearcoat / car paint polish:
+
+- Clearcoat highlight is stronger but clamped.
+- Car paint separates base, coat, and reflection response more clearly.
+- Fabric remains matte.
+- Plastic/rubber/metal keep previous routing.
+
+Reflection polish:
+
+- Procedural reflection zones have stronger sky/horizon/ground/side contrast.
+- Side/rim reflection is more readable.
+- Roughness response is smoothed for mobile-friendly math.
+- Reflection energy and overbright guards remain active.
+
+Material tab:
+
+- Existing glass controls are preserved.
+- Glass preset text now names full presets.
+- Compact material summary includes preset, opacity/edge/roughness.
+- No large UI redesign.
+
+Debug views added:
+
+```text
+Glass Polish
+Glass Edge
+Glass Thickness Fake
+Glass Reflection Polish
+Clearcoat Polish
+Paint Reflection
+```
+
+Diagnostics added at top level and under `renderLab`:
+
+```text
+glassPolishStatus
+glassPolishMode = single_pass_fake_glass_polish
+glassReadabilityStatus
+glassEdgePolishStatus
+glassTintPolishStatus
+glassThicknessPolishStatus
+glassOpacityCurveStatus
+glassRoughnessPolishStatus
+glassReflectionPolishStatus
+glassInvisibleGuardStatus
+glassStillFakeTransparencyStatus = yes_no_real_transparent_pass
+glassPresetPolishStatus
+activeGlassPreset
+clearGlassPresetStatus
+blueGlassPresetStatus
+greenGlassPresetStatus
+smokeGlassPresetStatus
+warmGlassPresetStatus
+magicGlassPresetStatus
+dirtyGlassLitePresetStatus
+crystalLitePresetStatus
+glassPresetVisualResponseStatus
+clearcoatPolishStatus
+clearcoatHighlightPolishStatus
+clearcoatReflectionSeparationStatus
+carPaintPolishStatus
+carPaintLayerReadabilityStatus
+carPaintReflectionSeparationStatus
+paintOverbrightGuardStatus
+fabricMattePreserveStatus
+p26ReflectionPolishStatus
+reflectionZonePolishStatus
+sideRimReflectionPolishStatus
+roughnessReflectionPolishStatus
+glassReflectionZoneStatus
+clearcoatReflectionZoneStatus
+reflectionEnergyGuardStatus
+reflectionOverbrightGuardStatus
+p26UiChangeStatus
+glassSummaryUiStatus
+glassStrengthSliderStatus
+glassControlsPreservedStatus
+glassPolishDebugViewStatus
+glassEdgeDebugViewStatus
+glassThicknessDebugViewStatus
+glassReflectionPolishDebugViewStatus
+clearcoatPolishDebugViewStatus
+paintReflectionDebugViewStatus
+p25GlassPreservedStatus
+p24ReflectionPreservedStatus
+p23ClearcoatPreservedStatus
+p22EmissivePreservedStatus
+p22PresetsPreservedStatus
+p21AlphaPreservedStatus
+p20RuntimeWorkflowPreservedStatus
+p19SlotControlsPreservedStatus
+p18IblPreservedStatus
+p26PerformanceStatus
+p26NoRealRefractionStatus
+p26NoScreenRefractionStatus
+p26NoMirrorPassStatus
+p26NoFullSortingStatus
+p26NoTextureRebuildStatus
+p26NoModelReuploadStatus
+p26NoNewShadowPassStatus
+renderLoopAllocationGuardStatus
+noFrameFileWriteStatus
+noFrameGlbParseStatus
+fpsStatus
+fpsUpdateMode
+debugZipStatus
+debugZipPath
+```
+
 ## Scene22 Glass Material Foundation Lab
 
 Patch P25 switches the active lab to:

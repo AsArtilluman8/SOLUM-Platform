@@ -1031,8 +1031,21 @@ struct RendererCore {
         model.glassOpacitySixExpectedCenterDense = "yes";
         model.glassDebugTruthStatus = "state_reported_not_visual_proof";
         model.glassCpuGpuMismatchRisk = transparentActive ? "medium_no_pixel_readback" : "low_inactive";
-        model.glassFinalCenterAlpha = clampFloat(material.glassOpacity, 0.0f, 1.0f);
-        model.glassFinalEdgeAlpha = clampFloat(0.06f + material.glassEdge * 0.20f + material.glassThickness * 0.08f, 0.06f, 0.58f);
+        const float activeLayerCount = clampFloat((float)std::max(1u, activeTransparentGlassSlotCount), 1.0f, 4.0f);
+        const float layerComp = 1.0f / std::sqrt(activeLayerCount);
+        const float effectiveTintStrength = material.glassTintPreset == 0 || material.glassTintPreset == 1 ? 0.05f : (material.glassTintPreset == 6 ? 0.22f : (material.glassTintPreset == 4 ? 0.18f : 0.12f));
+        const float effectiveCenterAlpha = clampFloat(material.glassOpacity * (0.10f + (0.32f - 0.10f) * (1.0f - material.glassClarity)), 0.0f, 0.36f) * layerComp;
+        const float effectiveEdgeAlpha = clampFloat((0.06f + material.glassEdge * 0.08f) * (0.16f + 0.18f * material.glassThickness), 0.0f, 0.40f) * (0.75f + (1.0f - 0.75f) * layerComp);
+        model.glassRuntimeTruthSource = "live_push_constants";
+        model.glassVisualFormulaVersion = "P28I_light_center_visible_edge";
+        model.glassEffectiveCenterAlpha = effectiveCenterAlpha;
+        model.glassEffectiveEdgeAlpha = effectiveEdgeAlpha;
+        model.glassEffectiveLayerCompensation = layerComp;
+        model.glassEffectiveTintStrength = effectiveTintStrength;
+        model.glassVisualVerified = "not_available_no_pixel_readback";
+        model.legacyGlassMaterialReportNotShaderTruth = "yes";
+        model.glassFinalCenterAlpha = effectiveCenterAlpha;
+        model.glassFinalEdgeAlpha = effectiveEdgeAlpha;
         model.glassFinalTintColor = glassTintColorString(material.glassTintPreset);
         model.glassActuallyTransparentStatus = transparentActive ? "not_available_no_pixel_readback" : "inactive";
         model.glassGreyPlateStillPossibleStatus = material.glassClarity < 0.35f || material.glassOpacity > 0.82f ? "possible_low_clarity_or_high_opacity" : "reduced";
@@ -1791,11 +1804,13 @@ struct RendererCore {
                             pc.material.materialPresetHint = 6;
                             pc.material.glassEnabled = material.glassEnabled;
                             pc.material.glassRenderMode = 1;
+                            pc.material.activeGlassSlotCount = (int)std::max(1u, activeTransparentGlassSlotCount);
                             pc.material.alphaMode = 0;
                         } else {
                             pc.material.materialPresetHint = slot.materialPresetHint;
                             pc.material.glassEnabled = 0;
                             pc.material.glassRenderMode = 0;
+                            pc.material.activeGlassSlotCount = 1;
                         }
                     } else {
                         pc.material.glossSliderValue = 0.0f;
@@ -1803,6 +1818,7 @@ struct RendererCore {
                         pc.material.emissiveIntensity = 0.0f;
                         pc.material.glassEnabled = 0;
                         pc.material.glassRenderMode = 0;
+                        pc.material.activeGlassSlotCount = 1;
                     }
                     if (((material.activeDebugView >= 27 && material.activeDebugView <= 31) || material.activeDebugView == 41) && range.materialSlot != selectedMaterialSlot) {
                         pc.material.activeDebugView = 0;

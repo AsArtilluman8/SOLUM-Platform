@@ -1762,7 +1762,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             else if (!"Glass".equals(modelState.selectedMaterialRole)) renderPath = "Opaque";
             String glassRoute = modelState.activeTransparentGlassSlotSource.startsWith("manual_override") ? "manual override active: slot " + modelState.activeGlassSlotDisplay : "auto glass slots: " + modelState.glassActiveSlotList;
             String applyTarget = "manual_slot".equals(modelState.glassApplyTargetStatus) ? "manual slot" : ("all_glass_slots".equals(modelState.glassApplyTargetStatus) ? "all glass slots" : "selected material");
-            materialStatusView.setText("Selected Material: " + modelState.selectedSlotDisplay + " " + modelState.selectedMaterialName + " " + modelState.selectedMaterialRole + "\nGlass Slots: " + modelState.glassSlotsCount + " " + modelState.glassSlotsDisplay + "\nActive Glass Slots: " + modelState.glassActiveSlotCount + "/" + modelState.glassSlotsCount + " " + modelState.glassActiveSlotList + "\nRender path: " + renderPath + "\nApply target: " + applyTarget + "\nGlass Enabled: " + (glassEnabled ? "on" : "off") + "\nPreset Mix In Shader: " + modelState.glassPresetMixInShader + "\nVisual Verified: no, user must verify\n" + glassRoute + "\nOpaque Slots: " + modelState.opaqueSlotsDisplay + "\nCutout Slots: " + modelState.cutoutSlotsDisplay);
+            materialStatusView.setText("Selected Material: " + modelState.selectedSlotDisplay + " " + modelState.selectedMaterialName + " " + modelState.selectedMaterialRole + "\nGlass Path: " + renderPath + "\nGlass Slots: " + modelState.glassActiveSlotCount + "/" + modelState.glassSlotsCount + " " + modelState.glassActiveSlotList + "\nApply target: " + applyTarget + "\nGlass Enabled: " + (glassEnabled ? "on" : "off") + "\nEffective center/edge: " + twoDecimal(modelState.glassEffectiveCenterAlpha) + "/" + twoDecimal(modelState.glassEffectiveEdgeAlpha) + "\nLayer compensation: " + twoDecimal(modelState.glassEffectiveLayerCompensation) + "\nTruth: " + modelState.glassRuntimeTruthSource + "\nPreset Mix In Shader: " + modelState.glassPresetMixInShader + "\nVisual Verified: no pixel readback\n" + glassRoute + "\nCutout Slots: " + modelState.cutoutSlotsDisplay);
         }
         updateSliderPositionsFromState();
         if (materialViewButton != null) materialViewButton.setText("Debug: " + modelState.activeDebugView);
@@ -2050,6 +2050,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.gitCommitContainsP28H = "yes";
         modelState.apkBuiltFromCommittedTree = "yes";
         modelState.glassCpuGpuMismatchRisk = transparentActive ? "medium_no_pixel_readback" : "low_inactive";
+        float activeLayerCount = clamp((float)Math.max(1, activeGlassSlots.size()), 1.0f, 4.0f);
+        float layerComp = (float)(1.0 / Math.sqrt(activeLayerCount));
+        float effectiveTintStrength = glassTintPresetIndex == 0 || glassTintPresetIndex == 1 ? 0.05f : (glassTintPresetIndex == 6 ? 0.22f : (glassTintPresetIndex == 4 ? 0.18f : 0.12f));
+        float effectiveCenterAlpha = clamp(glassOpacity * (0.10f + (0.32f - 0.10f) * (1.0f - glassClarity)), 0.0f, 0.36f) * layerComp;
+        float effectiveEdgeAlpha = clamp((0.06f + glassEdge * 0.08f) * (0.16f + 0.18f * glassThickness), 0.0f, 0.40f) * (0.75f + (1.0f - 0.75f) * layerComp);
+        modelState.glassRuntimeTruthSource = "live_push_constants";
+        modelState.glassVisualFormulaVersion = "P28I_light_center_visible_edge";
+        modelState.glassEffectiveCenterAlpha = effectiveCenterAlpha;
+        modelState.glassEffectiveEdgeAlpha = effectiveEdgeAlpha;
+        modelState.glassEffectiveLayerCompensation = layerComp;
+        modelState.glassEffectiveTintStrength = effectiveTintStrength;
+        modelState.glassVisualVerified = "not_available_no_pixel_readback";
+        modelState.legacyGlassMaterialReportNotShaderTruth = "yes";
+        modelState.glassFinalCenterAlpha = effectiveCenterAlpha;
+        modelState.glassFinalEdgeAlpha = effectiveEdgeAlpha;
         modelState.transparentGlassFabricGuardStatus = selectedFabric && !manualValid ? "ok_fabric_kept_opaque" : "ok";
         modelState.transparentGlassMetalGuardStatus = selectedMetal && !manualValid ? "ok_metal_kept_opaque" : "ok";
         modelState.transparentGlassCarPaintGuardStatus = selectedPaint && !manualValid ? "ok_car_paint_kept_opaque" : "ok";
@@ -2596,6 +2611,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private String oneDecimal(float v) { return String.format(Locale.US, "%.1f", v); }
+    private String twoDecimal(float v) { return String.format(Locale.US, "%.2f", v); }
 
     private int intJsonField(String key, int fallback) {
         try { return Integer.parseInt(jsonNumberField(getRenderLabStateForExport(), key, String.valueOf(fallback))); }
@@ -4300,6 +4316,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"gitCommitContainsP28H\": \"" + escape(jsonStringField(renderLab, "gitCommitContainsP28H", modelState.gitCommitContainsP28H)) + "\",\n"
             + indent + "\"apkBuiltFromCommittedTree\": \"" + escape(jsonStringField(renderLab, "apkBuiltFromCommittedTree", modelState.apkBuiltFromCommittedTree)) + "\",\n"
             + indent + "\"glassCpuGpuMismatchRisk\": \"" + escape(jsonStringField(renderLab, "glassCpuGpuMismatchRisk", modelState.glassCpuGpuMismatchRisk)) + "\",\n"
+            + indent + "\"glassRuntimeTruthSource\": \"" + escape(jsonStringField(renderLab, "glassRuntimeTruthSource", modelState.glassRuntimeTruthSource)) + "\",\n"
+            + indent + "\"glassVisualFormulaVersion\": \"" + escape(jsonStringField(renderLab, "glassVisualFormulaVersion", modelState.glassVisualFormulaVersion)) + "\",\n"
+            + indent + "\"glassEffectiveCenterAlpha\": " + jsonNumberField(renderLab, "glassEffectiveCenterAlpha", jsonFloat(modelState.glassEffectiveCenterAlpha)) + ",\n"
+            + indent + "\"glassEffectiveEdgeAlpha\": " + jsonNumberField(renderLab, "glassEffectiveEdgeAlpha", jsonFloat(modelState.glassEffectiveEdgeAlpha)) + ",\n"
+            + indent + "\"glassEffectiveLayerCompensation\": " + jsonNumberField(renderLab, "glassEffectiveLayerCompensation", jsonFloat(modelState.glassEffectiveLayerCompensation)) + ",\n"
+            + indent + "\"glassEffectiveTintStrength\": " + jsonNumberField(renderLab, "glassEffectiveTintStrength", jsonFloat(modelState.glassEffectiveTintStrength)) + ",\n"
+            + indent + "\"glassVisualVerified\": \"" + escape(jsonStringField(renderLab, "glassVisualVerified", modelState.glassVisualVerified)) + "\",\n"
+            + indent + "\"legacyGlassMaterialReportNotShaderTruth\": \"" + escape(jsonStringField(renderLab, "legacyGlassMaterialReportNotShaderTruth", modelState.legacyGlassMaterialReportNotShaderTruth)) + "\",\n"
             + indent + "\"glassPresetCount\": " + jsonNumberField(renderLab, "glassPresetCount", String.valueOf(modelState.glassPresetCount)) + ",\n"
             + indent + "\"glassPresetClearStatus\": \"" + escape(jsonStringField(renderLab, "glassPresetClearStatus", modelState.glassPresetClearStatus)) + "\",\n"
             + indent + "\"glassPresetSmokeStatus\": \"" + escape(jsonStringField(renderLab, "glassPresetSmokeStatus", modelState.glassPresetSmokeStatus)) + "\",\n"
@@ -5443,6 +5467,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String gitCommitContainsP28H = "yes";
         String apkBuiltFromCommittedTree = "yes";
         String glassCpuGpuMismatchRisk = "medium_no_pixel_readback";
+        String glassRuntimeTruthSource = "live_push_constants";
+        String glassVisualFormulaVersion = "P28I_light_center_visible_edge";
+        float glassEffectiveCenterAlpha = 0.0f;
+        float glassEffectiveEdgeAlpha = 0.0f;
+        float glassEffectiveLayerCompensation = 1.0f;
+        float glassEffectiveTintStrength = 0.06f;
+        String glassVisualVerified = "not_available_no_pixel_readback";
+        String legacyGlassMaterialReportNotShaderTruth = "yes";
         String materialRoleUiStatus = "ok_minimal_material_tab";
         String selectedSlotRoleSummaryUiStatus = "ok";
         String activeGlassSlotSummaryUiStatus = "ok";
@@ -6976,11 +7008,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     .append(",\"alphaBlendFallbackStatus\":\"").append(esc(m.alphaMode == 2 ? "fallback_no_transparent_sorting" : "not_blend")).append("\"")
                     .append(",\"doubleSided\":").append(m.doubleSided)
                     .append(",\"doubleSidedAppliedStatus\":\"").append(esc(m.doubleSided ? "normal_flip_foundation_pipeline_cull_none" : "not_double_sided")).append("\"")
-                    .append(",\"glassAppliedStatus\":\"").append(esc(m.materialTypeHint == 6 ? "applied_glass_like_hint" : "available_selected_slot_preset_only")).append("\"")
-                    .append(",\"glassOpacityApplied\":").append(jsonFloat(m.materialTypeHint == 6 ? 0.44f : 1.0f))
-                    .append(",\"glassTintApplied\":\"").append(esc(m.materialTypeHint == 6 ? "clear_default" : "none")).append("\"")
+                    .append(",\"glassAppliedStatus\":\"").append(esc(m.materialTypeHint == 6 ? "legacy_material_report_not_shader_truth" : "available_selected_slot_preset_only")).append("\"")
+                    .append(",\"legacyGlassMaterialReportNotShaderTruth\":\"").append(esc("yes")).append("\"")
+                    .append(",\"legacyGlassOpacityApplied\":").append(jsonFloat(m.materialTypeHint == 6 ? 0.44f : 1.0f))
+                    .append(",\"legacyGlassTintApplied\":\"").append(esc(m.materialTypeHint == 6 ? "clear_default" : "none")).append("\"")
                     .append(",\"glassEdgeReflectionApplied\":\"").append(esc(m.materialTypeHint == 6 ? "p24_probe_edge_fresnel" : "none")).append("\"")
-                    .append(",\"glassRoughnessApplied\":").append(jsonFloat(m.materialTypeHint == 6 ? calibratedRoughness(m) : m.roughnessFactor))
+                    .append(",\"legacyGlassRoughnessApplied\":").append(jsonFloat(m.materialTypeHint == 6 ? calibratedRoughness(m) : m.roughnessFactor))
                     .append(",\"glassGuardApplied\":\"").append(esc(m.materialTypeHint == 0 || m.materialTypeHint == 2 || m.materialTypeHint == 1 ? "yes_preserve_non_glass" : "no")).append("\"")
                     .append("}");
             }

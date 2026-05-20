@@ -2691,3 +2691,33 @@ apkBuiltFromCommittedTree = yes
 - User Android screenshot verification.
 - Pixel readback.
 - Full transparent sorting.
+
+---
+
+## Patch P28I — Real Glass Visual Response Fix
+
+### Goal
+
+Make Transparent v1 glass visually lighter: transparent center, visible rim/specular, weak tint, and layer compensation for multiple glass slots.
+
+### Changed
+
+- Reduced transparent center alpha so opacity no longer maps directly to final alpha.
+- Added `activeGlassSlotCount` push constant and layer compensation for stacked glass slots.
+- Rebalanced transparent glass RGB into light center tint, rim edge, thickness edge, frost haze, and spec/glint.
+- Limited thickness contribution to edges instead of full-surface haze.
+- Marked static per-slot glass diagnostics as legacy material report, not shader truth.
+
+### Safety
+
+```text
+glassRuntimeTruthSource = live_push_constants
+glassVisualFormulaVersion = P28I_light_center_visible_edge
+glassVisualVerified = not_available_no_pixel_readback
+legacyGlassMaterialReportNotShaderTruth = yes
+```
+
+### Deferred
+
+- Android screenshot verification.
+- Pixel readback.

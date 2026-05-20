@@ -100,6 +100,14 @@ struct RuntimeDiagnostics {
         f << "  \"gitCommitContainsP28H\": \"" << escapeJson(model.gitCommitContainsP28H) << "\",\n";
         f << "  \"apkBuiltFromCommittedTree\": \"" << escapeJson(model.apkBuiltFromCommittedTree) << "\",\n";
         f << "  \"glassCpuGpuMismatchRisk\": \"" << escapeJson(model.glassCpuGpuMismatchRisk) << "\",\n";
+        f << "  \"glassRuntimeTruthSource\": \"" << escapeJson(model.glassRuntimeTruthSource) << "\",\n";
+        f << "  \"glassVisualFormulaVersion\": \"" << escapeJson(model.glassVisualFormulaVersion) << "\",\n";
+        f << "  \"glassEffectiveCenterAlpha\": " << model.glassEffectiveCenterAlpha << ",\n";
+        f << "  \"glassEffectiveEdgeAlpha\": " << model.glassEffectiveEdgeAlpha << ",\n";
+        f << "  \"glassEffectiveLayerCompensation\": " << model.glassEffectiveLayerCompensation << ",\n";
+        f << "  \"glassEffectiveTintStrength\": " << model.glassEffectiveTintStrength << ",\n";
+        f << "  \"glassVisualVerified\": \"" << escapeJson(model.glassVisualVerified) << "\",\n";
+        f << "  \"legacyGlassMaterialReportNotShaderTruth\": \"" << escapeJson(model.legacyGlassMaterialReportNotShaderTruth) << "\",\n";
         f << "  \"glassCandidateScoringStatus\": \"" << escapeJson(model.glassCandidateScoringStatus) << "\",\n";
         f << "  \"glassBestCandidateStatus\": \"" << escapeJson(model.glassBestCandidateStatus) << "\",\n";
         f << "  \"glassUniformAppliedToShaderStatus\": \"" << escapeJson(model.glassUniformAppliedToShaderStatus) << "\",\n";

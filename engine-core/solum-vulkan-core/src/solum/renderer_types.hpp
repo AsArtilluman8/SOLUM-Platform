@@ -85,6 +85,7 @@ struct MaterialConstants {
     int glassRenderMode = 2;
     float glassClarity = 0.82f;
     float glassThickness = 0.34f;
+    int activeGlassSlotCount = 1;
 };
 
 inline const char* lightPresetName(int preset) {
@@ -949,6 +950,14 @@ struct ModelRenderState {
     std::string gitCommitContainsP28H = "yes";
     std::string apkBuiltFromCommittedTree = "yes";
     std::string glassCpuGpuMismatchRisk = "medium_no_pixel_readback";
+    std::string glassRuntimeTruthSource = "live_push_constants";
+    std::string glassVisualFormulaVersion = "P28I_light_center_visible_edge";
+    float glassEffectiveCenterAlpha = 0.0f;
+    float glassEffectiveEdgeAlpha = 0.0f;
+    float glassEffectiveLayerCompensation = 1.0f;
+    float glassEffectiveTintStrength = 0.06f;
+    std::string glassVisualVerified = "not_available_no_pixel_readback";
+    std::string legacyGlassMaterialReportNotShaderTruth = "yes";
     std::string materialRoleUiStatus = "ok_minimal_material_tab";
     std::string selectedSlotRoleSummaryUiStatus = "ok";
     std::string activeGlassSlotSummaryUiStatus = "ok";

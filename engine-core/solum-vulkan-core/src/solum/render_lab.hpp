@@ -256,6 +256,14 @@ struct RenderLabState {
         f << indent << "  \"gitCommitContainsP28H\": \"" << escapeJson(model.gitCommitContainsP28H) << "\",\n";
         f << indent << "  \"apkBuiltFromCommittedTree\": \"" << escapeJson(model.apkBuiltFromCommittedTree) << "\",\n";
         f << indent << "  \"glassCpuGpuMismatchRisk\": \"" << escapeJson(model.glassCpuGpuMismatchRisk) << "\",\n";
+        f << indent << "  \"glassRuntimeTruthSource\": \"" << escapeJson(model.glassRuntimeTruthSource) << "\",\n";
+        f << indent << "  \"glassVisualFormulaVersion\": \"" << escapeJson(model.glassVisualFormulaVersion) << "\",\n";
+        f << indent << "  \"glassEffectiveCenterAlpha\": " << model.glassEffectiveCenterAlpha << ",\n";
+        f << indent << "  \"glassEffectiveEdgeAlpha\": " << model.glassEffectiveEdgeAlpha << ",\n";
+        f << indent << "  \"glassEffectiveLayerCompensation\": " << model.glassEffectiveLayerCompensation << ",\n";
+        f << indent << "  \"glassEffectiveTintStrength\": " << model.glassEffectiveTintStrength << ",\n";
+        f << indent << "  \"glassVisualVerified\": \"" << escapeJson(model.glassVisualVerified) << "\",\n";
+        f << indent << "  \"legacyGlassMaterialReportNotShaderTruth\": \"" << escapeJson(model.legacyGlassMaterialReportNotShaderTruth) << "\",\n";
         f << indent << "  \"glassPresetCount\": " << model.glassPresetCount << ",\n";
         f << indent << "  \"activeGlassPreset\": \"" << escapeJson(model.activeGlassPreset) << "\",\n";
         f << indent << "  \"glassPresetClearStatus\": \"" << escapeJson(model.glassPresetClearStatus) << "\",\n";

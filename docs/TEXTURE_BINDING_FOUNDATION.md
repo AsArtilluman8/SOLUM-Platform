@@ -1,5 +1,44 @@
 # TEXTURE_BINDING_FOUNDATION — P07
 
+## P28 universal glass visual quality pack
+
+P28 switches the active lab to `scene25_glass_visual_quality_lab`.
+
+The glass path remains role-based and universal:
+
+- `activeTransparentGlassSlot` is still selected by material role Glass, not by random selected slot.
+- OPAQUE alphaMode on a Glass role does not block Transparent v1.
+- Missing baseColor, metallicRoughness, and normal textures use clean glass fallback uniforms.
+- Glass preset quality does not depend on texture availability.
+- No ToyCar or fixed slot hardcode is allowed.
+
+Glass quality controls:
+
+- Glass Opacity drives center coverage.
+- Glass Clarity separates clear center from rough/tinted surface.
+- Glass Edge keeps Fresnel/reflection visible.
+- Glass Thickness affects edge tint/darkening only.
+- Glass Rough softens reflection and clarity without forcing grey center.
+
+P28 presets:
+
+- Clear Glass
+- Smoke Glass
+- Green Glass
+- Crystal Lite
+- Warm Glass
+- Dark Tinted Glass
+
+Required diagnostic anchors:
+
+```text
+glassGreyPlateFixStatus
+glassWeakMaterialFallbackStatus
+glassClaritySliderStatus
+glassOpaqueAlphaModeOverrideStatus
+p28VisualGlassStatus
+```
+
 ## P27 transparent glass pass lab
 
 P27 switches the active lab to `scene24_transparent_glass_pass_lab`.

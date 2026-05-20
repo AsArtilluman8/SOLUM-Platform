@@ -83,6 +83,8 @@ struct MaterialConstants {
     float glassRoughness = 0.14f;
     int glassTintPreset = 0;
     int glassRenderMode = 2;
+    float glassClarity = 0.82f;
+    float glassThickness = 0.34f;
 };
 
 inline const char* lightPresetName(int preset) {
@@ -176,6 +178,12 @@ inline const char* materialDebugViewName(int view) {
     if (view == 71) return "Active Glass Slot";
     if (view == 72) return "Transparent Routing";
     if (view == 73) return "Wrong Slot Guard";
+    if (view == 74) return "Glass Center Alpha";
+    if (view == 75) return "Glass Edge Reflection";
+    if (view == 76) return "Glass Thickness";
+    if (view == 77) return "Glass Clarity";
+    if (view == 78) return "Glass Fallback Material";
+    if (view == 79) return "Glass Final Composite";
     return "Final Shaded";
 }
 
@@ -540,6 +548,7 @@ struct ModelRenderState {
     std::string alphaNoModelReuploadStatus = "ok";
     std::string p20RuntimeWorkflowPreservedStatus = "ok";
     std::string p19SlotControlsPreservedStatus = "ok";
+    std::string p18IblPreservedStatus = "ok";
     std::string p21AlphaPreservedStatus = "ok";
     std::string emissiveMaterialStatus = "ok_metadata_supported";
     std::string emissiveMode = "factor_uniform_only_no_light_contribution";
@@ -734,6 +743,41 @@ struct ModelRenderState {
     std::string dirtyGlassLitePresetStatus = "ok";
     std::string crystalLitePresetStatus = "ok";
     std::string glassPresetVisualResponseStatus = "ok_tint_opacity_edge_roughness_reflection_thickness";
+    std::string glassVisualQualityStatus = "ok_universal_game_glass";
+    std::string glassGreyPlateFixStatus = "ok_center_clear_not_dirty_grey";
+    std::string glassClarityStatus = "ok_center_clarity_uniform";
+    std::string glassCenterTransparencyStatus = "ok_opacity_drives_center_alpha";
+    std::string glassFakeThicknessStatus = "ok_edges_only";
+    std::string glassPresetVisualStatus = "ok_role_based_presets";
+    std::string glassFallbackMaterialStatus = "ok_clean_defaults";
+    std::string glassWeakMaterialFallbackStatus = "ok_missing_textures_handled";
+    std::string glassNoAssetHardcodeStatus = "ok_universal_role_based";
+    int glassPresetCount = 6;
+    std::string glassPresetClearStatus = "ok_clearer_bright_center";
+    std::string glassPresetSmokeStatus = "ok_smoke_tinted_transparent";
+    std::string glassPresetGreenStatus = "ok_green_tint_body_preserved";
+    std::string glassPresetCrystalStatus = "ok_crystal_lite_clean";
+    std::string glassPresetWarmStatus = "ok_warm_tint";
+    std::string glassPresetDarkStatus = "ok_dark_tinted_glass";
+    std::string glassPresetNoTextureDependencyStatus = "ok_uniform_fallbacks";
+    float glassClarityValue = 0.82f;
+    std::string glassClaritySliderStatus = "ok";
+    float glassThicknessValue = 0.34f;
+    std::string glassThicknessSliderStatus = "ok";
+    std::string glassQualityUiStatus = "ok_minimal_material_tab";
+    std::string glassQualitySummaryUiStatus = "ok_active_preset_quality";
+    std::string activeGlassSummaryPreservedStatus = "ok";
+    std::string glassCenterAlphaDebugViewStatus = "shader_applied";
+    std::string glassEdgeReflectionDebugViewStatus = "shader_applied";
+    std::string glassClarityDebugViewStatus = "shader_applied";
+    std::string glassFallbackMaterialDebugViewStatus = "shader_applied";
+    std::string glassFinalCompositeDebugViewStatus = "shader_applied";
+    std::string glassMissingBaseColorFallbackStatus = "ok_clean_clear_fallback";
+    std::string glassMissingRoughnessFallbackStatus = "ok_clear_roughness_fallback";
+    std::string glassOpaqueAlphaModeOverrideStatus = "ok_role_glass_overrides_opaque_alpha_mode";
+    std::string glassFallbackOpacityStatus = "ok_uses_glass_opacity";
+    std::string glassFallbackRoughnessStatus = "ok_uses_preset_roughness";
+    std::string glassFallbackTintStatus = "ok_uses_preset_tint";
     std::string glassSelectedSlotRoutingStatus = "ok_selected_slot_or_glass_hint";
     std::string glassFabricGuardStatus = "ok";
     std::string glassMetalGuardStatus = "ok";
@@ -794,6 +838,14 @@ struct ModelRenderState {
     std::string transparentGlassFallbackStatus = "p26_fake_glass_available";
     std::string transparentGlassPerformanceStatus = "ok_one_extra_selected_slot_draw_when_active";
     std::string transparentGlassUiStatus = "ok_minimal_material_tab";
+    std::string transparentGlassQualityStatus = "ok_game_glass_blend";
+    std::string transparentGlassCenterAlphaStatus = "ok_opacity_clarity_center";
+    std::string transparentGlassEdgeAlphaStatus = "ok_edge_separate_visible";
+    std::string transparentGlassDepthBehaviorStatus = "ok_depth_write_disabled_transparent_pipeline";
+    std::string transparentGlassBackgroundVisibilityStatus = "ok_center_alpha_reveals_background";
+    std::string transparentGlassInteriorVisibilityStatus = "ok_active_slot_only";
+    std::string transparentGlassBlendPreservedStatus = "ok_vk_src_alpha_one_minus_src_alpha";
+    std::string transparentGlassPassPreservedStatus = "ok_opaque_first_active_glass_after";
     std::string glassRenderModeStatus = "ok_fake_transparent_auto";
     std::string activeGlassRenderMode = "Auto";
     std::string transparentGlassToggleStatus = "ok";
@@ -843,6 +895,21 @@ struct ModelRenderState {
     uint32_t transparentGlassSkippedMetalCount = 0;
     uint32_t transparentGlassSkippedPaintCount = 0;
     std::string p27TransparentPassPreservedStatus = "ok";
+    std::string p28VisualGlassStatus = "ok";
+    std::string p27bRoutingPreservedStatus = "ok";
+    std::string p28PerformanceStatus = "ok_uniform_shader_math_only";
+    std::string p28NoRaytraceStatus = "ok";
+    std::string p28NoSsrStatus = "ok";
+    std::string p28NoRealMirrorStatus = "ok";
+    std::string p28NoRealRefractionStatus = "ok";
+    std::string p28NoShadowStatus = "ok";
+    std::string p28NoCsmStatus = "ok";
+    std::string p28NoOffscreenCubemapStatus = "ok";
+    std::string p28NoTextureRebuildStatus = "ok";
+    std::string p28NoModelReuploadStatus = "ok";
+    std::string p28NoFrameGlbParseStatus = "ok";
+    std::string p28NoFrameFileWriteStatus = "ok";
+    std::string p28UniformOnlyStatus = "ok";
     std::string p27bPerformanceStatus = "ok_existing_transparent_pass_only";
     std::string p27bNoExtraHeavyPassStatus = "ok";
     std::string p27bNoTextureRebuildStatus = "ok";

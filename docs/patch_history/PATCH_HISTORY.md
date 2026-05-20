@@ -2,6 +2,41 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P28 — Universal Glass Visual Quality Pack / Grey Glass Fix
+
+Scope:
+
+- Scene25 Glass Visual Quality Lab.
+- Active scene: `scene25_glass_visual_quality_lab`.
+- Universal role=Glass quality formula for weak/partial GLB materials.
+- Clean fallback when baseColor/roughness/normal textures are missing.
+- OPAQUE alphaMode override for role=Glass Transparent v1 routing.
+- Better center clarity, edge highlight, fake thickness, and reflection balance.
+- Presets: Clear Glass, Smoke Glass, Green Glass, Crystal Lite, Warm Glass, Dark Tinted Glass.
+- Material tab adds Glass Clarity and Glass Thickness sliders.
+- Debug views: Glass Center Alpha, Glass Edge Reflection, Glass Thickness, Glass Clarity, Glass Fallback Material, Glass Final Composite.
+
+Key diagnostics:
+
+```text
+glassGreyPlateFixStatus = ok_center_clear_not_dirty_grey
+glassWeakMaterialFallbackStatus = ok_missing_textures_handled
+glassNoAssetHardcodeStatus = ok_universal_role_based
+glassOpaqueAlphaModeOverrideStatus = ok_role_glass_overrides_opaque_alpha_mode
+p28VisualGlassStatus = ok
+p27bRoutingPreservedStatus = ok
+transparentGlassPassPreservedStatus = ok_opaque_first_active_glass_after
+p28PerformanceStatus = ok_uniform_shader_math_only
+```
+
+Out of scope:
+
+- ToyCar or slot hardcode.
+- Shadows, shadow maps, CSM.
+- Raytracing, SSR, real mirror, real refraction.
+- OBJ/FBX import.
+- Texture rebuild/model reupload while sliders move.
+
 ## Patch P27 — Transparent Glass Pass v1
 
 Scope:

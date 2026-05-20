@@ -54,6 +54,14 @@ struct RuntimeDiagnostics {
         f << "  \"glassWeakMaterialFallbackStatus\": \"" << escapeJson(model.glassWeakMaterialFallbackStatus) << "\",\n";
         f << "  \"glassNoAssetHardcodeStatus\": \"" << escapeJson(model.glassNoAssetHardcodeStatus) << "\",\n";
         f << "  \"p28bGlassFixStatus\": \"" << escapeJson(model.p28bGlassFixStatus) << "\",\n";
+        f << "  \"p28cTransparentRenderFixStatus\": \"" << escapeJson(model.p28cTransparentRenderFixStatus) << "\",\n";
+        f << "  \"glassDiscardBypassStatus\": \"" << escapeJson(model.glassDiscardBypassStatus) << "\",\n";
+        f << "  \"glassFinalShaderAlphaStatus\": \"" << escapeJson(model.glassFinalShaderAlphaStatus) << "\",\n";
+        f << "  \"glassFinalShaderColorStatus\": \"" << escapeJson(model.glassFinalShaderColorStatus) << "\",\n";
+        f << "  \"glassFinalUsesLiveUniformsStatus\": \"" << escapeJson(model.glassFinalUsesLiveUniformsStatus) << "\",\n";
+        f << "  \"transparentPipelineActuallyUsedStatus\": \"" << escapeJson(model.transparentPipelineActuallyUsedStatus) << "\",\n";
+        f << "  \"glassCutoutDisabledForTransparentStatus\": \"" << escapeJson(model.glassCutoutDisabledForTransparentStatus) << "\",\n";
+        f << "  \"p21AlphaCutoutPreservedStatus\": \"" << escapeJson(model.p21AlphaCutoutPreservedStatus) << "\",\n";
         f << "  \"glassCandidateScoringStatus\": \"" << escapeJson(model.glassCandidateScoringStatus) << "\",\n";
         f << "  \"glassBestCandidateStatus\": \"" << escapeJson(model.glassBestCandidateStatus) << "\",\n";
         f << "  \"glassUniformAppliedToShaderStatus\": \"" << escapeJson(model.glassUniformAppliedToShaderStatus) << "\",\n";

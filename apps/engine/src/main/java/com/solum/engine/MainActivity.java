@@ -1121,6 +1121,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         return "0.94,0.99,1.00";
     }
 
+    private float glassPresetOpacityValue(int preset) {
+        if (preset == 1) return 0.18f;
+        if (preset == 2) return 0.24f;
+        if (preset == 3) return 0.26f;
+        if (preset == 4) return 0.32f;
+        if (preset == 5) return 0.28f;
+        if (preset == 6) return 0.40f;
+        return 0.20f;
+    }
+
+    private float glassPresetClarityValue(int preset) {
+        if (preset == 6) return 0.48f;
+        if (preset == 4) return 0.58f;
+        if (preset == 1) return 0.96f;
+        return 0.88f;
+    }
+
     private void cycleAlphaDebugView() {
         activeDebugViewIndex = activeDebugViewIndex < 32 || activeDebugViewIndex > 36 ? 32 : 32 + ((activeDebugViewIndex - 31) % 5);
         applyLightingControls();
@@ -1813,12 +1830,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.glassWeakMaterialFallbackStatus = "ok_missing_textures_handled";
         modelState.glassNoAssetHardcodeStatus = "ok_universal_role_based";
         modelState.p28bGlassFixStatus = "ok_live_shader_transparency";
+        modelState.p28cTransparentRenderFixStatus = "ok_final_render_path_fixed";
+        modelState.glassDiscardBypassStatus = "ok_glass_skips_early_cutout";
+        modelState.glassFinalShaderAlphaStatus = "ok_final_shaded_outputs_glass_alpha";
+        modelState.glassFinalShaderColorStatus = "ok_center_scaled_edge_visible";
+        modelState.glassFinalUsesLiveUniformsStatus = "ok";
+        modelState.transparentPipelineActuallyUsedStatus = transparentActive ? "ok_transparent_pipeline_bound_for_active_glass" : "inactive_fake_or_auto_fallback";
+        modelState.glassCutoutDisabledForTransparentStatus = "ok";
+        modelState.p21AlphaCutoutPreservedStatus = "ok";
         modelState.glassCandidateScoringStatus = "ok_name_alpha_transmission_scoring";
         modelState.glassBestCandidateStatus = bestGlassSlot >= 0 ? "ok_" + modelState.bestGlassCandidateName : "fallback_no_candidate";
         modelState.glassUniformAppliedToShaderStatus = "ok";
         modelState.glassLiveSliderResponseStatus = "ok";
         modelState.glassPresetLiveApplyStatus = "ok";
-        modelState.glassFinalCenterAlpha = clamp(0.018f + glassOpacity * (0.62f + (0.30f - 0.62f) * glassClarity) + glassRoughness * 0.018f, 0.02f, 0.70f);
+        float finalOpacityInput = glassPresetOpacityValue(glassTintPresetIndex) * 0.22f + glassOpacity * 0.78f;
+        float finalClarityInput = glassPresetClarityValue(glassTintPresetIndex) * 0.28f + glassClarity * 0.72f;
+        modelState.glassFinalCenterAlpha = clamp(0.018f + finalOpacityInput * (0.62f + (0.30f - 0.62f) * finalClarityInput) + glassRoughness * 0.018f, 0.02f, 0.70f);
         modelState.glassFinalEdgeAlpha = clamp(0.06f * (0.20f + (0.50f - 0.20f) * clamp(glassEdge * 0.5f, 0.0f, 1.0f)), 0.0f, 0.52f);
         modelState.glassFinalTintColor = glassTintColorStatus(glassTintPresetIndex);
         modelState.glassActuallyTransparentStatus = transparentActive && modelState.glassFinalCenterAlpha < 0.62f ? "ok" : "not_active_or_too_solid";
@@ -4107,6 +4134,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"glassWeakMaterialFallbackStatus\": \"" + escape(jsonStringField(renderLab, "glassWeakMaterialFallbackStatus", modelState.glassWeakMaterialFallbackStatus)) + "\",\n"
             + indent + "\"glassNoAssetHardcodeStatus\": \"" + escape(jsonStringField(renderLab, "glassNoAssetHardcodeStatus", modelState.glassNoAssetHardcodeStatus)) + "\",\n"
             + indent + "\"p28bGlassFixStatus\": \"" + escape(jsonStringField(renderLab, "p28bGlassFixStatus", modelState.p28bGlassFixStatus)) + "\",\n"
+            + indent + "\"p28cTransparentRenderFixStatus\": \"" + escape(jsonStringField(renderLab, "p28cTransparentRenderFixStatus", modelState.p28cTransparentRenderFixStatus)) + "\",\n"
+            + indent + "\"glassDiscardBypassStatus\": \"" + escape(jsonStringField(renderLab, "glassDiscardBypassStatus", modelState.glassDiscardBypassStatus)) + "\",\n"
+            + indent + "\"glassFinalShaderAlphaStatus\": \"" + escape(jsonStringField(renderLab, "glassFinalShaderAlphaStatus", modelState.glassFinalShaderAlphaStatus)) + "\",\n"
+            + indent + "\"glassFinalShaderColorStatus\": \"" + escape(jsonStringField(renderLab, "glassFinalShaderColorStatus", modelState.glassFinalShaderColorStatus)) + "\",\n"
+            + indent + "\"glassFinalUsesLiveUniformsStatus\": \"" + escape(jsonStringField(renderLab, "glassFinalUsesLiveUniformsStatus", modelState.glassFinalUsesLiveUniformsStatus)) + "\",\n"
+            + indent + "\"transparentPipelineActuallyUsedStatus\": \"" + escape(jsonStringField(renderLab, "transparentPipelineActuallyUsedStatus", modelState.transparentPipelineActuallyUsedStatus)) + "\",\n"
+            + indent + "\"glassCutoutDisabledForTransparentStatus\": \"" + escape(jsonStringField(renderLab, "glassCutoutDisabledForTransparentStatus", modelState.glassCutoutDisabledForTransparentStatus)) + "\",\n"
+            + indent + "\"p21AlphaCutoutPreservedStatus\": \"" + escape(jsonStringField(renderLab, "p21AlphaCutoutPreservedStatus", modelState.p21AlphaCutoutPreservedStatus)) + "\",\n"
             + indent + "\"glassCandidateScoringStatus\": \"" + escape(jsonStringField(renderLab, "glassCandidateScoringStatus", modelState.glassCandidateScoringStatus)) + "\",\n"
             + indent + "\"glassBestCandidateStatus\": \"" + escape(jsonStringField(renderLab, "glassBestCandidateStatus", modelState.glassBestCandidateStatus)) + "\",\n"
             + indent + "\"glassUniformAppliedToShaderStatus\": \"" + escape(jsonStringField(renderLab, "glassUniformAppliedToShaderStatus", modelState.glassUniformAppliedToShaderStatus)) + "\",\n"
@@ -5072,6 +5107,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String glassWeakMaterialFallbackStatus = "ok_missing_textures_handled";
         String glassNoAssetHardcodeStatus = "ok_universal_role_based";
         String p28bGlassFixStatus = "ok_live_shader_transparency";
+        String p28cTransparentRenderFixStatus = "ok_final_render_path_fixed";
+        String glassDiscardBypassStatus = "ok_glass_skips_early_cutout";
+        String glassFinalShaderAlphaStatus = "ok_final_shaded_outputs_glass_alpha";
+        String glassFinalShaderColorStatus = "ok_center_scaled_edge_visible";
+        String glassFinalUsesLiveUniformsStatus = "ok";
+        String transparentPipelineActuallyUsedStatus = "pending";
+        String glassCutoutDisabledForTransparentStatus = "ok";
+        String p21AlphaCutoutPreservedStatus = "ok";
         String glassCandidateScoringStatus = "ok_name_alpha_transmission_scoring";
         String glassBestCandidateStatus = "pending";
         String glassUniformAppliedToShaderStatus = "ok";

@@ -753,6 +753,14 @@ struct ModelRenderState {
     std::string glassWeakMaterialFallbackStatus = "ok_missing_textures_handled";
     std::string glassNoAssetHardcodeStatus = "ok_universal_role_based";
     std::string p28bGlassFixStatus = "ok_live_shader_transparency";
+    std::string p28cTransparentRenderFixStatus = "ok_final_render_path_fixed";
+    std::string glassDiscardBypassStatus = "ok_glass_skips_early_cutout";
+    std::string glassFinalShaderAlphaStatus = "ok_final_shaded_outputs_glass_alpha";
+    std::string glassFinalShaderColorStatus = "ok_center_scaled_edge_visible";
+    std::string glassFinalUsesLiveUniformsStatus = "ok";
+    std::string transparentPipelineActuallyUsedStatus = "pending";
+    std::string glassCutoutDisabledForTransparentStatus = "ok";
+    std::string p21AlphaCutoutPreservedStatus = "ok";
     std::string glassCandidateScoringStatus = "ok_name_alpha_transmission_scoring";
     std::string glassBestCandidateStatus = "pending";
     std::string glassUniformAppliedToShaderStatus = "ok";

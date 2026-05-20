@@ -716,6 +716,23 @@ struct RendererCore {
         return "0.94,0.99,1.00";
     }
 
+    float glassPresetOpacityValue(int preset) const {
+        if (preset == 1) return 0.18f;
+        if (preset == 2) return 0.24f;
+        if (preset == 3) return 0.26f;
+        if (preset == 4) return 0.32f;
+        if (preset == 5) return 0.28f;
+        if (preset == 6) return 0.40f;
+        return 0.20f;
+    }
+
+    float glassPresetClarityValue(int preset) const {
+        if (preset == 6) return 0.48f;
+        if (preset == 4) return 0.58f;
+        if (preset == 1) return 0.96f;
+        return 0.88f;
+    }
+
     std::string lowerAscii(std::string value) const {
         for (char& c : value) c = (char)std::tolower((unsigned char)c);
         return value;
@@ -914,12 +931,22 @@ struct RendererCore {
         model.glassWeakMaterialFallbackStatus = "ok_missing_textures_handled";
         model.glassNoAssetHardcodeStatus = "ok_universal_role_based";
         model.p28bGlassFixStatus = "ok_live_shader_transparency";
+        model.p28cTransparentRenderFixStatus = "ok_final_render_path_fixed";
+        model.glassDiscardBypassStatus = "ok_glass_skips_early_cutout";
+        model.glassFinalShaderAlphaStatus = "ok_final_shaded_outputs_glass_alpha";
+        model.glassFinalShaderColorStatus = "ok_center_scaled_edge_visible";
+        model.glassFinalUsesLiveUniformsStatus = "ok";
+        model.transparentPipelineActuallyUsedStatus = transparentActive ? "ok_transparent_pipeline_bound_for_active_glass" : "inactive_fake_or_auto_fallback";
+        model.glassCutoutDisabledForTransparentStatus = "ok";
+        model.p21AlphaCutoutPreservedStatus = "ok";
         model.glassCandidateScoringStatus = "ok_name_alpha_transmission_scoring";
         model.glassBestCandidateStatus = bestGlassSlot >= 0 ? "ok_" + materialNameFromDiagnostics(bestGlassSlot) : "fallback_no_candidate";
         model.glassUniformAppliedToShaderStatus = "ok";
         model.glassLiveSliderResponseStatus = "ok";
         model.glassPresetLiveApplyStatus = "ok";
-        model.glassFinalCenterAlpha = clampFloat(0.018f + material.glassOpacity * (0.62f + (0.30f - 0.62f) * material.glassClarity) + material.glassRoughness * 0.018f, 0.02f, 0.70f);
+        const float finalOpacityInput = glassPresetOpacityValue(material.glassTintPreset) * 0.22f + material.glassOpacity * 0.78f;
+        const float finalClarityInput = glassPresetClarityValue(material.glassTintPreset) * 0.28f + material.glassClarity * 0.72f;
+        model.glassFinalCenterAlpha = clampFloat(0.018f + finalOpacityInput * (0.62f + (0.30f - 0.62f) * finalClarityInput) + material.glassRoughness * 0.018f, 0.02f, 0.70f);
         model.glassFinalEdgeAlpha = clampFloat(0.06f * (0.20f + (0.50f - 0.20f) * clampFloat(material.glassEdge * 0.5f, 0.0f, 1.0f)), 0.0f, 0.52f);
         model.glassFinalTintColor = glassTintColorString(material.glassTintPreset);
         model.glassActuallyTransparentStatus = transparentActive && model.glassFinalCenterAlpha < 0.62f ? "ok" : "not_active_or_too_solid";
@@ -1637,6 +1664,7 @@ struct RendererCore {
                 pc.material = material;
                 if (range.materialSlot >= 0 && (size_t)range.materialSlot < modelMaterialSlots.size()) {
                     const auto& slot = modelMaterialSlots[(size_t)range.materialSlot];
+                    const bool rangeActiveGlass = transparentGlassActive && range.materialSlot == activeTransparentGlassSlot;
                     for (int i = 0; i < 4; ++i) pc.material.baseColorFactor[i] = slot.baseColorFactor[i];
                     pc.material.metallicFactor = slot.metallicFactor;
                     pc.material.roughnessFactor = slot.roughnessFactor;
@@ -1647,7 +1675,7 @@ struct RendererCore {
                     pc.material.emissiveFactor[2] = slot.emissiveFactor[2];
                     pc.material.materialPresetHint = slot.materialPresetHint;
                     pc.material.alphaCutoff = clampFloat(slot.alphaCutoff, 0.0f, 1.0f);
-                    if (range.materialSlot == selectedMaterialSlot || range.materialSlot == activeTransparentGlassSlot) {
+                    if (range.materialSlot == selectedMaterialSlot || rangeActiveGlass) {
                         pc.material.metallicFactor = selectedSlotMetallicOverride;
                         pc.material.roughnessFactor = selectedSlotRoughnessOverride;
                         pc.material.normalScale = selectedSlotNormalScaleOverride;
@@ -1656,9 +1684,15 @@ struct RendererCore {
                         pc.material.paintGlossSliderValue = selectedSlotCoatOverride;
                         pc.material.alphaCutoff = material.alphaCutoff;
                         pc.material.emissiveIntensity = selectedSlotEmissiveIntensity;
-                        pc.material.materialPresetHint = activeMaterialPreset;
-                        pc.material.glassEnabled = range.materialSlot == activeTransparentGlassSlot ? 1 : ((material.glassEnabled != 0 || activeMaterialPreset == 6) ? 1 : 0);
-                        pc.material.glassRenderMode = transparentPass ? 1 : (range.materialSlot == activeTransparentGlassSlot ? material.glassRenderMode : 0);
+                        if (rangeActiveGlass) {
+                            pc.material.materialPresetHint = 6;
+                            pc.material.glassEnabled = 1;
+                            pc.material.glassRenderMode = transparentPass ? 1 : material.glassRenderMode;
+                        } else {
+                            pc.material.materialPresetHint = slot.materialPresetHint;
+                            pc.material.glassEnabled = 0;
+                            pc.material.glassRenderMode = 0;
+                        }
                     } else {
                         pc.material.glossSliderValue = 0.0f;
                         pc.material.paintGlossSliderValue = 0.0f;

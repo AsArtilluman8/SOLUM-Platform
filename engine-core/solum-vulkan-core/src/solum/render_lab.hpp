@@ -199,6 +199,14 @@ struct RenderLabState {
         f << indent << "  \"glassWeakMaterialFallbackStatus\": \"" << escapeJson(model.glassWeakMaterialFallbackStatus) << "\",\n";
         f << indent << "  \"glassNoAssetHardcodeStatus\": \"" << escapeJson(model.glassNoAssetHardcodeStatus) << "\",\n";
         f << indent << "  \"p28bGlassFixStatus\": \"" << escapeJson(model.p28bGlassFixStatus) << "\",\n";
+        f << indent << "  \"p28cTransparentRenderFixStatus\": \"" << escapeJson(model.p28cTransparentRenderFixStatus) << "\",\n";
+        f << indent << "  \"glassDiscardBypassStatus\": \"" << escapeJson(model.glassDiscardBypassStatus) << "\",\n";
+        f << indent << "  \"glassFinalShaderAlphaStatus\": \"" << escapeJson(model.glassFinalShaderAlphaStatus) << "\",\n";
+        f << indent << "  \"glassFinalShaderColorStatus\": \"" << escapeJson(model.glassFinalShaderColorStatus) << "\",\n";
+        f << indent << "  \"glassFinalUsesLiveUniformsStatus\": \"" << escapeJson(model.glassFinalUsesLiveUniformsStatus) << "\",\n";
+        f << indent << "  \"transparentPipelineActuallyUsedStatus\": \"" << escapeJson(model.transparentPipelineActuallyUsedStatus) << "\",\n";
+        f << indent << "  \"glassCutoutDisabledForTransparentStatus\": \"" << escapeJson(model.glassCutoutDisabledForTransparentStatus) << "\",\n";
+        f << indent << "  \"p21AlphaCutoutPreservedStatus\": \"" << escapeJson(model.p21AlphaCutoutPreservedStatus) << "\",\n";
         f << indent << "  \"glassCandidateScoringStatus\": \"" << escapeJson(model.glassCandidateScoringStatus) << "\",\n";
         f << indent << "  \"glassBestCandidateStatus\": \"" << escapeJson(model.glassBestCandidateStatus) << "\",\n";
         f << indent << "  \"glassUniformAppliedToShaderStatus\": \"" << escapeJson(model.glassUniformAppliedToShaderStatus) << "\",\n";

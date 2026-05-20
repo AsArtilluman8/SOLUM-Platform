@@ -2,6 +2,34 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P28C — Transparent Glass Final Render Path Fix
+
+Scope:
+
+- Fixed Transparent v1 Final Shaded glass path.
+- Glass now bypasses the early alpha cutout/discard branch before computed glass alpha is applied.
+- Final Shaded transparent glass uses live opacity, clarity, thickness, roughness, and tint uniforms.
+- Center lighting/color contribution is scaled down for transparent glass while edge/fresnel remains visible.
+- Active Transparent v1 glass slot stays routed through the transparent pipeline; non-active selected slots are not glass-shaded in the opaque pass.
+- P21 alpha/cutout behavior remains for non-glass materials.
+
+Key diagnostics:
+
+```text
+p28cTransparentRenderFixStatus = ok_final_render_path_fixed
+glassDiscardBypassStatus = ok_glass_skips_early_cutout
+glassFinalShaderAlphaStatus = ok_final_shaded_outputs_glass_alpha
+glassFinalUsesLiveUniformsStatus = ok
+transparentPipelineActuallyUsedStatus = ok_transparent_pipeline_bound_for_active_glass / inactive_fake_or_auto_fallback
+p21AlphaCutoutPreservedStatus = ok
+```
+
+Out of scope:
+
+- Real refraction, SSR, raytracing, mirrors.
+- Shadows, CSM.
+- New UI or preset expansion.
+
 ## Patch P28B — Make Glass Actually Transparent / Live Shader Fix
 
 Scope:

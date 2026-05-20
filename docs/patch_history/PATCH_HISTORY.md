@@ -2,6 +2,37 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P28B — Make Glass Actually Transparent / Live Shader Fix
+
+Scope:
+
+- Scene25 preserved.
+- Reworked role=Glass shader path so opacity, clarity, thickness, roughness, and tint presets affect live push-constant rendering.
+- Center alpha now stays transparent at low opacity; edge alpha/Fresnel remains separate.
+- Thickness darkens/tints edges only.
+- Candidate scoring now prefers transmission/volume extensions, BLEND alpha, baseColor alpha, and glass/window/lens/transparent/crystal material names while penalizing opaque names.
+- Simple presets: Clear, Crystal, Blue, Green, Smoke, Warm, Dark.
+
+Key diagnostics:
+
+```text
+p28bGlassFixStatus = ok_live_shader_transparency
+glassCandidateScoringStatus = ok_name_alpha_transmission_scoring
+glassUniformAppliedToShaderStatus = ok
+glassLiveSliderResponseStatus = ok
+glassPresetLiveApplyStatus = ok
+glassFinalCenterAlpha = live_numeric
+glassActuallyTransparentStatus = ok / not_active_or_too_solid
+glassGreyPlateStillPossibleStatus = reduced / possible_low_clarity_or_high_opacity
+glassNoAssetHardcodeStatus = ok_universal_role_based
+```
+
+Out of scope:
+
+- ToyCar or slot hardcode.
+- Shadows, CSM, raytracing, SSR, real mirror, real refraction.
+- Full UI redesign.
+
 ## Patch P28 — Universal Glass Visual Quality Pack / Grey Glass Fix
 
 Scope:

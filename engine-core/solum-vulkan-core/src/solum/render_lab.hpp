@@ -198,6 +198,18 @@ struct RenderLabState {
         f << indent << "  \"glassFallbackMaterialStatus\": \"" << escapeJson(model.glassFallbackMaterialStatus) << "\",\n";
         f << indent << "  \"glassWeakMaterialFallbackStatus\": \"" << escapeJson(model.glassWeakMaterialFallbackStatus) << "\",\n";
         f << indent << "  \"glassNoAssetHardcodeStatus\": \"" << escapeJson(model.glassNoAssetHardcodeStatus) << "\",\n";
+        f << indent << "  \"p28bGlassFixStatus\": \"" << escapeJson(model.p28bGlassFixStatus) << "\",\n";
+        f << indent << "  \"glassCandidateScoringStatus\": \"" << escapeJson(model.glassCandidateScoringStatus) << "\",\n";
+        f << indent << "  \"glassBestCandidateStatus\": \"" << escapeJson(model.glassBestCandidateStatus) << "\",\n";
+        f << indent << "  \"glassUniformAppliedToShaderStatus\": \"" << escapeJson(model.glassUniformAppliedToShaderStatus) << "\",\n";
+        f << indent << "  \"glassLiveSliderResponseStatus\": \"" << escapeJson(model.glassLiveSliderResponseStatus) << "\",\n";
+        f << indent << "  \"glassPresetLiveApplyStatus\": \"" << escapeJson(model.glassPresetLiveApplyStatus) << "\",\n";
+        f << indent << "  \"glassFinalCenterAlpha\": " << model.glassFinalCenterAlpha << ",\n";
+        f << indent << "  \"glassFinalEdgeAlpha\": " << model.glassFinalEdgeAlpha << ",\n";
+        f << indent << "  \"glassFinalTintColor\": \"" << escapeJson(model.glassFinalTintColor) << "\",\n";
+        f << indent << "  \"glassActuallyTransparentStatus\": \"" << escapeJson(model.glassActuallyTransparentStatus) << "\",\n";
+        f << indent << "  \"glassGreyPlateStillPossibleStatus\": \"" << escapeJson(model.glassGreyPlateStillPossibleStatus) << "\",\n";
+        f << indent << "  \"previousSystemsPreservedStatus\": \"" << escapeJson(model.previousSystemsPreservedStatus) << "\",\n";
         f << indent << "  \"glassPresetCount\": " << model.glassPresetCount << ",\n";
         f << indent << "  \"activeGlassPreset\": \"" << escapeJson(model.activeGlassPreset) << "\",\n";
         f << indent << "  \"glassPresetClearStatus\": \"" << escapeJson(model.glassPresetClearStatus) << "\",\n";

@@ -53,6 +53,18 @@ struct RuntimeDiagnostics {
         f << "  \"glassGreyPlateFixStatus\": \"" << escapeJson(model.glassGreyPlateFixStatus) << "\",\n";
         f << "  \"glassWeakMaterialFallbackStatus\": \"" << escapeJson(model.glassWeakMaterialFallbackStatus) << "\",\n";
         f << "  \"glassNoAssetHardcodeStatus\": \"" << escapeJson(model.glassNoAssetHardcodeStatus) << "\",\n";
+        f << "  \"p28bGlassFixStatus\": \"" << escapeJson(model.p28bGlassFixStatus) << "\",\n";
+        f << "  \"glassCandidateScoringStatus\": \"" << escapeJson(model.glassCandidateScoringStatus) << "\",\n";
+        f << "  \"glassBestCandidateStatus\": \"" << escapeJson(model.glassBestCandidateStatus) << "\",\n";
+        f << "  \"glassUniformAppliedToShaderStatus\": \"" << escapeJson(model.glassUniformAppliedToShaderStatus) << "\",\n";
+        f << "  \"glassLiveSliderResponseStatus\": \"" << escapeJson(model.glassLiveSliderResponseStatus) << "\",\n";
+        f << "  \"glassPresetLiveApplyStatus\": \"" << escapeJson(model.glassPresetLiveApplyStatus) << "\",\n";
+        f << "  \"glassFinalCenterAlpha\": " << model.glassFinalCenterAlpha << ",\n";
+        f << "  \"glassFinalEdgeAlpha\": " << model.glassFinalEdgeAlpha << ",\n";
+        f << "  \"glassFinalTintColor\": \"" << escapeJson(model.glassFinalTintColor) << "\",\n";
+        f << "  \"glassActuallyTransparentStatus\": \"" << escapeJson(model.glassActuallyTransparentStatus) << "\",\n";
+        f << "  \"glassGreyPlateStillPossibleStatus\": \"" << escapeJson(model.glassGreyPlateStillPossibleStatus) << "\",\n";
+        f << "  \"previousSystemsPreservedStatus\": \"" << escapeJson(model.previousSystemsPreservedStatus) << "\",\n";
         f << "  \"glassOpaqueAlphaModeOverrideStatus\": \"" << escapeJson(model.glassOpaqueAlphaModeOverrideStatus) << "\",\n";
         f << "  \"p28VisualGlassStatus\": \"" << escapeJson(model.p28VisualGlassStatus) << "\",\n";
         f << "  \"glassClarityStatus\": \"" << escapeJson(model.glassClarityStatus) << "\",\n";

@@ -190,7 +190,7 @@ Make diagnostics honest:
 - Add `materialSlotDiagnosticsTruth = metadata_only_not_shader_input`.
 - Add `debugViewsAreVisualProof = false`.
 - Add `pixelReadbackStatus = not_implemented`.
-- Add `glassRoute = fake_safe | transparent_v1 | auto_fallback`.
+- Add `glassRoute = disabled | fake_safe | transparent_v1 | auto_transparent | auto_fallback_fake`.
 - Add `glassRouteReason` with exact branch reason.
 
 ## 8. Required Glass Proof Plan — P29C
@@ -216,3 +216,59 @@ After P29B cleanup:
 - Debug views are diagnostics, not final screen proof.
 - Selected slot and active transparent glass slot list must stay separate in naming and diagnostics.
 - Any CPU estimate must be named as an estimate.
+
+## 10. P29B Cleanup Result
+
+P29B made diagnostics naming honest without changing the glass shader visual formula.
+
+Added/clarified truth markers:
+
+- `materialSlotDiagnosticsTruth = metadata_only_not_shader_input`
+- `shaderTruthSource = push_constants_per_draw`
+- `debugViewsAreVisualProof = false`
+- `pixelReadbackStatus = not_implemented`
+- `visualVerificationStatus = manual_required_no_pixel_readback`
+
+Legacy material-slot glass fields are explicitly legacy/report metadata:
+
+- `legacyGlassOpacityApplied`
+- `legacyGlassTintApplied`
+- `legacyGlassRoughnessApplied`
+- `legacyGlassMaterialReportNotShaderTruth = yes`
+
+CPU alpha diagnostics are marked as estimates, not pixel proof:
+
+- `glassCpuEstimateStatus = estimate_only_not_pixel_proof`
+- `glassShaderFinalAlphaReadbackStatus = not_available_no_pixel_readback`
+- `glassCpuEstimatedCenterAlpha`
+- `glassCpuEstimatedEdgeAlpha`
+
+Selected slot, active glass slots, and inspected diagnostic slot are separated:
+
+- `selectedSlotPurpose = ui_edit_target`
+- `activeGlassSlotsPurpose = transparent_render_routing`
+- `debugInspectedSlotPurpose = diagnostics_display_target`
+- `debugInspectedMaterialSlotMode = currently_selected_slot_alias`
+- `selectedVsActiveGlassSlotStatus = separate_concepts`
+
+Render route diagnostics now report route state, not visual proof:
+
+- `glassRoute = disabled | fake_safe | transparent_v1 | auto_transparent | auto_fallback_fake`
+- `glassRouteReason = exact branch reason`
+- `glassVisualBranchActive = yes/no`
+- `glassTransparentPassActive = yes/no`
+- `glassFakeFallbackActive = yes/no`
+- `glassRouteIsVisualProof = false`
+
+Preset diagnostics now distinguish preset role from shader truth:
+
+- `materialPresetRole = fills_live_sliders`
+- `materialPresetIsShaderTruth = false`
+- `glassLiveControlsAfterPreset = true`
+- `glassOpacityTruth = live_push_constant`
+- `glassClarityTruth = live_push_constant`
+- `glassThicknessTruth = live_push_constant`
+- `glassRoughnessTruth = live_push_constant`
+- `glassTintPresetShaderUse = tint_lookup_only`
+
+P29B does not prove final visible glass pixels. P29C remains required for pixel/readback/manual proof.

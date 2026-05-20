@@ -2,6 +2,54 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P29B — Material Runtime Truth Cleanup
+
+Scope:
+
+- Marked `materialSlotDiagnostics` as metadata/report only:
+  `materialSlotDiagnosticsTruth = metadata_only_not_shader_input`.
+- Added shader truth marker:
+  `shaderTruthSource = push_constants_per_draw`.
+- Marked debug views and route diagnostics as not visual proof:
+  `debugViewsAreVisualProof = false`, `glassRouteIsVisualProof = false`.
+- Marked pixel/readback state:
+  `pixelReadbackStatus = not_implemented`,
+  `visualVerificationStatus = manual_required_no_pixel_readback`.
+- Kept legacy slot glass fields legacy-prefixed and explicitly marked:
+  `legacyGlassOpacityApplied`, `legacyGlassTintApplied`,
+  `legacyGlassRoughnessApplied`,
+  `legacyGlassMaterialReportNotShaderTruth = yes`.
+- Added CPU estimate labels:
+  `glassCpuEstimateStatus = estimate_only_not_pixel_proof`,
+  `glassShaderFinalAlphaReadbackStatus = not_available_no_pixel_readback`,
+  `glassCpuEstimatedCenterAlpha`, `glassCpuEstimatedEdgeAlpha`.
+- Split selected/edit/active/diagnostic meanings:
+  `selectedSlotPurpose = ui_edit_target`,
+  `activeGlassSlotsPurpose = transparent_render_routing`,
+  `debugInspectedSlotPurpose = diagnostics_display_target`,
+  `debugInspectedMaterialSlotMode = currently_selected_slot_alias`,
+  `selectedVsActiveGlassSlotStatus = separate_concepts`.
+- Added route truth:
+  `glassRoute`, `glassRouteReason`, `glassVisualBranchActive`,
+  `glassTransparentPassActive`, `glassFakeFallbackActive`.
+- Clarified preset role:
+  `materialPresetRole = fills_live_sliders`,
+  `materialPresetIsShaderTruth = false`,
+  live glass controls remain `live_push_constant`.
+
+Safety:
+
+```text
+shader visual formula changed = no
+new fake glass mode added = no
+UI sliders/buttons/redesign added = no
+visual proof claimed = no
+```
+
+Deferred:
+
+- P29C final alpha/RGB/pixel or manual screenshot proof.
+
 ## Patch P29A — Material Runtime Truth Audit
 
 Scope:

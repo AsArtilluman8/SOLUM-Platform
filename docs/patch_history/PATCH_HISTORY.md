@@ -2,6 +2,37 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P28D — Glass Foundation Repair
+
+Scope:
+
+- Repaired Transparent v1 Final Shaded glass formula so center color/ambient/diffuse contribution is strongly reduced and edge/fresnel/glint stays visible.
+- Transparent glass continues to bypass early alpha cutoff/discard; non-glass P21 alpha/cutout path is preserved.
+- Transparent pipeline keeps blending `SRC_ALPHA / ONE_MINUS_SRC_ALPHA`, depth write disabled, depth test enabled.
+- Transparent pipeline depth compare is now `LESS_OR_EQUAL` only for the transparent pipeline to reduce equal-depth glass shell rejection.
+- Glass candidate scoring now uses material-slot metadata/name only and penalizes opaque/body/paint/metal/fabric/rubber/base/interior material names.
+- Material UI now distinguishes Selected Slot from Active Glass Slot with 1-based user-facing slot numbering and explicit apply/render-path labels.
+- Diagnostics now report state/pipeline/CPU estimates honestly and mark visual result as not visually verified without GPU readback.
+- Camera/control hot path throttles inspector diagnostics rebuilds while preserving live FPS and debug export.
+
+Key diagnostics:
+
+```text
+p28dGlassFoundationRepairStatus = active_formula_repaired_no_pixel_readback
+glassFinalShadedFormulaStatus = shader_branch_center_scaled_edge_retained / inactive_or_fake_fallback
+transparentPipelineActuallyUsedStatus = pipeline_bound / inactive_fake_or_auto_fallback
+glassDiagnosticsHonestyStatus = state_reported_no_pixel_readback
+glassVisualVerificationStatus = not_visually_verified
+selectedVsActiveGlassSlotStatus = same_slot / different_selected_slot_active_glass_slot / no_active_glass_slot
+cameraHotPathDiagnosticsStatus = throttled_no_file_write_while_moving
+```
+
+Out of scope:
+
+- Real refraction, SSR, raytracing, mirrors.
+- Shadows, CSM.
+- New scenes or broad debug-view expansion.
+
 ## Patch P28C — Transparent Glass Final Render Path Fix
 
 Scope:

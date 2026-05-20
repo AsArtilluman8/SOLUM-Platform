@@ -418,13 +418,15 @@ void main() {
     float glassSurface = clamp(glassCenterAlpha + edgeAlpha * 0.58, 0.035, 0.78);
     float transparentGlassAlpha = clamp(glassCenterAlpha + edgeAlpha + glassThickness * 0.055, 0.025, 0.82);
     if (glassActive) {
-        vec3 clearCenter = mix(vec3(0.92, 0.985, 1.0), glassTint, pc.glassTintPreset == 0 || pc.glassTintPreset == 1 ? 0.05 : (pc.glassTintPreset == 6 ? 0.18 : 0.13));
-        vec3 thicknessTint = mix(glassTint * mix(0.88, 0.54, glassThicknessInput), glassTint * 1.12, glassFresnel);
-        diffuseLight *= glassCenterAlpha * mix(0.08, 0.22, 1.0 - glassClarityInput);
-        specularLight = specularLight * 0.24 + glassReflection * mix(1.06, 1.34, glassClarityInput);
-        specularLight += thicknessTint * glassFresnel * clamp(glassEdgeInput, 0.0, 2.0) * mix(0.14, 0.34, glassThicknessInput);
-        baseColor = mix(clearCenter, thicknessTint, glassThickness * 0.34);
-        baseColor *= mix(1.0, 0.78, glassThickness * glassThicknessInput);
+        vec3 clearCenter = mix(vec3(0.94, 0.99, 1.0), glassTint, pc.glassTintPreset == 0 || pc.glassTintPreset == 1 ? 0.025 : (pc.glassTintPreset == 6 ? 0.16 : 0.09));
+        vec3 thicknessTint = mix(glassTint * mix(0.82, 0.48, glassThicknessInput), glassTint * 1.10, glassFresnel);
+        float clearCenterEnergy = transparentGlassRequested ? mix(0.018, 0.105, glassCenterAlpha) * mix(0.26, 1.0, 1.0 - glassClarityInput) : glassSurface;
+        float centerTintEnergy = transparentGlassRequested ? glassCenterAlpha * mix(0.018, 0.105, 1.0 - glassClarityInput) : glassThickness * 0.22;
+        diffuseLight *= transparentGlassRequested ? clearCenterEnergy : glassCenterAlpha * mix(0.08, 0.22, 1.0 - glassClarityInput);
+        specularLight = specularLight * (transparentGlassRequested ? 0.08 : 0.24) + glassReflection * mix(1.04, 1.34, glassClarityInput);
+        specularLight += thicknessTint * glassFresnel * clamp(glassEdgeInput, 0.0, 2.0) * mix(0.16, 0.38, glassThicknessInput);
+        baseColor = mix(clearCenter, thicknessTint, transparentGlassRequested ? centerTintEnergy : glassThickness * 0.34);
+        baseColor *= transparentGlassRequested ? mix(0.08, 0.32, glassCenterAlpha) : mix(1.0, 0.78, glassThickness * glassThicknessInput);
         if (transparentGlassRequested) alpha = transparentGlassAlpha;
     }
     specularLight *= mix(1.0, 1.36, paintTarget);
@@ -464,8 +466,13 @@ void main() {
         return;
     }
     vec3 ambient = baseColor * (1.0 - metallic * 0.75) * mix(ambientColor * max(pc.ambientIntensity, pc.ambientFloor), iblDiffuseColor, 0.65);
-    if (glassActive) ambient *= transparentGlassRequested ? mix(0.04, 0.28, glassCenterAlpha) : mix(0.18, 0.56, glassOpacity);
+    if (glassActive) ambient *= transparentGlassRequested ? mix(0.012, 0.075, glassCenterAlpha) * mix(0.45, 1.0, 1.0 - glassClarityInput) : mix(0.18, 0.56, glassOpacity);
     vec3 rgb = (diffuseLight + ambient) * ao + specularLight + emissiveColor;
+    if (transparentGlassRequested) {
+        vec3 edgeTint = mix(vec3(1.0), glassTint, pc.glassTintPreset == 0 || pc.glassTintPreset == 1 ? 0.04 : 0.18);
+        vec3 edgeGlint = edgeTint * glassFresnel * clamp(glassEdgeInput, 0.0, 2.0) * mix(0.10, 0.32, glassClarityInput);
+        rgb = rgb * mix(0.42, 0.72, glassCenterAlpha) + edgeGlint;
+    }
     float contactMask = contactGroundingMask(inLocalPosition, n);
     if (pc.activeDebugView == 13) {
         fragColor = vec4(vec3(contactMask * clamp(pc.contactShadowIntensity / 1.5, 0.0, 1.0)), alpha);

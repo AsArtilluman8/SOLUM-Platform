@@ -752,6 +752,9 @@ struct ModelRenderState {
     std::string glassFallbackMaterialStatus = "ok_clean_defaults";
     std::string glassWeakMaterialFallbackStatus = "ok_missing_textures_handled";
     std::string glassNoAssetHardcodeStatus = "ok_universal_role_based";
+    std::string p28dGlassFoundationRepairStatus = "pending";
+    std::string glassVisualTruthStatus = "not_visually_verified";
+    std::string glassFinalShadedFormulaStatus = "pending";
     std::string p28bGlassFixStatus = "ok_live_shader_transparency";
     std::string p28cTransparentRenderFixStatus = "ok_final_render_path_fixed";
     std::string glassDiscardBypassStatus = "ok_glass_skips_early_cutout";
@@ -772,6 +775,13 @@ struct ModelRenderState {
     std::string glassActuallyTransparentStatus = "pending";
     std::string glassGreyPlateStillPossibleStatus = "unknown_until_runtime";
     std::string previousSystemsPreservedStatus = "ok";
+    std::string selectedSlotDisplay = "none";
+    std::string activeGlassSlotDisplay = "none";
+    std::string glassApplyTargetStatus = "inactive";
+    std::string selectedVsActiveGlassSlotStatus = "inactive";
+    std::string glassDiagnosticsHonestyStatus = "state_reported_no_pixel_readback";
+    std::string glassVisualVerificationStatus = "not_visually_verified";
+    std::string cameraHotPathDiagnosticsStatus = "not_throttled";
     int glassPresetCount = 7;
     std::string glassPresetClearStatus = "ok_clearer_bright_center";
     std::string glassPresetSmokeStatus = "ok_smoke_tinted_transparent";

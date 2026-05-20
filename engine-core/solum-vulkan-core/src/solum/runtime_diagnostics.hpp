@@ -53,6 +53,9 @@ struct RuntimeDiagnostics {
         f << "  \"glassGreyPlateFixStatus\": \"" << escapeJson(model.glassGreyPlateFixStatus) << "\",\n";
         f << "  \"glassWeakMaterialFallbackStatus\": \"" << escapeJson(model.glassWeakMaterialFallbackStatus) << "\",\n";
         f << "  \"glassNoAssetHardcodeStatus\": \"" << escapeJson(model.glassNoAssetHardcodeStatus) << "\",\n";
+        f << "  \"p28dGlassFoundationRepairStatus\": \"" << escapeJson(model.p28dGlassFoundationRepairStatus) << "\",\n";
+        f << "  \"glassVisualTruthStatus\": \"" << escapeJson(model.glassVisualTruthStatus) << "\",\n";
+        f << "  \"glassFinalShadedFormulaStatus\": \"" << escapeJson(model.glassFinalShadedFormulaStatus) << "\",\n";
         f << "  \"p28bGlassFixStatus\": \"" << escapeJson(model.p28bGlassFixStatus) << "\",\n";
         f << "  \"p28cTransparentRenderFixStatus\": \"" << escapeJson(model.p28cTransparentRenderFixStatus) << "\",\n";
         f << "  \"glassDiscardBypassStatus\": \"" << escapeJson(model.glassDiscardBypassStatus) << "\",\n";
@@ -62,6 +65,13 @@ struct RuntimeDiagnostics {
         f << "  \"transparentPipelineActuallyUsedStatus\": \"" << escapeJson(model.transparentPipelineActuallyUsedStatus) << "\",\n";
         f << "  \"glassCutoutDisabledForTransparentStatus\": \"" << escapeJson(model.glassCutoutDisabledForTransparentStatus) << "\",\n";
         f << "  \"p21AlphaCutoutPreservedStatus\": \"" << escapeJson(model.p21AlphaCutoutPreservedStatus) << "\",\n";
+        f << "  \"selectedSlotDisplay\": \"" << escapeJson(model.selectedSlotDisplay) << "\",\n";
+        f << "  \"activeGlassSlotDisplay\": \"" << escapeJson(model.activeGlassSlotDisplay) << "\",\n";
+        f << "  \"glassApplyTargetStatus\": \"" << escapeJson(model.glassApplyTargetStatus) << "\",\n";
+        f << "  \"selectedVsActiveGlassSlotStatus\": \"" << escapeJson(model.selectedVsActiveGlassSlotStatus) << "\",\n";
+        f << "  \"glassDiagnosticsHonestyStatus\": \"" << escapeJson(model.glassDiagnosticsHonestyStatus) << "\",\n";
+        f << "  \"glassVisualVerificationStatus\": \"" << escapeJson(model.glassVisualVerificationStatus) << "\",\n";
+        f << "  \"cameraHotPathDiagnosticsStatus\": \"" << escapeJson(model.cameraHotPathDiagnosticsStatus) << "\",\n";
         f << "  \"glassCandidateScoringStatus\": \"" << escapeJson(model.glassCandidateScoringStatus) << "\",\n";
         f << "  \"glassBestCandidateStatus\": \"" << escapeJson(model.glassBestCandidateStatus) << "\",\n";
         f << "  \"glassUniformAppliedToShaderStatus\": \"" << escapeJson(model.glassUniformAppliedToShaderStatus) << "\",\n";

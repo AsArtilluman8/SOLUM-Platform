@@ -198,6 +198,9 @@ struct RenderLabState {
         f << indent << "  \"glassFallbackMaterialStatus\": \"" << escapeJson(model.glassFallbackMaterialStatus) << "\",\n";
         f << indent << "  \"glassWeakMaterialFallbackStatus\": \"" << escapeJson(model.glassWeakMaterialFallbackStatus) << "\",\n";
         f << indent << "  \"glassNoAssetHardcodeStatus\": \"" << escapeJson(model.glassNoAssetHardcodeStatus) << "\",\n";
+        f << indent << "  \"p28dGlassFoundationRepairStatus\": \"" << escapeJson(model.p28dGlassFoundationRepairStatus) << "\",\n";
+        f << indent << "  \"glassVisualTruthStatus\": \"" << escapeJson(model.glassVisualTruthStatus) << "\",\n";
+        f << indent << "  \"glassFinalShadedFormulaStatus\": \"" << escapeJson(model.glassFinalShadedFormulaStatus) << "\",\n";
         f << indent << "  \"p28bGlassFixStatus\": \"" << escapeJson(model.p28bGlassFixStatus) << "\",\n";
         f << indent << "  \"p28cTransparentRenderFixStatus\": \"" << escapeJson(model.p28cTransparentRenderFixStatus) << "\",\n";
         f << indent << "  \"glassDiscardBypassStatus\": \"" << escapeJson(model.glassDiscardBypassStatus) << "\",\n";
@@ -218,6 +221,13 @@ struct RenderLabState {
         f << indent << "  \"glassActuallyTransparentStatus\": \"" << escapeJson(model.glassActuallyTransparentStatus) << "\",\n";
         f << indent << "  \"glassGreyPlateStillPossibleStatus\": \"" << escapeJson(model.glassGreyPlateStillPossibleStatus) << "\",\n";
         f << indent << "  \"previousSystemsPreservedStatus\": \"" << escapeJson(model.previousSystemsPreservedStatus) << "\",\n";
+        f << indent << "  \"selectedSlotDisplay\": \"" << escapeJson(model.selectedSlotDisplay) << "\",\n";
+        f << indent << "  \"activeGlassSlotDisplay\": \"" << escapeJson(model.activeGlassSlotDisplay) << "\",\n";
+        f << indent << "  \"glassApplyTargetStatus\": \"" << escapeJson(model.glassApplyTargetStatus) << "\",\n";
+        f << indent << "  \"selectedVsActiveGlassSlotStatus\": \"" << escapeJson(model.selectedVsActiveGlassSlotStatus) << "\",\n";
+        f << indent << "  \"glassDiagnosticsHonestyStatus\": \"" << escapeJson(model.glassDiagnosticsHonestyStatus) << "\",\n";
+        f << indent << "  \"glassVisualVerificationStatus\": \"" << escapeJson(model.glassVisualVerificationStatus) << "\",\n";
+        f << indent << "  \"cameraHotPathDiagnosticsStatus\": \"" << escapeJson(model.cameraHotPathDiagnosticsStatus) << "\",\n";
         f << indent << "  \"glassPresetCount\": " << model.glassPresetCount << ",\n";
         f << indent << "  \"activeGlassPreset\": \"" << escapeJson(model.activeGlassPreset) << "\",\n";
         f << indent << "  \"glassPresetClearStatus\": \"" << escapeJson(model.glassPresetClearStatus) << "\",\n";

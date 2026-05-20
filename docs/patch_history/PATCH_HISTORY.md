@@ -2,6 +2,33 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P29A — Material Runtime Truth Audit
+
+Scope:
+
+- Added `docs/MATERIAL_RUNTIME_TRUTH_AUDIT.md`.
+- Mapped material/glass truth flow:
+  UI -> Java -> JNI -> C++ runtime state -> PushConstants -> Shader -> Diagnostics.
+- Audited `glassEnabled`, render mode, opacity, tint, clarity, thickness, roughness, edge, selected slot, active glass slots, material hints, alpha, and material slot diagnostics.
+- Listed conflicts between live sliders, presets, selected-slot overrides, active glass slot routing, fake fallback, CPU diagnostics, shader debug views, and legacy material reports.
+- Added P29B cleanup plan and P29C proof plan.
+
+Safety:
+
+```text
+shader visual formula changed = no
+new fake glass mode added = no
+render pass logic changed = no
+diagnostics behavior changed = no
+materialSlotDiagnostics treated as shader truth = no
+```
+
+Deferred:
+
+- P29B cleanup/rename of legacy fields.
+- P29C glass proof path with final alpha/RGB proof.
+- Pixel readback/manual Android visual proof.
+
 ## Patch P28E — True Glass Material Path Fix
 
 Scope:

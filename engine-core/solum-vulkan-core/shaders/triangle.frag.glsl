@@ -419,13 +419,15 @@ void main() {
     float glassLayerCount = clamp(float(max(pc.activeGlassSlotCount, 1)), 1.0, 4.0);
     float glassLayerComp = inversesqrt(glassLayerCount);
     float rimOnly = clamp(glassFresnelBase * clamp(glassEdgeInput, 0.0, 2.0), 0.0, 1.0);
-    float edgeAlpha = clamp(rimOnly * (0.16 + 0.18 * glassThicknessInput), 0.0, 0.40);
-    float centerAlpha = clamp(glassOpacity * mix(0.10, 0.32, 1.0 - glassClarityInput), 0.0, 0.36);
-    centerAlpha *= glassLayerComp;
+    float proofOpacity = glassOpacity;
+    float centerAlpha = clamp(proofOpacity * mix(0.18, 0.30, 1.0 - glassClarityInput), 0.0, 0.24);
+    centerAlpha *= mix(0.92, 1.0, glassLayerComp);
+    float edgeAlpha = clamp(0.08 + rimOnly * (0.10 + 0.12 * glassThicknessInput) + glassThicknessInput * 0.025, 0.08, 0.32);
     edgeAlpha *= mix(0.75, 1.0, glassLayerComp);
     float glassSurface = clamp(glassCenterAlpha + edgeAlpha * 0.58, 0.0, 0.88);
-    float transparentGlassAlpha = transparentGlassRequested ? clamp(centerAlpha + edgeAlpha, 0.02, 0.55) : clamp(glassCenterAlpha, 0.0, 0.96);
+    float transparentGlassAlpha = transparentGlassRequested ? clamp(max(centerAlpha, edgeAlpha), 0.0, 0.38) : clamp(glassCenterAlpha, 0.0, 0.96);
     vec3 transparentGlassRgb = vec3(0.0);
+    float tintStrength = pc.glassTintPreset == 0 || pc.glassTintPreset == 1 ? 0.025 : (pc.glassTintPreset == 6 ? 0.11 : (pc.glassTintPreset == 4 ? 0.09 : 0.06));
     if (glassActive) {
         vec3 hazeColor = mix(glassTint, vec3(luminance(glassTint)), 0.65);
         vec3 centerTint = mix(glassTint, hazeColor, clamp(1.0 - glassClarityInput, 0.0, 1.0));
@@ -438,13 +440,12 @@ void main() {
         baseColor = mix(vec3(0.0), centerTint, centerTintEnergy);
         baseColor += thicknessTint * glassThickness * glassFresnel * 0.18;
         if (transparentGlassRequested) {
-            float tintStrength = pc.glassTintPreset == 0 || pc.glassTintPreset == 1 ? 0.05 : (pc.glassTintPreset == 6 ? 0.22 : (pc.glassTintPreset == 4 ? 0.18 : 0.12));
-            vec3 edgeTint = mix(vec3(1.0), glassTint, tintStrength * 1.25);
-            vec3 glassCenterRgb = glassTint * centerAlpha * tintStrength;
-            vec3 glassEdgeRgb = edgeTint * edgeAlpha * mix(0.72, 1.18, glassClarityInput);
-            vec3 glassThicknessEdge = glassTint * rimOnly * glassThicknessInput * 0.10;
-            vec3 frostHaze = mix(glassTint, vec3(0.86), 0.72) * min(0.08 * glassOpacity * (1.0 - glassClarityInput), 0.08);
-            vec3 specGlint = glassReflection * mix(0.20, 0.54, glassClarityInput) + edgeTint * rimOnly * mix(0.10, 0.24, glassClarityInput);
+            vec3 edgeTint = mix(vec3(1.0), glassTint, tintStrength);
+            vec3 glassCenterRgb = glassTint * centerAlpha * tintStrength * 0.28;
+            vec3 glassEdgeRgb = edgeTint * edgeAlpha * mix(0.34, 0.62, glassClarityInput);
+            vec3 glassThicknessEdge = glassTint * rimOnly * glassThicknessInput * tintStrength * 0.34;
+            vec3 frostHaze = mix(glassTint, vec3(0.88), 0.80) * min(0.035 * proofOpacity * (1.0 - glassClarityInput), 0.035);
+            vec3 specGlint = glassReflection * mix(0.12, 0.34, glassClarityInput) + edgeTint * rimOnly * mix(0.06, 0.16, glassClarityInput);
             transparentGlassRgb = (glassCenterRgb + glassEdgeRgb + glassThicknessEdge + frostHaze + specGlint) * glassLayerComp;
         }
         if (transparentGlassRequested) alpha = transparentGlassAlpha;
@@ -703,7 +704,7 @@ void main() {
         return;
     }
     if (pc.activeDebugView == 65) {
-        fragColor = vec4(vec3(glassActive ? transparentGlassAlpha : 1.0), 1.0);
+        fragColor = vec4(vec3(transparentGlassRequested ? transparentGlassAlpha : 0.0), 1.0);
         return;
     }
     if (pc.activeDebugView == 66) {
@@ -739,7 +740,7 @@ void main() {
         return;
     }
     if (pc.activeDebugView == 74) {
-        fragColor = vec4(vec3(glassCenterAlpha), 1.0);
+        fragColor = vec4(vec3(transparentGlassRequested ? centerAlpha : 0.0), 1.0);
         return;
     }
     if (pc.activeDebugView == 75) {
@@ -759,7 +760,7 @@ void main() {
         return;
     }
     if (pc.activeDebugView == 79) {
-        fragColor = vec4(toneMap((baseColor * glassSurface + glassReflection) * pc.exposureValue), 1.0);
+        fragColor = vec4(toneMap(transparentGlassRequested ? transparentGlassRgb * pc.exposureValue : (baseColor * glassSurface + glassReflection) * pc.exposureValue), 1.0);
         return;
     }
     rgb *= 1.0 - contactMask * clamp(pc.contactShadowIntensity, 0.0, 1.5) * 0.22;

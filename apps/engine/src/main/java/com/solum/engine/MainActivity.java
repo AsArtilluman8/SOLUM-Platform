@@ -1917,8 +1917,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.glassUniformAppliedToShaderStatus = transparentActive ? "reported_by_push_constants" : "inactive";
         modelState.glassLiveSliderResponseStatus = transparentActive ? "reported_by_ui_and_push_constants" : "inactive";
         modelState.glassPresetLiveApplyStatus = transparentActive ? "reported_by_ui_and_push_constants" : "inactive";
-        modelState.glassCpuEstimatedCenterAlpha = clamp(glassOpacity, 0.0f, 1.0f);
-        modelState.glassCpuEstimatedEdgeAlpha = clamp(0.06f + glassEdge * 0.20f + glassThickness * 0.08f, 0.06f, 0.58f);
+        modelState.glassCpuEstimatedCenterAlpha = clamp(glassOpacity * (0.18f + (0.30f - 0.18f) * (1.0f - glassClarity)), 0.0f, 0.24f);
+        modelState.glassCpuEstimatedEdgeAlpha = clamp(0.08f + 0.10f + 0.12f * glassThickness + glassThickness * 0.025f, 0.08f, 0.32f);
         modelState.glassFinalCenterAlpha = modelState.glassCpuEstimatedCenterAlpha;
         modelState.glassFinalEdgeAlpha = modelState.glassCpuEstimatedEdgeAlpha;
         modelState.glassFinalTintColor = glassTintColorStatus(glassTintPresetIndex);
@@ -2069,11 +2069,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.glassCpuGpuMismatchRisk = transparentActive ? "medium_no_pixel_readback" : "low_inactive";
         float activeLayerCount = clamp((float)Math.max(1, activeGlassSlots.size()), 1.0f, 4.0f);
         float layerComp = (float)(1.0 / Math.sqrt(activeLayerCount));
-        float effectiveTintStrength = glassTintPresetIndex == 0 || glassTintPresetIndex == 1 ? 0.05f : (glassTintPresetIndex == 6 ? 0.22f : (glassTintPresetIndex == 4 ? 0.18f : 0.12f));
-        float effectiveCenterAlpha = clamp(glassOpacity * (0.10f + (0.32f - 0.10f) * (1.0f - glassClarity)), 0.0f, 0.36f) * layerComp;
-        float effectiveEdgeAlpha = clamp((0.06f + glassEdge * 0.08f) * (0.16f + 0.18f * glassThickness), 0.0f, 0.40f) * (0.75f + (1.0f - 0.75f) * layerComp);
+        float effectiveTintStrength = glassTintPresetIndex == 0 || glassTintPresetIndex == 1 ? 0.025f : (glassTintPresetIndex == 6 ? 0.11f : (glassTintPresetIndex == 4 ? 0.09f : 0.06f));
+        float effectiveCenterAlpha = clamp(glassOpacity * (0.18f + (0.30f - 0.18f) * (1.0f - glassClarity)), 0.0f, 0.24f) * (0.92f + (1.0f - 0.92f) * layerComp);
+        float effectiveEdgeAlpha = clamp(0.08f + 1.0f * (0.10f + 0.12f * glassThickness) + glassThickness * 0.025f, 0.08f, 0.32f) * (0.75f + (1.0f - 0.75f) * layerComp);
+        float effectiveFinalAlpha = transparentActive ? clamp(Math.max(effectiveCenterAlpha, effectiveEdgeAlpha), 0.0f, 0.38f) : 0.0f;
         modelState.glassRuntimeTruthSource = "live_push_constants";
-        modelState.glassVisualFormulaVersion = "P28I_light_center_visible_edge";
+        modelState.glassVisualFormulaVersion = "P29C_clear_center_visible_edge";
         modelState.glassEffectiveCenterAlpha = effectiveCenterAlpha;
         modelState.glassEffectiveEdgeAlpha = effectiveEdgeAlpha;
         modelState.glassEffectiveLayerCompensation = layerComp;
@@ -2082,6 +2083,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.legacyGlassMaterialReportNotShaderTruth = "yes";
         modelState.glassCpuEstimatedCenterAlpha = effectiveCenterAlpha;
         modelState.glassCpuEstimatedEdgeAlpha = effectiveEdgeAlpha;
+        modelState.glassProofMode = "transparent_v1_shader_final";
+        modelState.shaderFinalGlassCenterAlpha = transparentActive ? effectiveCenterAlpha : 0.0f;
+        modelState.shaderFinalGlassEdgeAlpha = transparentActive ? effectiveEdgeAlpha : 0.0f;
+        modelState.shaderFinalGlassFinalAlpha = effectiveFinalAlpha;
+        modelState.shaderFinalGlassTintStrength = transparentActive ? effectiveTintStrength : 0.0f;
+        modelState.shaderFinalGlassRgbMode = "clear_center_visible_edge";
+        modelState.shaderFinalGlassUsesBaseColorFill = "false";
+        modelState.shaderFinalGlassCpuMirrorStatus = "mirrors_shader_formula_not_pixel_readback";
         modelState.glassFinalCenterAlpha = modelState.glassCpuEstimatedCenterAlpha;
         modelState.glassFinalEdgeAlpha = modelState.glassCpuEstimatedEdgeAlpha;
         modelState.glassRoute = glassRouteValue;
@@ -2428,7 +2437,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 62) return "Clearcoat Polish";
         if (index == 63) return "Paint Reflection";
         if (index == 64) return "Transparent Glass Mask";
-        if (index == 65) return "Transparent Glass Alpha";
+        if (index == 65) return "Shader Final Glass Alpha";
         if (index == 66) return "Transparent Glass Draw Order";
         if (index == 67) return "Transparent Glass Fallback";
         if (index == 68) return "Transparent Glass Safety";
@@ -2437,7 +2446,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 71) return "Active Glass Slot";
         if (index == 72) return "Transparent Routing";
         if (index == 73) return "Wrong Slot Guard";
-        if (index == 74) return "Glass Center Alpha";
+        if (index == 74) return "Shader Glass Center Alpha";
         if (index == 75) return "Glass Edge Reflection";
         if (index == 76) return "Glass Thickness";
         if (index == 77) return "Glass Clarity";
@@ -4317,6 +4326,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"glassShaderFinalAlphaReadbackStatus\": \"" + escape(jsonStringField(renderLab, "glassShaderFinalAlphaReadbackStatus", modelState.glassShaderFinalAlphaReadbackStatus)) + "\",\n"
             + indent + "\"glassCpuEstimatedCenterAlpha\": " + jsonNumberField(renderLab, "glassCpuEstimatedCenterAlpha", jsonFloat(modelState.glassCpuEstimatedCenterAlpha)) + ",\n"
             + indent + "\"glassCpuEstimatedEdgeAlpha\": " + jsonNumberField(renderLab, "glassCpuEstimatedEdgeAlpha", jsonFloat(modelState.glassCpuEstimatedEdgeAlpha)) + ",\n"
+            + indent + "\"glassProofMode\": \"" + escape(jsonStringField(renderLab, "glassProofMode", modelState.glassProofMode)) + "\",\n"
+            + indent + "\"shaderFinalGlassCenterAlpha\": " + jsonNumberField(renderLab, "shaderFinalGlassCenterAlpha", jsonFloat(modelState.shaderFinalGlassCenterAlpha)) + ",\n"
+            + indent + "\"shaderFinalGlassEdgeAlpha\": " + jsonNumberField(renderLab, "shaderFinalGlassEdgeAlpha", jsonFloat(modelState.shaderFinalGlassEdgeAlpha)) + ",\n"
+            + indent + "\"shaderFinalGlassFinalAlpha\": " + jsonNumberField(renderLab, "shaderFinalGlassFinalAlpha", jsonFloat(modelState.shaderFinalGlassFinalAlpha)) + ",\n"
+            + indent + "\"shaderFinalGlassTintStrength\": " + jsonNumberField(renderLab, "shaderFinalGlassTintStrength", jsonFloat(modelState.shaderFinalGlassTintStrength)) + ",\n"
+            + indent + "\"shaderFinalGlassRgbMode\": \"" + escape(jsonStringField(renderLab, "shaderFinalGlassRgbMode", modelState.shaderFinalGlassRgbMode)) + "\",\n"
+            + indent + "\"shaderFinalGlassUsesBaseColorFill\": \"" + escape(jsonStringField(renderLab, "shaderFinalGlassUsesBaseColorFill", modelState.shaderFinalGlassUsesBaseColorFill)) + "\",\n"
+            + indent + "\"shaderFinalGlassCpuMirrorStatus\": \"" + escape(jsonStringField(renderLab, "shaderFinalGlassCpuMirrorStatus", modelState.shaderFinalGlassCpuMirrorStatus)) + "\",\n"
             + indent + "\"glassFinalCenterAlpha\": " + jsonNumberField(renderLab, "glassFinalCenterAlpha", jsonFloat(modelState.glassFinalCenterAlpha)) + ",\n"
             + indent + "\"glassFinalEdgeAlpha\": " + jsonNumberField(renderLab, "glassFinalEdgeAlpha", jsonFloat(modelState.glassFinalEdgeAlpha)) + ",\n"
             + indent + "\"glassFinalTintColor\": \"" + escape(jsonStringField(renderLab, "glassFinalTintColor", modelState.glassFinalTintColor)) + "\",\n"
@@ -5364,6 +5381,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String glassShaderFinalAlphaReadbackStatus = "not_available_no_pixel_readback";
         float glassCpuEstimatedCenterAlpha = 0.0f;
         float glassCpuEstimatedEdgeAlpha = 0.0f;
+        String glassProofMode = "transparent_v1_shader_final";
+        float shaderFinalGlassCenterAlpha = 0.0f;
+        float shaderFinalGlassEdgeAlpha = 0.0f;
+        float shaderFinalGlassFinalAlpha = 0.0f;
+        float shaderFinalGlassTintStrength = 0.0f;
+        String shaderFinalGlassRgbMode = "clear_center_visible_edge";
+        String shaderFinalGlassUsesBaseColorFill = "false";
+        String shaderFinalGlassCpuMirrorStatus = "mirrors_shader_formula_not_pixel_readback";
         float glassFinalCenterAlpha = 0.0f;
         float glassFinalEdgeAlpha = 0.0f;
         String glassFinalTintColor = "0.94,0.99,1.00";

@@ -787,6 +787,14 @@ struct ModelRenderState {
     std::string glassShaderFinalAlphaReadbackStatus = "not_available_no_pixel_readback";
     float glassCpuEstimatedCenterAlpha = 0.0f;
     float glassCpuEstimatedEdgeAlpha = 0.0f;
+    std::string glassProofMode = "transparent_v1_shader_final";
+    float shaderFinalGlassCenterAlpha = 0.0f;
+    float shaderFinalGlassEdgeAlpha = 0.0f;
+    float shaderFinalGlassFinalAlpha = 0.0f;
+    float shaderFinalGlassTintStrength = 0.0f;
+    std::string shaderFinalGlassRgbMode = "clear_center_visible_edge";
+    std::string shaderFinalGlassUsesBaseColorFill = "false";
+    std::string shaderFinalGlassCpuMirrorStatus = "mirrors_shader_formula_not_pixel_readback";
     float glassFinalCenterAlpha = 0.0f;
     float glassFinalEdgeAlpha = 0.0f;
     std::string glassFinalTintColor = "0.94,0.99,1.00";

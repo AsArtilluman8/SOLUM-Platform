@@ -272,3 +272,40 @@ Preset diagnostics now distinguish preset role from shader truth:
 - `glassTintPresetShaderUse = tint_lookup_only`
 
 P29B does not prove final visible glass pixels. P29C remains required for pixel/readback/manual proof.
+
+## 11. P29C Glass Proof Render Result
+
+P29C changes the Transparent v1 shader formula to make glass behavior easier to prove manually.
+
+Shader formula result:
+
+- visual formula changed: yes
+- center alpha is reduced below opacity; `centerAlpha` is not assigned directly from opacity
+- opacity `0.0`: expected clear center, with rim/edge still visible
+- opacity `0.2`: expected visible-through center
+- opacity `0.6`: expected denser center, still transparent
+- edge/rim remains visible through a separate edge alpha term
+- tint is light, not paint-fill
+- transparent glass center no longer uses opaque material `baseColor` fill
+- fake fallback is not used as proof for Transparent v1
+
+Diagnostics added:
+
+- `glassProofMode = transparent_v1_shader_final`
+- `shaderFinalGlassCenterAlpha`
+- `shaderFinalGlassEdgeAlpha`
+- `shaderFinalGlassFinalAlpha`
+- `shaderFinalGlassTintStrength`
+- `shaderFinalGlassRgbMode = clear_center_visible_edge`
+- `shaderFinalGlassUsesBaseColorFill = false`
+- `shaderFinalGlassCpuMirrorStatus = mirrors_shader_formula_not_pixel_readback`
+
+Debug view:
+
+- `Shader Final Glass Alpha` shows the same final alpha value used by the Transparent v1 branch.
+
+Honesty limits:
+
+- pixel readback is still not implemented
+- proof values are shader formula / CPU mirror values, not framebuffer proof
+- manual Android verification is still required before claiming visual success

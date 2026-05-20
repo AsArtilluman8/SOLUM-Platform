@@ -2,6 +2,39 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P29C — Glass Proof Render
+
+Scope:
+
+- Changed Transparent v1 glass shader formula to use clear center plus visible edge/rim.
+- Kept center alpha below opacity; `centerAlpha` is not direct opacity.
+- Kept tint light so Clear/Crystal/Blue/Green/Warm do not become paint fill.
+- Removed opaque material `baseColor` fill from Transparent v1 glass center.
+- Kept Glass Enable as the branch gate.
+- Kept fake fallback separate from Transparent v1 proof.
+- Added shader-final diagnostics:
+  `glassProofMode`, `shaderFinalGlassCenterAlpha`,
+  `shaderFinalGlassEdgeAlpha`, `shaderFinalGlassFinalAlpha`,
+  `shaderFinalGlassTintStrength`, `shaderFinalGlassRgbMode`,
+  `shaderFinalGlassUsesBaseColorFill`,
+  `shaderFinalGlassCpuMirrorStatus`.
+- Renamed debug view 65 to `Shader Final Glass Alpha`.
+
+Safety:
+
+```text
+visual formula changed = yes
+new fake mode added = no
+UI sliders/buttons/redesign added = no
+pixel readback implemented = no
+visual ok claimed = no
+```
+
+Proof limits:
+
+- Diagnostics are shader formula / CPU mirror values, not framebuffer proof.
+- Manual Android visual verification is still required.
+
 ## Patch P29B — Material Runtime Truth Cleanup
 
 Scope:

@@ -141,6 +141,14 @@ struct RuntimeDiagnostics {
         f << "  \"glassShaderFinalAlphaReadbackStatus\": \"" << escapeJson(model.glassShaderFinalAlphaReadbackStatus) << "\",\n";
         f << "  \"glassCpuEstimatedCenterAlpha\": " << model.glassCpuEstimatedCenterAlpha << ",\n";
         f << "  \"glassCpuEstimatedEdgeAlpha\": " << model.glassCpuEstimatedEdgeAlpha << ",\n";
+        f << "  \"glassProofMode\": \"" << escapeJson(model.glassProofMode) << "\",\n";
+        f << "  \"shaderFinalGlassCenterAlpha\": " << model.shaderFinalGlassCenterAlpha << ",\n";
+        f << "  \"shaderFinalGlassEdgeAlpha\": " << model.shaderFinalGlassEdgeAlpha << ",\n";
+        f << "  \"shaderFinalGlassFinalAlpha\": " << model.shaderFinalGlassFinalAlpha << ",\n";
+        f << "  \"shaderFinalGlassTintStrength\": " << model.shaderFinalGlassTintStrength << ",\n";
+        f << "  \"shaderFinalGlassRgbMode\": \"" << escapeJson(model.shaderFinalGlassRgbMode) << "\",\n";
+        f << "  \"shaderFinalGlassUsesBaseColorFill\": \"" << escapeJson(model.shaderFinalGlassUsesBaseColorFill) << "\",\n";
+        f << "  \"shaderFinalGlassCpuMirrorStatus\": \"" << escapeJson(model.shaderFinalGlassCpuMirrorStatus) << "\",\n";
         f << "  \"glassFinalCenterAlpha\": " << model.glassFinalCenterAlpha << ",\n";
         f << "  \"glassFinalEdgeAlpha\": " << model.glassFinalEdgeAlpha << ",\n";
         f << "  \"glassFinalTintColor\": \"" << escapeJson(model.glassFinalTintColor) << "\",\n";

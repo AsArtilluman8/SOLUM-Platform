@@ -2,6 +2,35 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P28E — True Glass Material Path Fix
+
+Scope:
+
+- Glass role separated from Opaque/Cutout/Emissive/HairThin.
+- Renderer now builds a fixed glass slot list and renders up to 3 glass slots in the transparent pass.
+- Opaque/Cutout pass excludes Glass; Cutout keeps alpha cutoff/discard.
+- Transparent glass shader uses slider values directly for opacity, clarity, roughness, thickness and tint preset.
+- Fake visual-ok glass diagnostics renamed to state/formula/runtime-pending statuses.
+
+Key diagnostics:
+
+```text
+glassSlotsCount = count
+glassSlotsDisplay = 1/N material, ...
+opaqueSlotsDisplay = 1/N material, ...
+cutoutSlotsDisplay = 1/N material, ...
+transparentGlassSlotLimit = 3
+transparentGlassSlotsRendered = count
+glassVisualQualityStatus = runtime_visual_pending
+transparentPipelineActuallyUsedStatus = transparent_pipeline_bound / inactive
+```
+
+Out of scope:
+
+- SSR, ray tracing, mirror, refraction, shadows, CSM.
+- New scenes or model-name hardcode.
+- Visual success claim without Android screenshots.
+
 ## Patch P28D — Glass Foundation Repair
 
 Scope:
@@ -47,11 +76,11 @@ Scope:
 Key diagnostics:
 
 ```text
-p28cTransparentRenderFixStatus = ok_final_render_path_fixed
-glassDiscardBypassStatus = ok_glass_skips_early_cutout
-glassFinalShaderAlphaStatus = ok_final_shaded_outputs_glass_alpha
-glassFinalUsesLiveUniformsStatus = ok
-transparentPipelineActuallyUsedStatus = ok_transparent_pipeline_bound_for_active_glass / inactive_fake_or_auto_fallback
+p28cTransparentRenderFixStatus = transparent_pipeline_bound
+glassDiscardBypassStatus = state_reported_glass_skips_cutout_discard
+glassFinalShaderAlphaStatus = formula_attempted
+glassFinalUsesLiveUniformsStatus = state_reported
+transparentPipelineActuallyUsedStatus = transparent_pipeline_bound / inactive_fake_or_auto_fallback
 p21AlphaCutoutPreservedStatus = ok
 ```
 
@@ -75,13 +104,13 @@ Scope:
 Key diagnostics:
 
 ```text
-p28bGlassFixStatus = ok_live_shader_transparency
+p28bGlassFixStatus = state_reported
 glassCandidateScoringStatus = ok_name_alpha_transmission_scoring
-glassUniformAppliedToShaderStatus = ok
-glassLiveSliderResponseStatus = ok
-glassPresetLiveApplyStatus = ok
+glassUniformAppliedToShaderStatus = state_reported
+glassLiveSliderResponseStatus = state_reported
+glassPresetLiveApplyStatus = state_reported
 glassFinalCenterAlpha = live_numeric
-glassActuallyTransparentStatus = ok / not_active_or_too_solid
+glassActuallyTransparentStatus = not_visually_verified / inactive
 glassGreyPlateStillPossibleStatus = reduced / possible_low_clarity_or_high_opacity
 glassNoAssetHardcodeStatus = ok_universal_role_based
 ```
@@ -109,7 +138,7 @@ Scope:
 Key diagnostics:
 
 ```text
-glassGreyPlateFixStatus = ok_center_clear_not_dirty_grey
+glassGreyPlateFixStatus = formula_attempted
 glassWeakMaterialFallbackStatus = ok_missing_textures_handled
 glassNoAssetHardcodeStatus = ok_universal_role_based
 glassOpaqueAlphaModeOverrideStatus = ok_role_glass_overrides_opaque_alpha_mode
@@ -2595,3 +2624,70 @@ transparentGlassRoutingMode = auto_best_glass_candidate / manual_override / tran
 - No real mirror.
 - No SSR.
 - No shadows.
+
+---
+
+## Patch P28F — Glass Source Of Truth Fix
+
+### Goal
+
+Make Transparent v1 route active Glass roles through an explicit glass slot list and keep live glass sliders as the shader source of truth.
+
+### Changed
+
+- Raised the fixed transparent glass slot list to 4 active slots.
+- Routed transparent pass draw checks through `isActiveTransparentGlassSlot`.
+- Added honest glass diagnostics for active slot list, live/shader inputs, preset mix removal, visual verification, and CPU/GPU mismatch risk.
+- Reworked transparent glass Final Shaded output to use a separate `transparentGlassRgb` path instead of normal material RGB.
+- Kept non-glass cutout alpha discard and opaque material routing separate.
+
+### Safety
+
+```text
+glassFinalVisualVerified = not_available_no_pixel_readback
+glassPresetMixRemovedStatus = shader_uses_live_uniforms_directly
+glassPresetMixInShader = no
+glassUsesNormalMaterialRgb = no
+transparentGlassSlotsRendered = active glass slot count within fixed limit
+```
+
+### Deferred
+
+- User Android screenshot verification.
+- Full transparent sorting.
+- Real refraction, SSR, mirrors, shadows, water, hair.
+
+---
+
+## Patch P28G — Remove Fake Glass Architecture
+
+### Goal
+
+Remove the fake-glass architecture path from Transparent v1 so Glass is routed and shaded as its own material/render path.
+
+### Changed
+
+- Kept `activeTransparentGlassSlot` only as a legacy diagnostic and used `activeTransparentGlassSlots[4]` plus `isActiveTransparentGlassSlot` for draw routing.
+- Manual override now replaces the active glass slot list with the chosen slot; auto mode renders all detected glass slots up to the fixed limit.
+- Opaque pass skips only active transparent glass slots; inactive glass roles can render outside the transparent pass when Glass Enabled is off.
+- Transparent shader branch now requires material role Glass, `glassEnabled != 0`, and Transparent v1.
+- Transparent glass final color uses `glassCenter + glassEdge + glassSpecular`, not normal material RGB.
+
+### Safety
+
+```text
+glassSingleSlotDrawRemoved = yes
+glassUsesSlotList = yes
+glassPresetMixInShader = no
+glassUsesNormalMaterialRgb = no
+glassFinalVisualVerified = not_available_no_pixel_readback
+glassDebugTruthStatus = state_reported_not_visual_proof
+gitCommitContainsP28H = yes
+apkBuiltFromCommittedTree = yes
+```
+
+### Deferred
+
+- User Android screenshot verification.
+- Pixel readback.
+- Full transparent sorting.

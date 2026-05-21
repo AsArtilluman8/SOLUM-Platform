@@ -309,3 +309,29 @@ Honesty limits:
 - pixel readback is still not implemented
 - proof values are shader formula / CPU mirror values, not framebuffer proof
 - manual Android verification is still required before claiming visual success
+
+## 12. P29D Glass Rim Mask Shader Fix Result
+
+P29D changes only the Transparent v1 glass shader formula and matching final glass diagnostics output.
+
+Result:
+
+- only shader glass formula changed
+- pipeline/pass/UI/import code not changed
+- GLB node transforms not changed
+- `edgeAlpha` now requires `rimMask`
+- `edgeRgb` now requires `rimMask`
+- center alpha is `glassOpacityInput * 0.10`
+- final alpha uses `centerAlpha + edgeAlpha`, not global `max(centerAlpha, edgeAlpha)`
+- center RGB is dark/neutral tint only: no `baseColor`, PBR, ambient, or IBL fill
+- rim mask meaning is zero in the center and one near silhouette/edge
+
+Diagnostics honesty:
+
+- `shaderFinalGlassRimMaskMeaning = zero_center_one_edge`
+- `shaderFinalGlassRgbMode = dark_center_masked_rim`
+- `shaderFinalGlassUsesBaseColorFill = false`
+- `shaderFinalGlassCpuMirrorStatus = mirrors_shader_formula_not_pixel_readback`
+- `glassGreyPlateStillPossibleStatus = reduced_rim_mask_applied_not_pixel_verified`
+- pixel readback is still not implemented
+- visual verification is still manual

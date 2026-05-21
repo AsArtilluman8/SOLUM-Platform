@@ -2,6 +2,37 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P29D — Glass Rim Mask Shader Fix
+
+Scope:
+
+- Changed only the existing Transparent v1 glass shader formula.
+- Pipeline/pass/UI/import code not changed.
+- GLB node transforms not changed.
+- `edgeAlpha` and `edgeRgb` now require `rimMask`.
+- Center alpha is `glassOpacityInput * 0.10`.
+- Final alpha uses `centerAlpha + edgeAlpha`, not global `max(centerAlpha, edgeAlpha)`.
+- Center RGB no longer uses `baseColor`, PBR, ambient, or IBL fill.
+- Runtime diagnostics describe the rim mask and final glass alpha/RGB formula honestly.
+
+Safety:
+
+```text
+shaderFinalGlassRimMaskMeaning = zero_center_one_edge
+shaderFinalGlassRgbMode = dark_center_masked_rim
+shaderFinalGlassUsesBaseColorFill = false
+shaderFinalGlassCpuMirrorStatus = mirrors_shader_formula_not_pixel_readback
+glassGreyPlateStillPossibleStatus = reduced_rim_mask_applied_not_pixel_verified
+pixel readback implemented = no
+visual verification = manual required
+```
+
+Deferred:
+
+- Pixel readback.
+- Android screenshot/manual visual verification.
+- GLB node transform fix.
+
 ## Patch P29C — Glass Proof Render
 
 Scope:

@@ -150,6 +150,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private TextView topHudView;
     private boolean nativeLoaded = false;
     private boolean inspectorPanelVisible = true;
+    private volatile String crashPhase = "startup_before_onCreate";
+    private volatile String lastCrashLogPath = "";
+    private volatile String lastSafetyLogPath = "";
     private String activeInspectorTab = "Assets";
     private boolean updatingSlidersFromState = false;
     private int lightPresetIndex = 3;
@@ -426,11 +429,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        setCrashPhase("onCreate_enter");
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
-            writeCrashReport("uncaught_exception", throwable);
+            writeCrashReport("uncaught_exception_thread_" + (thread == null ? "unknown" : thread.getName()), throwable);
             System.exit(10);
         });
         super.onCreate(savedInstanceState);
+        setCrashPhase("onCreate_after_super");
         SurfaceView surfaceView = new SurfaceView(this);
         surfaceView.getHolder().addCallback(this);
         surfaceView.setOnTouchListener((view, event) -> handleCameraTouch(event));
@@ -670,17 +675,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         root.addView(dockScroll);
         applyInspectorHeightCap();
         syncPanelVisibility();
-        restorePersistedActiveModel();
-        scanModels("startup");
+        safeRun("restorePersistedActiveModel", () -> restorePersistedActiveModel());
+        safeRun("scanModels_startup", () -> scanModels("startup"));
         updateDiagnosticsStatusPanel();
         setContentView(root);
+        setCrashPhase("onCreate_after_setContentView");
         try {
+            setCrashPhase("native_load_start");
             System.loadLibrary("solum_engine");
             nativeLoaded = true;
             nativeHandle = nativeCreate();
             statusView.setText("SOLUM Engine\nVulkan: loading\nStatus: native ready");
             writeRuntimeNote("native_load_ok", "libsolum_engine loaded and native object created");
             exportEngineDiagnostics("native_load_ok");
+            setCrashPhase("onCreate_done");
         } catch (Throwable t) {
             nativeLoaded = false;
             writeCrashReport("native_load_failed", t);
@@ -1808,7 +1816,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             return;
         }
         try {
-            if (modelState.parse == null || !modelState.parse.glbValid || modelState.parse.binChunk == null) modelState.parse = GlbParser.parse(active);
+            if (modelState.parse == null || !modelState.parse.glbValid || modelState.parse.binChunk == null) modelState.parse = safeParseGlb(active, trigger + "_parse");
             GlbPrimitiveMesh mesh = GlbParser.extractMultiPrimitive(modelState.parse);
             boolean ok = nativeUploadModelMultiPrimitive(
                 nativeHandle,
@@ -1891,10 +1899,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 setModelFallbackState(trigger + ": native model upload/draw failed");
             }
         } catch (Throwable t) {
+            writeCrashReport("gpu_upload_failed_" + trigger, t);
             modelState.resumeRestoreStatus = "failed";
             modelState.activeModelRestoreResult = "failed_exception";
             setModelFallbackState(trigger + ": " + shortThrowable(t));
-            nativeSetModelFallback(nativeHandle, modelState.activeModelName(), modelState.activeModelPath, modelState.reason);
+            try { nativeSetModelFallback(nativeHandle, modelState.activeModelName(), modelState.activeModelPath, modelState.reason); } catch (Throwable nt) { writeCrashReport("native_model_fallback_failed_" + trigger, nt); }
         }
         writeModelDiagnostics("gpu_upload_" + trigger);
     }
@@ -2049,6 +2058,76 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         startActivityForResult(intent, REQUEST_IMPORT_GLB);
     }
 
+    private interface SafeRunnable { void run() throws Exception; }
+
+    private void setCrashPhase(String phase) {
+        crashPhase = phase == null || phase.isEmpty() ? "unknown" : phase;
+        writeSafetyLog("phase", crashPhase, null);
+    }
+
+    private void safeRun(String phase, SafeRunnable runnable) {
+        setCrashPhase(phase);
+        try {
+            runnable.run();
+        } catch (Throwable t) {
+            writeCrashReport(phase + "_failed", t);
+            try {
+                modelState.reason = phase + ": " + shortThrowable(t);
+                if (phase.toLowerCase(Locale.US).contains("scan") || phase.toLowerCase(Locale.US).contains("restore")) {
+                    modelState.resumeRestoreStatus = "failed_guarded";
+                    modelState.activeModelRestoreResult = "failed_guarded";
+                    setModelFallbackState(modelState.reason);
+                }
+            } catch (Throwable ignored) { }
+        }
+    }
+
+    private GlbParseResult safeParseGlb(File file, String phase) {
+        setCrashPhase(phase);
+        try {
+            if (file == null) throw new IllegalStateException("glb_file_null");
+            if (!file.exists()) throw new IllegalStateException("glb_file_missing:" + file.getAbsolutePath());
+            GlbParseResult result = GlbParser.parse(file);
+            if (result == null) return GlbParseResult.failed("parser_returned_null");
+            return result;
+        } catch (Throwable t) {
+            writeCrashReport(phase + "_glb_parse_failed", t);
+            return GlbParseResult.failed(shortThrowable(t));
+        }
+    }
+
+    private File crashLogDir() {
+        File direct = new File("/storage/emulated/0/Download/SOLUM_CRASH_LOGS");
+        if (canWriteDirectory(direct)) return direct;
+        File externalBase = getExternalFilesDir(null);
+        File external = externalBase != null ? new File(externalBase, "SOLUM_CRASH_LOGS") : null;
+        if (external != null && canWriteDirectory(external)) return external;
+        File internal = new File(getFilesDir(), "SOLUM_CRASH_LOGS");
+        internal.mkdirs();
+        return internal;
+    }
+
+    private void writeSafetyLog(String kind, String message, Throwable throwable) {
+        try {
+            File dir = crashLogDir();
+            File out = new File(dir, "solum_safety_latest.txt");
+            lastSafetyLogPath = out.getAbsolutePath();
+            try (PrintWriter pw = new PrintWriter(new FileWriter(out, false))) {
+                pw.println("kind=" + kind);
+                pw.println("timestampUtc=" + timestampUtc());
+                pw.println("phase=" + crashPhase);
+                pw.println("message=" + (message == null ? "" : message));
+                pw.println("activeModelName=" + modelState.activeModelName());
+                pw.println("activeModelPath=" + modelState.activeModelPath);
+                pw.println("activeModelLocalPath=" + modelState.activeModelLocalPath);
+                pw.println("importStatus=" + modelState.importStatus);
+                pw.println("gpuUploadStatus=" + modelState.gpuUploadStatus);
+                pw.println("drawStatus=" + modelState.drawStatus);
+                if (throwable != null) throwable.printStackTrace(pw);
+            }
+        } catch (Throwable ignored) { }
+    }
+
     private void importGlbFromUri(Uri uri) {
         modelState.importStatus = "importing";
         modelState.importRoute = "not run";
@@ -2068,7 +2147,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 modelState.lastImportedModel = copy.path;
                 modelState.activeModelPersistenceStatus = "metadata_pending_upload";
                 modelState.reason = copy.reason;
-                modelState.parse = GlbParser.parse(copy.localFile);
+                modelState.parse = safeParseGlb(copy.localFile, "import_parse");
                 if (!modelState.parse.glbValid) {
                     modelState.importStatus = "failed";
                     modelState.importRoute = copy.route;
@@ -2079,6 +2158,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 attemptActiveModelGpuUpload("model_import");
                 persistActiveModelMetadata();
             } catch (Throwable t) {
+                writeCrashReport("import_glb_failed", t);
                 modelState.importStatus = "failed";
                 modelState.importRoute = "failed";
                 modelState.reason = shortThrowable(t);
@@ -2172,7 +2252,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (modelState.lastImportedModel.isEmpty() && !models.isEmpty()) modelState.lastImportedModel = models.get(models.size() - 1).getAbsolutePath();
         if (!modelState.activeModelPath.isEmpty()) {
             File active = new File(modelState.localExtractionPath());
-            if (active.exists()) modelState.parse = GlbParser.parse(active);
+            if (active.exists()) modelState.parse = safeParseGlb(active, trigger + "_parse");
         }
         if ("not run".equals(modelState.importStatus) && models.isEmpty()) modelState.reason = trigger + ": no .glb files found";
     }
@@ -2568,6 +2648,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"assetImportStatus\": \"" + escape(modelState.importStatus) + "\",\n"
             + "  \"activeModelName\": \"" + escape(modelState.activeModelName()) + "\",\n"
             + "  \"activeModelPath\": \"" + escape(modelState.activeModelPath) + "\",\n"
+            + "  \"p31aCrashGuardStatus\": \"enabled\",\n"
+            + "  \"lastCrashPhase\": \"" + escape(crashPhase) + "\",\n"
+            + "  \"lastCrashLogPath\": \"" + escape(lastCrashLogPath) + "\",\n"
+            + "  \"lastSafetyLogPath\": \"" + escape(lastSafetyLogPath) + "\",\n"
             + "  \"activePrimitiveIndex\": 0,\n"
             + "  \"activeModelSummary\": \"" + escape(modelState.summary()) + "\",\n"
             + "  \"gpuUploadStatus\": \"" + escape(jsonStringField(renderLab, "gpuUploadStatus", modelState.gpuUploadStatus)) + "\",\n"
@@ -3406,7 +3490,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     + "Source: " + shorten(modelState.sourceDisplayName.isEmpty() ? "none" : modelState.sourceDisplayName, 48) + "\n"
                     + "Imported: " + shorten(modelState.importedPath.isEmpty() ? "none" : modelState.importedPath, 72) + "\n"
                     + "Models found: " + modelState.modelsFoundCount + " active=" + (modelState.activeModelName().isEmpty() ? "none" : shorten(modelState.activeModelName(), 40)) + "\n"
-                    + "Reason: " + shorten(modelState.reason, 72)
+                    + "Reason: " + shorten(modelState.reason, 72) + "\n"
+                    + "Crash log: " + shorten(lastCrashLogPath.isEmpty() ? "none" : lastCrashLogPath, 72)
             );
         });
     }
@@ -3471,6 +3556,47 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private String fallbackRenderLabJson(String status, String lightingStatus, String debugStatus, String reason) {
         return "{\"currentScene\":\"" + SCENE_ID + "\",\"currentLabScene\":\"" + SCENE_ID + "\",\"currentLabSceneName\":\"" + SCENE_NAME + "\",\"status\":\"" + escape(status) + "\",\"lightingStatus\":\"" + escape(lightingStatus) + "\",\"lightingControlStatus\":\"" + escape(lightingStatus) + "\",\"lightingUiMode\":\"compact_sliders\",\"inspectorUiStatus\":\"ok\",\"inspectorUiMode\":\"tabbed_compact_inspector\",\"activeInspectorTab\":\"" + escape(activeInspectorTab) + "\",\"assetsTabStatus\":\"ok_import_scan_export_summary\",\"cameraTabStatus\":\"ok_camera_info_reset_zoom\",\"lightingTabStatus\":\"ok_sliders_environment_controls\",\"materialTabStatus\":\"ok_debug_views\",\"debugTabStatus\":\"ok_fps_zip_status\",\"sunDirection\":[-0.35,-0.82,-0.45],\"sunColor\":[1,0.96,0.88],\"sunIntensity\":2.0,\"ambientColor\":[0.42,0.52,0.62],\"ambientIntensity\":0.8,\"lightPreset\":\"Bright\",\"specularBoost\":1.85,\"specularBoostStatus\":\"ok_uniform_controlled\",\"reflectionIntensity\":1.15,\"contactGroundingStatus\":\"foundation_analytic\",\"contactShadowStatus\":\"enabled\",\"contactShadowMode\":\"analytic_blob_or_grounding_approx\",\"contactShadowIntensity\":" + jsonFloat(contactShadowIntensity) + ",\"contactShadowPerformanceStatus\":\"ok_uniform_only_no_shadow_pass\",\"groundingUsesModelBounds\":\"yes_upload_bounds_scaled_local\",\"groundingUniformUpdateStatus\":\"ok_uniform_only\",\"groundSliderStatus\":\"ok\",\"contactGroundingSliderStatus\":\"ok\",\"iblStatus\":\"ok_foundation\",\"iblMode\":\"directional_sky_ground_ibl\",\"environmentIblStatus\":\"ok_foundation\",\"environmentIblMode\":\"directional_sky_ground_ibl\",\"environmentSourceStatus\":\"ok_procedural_no_external_texture\",\"environmentSourceType\":\"directional_sky_ground_shader_model\",\"environmentSkyColorStatus\":\"ok_preset_uniform\",\"environmentGroundColorStatus\":\"ok_preset_uniform\",\"environmentHorizonStatus\":\"ok_directional_horizon_blend\",\"environmentPerformanceStatus\":\"ok_no_extra_pass_no_texture_upload\",\"iblDiffuseStatus\":\"ok_directional_sky_ground_diffuse\",\"iblSpecularStatus\":\"ok_reflection_direction_environment\",\"iblRoughnessResponseStatus\":\"ok_roughness_blurs_and_reduces_specular\",\"iblMetallicResponseStatus\":\"ok_metal_tints_reflection\",\"iblDielectricResponseStatus\":\"ok_subtle_f0_reflection\",\"iblFabricPreserveStatus\":\"ok_fabric_matte_preserved\",\"iblOverbrightGuardStatus\":\"ok_luminance_guarded\",\"environmentUiStatus\":\"ok_compact_lighting_controls\",\"environmentPreset\":\"Studio\",\"environmentIntensity\":1.0,\"environmentSliderStatus\":\"ok\",\"skyPresetStatus\":\"ok\",\"horizonControlStatus\":\"ok\",\"environmentUniformUpdateStatus\":\"ok_uniform_only\",\"environmentDebugViewStatus\":\"shader_applied\",\"reflectionDirectionDebugViewStatus\":\"shader_applied\",\"environmentColorDebugViewStatus\":\"shader_applied\",\"iblPerformanceStatus\":\"ok_shader_math_only_no_loops\",\"reflectionFoundationStatus\":\"p18_environment_ibl_foundation\",\"reflectionMode\":\"directional_sky_ground_ibl\",\"environmentReflectionStatus\":\"p18_environment_directional_source_no_texture_cubemap\",\"environmentReflectionMode\":\"reflection_direction_sky_ground_ibl\",\"environmentSource\":\"directional_sky_ground_shader_model\",\"reflectionColorStatus\":\"ok_environment_preset_horizon_gradient\",\"reflectionRoughnessResponseStatus\":\"ok_roughness_blurs_reduces_reflection\",\"metallicReflectionStatus\":\"ok_metal_tinted_environment_guarded\",\"dielectricReflectionStatus\":\"ok_subtle_f0_environment\",\"reflectionPerformanceStatus\":\"ok_no_extra_pass_no_texture_rebuild\",\"lightingUniformUpdateStatus\":\"ok_uniform_only\",\"sliderUpdateMode\":\"uniform_only\",\"sliderTouchStatus\":\"ok_touch_targets\",\"sunSliderStatus\":\"ok\",\"ambientSliderStatus\":\"ok\",\"exposureSliderStatus\":\"ok\",\"specularSliderStatus\":\"ok\",\"reflectionSliderStatus\":\"ok\",\"brdfStatus\":\"ok\",\"brdfMode\":\"direct_lighting_schlick_mobile_p17_gloss\",\"diffuseStatus\":\"ok_environment_diffuse\",\"specularStatus\":\"ok_p17_gloss_response_guarded\",\"fresnelStatus\":\"ok_schlick\",\"f0Status\":\"ok_dielectric_0_04_metal_base_color\",\"metallicResponseStatus\":\"ok_diffuse_reduced_f0_tinted\",\"roughnessResponseStatus\":\"ok_gloss_width_energy_remap\",\"directLightingStatus\":\"ok_single_sun_direct_gloss_lobe\",\"materialResponseStatus\":\"p18_environment_ibl_foundation\",\"pbrQualityTier\":\"mobile_direct_lighting_ibl_v1\",\"brdfPerformanceStatus\":\"ok_mobile_friendly_direct_lighting_ibl\",\"toneMappingStatus\":\"ok\",\"toneMappingMode\":\"reinhard\",\"activeDebugView\":\"Final Shaded\",\"debugViewStatus\":\"" + escape(debugStatus) + "\",\"diffuseDebugViewStatus\":\"" + escape(debugStatus) + "\",\"specularDebugViewStatus\":\"" + escape(debugStatus) + "\",\"f0DebugViewStatus\":\"" + escape(debugStatus) + "\",\"reflectionDebugViewStatus\":\"" + escape(debugStatus) + "\",\"iblDiffuseDebugViewStatus\":\"" + escape(debugStatus) + "\",\"iblSpecularDebugViewStatus\":\"" + escape(debugStatus) + "\",\"brdfStatusDebugViewStatus\":\"" + escape(debugStatus) + "\",\"groundingDebugViewStatus\":\"" + escape(debugStatus) + "\",\"exposureValue\":1.5,\"ambientFloor\":0.16,\"brightnessPreset\":\"Bright Preview\",\"gpuUploadStatus\":\"failed\",\"drawStatus\":\"fallback\",\"meshDrawStatus\":\"fallback\",\"textureUploadStatus\":\"missing\",\"baseColorTextureStatus\":\"missing\",\"textureFallbackUsed\":true,\"textureWidth\":0,\"textureHeight\":0,\"uploadedVertexCount\":0,\"uploadedIndexCount\":0,\"modelBoundsMin\":[0,0,0],\"modelBoundsMax\":[0,0,0],\"modelBoundsCenter\":[0,0,0],\"modelScale\":1,\"modelRenderMode\":\"multi_primitive_static\",\"primitiveCountTotal\":0,\"primitiveCountRendered\":0,\"primitiveCountSkipped\":0,\"unsupportedPrimitiveCount\":0,\"materialSlotCount\":0,\"materialSlotCountRendered\":0,\"textureSlotCount\":0,\"uploadedTextureCount\":0,\"textureFallbackCount\":0,\"skippedTextureCount\":0,\"textureSlotLimit\":8,\"tangentFallbackGeneratedCount\":0,\"tangentDegenerateTriangleCount\":0,\"tangentBuildMode\":\"once_on_upload\",\"fpsCurrent\":0,\"frameTimeMs\":0,\"fpsSource\":\"not_ready\",\"fpsLastStable\":0,\"frameTimeLastStableMs\":0,\"fpsStatus\":\"not_ready\",\"fpsUpdateMode\":\"java_choreographer_live\",\"fpsSampleWindowMs\":1000,\"framesRenderedLive\":0,\"modelUploadRepeatCount\":0,\"uploadGenerationId\":0,\"renderLoopAllocationGuardStatus\":\"ok_no_java_glb_parse_or_upload_in_frame_callback\",\"debugZipStatus\":\"not_run\",\"debugZipPath\":\"\",\"debugZipIncludedFiles\":\"\",\"debugZipReason\":\"not_run\",\"fallbackCubeVisible\":true,\"fallbackCubeStatus\":\"on\",\"reason\":\"" + escape(reason) + "\"}";
+    }
+
+    private void writeCrashReport(String phase, Throwable t) {
+        try {
+            crashPhase = phase == null || phase.isEmpty() ? crashPhase : phase;
+            File dir = crashLogDir();
+            String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+            File out = new File(dir, "crash_" + stamp + "_" + safeFileName(crashPhase) + ".txt");
+            lastCrashLogPath = out.getAbsolutePath();
+            try (PrintWriter pw = new PrintWriter(new FileWriter(out, false))) {
+                pw.println("SOLUM Engine crash report");
+                pw.println("timestampUtc=" + timestampUtc());
+                pw.println("phase=" + crashPhase);
+                pw.println("thread=" + Thread.currentThread().getName());
+                pw.println("package=" + getPackageName());
+                pw.println("activeModelName=" + modelState.activeModelName());
+                pw.println("activeModelPath=" + modelState.activeModelPath);
+                pw.println("activeModelLocalPath=" + modelState.activeModelLocalPath);
+                pw.println("importStatus=" + modelState.importStatus);
+                pw.println("importRoute=" + modelState.importRoute);
+                pw.println("resumeRestoreStatus=" + modelState.resumeRestoreStatus);
+                pw.println("resumeRestoreMode=" + modelState.resumeRestoreMode);
+                pw.println("gpuUploadStatus=" + modelState.gpuUploadStatus);
+                pw.println("drawStatus=" + modelState.drawStatus);
+                pw.println("reason=" + modelState.reason);
+                pw.println("throwable=" + (t == null ? "null" : t.getClass().getName()));
+                pw.println("message=" + (t == null || t.getMessage() == null ? "" : t.getMessage()));
+                pw.println();
+                if (t != null) t.printStackTrace(pw);
+            }
+            writeSafetyLog("crash", out.getAbsolutePath(), t);
+        } catch (Throwable ignored) {
+            try {
+                File fallback = new File(getFilesDir(), "last_crash_fallback.txt");
+                try (PrintWriter pw = new PrintWriter(new FileWriter(fallback, false))) {
+                    pw.println("phase=" + phase);
+                    if (t != null) t.printStackTrace(pw);
+                }
+                lastCrashLogPath = fallback.getAbsolutePath();
+            } catch (Throwable ignored2) { }
+        }
     }
 
     private String timestampUtc() {
@@ -5672,24 +5798,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         return required ? "missing_required" : "missing_optional";
     }
 
-    private void writeCrashReport(String stage, Throwable throwable) {
-        try {
-            File dir = getReportDir();
-            String ts = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
-            File out = new File(dir, "runtime_crash_" + ts + ".txt");
-            try (PrintWriter pw = new PrintWriter(new FileWriter(out))) {
-                pw.println("SOLUM Runtime Crash Report");
-                pw.println("stage=" + stage);
-                pw.println("time=" + ts);
-                pw.println("thread=" + Thread.currentThread().getName());
-                pw.println("throwable=" + throwable.getClass().getName());
-                pw.println("message=" + throwable.getMessage());
-                pw.println();
-                throwable.printStackTrace(pw);
-            }
-        } catch (Throwable ignored) { }
-    }
-
-    private String shortThrowable(Throwable t) { String msg = t.getMessage(); if (msg == null) msg = "no message"; return t.getClass().getSimpleName() + ": " + msg; }
+private String shortThrowable(Throwable t) { String msg = t.getMessage(); if (msg == null) msg = "no message"; return t.getClass().getSimpleName() + ": " + msg; }
     private String escape(String s) { if (s == null) return ""; return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n"); }
 }

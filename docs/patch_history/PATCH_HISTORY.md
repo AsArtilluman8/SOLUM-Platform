@@ -1,3 +1,21 @@
+
+## Patch P31A — Crash Logger + Safe GLB Load Guard
+
+Scope:
+- Added robust file crash logs for startup, cached GLB restore, import, parse, GPU upload, and diagnostics-sensitive phases.
+- Added guarded startup restore/scan path so bad cached GLB should fall back instead of silently killing the app.
+- Added `safeParseGlb(...)` wrapper around GLB parser calls.
+- Added crash/safety paths to diagnostics UI and runtime JSON.
+
+Crash logs:
+- Primary: `/storage/emulated/0/Download/SOLUM_CRASH_LOGS/`
+- Fallback: app external/internal files if public Downloads is not writable.
+
+Rules:
+- This patch does not add glass rendering.
+- This patch does not change Vulkan shader, pipeline, or GLB geometry.
+- Diagnostics/parse failures must write a file and fall back instead of disappearing silently.
+
 # PATCH_HISTORY — история патчей SOLUM
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.

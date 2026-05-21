@@ -1022,6 +1022,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
     }
 
+    private String p31dUtcTimestamp() {
+        try {
+            java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("yyyy-MM-ddTHH:mm:ssZ", java.util.Locale.US);
+            fmt.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+            return fmt.format(new java.util.Date());
+        } catch (Throwable ignored) {
+            return String.valueOf(System.currentTimeMillis());
+        }
+    }
+
     private void runGlassAutoTest() {
         try {
             int oldGlassTruth = activeGlassTruthViewIndex;
@@ -1030,7 +1040,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
             File root = new File(Environment.getExternalStorageDirectory(), "Download/SOLUM_GLASS_AUTOTEST");
             if (!root.exists()) root.mkdirs();
-            String stamp = utcTimestamp().replace(":", "").replace("-", "").replace("T", "_").replace("Z", "");
+            String stamp = p31dUtcTimestamp().replace(":", "").replace("-", "").replace("T", "_").replace("Z", "");
             File dir = new File(root, "P31D_" + stamp);
             if (!dir.exists()) dir.mkdirs();
 
@@ -1092,7 +1102,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String firstCandidateLine = "none";
 
         out.append("SOLUM Glass Auto Test P31D\n");
-        out.append("timestamp: ").append(utcTimestamp()).append("\n");
+        out.append("timestamp: ").append(p31dUtcTimestamp()).append("\n");
         out.append("mode: safe_cpu_route_no_pixel_readback\n\n");
 
         out.append("MODEL\n");
@@ -1231,7 +1241,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
         return "{\n"
             + "  \"patch\": \"P31D_safe_glass_auto_test\",\n"
-            + "  \"timestamp\": \"" + escape(utcTimestamp()) + "\",\n"
+            + "  \"timestamp\": \"" + escape(p31dUtcTimestamp()) + "\",\n"
             + "  \"mode\": \"safe_cpu_route_no_pixel_readback\",\n"
             + "  \"activeModelName\": \"" + escape(modelState.activeModelName()) + "\",\n"
             + "  \"importStatus\": \"" + escape(modelState.importStatus) + "\",\n"

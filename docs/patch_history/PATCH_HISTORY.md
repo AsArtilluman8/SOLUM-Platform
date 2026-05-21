@@ -1,3 +1,21 @@
+## Patch P31G — True Per-Slot Glass Proof Isolation
+
+Scope:
+- Separates Glass Truth UI index from Glass Proof UI index.
+- Glass Truth and Glass Proof no longer appear active at the same time.
+- Encodes proof mode + selected material slot into `activeDebugView`:
+  - `460 + proofMode*10 + selectedSlot`.
+- Shader proof now uses exact `pc.materialId == selectedSlot`.
+- Proof no longer trusts `materialTypeHint`, because P31F showed hint can be dirty/global.
+- Glass Auto Test report includes proof mode, target slot, and encoded debug index.
+
+How to test:
+- Select slot 2 on ToyCar glass, then cycle Glass Proof Test.
+- A should color only slot 2 cyan.
+- B should color only slot 2 translucent cyan if blending works.
+- C should make only slot 2 disappear if alpha is respected.
+- If the whole car is affected, `pc.materialId` or draw-range slot routing is wrong.
+
 ## Patch P31F — Glass Blend/Depth Proof Test
 
 Scope:

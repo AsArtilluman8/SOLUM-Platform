@@ -186,6 +186,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private int brightnessPresetIndex = 3;
     private int activeDebugViewIndex = 0;
     private int activeGlassTruthViewIndex = 0;
+    private int activeGlassProofViewIndex = 0;
     private int toneMappingModeIndex = 1;
     private File cachedReportDir = null;
     private String cachedReportDirReason = "not_resolved";
@@ -928,7 +929,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleGlassTruthView() {
-        if (activeGlassTruthViewIndex < 42 || activeGlassTruthViewIndex > 45) {
+
+        activeGlassProofViewIndex = 0;
+if (activeGlassTruthViewIndex < 42 || activeGlassTruthViewIndex > 45) {
             activeGlassTruthViewIndex = 42;
         } else if (activeGlassTruthViewIndex == 45) {
             activeGlassTruthViewIndex = 0;
@@ -954,22 +957,28 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private void cycleGlassProofTest() {
         activeDebugViewIndex = 0;
-        if (activeGlassTruthViewIndex < 46 || activeGlassTruthViewIndex > 49) {
-            activeGlassTruthViewIndex = 46;
-        } else if (activeGlassTruthViewIndex == 49) {
-            activeGlassTruthViewIndex = 0;
+        activeGlassTruthViewIndex = 0;
+        if (activeGlassProofViewIndex < 46 || activeGlassProofViewIndex > 49) {
+            activeGlassProofViewIndex = 46;
+        } else if (activeGlassProofViewIndex == 49) {
+            activeGlassProofViewIndex = 0;
         } else {
-            activeGlassTruthViewIndex += 1;
+            activeGlassProofViewIndex += 1;
         }
-        modelState.glassMetadataStatus = "p31f_blend_depth_proof_" + glassTruthLabel(activeGlassTruthViewIndex);
+        modelState.glassMetadataStatus = "p31g_true_per_slot_proof_" + glassProofLabel(activeGlassProofViewIndex)
+            + "_slot_" + Math.max(0, Math.min(selectedMaterialSlot, 7));
         applyLightingControls();
         updateStatus();
     }
 
     private String glassProofLabel(int view) {
-        if (view >= 46 && view <= 49) return glassTruthLabel(view);
+        if (view == 46) return "Proof A Solid Cyan";
+        if (view == 47) return "Proof B Alpha 25 Cyan";
+        if (view == 48) return "Proof C Alpha 0 Red";
+        if (view == 49) return "Proof D Slot Only Alpha";
         return "Off";
     }
+
 
     private void cycleMaterialPreset() {
         activeMaterialPresetIndex = (activeMaterialPresetIndex + 1) % 8;
@@ -1152,7 +1161,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         out.append("nativeHandleNonZero: ").append(nativeHandle != 0L).append("\n\n");
 
         out.append("P31F PROOF STATE\n");
-        out.append("proofMode: ").append(glassProofLabel(activeGlassTruthViewIndex)).append("\n");
+        out.append("proofMode: ").append(glassProofLabel(activeGlassProofViewIndex)).append("\n");
+        out.append("proofTargetSlot: ").append(Math.max(0, Math.min(selectedMaterialSlot, 7))).append("\n");
+        out.append("proofEncodedDebugIndex: ").append(effectiveShaderDebugViewIndex()).append("\n");
         out.append("proofInterpretation: A=solid shader route, B=alpha blend, C=alpha ignored check, D=glass-only alpha visibility\n\n");
 
         out.append("MATERIAL SLOTS\n");
@@ -1282,7 +1293,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"selectedMaterialSlotCount\": " + selectedMaterialSlotCount + ",\n"
             + "  \"uiDebugIndex\": " + activeDebugViewIndex + ",\n"
             + "  \"glassTruthIndex\": " + activeGlassTruthViewIndex + ",\n"
-            + "  \"proofMode\": \"" + escape(glassProofLabel(activeGlassTruthViewIndex)) + "\",\n"
+            + "  \"proofMode\": \"" + escape(glassProofLabel(activeGlassProofViewIndex)) + "\",\n"
+            + "  \"proofTargetSlot\": " + Math.max(0, Math.min(selectedMaterialSlot, 7)) + ",\n"
             + "  \"effectiveShaderDebugIndex\": " + effectiveShaderDebugViewIndex() + ",\n"
             + "  \"glassMetadataStatus\": \"" + escape(modelState.glassMetadataStatus) + "\",\n"
             + "  \"alphaBlendStatus\": \"" + escape(modelState.alphaBlendStatus) + "\",\n"
@@ -1636,7 +1648,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         updateSliderPositionsFromState();
         if (materialViewButton != null) materialViewButton.setText("Debug: " + materialDebugViewName(activeDebugViewIndex));
         if (glassTruthButton != null) glassTruthButton.setText("Glass Truth: " + glassTruthLabel(activeGlassTruthViewIndex));
-        if (glassProofTestButton != null) glassProofTestButton.setText("Glass Proof Test: " + glassProofLabel(activeGlassTruthViewIndex));
+        if (glassProofTestButton != null) glassProofTestButton.setText("Glass Proof Test: " + glassProofLabel(activeGlassProofViewIndex));
         try {
             if (nativeLoaded && nativeHandle != 0L) {
                 nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, effectiveShaderDebugViewIndex(), toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPresetIndex, calibrationSliderValue, glossSliderValue, paintGlossSliderValue, environmentIntensity, environmentPresetIndex, horizonStrength, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, glossSliderValue, paintGlossSliderValue, alphaCutoffValue, emissiveIntensity, activeMaterialPresetIndex);
@@ -1823,7 +1835,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private int effectiveShaderDebugViewIndex() {
-        return activeGlassTruthViewIndex != 0 ? activeGlassTruthViewIndex : activeDebugViewIndex;
+        if (activeGlassProofViewIndex >= 46 && activeGlassProofViewIndex <= 49) {
+            int proofMode = activeGlassProofViewIndex - 46;
+            int proofSlot = Math.max(0, Math.min(selectedMaterialSlot, 7));
+            return 460 + proofMode * 10 + proofSlot;
+        }
+        if (activeGlassTruthViewIndex >= 42 && activeGlassTruthViewIndex <= 45) {
+            return activeGlassTruthViewIndex;
+        }
+        return activeDebugViewIndex;
     }
 
     private String materialDebugViewName(int index) {
@@ -1868,6 +1888,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 39) return "Preset Response";
         if (index == 40) return "Material Energy Guard";
         if (index == 41) return "Selected Slot Preset";
+        if (index >= 460 && index <= 499) {
+            int proofCode = index - 460;
+            int proofMode = proofCode / 10;
+            int proofSlot = proofCode % 10;
+            if (proofMode == 0) return "P31G Proof A Slot " + proofSlot + " Solid Cyan";
+            if (proofMode == 1) return "P31G Proof B Slot " + proofSlot + " Alpha Cyan";
+            if (proofMode == 2) return "P31G Proof C Slot " + proofSlot + " Alpha Zero Red";
+            if (proofMode == 3) return "P31G Proof D Slot " + proofSlot + " Only Alpha";
+        }
         if (index == 42) return "P31B Slot Heatmap";
         if (index == 43) return "P31B Glass Candidates";
         if (index == 44) return "P31B Selected Slot";

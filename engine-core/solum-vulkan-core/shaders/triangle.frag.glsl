@@ -241,6 +241,40 @@ void main() {
         return;
     }
 
+    // P31G_true_per_slot_proof_modes
+    // activeDebugView 460..499 encodes:
+    //   460 + proofMode*10 + targetMaterialSlot
+    // This avoids materialTypeHint because P31F proved hint can be global/dirty.
+    // It tests exact draw range slot via pc.materialId.
+    if (pc.activeDebugView >= 460 && pc.activeDebugView <= 499) {
+        int proofCode = pc.activeDebugView - 460;
+        int proofMode = proofCode / 10;
+        int targetSlot = proofCode - proofMode * 10;
+        if (pc.materialId != targetSlot) discard;
+
+        if (proofMode == 0) {
+            // A: exact selected slot solid cyan. If this does not isolate only selected slot, materialId routing is wrong.
+            fragColor = vec4(0.0, 1.0, 1.0, 1.0);
+            return;
+        }
+        if (proofMode == 1) {
+            // B: exact selected slot alpha 0.25. If solid/white, blend is wrong or alpha ignored.
+            fragColor = vec4(0.0, 1.0, 1.0, 0.25);
+            return;
+        }
+        if (proofMode == 2) {
+            // C: exact selected slot alpha 0.0. It must disappear if alpha blend is respected.
+            fragColor = vec4(1.0, 0.0, 0.0, 0.0);
+            return;
+        }
+        if (proofMode == 3) {
+            // D: exact selected slot only, dark alpha. Useful for depth/order observation.
+            fragColor = vec4(0.0, 0.22, 0.30, 0.25);
+            return;
+        }
+        discard;
+    }
+
     // P31F_blend_depth_proof_modes
     // These modes isolate glass-like materialTypeHint == 6.
     // A: solid cyan proves the shader route reaches the glass.

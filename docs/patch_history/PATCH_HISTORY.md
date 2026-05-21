@@ -1,3 +1,21 @@
+## Patch P31F — Glass Blend/Depth Proof Test
+
+Scope:
+- Adds one UI button: `Glass Proof Test`.
+- Cycles four visual proof modes through the existing shader debug route:
+  - A Solid Cyan: glass shader route proof.
+  - B Alpha 25 Cyan: alpha blending proof.
+  - C Alpha 0 Red: alpha ignored proof.
+  - D Glass Only Alpha: isolated glass visibility/depth/order proof.
+- Extends Glass Auto Test ZIP report with current proof mode.
+- Does not change glass beauty formula.
+- Does not add pixel readback.
+
+How to read:
+- A visible, B solid, C visible => alpha/blend is ignored or wrong pipeline is active.
+- A visible, B translucent, C invisible => blend works; next problem is formula/order/depth.
+- A invisible => glass shader route is not active for that model/slot.
+
 ## Patch P31E — Clean Glass Route v1
 
 Scope:

@@ -122,6 +122,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button materialViewButton;
     private Button glassTruthButton;
     private Button glassAutoTestButton;
+    private Button glassProofTestButton;
     private Button reloadActiveModelButton;
     private TextView materialStatusView;
     private SeekBar sunSlider;
@@ -665,6 +666,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         glassAutoTestButton = compactButton("Glass Auto Test");
         glassAutoTestButton.setOnClickListener(v -> runGlassAutoTest());
         materialPanel.addView(glassAutoTestButton);
+        glassProofTestButton = compactButton("Glass Proof Test: Off");
+        glassProofTestButton.setOnClickListener(v -> cycleGlassProofTest());
+        materialPanel.addView(glassProofTestButton);
         inspectorPanel.addView(materialPanel);
 
         debugPanel = new LinearLayout(this);
@@ -941,6 +945,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (view == 43) return "Glass Candidates WHITE";
         if (view == 44) return "Selected Slot BLUE";
         if (view == 45) return "Full Shader PURPLE";
+        if (view == 46) return "Proof A Solid Cyan";
+        if (view == 47) return "Proof B Alpha 25 Cyan";
+        if (view == 48) return "Proof C Alpha 0 Red";
+        if (view == 49) return "Proof D Glass Only Alpha";
+        return "Off";
+    }
+
+    private void cycleGlassProofTest() {
+        activeDebugViewIndex = 0;
+        if (activeGlassTruthViewIndex < 46 || activeGlassTruthViewIndex > 49) {
+            activeGlassTruthViewIndex = 46;
+        } else if (activeGlassTruthViewIndex == 49) {
+            activeGlassTruthViewIndex = 0;
+        } else {
+            activeGlassTruthViewIndex += 1;
+        }
+        modelState.glassMetadataStatus = "p31f_blend_depth_proof_" + glassTruthLabel(activeGlassTruthViewIndex);
+        applyLightingControls();
+        updateStatus();
+    }
+
+    private String glassProofLabel(int view) {
+        if (view >= 46 && view <= 49) return glassTruthLabel(view);
         return "Off";
     }
 
@@ -1124,6 +1151,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         out.append("nativeLoaded: ").append(nativeLoaded).append("\n");
         out.append("nativeHandleNonZero: ").append(nativeHandle != 0L).append("\n\n");
 
+        out.append("P31F PROOF STATE\n");
+        out.append("proofMode: ").append(glassProofLabel(activeGlassTruthViewIndex)).append("\n");
+        out.append("proofInterpretation: A=solid shader route, B=alpha blend, C=alpha ignored check, D=glass-only alpha visibility\n\n");
+
         out.append("MATERIAL SLOTS\n");
         for (int i = 0; i < slots.length(); i++) {
             JSONObject slot = slots.optJSONObject(i);
@@ -1251,6 +1282,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"selectedMaterialSlotCount\": " + selectedMaterialSlotCount + ",\n"
             + "  \"uiDebugIndex\": " + activeDebugViewIndex + ",\n"
             + "  \"glassTruthIndex\": " + activeGlassTruthViewIndex + ",\n"
+            + "  \"proofMode\": \"" + escape(glassProofLabel(activeGlassTruthViewIndex)) + "\",\n"
             + "  \"effectiveShaderDebugIndex\": " + effectiveShaderDebugViewIndex() + ",\n"
             + "  \"glassMetadataStatus\": \"" + escape(modelState.glassMetadataStatus) + "\",\n"
             + "  \"alphaBlendStatus\": \"" + escape(modelState.alphaBlendStatus) + "\",\n"
@@ -1604,6 +1636,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         updateSliderPositionsFromState();
         if (materialViewButton != null) materialViewButton.setText("Debug: " + materialDebugViewName(activeDebugViewIndex));
         if (glassTruthButton != null) glassTruthButton.setText("Glass Truth: " + glassTruthLabel(activeGlassTruthViewIndex));
+        if (glassProofTestButton != null) glassProofTestButton.setText("Glass Proof Test: " + glassProofLabel(activeGlassTruthViewIndex));
         try {
             if (nativeLoaded && nativeHandle != 0L) {
                 nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, effectiveShaderDebugViewIndex(), toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPresetIndex, calibrationSliderValue, glossSliderValue, paintGlossSliderValue, environmentIntensity, environmentPresetIndex, horizonStrength, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, glossSliderValue, paintGlossSliderValue, alphaCutoffValue, emissiveIntensity, activeMaterialPresetIndex);
@@ -1839,6 +1872,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 43) return "P31B Glass Candidates";
         if (index == 44) return "P31B Selected Slot";
         if (index == 45) return "P31B Full Shader Purple";
+        if (index == 46) return "P31F Proof A Solid Cyan";
+        if (index == 47) return "P31F Proof B Alpha Cyan";
+        if (index == 48) return "P31F Proof C Alpha Zero Red";
+        if (index == 49) return "P31F Proof D Glass Only Alpha";
         return "Final Shaded";
     }
 

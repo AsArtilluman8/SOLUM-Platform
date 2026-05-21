@@ -240,6 +240,33 @@ void main() {
         fragColor = vec4(1.0, 0.0, 1.0, 1.0);
         return;
     }
+
+    // P31F_blend_depth_proof_modes
+    // These modes isolate glass-like materialTypeHint == 6.
+    // A: solid cyan proves the shader route reaches the glass.
+    // B: cyan alpha 0.25 proves/denies SRC_ALPHA blending.
+    // C: red alpha 0.0 must be invisible if alpha is respected.
+    // D: glass-only alpha confirms non-glass is discarded and depth/order can be observed.
+    if (pc.activeDebugView == 46) {
+        if (hint != 6) discard;
+        fragColor = vec4(0.0, 1.0, 1.0, 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 47) {
+        if (hint != 6) discard;
+        fragColor = vec4(0.0, 1.0, 1.0, 0.25);
+        return;
+    }
+    if (pc.activeDebugView == 48) {
+        if (hint != 6) discard;
+        fragColor = vec4(1.0, 0.0, 0.0, 0.0);
+        return;
+    }
+    if (pc.activeDebugView == 49) {
+        if (hint != 6) discard;
+        fragColor = vec4(0.0, 0.22, 0.30, 0.25);
+        return;
+    }
     if (pc.activeDebugView == 42) {
         int slot = ((pc.materialId % 8) + 8) % 8;
         vec3 slotColor = vec3(0.86, 0.86, 0.86);

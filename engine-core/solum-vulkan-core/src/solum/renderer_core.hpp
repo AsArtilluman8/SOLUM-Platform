@@ -1059,7 +1059,17 @@ struct RendererCore {
         if (model.modelReady() && modelMesh.ready() && !modelDrawRanges.empty()) {
             modelMesh.bind(cmd);
             if (modelMesh.indexedReady()) vkCmdBindIndexBuffer(cmd, modelMesh.indexBuffer.buffer, 0, modelMesh.indexType);
+            // P31E_clean_glass_route_v1:
+            // Pass 0: all non-glass ranges.
+            // Pass 1: glass-like ranges after opaque scene, so alpha blend can reveal objects behind.
+            for (int p31eGlassPass = 0; p31eGlassPass < 2; ++p31eGlassPass) {
             for (const auto& range : modelDrawRanges) {
+                const bool p31eRangeIsGlass = range.materialSlot >= 0
+                    && (size_t)range.materialSlot < modelMaterialSlots.size()
+                    && modelMaterialSlots[(size_t)range.materialSlot].materialTypeHint == 6;
+                if ((p31eGlassPass == 0 && p31eRangeIsGlass) || (p31eGlassPass == 1 && !p31eRangeIsGlass)) {
+                    continue;
+                }
                 pc.material = material;
                 if (range.materialSlot >= 0 && (size_t)range.materialSlot < modelMaterialSlots.size()) {
                     const auto& slot = modelMaterialSlots[(size_t)range.materialSlot];
@@ -1116,6 +1126,7 @@ struct RendererCore {
                 vkCmdPushConstants(cmd, trianglePipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pc);
                 if (modelMesh.indexedReady() && range.indexCount > 0) vkCmdDrawIndexed(cmd, range.indexCount, 1, range.firstIndex, 0, 0);
                 else if (range.vertexCount > 0) vkCmdDraw(cmd, range.vertexCount, 1, range.firstVertex, 0);
+            }
             }
         } else {
             if (!textureDescriptorSets.empty() && textureDescriptorSets[0] != VK_NULL_HANDLE) {

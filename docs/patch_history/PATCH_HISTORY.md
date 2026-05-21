@@ -1,3 +1,20 @@
+## Patch P31E — Clean Glass Route v1
+
+Scope:
+- First visual glass route on the clean P31 branch.
+- Draw order changed to two lightweight passes inside the existing render pass:
+  - pass 0: non-glass material ranges;
+  - pass 1: glass-like material ranges (`materialTypeHint == 6`).
+- Shader adds `P31E_clean_glass_route_v1` early return for glass-like materials.
+- Glass shader bypasses PBR/baseColor/fake glass and outputs a small alpha + rim.
+- Existing triangle pipeline alpha blending is enabled when the blend-state anchor is found.
+- No new GLB parser changes.
+- No pixel readback.
+
+Expected:
+- ToyCar glass slot becomes visible and transparent-ish instead of opaque/invisible.
+- GlassVaseFlowers should show the vase as light transparent glass, not a grey plate.
+
 ## Patch P31D — Safe Glass Auto Test
 
 Scope:

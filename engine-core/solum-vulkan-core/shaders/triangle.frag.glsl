@@ -282,6 +282,28 @@ void main() {
         mapN.xy *= pc.normalScale;
         n = normalize(mat3(t, b, n) * normalize(mapN));
     }
+
+    // P31E_clean_glass_route_v1
+    // First real visual glass proof path:
+    // - only materialTypeHint == 6
+    // - bypasses PBR/baseColor/fake glass
+    // - relies on SRC_ALPHA blending enabled in pipeline
+    // - non-premultiplied alpha output
+    if (hint == 6 && pc.activeDebugView == 0) {
+        vec3 vGlass = normalize(vec3(0.0, 0.0, 1.0));
+        float ndotvGlass = clamp(abs(dot(normalize(n), vGlass)), 0.0, 1.0);
+        float rimMask = smoothstep(0.18, 0.92, pow(1.0 - ndotvGlass, 1.45));
+        float centerAlpha = 0.115;
+        float edgeAlpha = rimMask * 0.205;
+        float finalAlpha = clamp(centerAlpha + edgeAlpha, 0.08, 0.36);
+
+        vec3 glassTint = vec3(0.70, 0.88, 1.00);
+        vec3 centerRgb = glassTint * 0.030;
+        vec3 edgeRgb = glassTint * rimMask * 0.34 + vec3(1.0) * rimMask * 0.08;
+        fragColor = vec4(centerRgb + edgeRgb, finalAlpha);
+        return;
+    }
+
     vec3 l = normalize(-vec3(pc.sunDirectionX, pc.sunDirectionY, pc.sunDirectionZ));
     vec3 v = normalize(vec3(0.0, 0.0, 1.0));
     vec3 h = normalize(l + v);

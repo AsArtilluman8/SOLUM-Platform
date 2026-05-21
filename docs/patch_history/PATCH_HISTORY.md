@@ -1,3 +1,12 @@
+## Patch P31B — Safe Glass Truth Probe Foundation
+
+Scope:
+- Added safe diagnostic shader views without enabling real glass rendering.
+- Added Material tab button: `Glass Truth`.
+- Views: 42 Slot Heatmap, 43 Glass Candidates WHITE, 44 Selected Slot BLUE, 45 Full Shader PURPLE.
+- Best-effort metadata classifier for glass-like materials.
+- No transparent pass, no glass formula, no pipeline state change.
+
 
 ## Patch P31A — Crash Logger + Safe GLB Load Guard
 

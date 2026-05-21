@@ -131,6 +131,10 @@ inline const char* materialDebugViewName(int view) {
     if (view == 39) return "Preset Response";
     if (view == 40) return "Material Energy Guard";
     if (view == 41) return "Selected Slot Preset";
+    if (view == 42) return "P31B Slot Heatmap";
+    if (view == 43) return "P31B Glass Candidates";
+    if (view == 44) return "P31B Selected Slot";
+    if (view == 45) return "P31B Full Shader Purple";
     return "Final Shaded";
 }
 

@@ -1088,7 +1088,7 @@ struct RendererCore {
                         pc.material.paintGlossSliderValue = 0.0f;
                         pc.material.emissiveIntensity = 0.0f;
                     }
-                    if (((material.activeDebugView >= 27 && material.activeDebugView <= 31) || material.activeDebugView == 41) && range.materialSlot != selectedMaterialSlot) {
+                    if (((material.activeDebugView >= 27 && material.activeDebugView <= 31) || material.activeDebugView == 41 || material.activeDebugView == 44) && range.materialSlot != selectedMaterialSlot) {
                         pc.material.activeDebugView = 0;
                     }
                     pc.material.alphaMode = slot.alphaMode;

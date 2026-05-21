@@ -235,6 +235,35 @@ void main() {
     float ao = pc.occlusionTextureReady != 0 ? mix(1.0, aoRaw, aoStrength) : 1.0;
     float alpha = clamp(pc.baseColorFactor.a * texel.a, 0.0, 1.0);
     float cutoff = clamp(pc.alphaCutoff, 0.0, 1.0);
+
+    if (pc.activeDebugView == 45) {
+        fragColor = vec4(1.0, 0.0, 1.0, 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 42) {
+        int slot = ((pc.materialId % 8) + 8) % 8;
+        vec3 slotColor = vec3(0.86, 0.86, 0.86);
+        if (slot == 0) slotColor = vec3(1.0, 0.05, 0.04);
+        else if (slot == 1) slotColor = vec3(0.05, 1.0, 0.18);
+        else if (slot == 2) slotColor = vec3(0.08, 0.32, 1.0);
+        else if (slot == 3) slotColor = vec3(1.0, 0.90, 0.05);
+        else if (slot == 4) slotColor = vec3(1.0, 0.05, 1.0);
+        else if (slot == 5) slotColor = vec3(0.0, 1.0, 1.0);
+        else if (slot == 6) slotColor = vec3(1.0, 0.55, 0.0);
+        else if (slot == 7) slotColor = vec3(0.65, 0.25, 1.0);
+        fragColor = vec4(slotColor, 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 43) {
+        bool glassCandidate = pc.materialTypeHint == 6;
+        fragColor = glassCandidate ? vec4(1.0, 1.0, 1.0, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+    if (pc.activeDebugView == 44) {
+        fragColor = vec4(0.0, 0.22, 1.0, 1.0);
+        return;
+    }
+
     if ((pc.alphaMode == 1 || pc.alphaMode == 2) && alpha < cutoff) {
         discard;
     }

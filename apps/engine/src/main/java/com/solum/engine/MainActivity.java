@@ -183,6 +183,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private boolean materialPresetPendingApply = false;
     private int brightnessPresetIndex = 3;
     private int activeDebugViewIndex = 0;
+    private int activeGlassTruthViewIndex = 0;
     private int toneMappingModeIndex = 1;
     private File cachedReportDir = null;
     private String cachedReportDirReason = "not_resolved";
@@ -912,20 +913,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleMaterialView() {
-        activeDebugViewIndex = (activeDebugViewIndex + 1) % 46;
+        activeGlassTruthViewIndex = 0;
+        activeDebugViewIndex = (activeDebugViewIndex + 1) % 42;
         applyLightingControls();
         updateStatus();
     }
 
     private void cycleGlassTruthView() {
-        if (activeDebugViewIndex < 42 || activeDebugViewIndex > 45) {
-            activeDebugViewIndex = 42;
-        } else if (activeDebugViewIndex == 45) {
-            activeDebugViewIndex = 0;
+        if (activeGlassTruthViewIndex < 42 || activeGlassTruthViewIndex > 45) {
+            activeGlassTruthViewIndex = 42;
+        } else if (activeGlassTruthViewIndex == 45) {
+            activeGlassTruthViewIndex = 0;
         } else {
-            activeDebugViewIndex += 1;
+            activeGlassTruthViewIndex += 1;
         }
-        modelState.glassMetadataStatus = "p31b_truth_probe_" + glassTruthLabel(activeDebugViewIndex);
+        modelState.glassMetadataStatus = "p31c_truth_probe_split_" + glassTruthLabel(activeGlassTruthViewIndex);
         applyLightingControls();
         updateStatus();
     }
@@ -1294,7 +1296,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.exposureValue = exposureValue;
         modelState.ambientFloor = ambientFloor;
         modelState.brightnessPreset = brightnessPresetName(brightnessPresetIndex);
-        modelState.activeDebugView = materialDebugViewName(activeDebugViewIndex);
+        modelState.activeDebugView = materialDebugViewName(effectiveShaderDebugViewIndex());
         modelState.debugViewStatus = "shader_applied";
         modelState.normalDebugViewStatus = "shader_applied";
         modelState.ndotlDebugViewStatus = "shader_applied";
@@ -1331,7 +1333,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (presetApplyButton != null) presetApplyButton.setText(materialPresetPendingApply ? "Apply Preset *" : "Apply Preset");
         if (emissiveSlider != null) emissiveSlider.setProgress(sliderProgress(emissiveIntensity, 0.0f, 2.0f));
         if (emissiveDebugButton != null) emissiveDebugButton.setText("Emissive View");
-        if (alphaModeDebugButton != null) alphaModeDebugButton.setText("Alpha: " + materialDebugViewName(activeDebugViewIndex));
+        if (alphaModeDebugButton != null) alphaModeDebugButton.setText("Alpha: " + materialDebugViewName(effectiveShaderDebugViewIndex()));
         if (doubleSidedDebugButton != null) doubleSidedDebugButton.setText("Double Sided");
         if (resetAlphaButton != null) resetAlphaButton.setText("Reset Alpha");
         if (calibrationButton != null) calibrationButton.setText("Calib " + oneDecimal(calibrationSliderValue));
@@ -1339,11 +1341,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (paintGlossButton != null) paintGlossButton.setText("Coat " + oneDecimal(paintGlossSliderValue));
         if (materialStatusView != null) materialStatusView.setText("Slot " + selectedMaterialSlot + "/" + Math.max(0, selectedMaterialSlotCount) + " " + modelState.selectedMaterialName + " " + modelState.selectedMaterialTypeHint + "\n" + modelState.selectedMaterialTextureSummaryStatus + "\nPreset " + modelState.activeMaterialPreset + " | Emissive " + oneDecimal(emissiveIntensity) + "\nAlpha " + modelState.alphaModeSupportStatus + " cutoff " + oneDecimal(alphaCutoffValue) + " | Double " + modelState.doubleSidedMode + "\nMetallic " + oneDecimal(selectedSlotMetallicOverride) + " Rough " + oneDecimal(selectedSlotRoughnessOverride) + " Normal " + oneDecimal(selectedSlotNormalScaleOverride) + " AO " + oneDecimal(selectedSlotAoOverride) + "\nCalib " + oneDecimal(calibrationSliderValue) + " Gloss " + oneDecimal(glossSliderValue) + " Coat " + oneDecimal(paintGlossSliderValue) + " | Fabric matte: on");
         updateSliderPositionsFromState();
-        if (materialViewButton != null) materialViewButton.setText("Debug: " + modelState.activeDebugView);
-        if (glassTruthButton != null) glassTruthButton.setText("Glass Truth: " + glassTruthLabel(activeDebugViewIndex));
+        if (materialViewButton != null) materialViewButton.setText("Debug: " + materialDebugViewName(activeDebugViewIndex));
+        if (glassTruthButton != null) glassTruthButton.setText("Glass Truth: " + glassTruthLabel(activeGlassTruthViewIndex));
         try {
             if (nativeLoaded && nativeHandle != 0L) {
-                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPresetIndex, calibrationSliderValue, glossSliderValue, paintGlossSliderValue, environmentIntensity, environmentPresetIndex, horizonStrength, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, glossSliderValue, paintGlossSliderValue, alphaCutoffValue, emissiveIntensity, activeMaterialPresetIndex);
+                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, effectiveShaderDebugViewIndex(), toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPresetIndex, calibrationSliderValue, glossSliderValue, paintGlossSliderValue, environmentIntensity, environmentPresetIndex, horizonStrength, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, glossSliderValue, paintGlossSliderValue, alphaCutoffValue, emissiveIntensity, activeMaterialPresetIndex);
             }
         } catch (Throwable t) {
             modelState.debugViewStatus = "native_control_failed";
@@ -1524,6 +1526,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 3) return "Outdoor";
         if (index == 4) return "Sunset";
         return "Studio";
+    }
+
+    private int effectiveShaderDebugViewIndex() {
+        return activeGlassTruthViewIndex != 0 ? activeGlassTruthViewIndex : activeDebugViewIndex;
     }
 
     private String materialDebugViewName(int index) {
@@ -2740,6 +2746,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"p31bGlassTruthProbeStatus\": \"enabled_shader_debug_views_42_45\",\n"
             + "  \"p31bGlassCandidateCount\": " + countOccurrences(modelState.materialSlotDiagnostics, "\\\"glassCandidate\\\":true") + ",\n"
             + "  \"p31bActiveDebugViewIndex\": " + activeDebugViewIndex + ",\n"
+            + "  \"p31cGlassTruthSplitStatus\": \"enabled_separate_ui_state_shared_native_effective_view\",\n"
+            + "  \"p31cUiDebugViewIndex\": " + activeDebugViewIndex + ",\n"
+            + "  \"p31cGlassTruthViewIndex\": " + activeGlassTruthViewIndex + ",\n"
+            + "  \"p31cEffectiveShaderDebugViewIndex\": " + effectiveShaderDebugViewIndex() + ",\n"
             + "  \"p31bActiveDebugViewName\": \"" + escape(materialDebugViewName(activeDebugViewIndex)) + "\",\n"
             + "  \"materialCalibrationStatus\": \"" + escape(jsonStringField(renderLab, "materialCalibrationStatus", modelState.materialCalibrationStatus)) + "\",\n"
             + "  \"materialCalibrationMode\": \"" + escape(jsonStringField(renderLab, "materialCalibrationMode", modelState.materialCalibrationMode)) + "\",\n"

@@ -1,3 +1,19 @@
+## Patch P31C — Split Glass Truth Debug State
+
+Scope:
+- Split UI debug state from Glass Truth state.
+- `activeDebugViewIndex` stays for the old Debug button.
+- `activeGlassTruthViewIndex` is used only by the Glass Truth button.
+- Native shader receives `effectiveShaderDebugViewIndex()`:
+  - Glass Truth view if enabled;
+  - otherwise normal Debug view.
+- Pressing normal Debug turns Glass Truth off.
+- Glass Truth no longer changes the Debug button label.
+
+Purpose:
+- Remove false impression that two debug modes are pressed at once.
+- Make P31B visual traps deterministic before adding real glass.
+
 ## Patch P31B — Safe Glass Truth Probe Foundation
 
 Scope:

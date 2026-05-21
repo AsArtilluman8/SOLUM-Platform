@@ -122,8 +122,12 @@ struct RuntimeDiagnostics {
         f << "  \"glassActiveSlotList\": \"" << escapeJson(model.glassActiveSlotList) << "\",\n";
         f << "  \"glassSlotPolicyVersion\": \"" << escapeJson(model.glassSlotPolicyVersion) << "\",\n";
         f << "  \"glassSlotPolicyMode\": \"" << escapeJson(model.glassSlotPolicyMode) << "\",\n";
+        f << "  \"glassSlotPolicyReason\": \"" << escapeJson(model.glassSlotPolicyReason) << "\",\n";
         f << "  \"activeTransparentGlassSlotCount\": " << model.activeTransparentGlassSlotCount << ",\n";
+        f << "  \"activeTransparentGlassSlotIndices\": " << model.activeTransparentGlassSlotIndices << ",\n";
+        f << "  \"activeTransparentGlassSlotNames\": " << model.activeTransparentGlassSlotNames << ",\n";
         f << "  \"activeTransparentGlassSlotList\": \"" << escapeJson(model.activeTransparentGlassSlotList) << "\",\n";
+        f << "  \"glassSlotRejectedCandidates\": " << model.glassSlotRejectedCandidates << ",\n";
         f << "  \"skippedGlassLikeSlotCount\": " << model.skippedGlassLikeSlotCount << ",\n";
         f << "  \"skippedGlassLikeSlotList\": \"" << escapeJson(model.skippedGlassLikeSlotList) << "\",\n";
         f << "  \"skippedGlassLikeSlotReasons\": \"" << escapeJson(model.skippedGlassLikeSlotReasons) << "\",\n";
@@ -136,6 +140,7 @@ struct RuntimeDiagnostics {
         f << "  \"transparentPassRenderedGlassSlots\": \"" << escapeJson(model.transparentPassRenderedGlassSlots) << "\",\n";
         f << "  \"duplicateTransmissionVolumeSkipped\": \"" << escapeJson(model.duplicateTransmissionVolumeSkipped) << "\",\n";
         f << "  \"glassSlotDrawDiagnostics\": " << model.glassSlotDrawDiagnostics << ",\n";
+        f << "  \"universalGlassSlotTruthTable\": " << model.universalGlassSlotTruthTable << ",\n";
         f << "  \"glassTrapModeIndex\": " << model.glassTrapModeIndex << ",\n";
         f << "  \"glassTrapModeName\": \"" << escapeJson(model.glassTrapModeName) << "\",\n";
         f << "  \"glassTrapModeRuntimeEnabled\": \"" << escapeJson(model.glassTrapModeRuntimeEnabled) << "\",\n";

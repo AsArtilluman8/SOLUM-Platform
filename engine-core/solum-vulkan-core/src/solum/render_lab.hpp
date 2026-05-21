@@ -839,8 +839,12 @@ struct RenderLabState {
         f << indent << "  \"activeTransparentGlassSlotSource\": \"" << escapeJson(model.activeTransparentGlassSlotSource) << "\",\n";
         f << indent << "  \"glassSlotPolicyVersion\": \"" << escapeJson(model.glassSlotPolicyVersion) << "\",\n";
         f << indent << "  \"glassSlotPolicyMode\": \"" << escapeJson(model.glassSlotPolicyMode) << "\",\n";
+        f << indent << "  \"glassSlotPolicyReason\": \"" << escapeJson(model.glassSlotPolicyReason) << "\",\n";
         f << indent << "  \"activeTransparentGlassSlotCount\": " << model.activeTransparentGlassSlotCount << ",\n";
+        f << indent << "  \"activeTransparentGlassSlotIndices\": " << model.activeTransparentGlassSlotIndices << ",\n";
+        f << indent << "  \"activeTransparentGlassSlotNames\": " << model.activeTransparentGlassSlotNames << ",\n";
         f << indent << "  \"activeTransparentGlassSlotList\": \"" << escapeJson(model.activeTransparentGlassSlotList) << "\",\n";
+        f << indent << "  \"glassSlotRejectedCandidates\": " << model.glassSlotRejectedCandidates << ",\n";
         f << indent << "  \"skippedGlassLikeSlotCount\": " << model.skippedGlassLikeSlotCount << ",\n";
         f << indent << "  \"skippedGlassLikeSlotList\": \"" << escapeJson(model.skippedGlassLikeSlotList) << "\",\n";
         f << indent << "  \"skippedGlassLikeSlotReasons\": \"" << escapeJson(model.skippedGlassLikeSlotReasons) << "\",\n";
@@ -853,6 +857,7 @@ struct RenderLabState {
         f << indent << "  \"transparentPassRenderedGlassSlots\": \"" << escapeJson(model.transparentPassRenderedGlassSlots) << "\",\n";
         f << indent << "  \"duplicateTransmissionVolumeSkipped\": \"" << escapeJson(model.duplicateTransmissionVolumeSkipped) << "\",\n";
         f << indent << "  \"glassSlotDrawDiagnostics\": " << model.glassSlotDrawDiagnostics << ",\n";
+        f << indent << "  \"universalGlassSlotTruthTable\": " << model.universalGlassSlotTruthTable << ",\n";
         f << indent << "  \"glassTrapModeIndex\": " << model.glassTrapModeIndex << ",\n";
         f << indent << "  \"glassTrapModeName\": \"" << escapeJson(model.glassTrapModeName) << "\",\n";
         f << indent << "  \"glassTrapModeRuntimeEnabled\": \"" << escapeJson(model.glassTrapModeRuntimeEnabled) << "\",\n";

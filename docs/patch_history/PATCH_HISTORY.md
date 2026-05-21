@@ -2972,3 +2972,28 @@ Keep Transparent v1 proof glass from rendering multiple glass-like material slot
 - Pipeline/blend/depth state.
 - GLB importer and node transforms.
 - Pixel readback or visual proof claims.
+
+## Patch P30E — Universal GLB Glass Slot Truth / Pass Routing Audit
+
+### Goal
+
+Prove GLB glass routing per material slot without changing the P30C glass beauty formula.
+
+### Changed
+
+- Added `universalGlassSlotTruthTable` diagnostics for slot/material/alpha/transmission/volume/classifier/policy/pass/shader control truth.
+- Added GLB-aware glass candidate reasons, including OPAQUE + transmission/volume/name glass.
+- Added active transparent slot policy diagnostics and rejected candidate list.
+- Added trap modes:
+  - `Glass Candidates WHITE`
+  - `Transparent Draw CYAN`
+- Kept draw truth fields sourced from actual draw submission points.
+
+### Not changed
+
+- Glass beauty formula.
+- Vulkan blend/depth/cull state.
+- GLB transforms or import geometry.
+- P30B slot isolation intent.
+- P30C clean path.
+- Visual success is not claimed.

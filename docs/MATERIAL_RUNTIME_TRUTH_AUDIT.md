@@ -258,6 +258,47 @@ Render route diagnostics now report route state, not visual proof:
 - `glassVisualBranchActive = yes/no`
 - `glassTransparentPassActive = yes/no`
 - `glassFakeFallbackActive = yes/no`
+
+## P30E Universal GLB Glass Slot Truth / Pass Routing Audit
+
+P30E adds a GLB-aware per-slot truth table for diagnostic routing only. It does not tune the P30C clean glass formula and does not claim visual success.
+
+Classifier rules:
+
+- Material name contains `glass`, `window`, `windshield`, `pane`, `bottle`, or `vase`.
+- `alphaMode == BLEND`.
+- `alphaMode == MASK` and `KHR_materials_transmission` exists.
+- `baseColorAlpha < 0.95`.
+- `KHR_materials_transmission.transmissionFactor > 0.0`.
+- `KHR_materials_volume` exists.
+- Existing manual/import role is Glass.
+
+Important GLB rule: `alphaMode == OPAQUE` does not disqualify glass. glTF transmission and volume extensions describe transparent glass-like material behavior even when the alpha mode remains opaque. Therefore ToyCar material `Glass` with `transmissionFactor = 1` is a glass candidate.
+
+Expected model facts:
+
+- ToyCar: material `Glass`, `alphaMode = OPAQUE`, `transmissionFactor = 1` must report `glassCandidate = true`.
+- GlassVaseFlowers: `GlassAlpha` and `GlassTransmission` must both report `glassCandidate = true`; active routing may select only one.
+- GlassBrokenWindow: `WindowGlass`, `alphaMode = MASK`, `transmissionFactor = 1` must report `glassCandidate = true`.
+
+Runtime diagnostics now export:
+
+- `universalGlassSlotTruthTable`
+- `glassCandidateReason`
+- `glassSlotPolicyReason`
+- `activeTransparentGlassSlotIndices`
+- `activeTransparentGlassSlotNames`
+- `glassSlotRejectedCandidates`
+- draw fields from actual draw submission points: `drawnOpaqueLastFrame`, `drawnTransparentLastFrame`, `cleanGlassPathLastFrame`, `oldFallbackPathLastFrame`.
+
+Trap interpretation:
+
+- `Glass Candidates WHITE`: proves classifier reaches shader-visible role routing.
+- `Active Glass BLUE`: proves the active transparent glass slot was selected.
+- `Transparent Draw CYAN`: proves the transparent pass submitted the slot.
+- `Opaque Glass YELLOW`: proves a glass candidate leaked into the opaque pass.
+- `Slot Heatmap`: proves material slot id reaches shader for all slots.
+- `Full Shader Test PURPLE`: proves the trap branch reaches the active shader early.
 - `glassRouteIsVisualProof = false`
 
 Preset diagnostics now distinguish preset role from shader truth:

@@ -229,6 +229,8 @@ inline const char* glassTrapModeName(int mode) {
     if (mode == 6) return "Hide Non-Glass";
     if (mode == 7) return "Slot Heatmap";
     if (mode == 8) return "Full Shader Test PURPLE";
+    if (mode == 9) return "Glass Candidates WHITE";
+    if (mode == 10) return "Transparent Draw CYAN";
     return "Off";
 }
 
@@ -960,6 +962,10 @@ struct ModelRenderState {
     std::string activeTransparentGlassSlotSource = "none";
     std::string glassSlotPolicyVersion = "none";
     std::string glassSlotPolicyMode = "none";
+    std::string glassSlotPolicyReason = "none";
+    std::string activeTransparentGlassSlotIndices = "[]";
+    std::string activeTransparentGlassSlotNames = "[]";
+    std::string glassSlotRejectedCandidates = "[]";
     uint32_t skippedGlassLikeSlotCount = 0;
     std::string skippedGlassLikeSlotList = "none";
     std::string skippedGlassLikeSlotReasons = "none";
@@ -972,6 +978,7 @@ struct ModelRenderState {
     std::string transparentPassRenderedGlassSlots = "none";
     std::string duplicateTransmissionVolumeSkipped = "false";
     std::string glassSlotDrawDiagnostics = "[]";
+    std::string universalGlassSlotTruthTable = "[]";
     int glassTrapModeIndex = 0;
     std::string glassTrapModeName = "Off";
     std::string glassTrapModeRuntimeEnabled = "false";

@@ -376,6 +376,14 @@ void main() {
     float metallic = clamp(pc.metallicFactor * mr.b, 0.0, 1.0);
     bool materialRoleIsGlass = hint == 6 || pc.materialPresetHint == 6;
     bool glassActive = materialRoleIsGlass && pc.glassEnabled != 0;
+    if (pc.glassTrapMode == 9 && materialRoleIsGlass) {
+        fragColor = vec4(1.0, 1.0, 1.0, 0.75);
+        return;
+    }
+    if (pc.glassTrapMode == 10 && pc.glassTrapDrawPass == 1) {
+        fragColor = vec4(0.0, 1.0, 1.0, 0.65);
+        return;
+    }
     if (pc.glassTrapMode == 7) {
         fragColor = vec4(glassTrapSlotHeatmap(pc.materialId), 1.0);
         return;

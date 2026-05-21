@@ -1097,7 +1097,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleGlassTrapMode() {
-        glassTrapModeIndex = (glassTrapModeIndex + 1) % 9;
+        glassTrapModeIndex = (glassTrapModeIndex + 1) % 11;
         applyLightingControls();
         updateStatus();
     }
@@ -1111,6 +1111,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (mode == 6) return "Hide Non-Glass";
         if (mode == 7) return "Slot Heatmap";
         if (mode == 8) return "Full Shader Test PURPLE";
+        if (mode == 9) return "Glass Candidates WHITE";
+        if (mode == 10) return "Transparent Draw CYAN";
         return "Off";
     }
 
@@ -1792,7 +1794,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             String trapPass = jsonStringField(renderLab, "glassTrapLastDrawPassName", "none");
             String trapClean = jsonStringField(renderLab, "glassTrapLastDrawCleanPathUsed", "false");
             String trapFormula = jsonStringField(renderLab, "glassTrapLastDrawFormulaVersion", "not_observed");
-            String glassDraw = "-1".equals(trapSlot) ? "none" : ("slot=" + trapSlot + " pass=" + trapPass + " clean=" + trapClean + " formula=" + trapFormula + " opacity=" + jsonNumberField(renderLab, "glassTrapLastDrawOpacity", "0"));
+            String activeIndices = jsonArrayField(renderLab, "activeTransparentGlassSlotIndices", "[]");
+            String activeDraw = activeIndices.contains(trapSlot) ? "yes" : "no";
+            String glassDraw = "-1".equals(trapSlot) ? "none" : ("slot=" + trapSlot + " " + jsonStringField(renderLab, "glassTrapLastDrawMaterialName", "unknown") + " pass=" + trapPass + " active=" + activeDraw + " opacity=" + jsonNumberField(renderLab, "glassTrapLastDrawOpacity", "0") + " clean=" + trapClean + " formula=" + trapFormula);
             materialStatusView.setText("Selected Material: " + modelState.selectedSlotDisplay + " " + modelState.selectedMaterialName + " " + modelState.selectedMaterialRole + "\nGlassTrap: " + trapName + "\nGlassDraw: " + glassDraw + "\nGlass Path: " + renderPath + "\nGlass Slots: " + modelState.glassActiveSlotCount + "/" + modelState.glassSlotsCount + " " + modelState.glassActiveSlotList + "\nApply target: " + applyTarget + "\nGlass Enabled: " + (glassEnabled ? "on" : "off") + "\nEffective center/edge: " + twoDecimal(modelState.glassEffectiveCenterAlpha) + "/" + twoDecimal(modelState.glassEffectiveEdgeAlpha) + "\nLayer compensation: " + twoDecimal(modelState.glassEffectiveLayerCompensation) + "\nTruth: " + modelState.glassRuntimeTruthSource + "\nPreset Mix In Shader: " + modelState.glassPresetMixInShader + "\nVisual Verified: no pixel readback\n" + glassRoute + "\nCutout Slots: " + modelState.cutoutSlotsDisplay);
         }
         updateSliderPositionsFromState();
@@ -4561,8 +4565,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"activeTransparentGlassSlotSource\": \"" + escape(jsonStringField(renderLab, "activeTransparentGlassSlotSource", modelState.activeTransparentGlassSlotSource)) + "\",\n"
             + indent + "\"glassSlotPolicyVersion\": \"" + escape(jsonStringField(renderLab, "glassSlotPolicyVersion", modelState.glassSlotPolicyVersion)) + "\",\n"
             + indent + "\"glassSlotPolicyMode\": \"" + escape(jsonStringField(renderLab, "glassSlotPolicyMode", modelState.glassSlotPolicyMode)) + "\",\n"
+            + indent + "\"glassSlotPolicyReason\": \"" + escape(jsonStringField(renderLab, "glassSlotPolicyReason", "none")) + "\",\n"
             + indent + "\"activeTransparentGlassSlotCount\": " + jsonNumberField(renderLab, "activeTransparentGlassSlotCount", String.valueOf(modelState.activeTransparentGlassSlotCount)) + ",\n"
+            + indent + "\"activeTransparentGlassSlotIndices\": " + jsonArrayField(renderLab, "activeTransparentGlassSlotIndices", "[]") + ",\n"
+            + indent + "\"activeTransparentGlassSlotNames\": " + jsonArrayField(renderLab, "activeTransparentGlassSlotNames", "[]") + ",\n"
             + indent + "\"activeTransparentGlassSlotList\": \"" + escape(jsonStringField(renderLab, "activeTransparentGlassSlotList", modelState.activeTransparentGlassSlotList)) + "\",\n"
+            + indent + "\"glassSlotRejectedCandidates\": " + jsonArrayField(renderLab, "glassSlotRejectedCandidates", "[]") + ",\n"
             + indent + "\"skippedGlassLikeSlotCount\": " + jsonNumberField(renderLab, "skippedGlassLikeSlotCount", String.valueOf(modelState.skippedGlassLikeSlotCount)) + ",\n"
             + indent + "\"skippedGlassLikeSlotList\": \"" + escape(jsonStringField(renderLab, "skippedGlassLikeSlotList", modelState.skippedGlassLikeSlotList)) + "\",\n"
             + indent + "\"skippedGlassLikeSlotReasons\": \"" + escape(jsonStringField(renderLab, "skippedGlassLikeSlotReasons", modelState.skippedGlassLikeSlotReasons)) + "\",\n"
@@ -4575,6 +4583,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"transparentPassRenderedGlassSlots\": \"" + escape(jsonStringField(renderLab, "transparentPassRenderedGlassSlots", modelState.transparentPassRenderedGlassSlots)) + "\",\n"
             + indent + "\"duplicateTransmissionVolumeSkipped\": \"" + escape(jsonStringField(renderLab, "duplicateTransmissionVolumeSkipped", modelState.duplicateTransmissionVolumeSkipped)) + "\",\n"
             + indent + "\"glassSlotDrawDiagnostics\": " + jsonArrayField(renderLab, "glassSlotDrawDiagnostics", modelState.glassSlotDrawDiagnostics) + ",\n"
+            + indent + "\"universalGlassSlotTruthTable\": " + jsonArrayField(renderLab, "universalGlassSlotTruthTable", "[]") + ",\n"
             + indent + "\"glassTrapModeIndex\": " + jsonNumberField(renderLab, "glassTrapModeIndex", String.valueOf(glassTrapModeIndex)) + ",\n"
             + indent + "\"glassTrapModeName\": \"" + escape(jsonStringField(renderLab, "glassTrapModeName", glassTrapModeName(glassTrapModeIndex))) + "\",\n"
             + indent + "\"glassTrapModeRuntimeEnabled\": \"" + escape(jsonStringField(renderLab, "glassTrapModeRuntimeEnabled", glassTrapModeIndex == 0 ? "false" : "true")) + "\",\n"
@@ -6493,15 +6502,30 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             }
         }
 
+        private static String[] nodeNamesByMesh(JSONArray nodes, int meshCount) {
+            String[] out = new String[Math.max(0, meshCount)];
+            if (nodes == null) return out;
+            for (int i = 0; i < nodes.length(); i++) {
+                JSONObject node = nodes.optJSONObject(i);
+                if (node == null) continue;
+                int meshIndex = node.optInt("mesh", -1);
+                if (meshIndex < 0 || meshIndex >= out.length || (out[meshIndex] != null && !out[meshIndex].isEmpty())) continue;
+                out[meshIndex] = node.optString("name", "");
+            }
+            return out;
+        }
+
         static GlbPrimitiveMesh extractFirstPrimitive(GlbParseResult parsed) throws Exception {
             if (parsed == null || !parsed.glbValid) throw new IllegalStateException("glb_not_valid: " + (parsed == null ? "null" : parsed.reason));
             if (parsed.jsonText == null || parsed.jsonText.isEmpty()) throw new IllegalStateException("missing_cached_glb_json");
             if (parsed.binChunk == null || parsed.binChunk.length == 0) throw new IllegalStateException("missing_glb_bin_chunk");
             JSONObject root = new JSONObject(parsed.jsonText);
             JSONArray meshes = root.optJSONArray("meshes");
+            JSONArray nodes = root.optJSONArray("nodes");
             JSONArray accessors = root.optJSONArray("accessors");
             JSONArray bufferViews = root.optJSONArray("bufferViews");
             if (meshes == null || meshes.length() == 0) throw new IllegalStateException("no_meshes_in_glb");
+            String[] nodeNamesByMesh = nodeNamesByMesh(nodes, meshes.length());
             JSONObject mesh = meshes.optJSONObject(0);
             if (mesh == null) throw new IllegalStateException("mesh_0_missing");
             JSONArray primitives = mesh.optJSONArray("primitives");
@@ -6584,9 +6608,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (parsed.binChunk == null || parsed.binChunk.length == 0) throw new IllegalStateException("missing_glb_bin_chunk");
             JSONObject root = new JSONObject(parsed.jsonText);
             JSONArray meshes = root.optJSONArray("meshes");
+            JSONArray nodes = root.optJSONArray("nodes");
             JSONArray accessors = root.optJSONArray("accessors");
             JSONArray bufferViews = root.optJSONArray("bufferViews");
             if (meshes == null || meshes.length() == 0) throw new IllegalStateException("no_meshes_in_glb");
+            String[] nodeNamesByMesh = nodeNamesByMesh(nodes, meshes.length());
 
             List<PrimitiveSource> sources = new ArrayList<>();
             List<String> skipped = new ArrayList<>();
@@ -6618,6 +6644,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                         AccessorReader tangents = tangentAccessor >= 0 ? AccessorReader.create(accessors, bufferViews, parsed.binChunk, tangentAccessor, 5126, "VEC4", "TANGENT") : null;
                         PrimitiveSource src = new PrimitiveSource();
                         src.primitive = primitive;
+                        src.meshIndex = meshIndex;
+                        src.meshName = mesh == null ? "" : mesh.optString("name", "");
+                        src.nodeName = meshIndex >= 0 && meshIndex < nodeNamesByMesh.length ? nodeNamesByMesh[meshIndex] : "";
+                        src.primitiveIndex = primitiveIndex;
                         src.positions = positions;
                         src.normals = normals;
                         src.texcoords = texcoords;
@@ -6708,6 +6738,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 }
                 if (materialSlot >= 0 && materialSlot < materials.size()) {
                     MaterialInfo mat = materials.get(materialSlot);
+                    mat.notePrimitive(src.meshName, src.nodeName, src.primitiveIndex);
                     mat.tangentStatus = primitiveTangentStatus;
                     mat.tangentMissingCount += primitiveTangentMissing;
                     mat.tangentFallbackCount += primitiveTangentFallback;
@@ -6823,6 +6854,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 JSONObject extensions = material == null ? null : material.optJSONObject("extensions");
                 info.hasTransmission = extensions != null && extensions.optJSONObject("KHR_materials_transmission") != null;
                 info.hasVolume = extensions != null && extensions.optJSONObject("KHR_materials_volume") != null;
+                JSONObject transmission = extensions == null ? null : extensions.optJSONObject("KHR_materials_transmission");
+                JSONObject volume = extensions == null ? null : extensions.optJSONObject("KHR_materials_volume");
+                info.transmissionFactor = transmission == null ? 0.0f : (float)transmission.optDouble("transmissionFactor", 0.0);
+                info.thicknessFactor = volume == null ? 0.0f : (float)volume.optDouble("thicknessFactor", 0.0);
                 JSONArray emissive = material == null ? null : material.optJSONArray("emissiveFactor");
                 if (emissive != null && emissive.length() >= 3) for (int e = 0; e < 3; e++) info.emissiveFactor[e] = (float)emissive.optDouble(e, 0.0);
                 info.emissiveTextureStatus = material != null && material.optJSONObject("emissiveTexture") != null ? "metadata_only" : "missing";
@@ -6863,7 +6898,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             boolean cutoutHint = info.alphaMode == 1;
             if (info.hasTransmission || info.hasVolume) return 6;
             if (luminance(info.emissiveFactor) > 0.001f || "metadata_only".equals(info.emissiveTextureStatus)) return 8;
-            if (name.contains("glass") || name.contains("window") || name.contains("windshield") || name.contains("crystal") || name.contains("transparent")) return 6;
+            if (name.contains("glass") || name.contains("window") || name.contains("windshield") || name.contains("pane") || name.contains("bottle") || name.contains("vase") || name.contains("crystal") || name.contains("transparent")) return 6;
             if (name.contains("decal") || name.contains("sticker") || name.contains("label")) return 7;
             if (cutoutHint || name.contains("leaf") || name.contains("leaves") || name.contains("grille") || name.contains("grid") || name.contains("card")) return 5;
             if (info.metallicFactor >= 0.65f || name.contains("metal") || name.contains("chrome") || name.contains("steel")) return 2;
@@ -7202,7 +7237,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     .append(",\"alphaMode\":\"").append(esc(m.alphaModeText)).append("\"")
                     .append(",\"baseColorAlpha\":").append(jsonFloat(m.baseColorFactor[3]))
                     .append(",\"hasTransmission\":").append(m.hasTransmission)
+                    .append(",\"transmissionFactor\":").append(jsonFloat(m.transmissionFactor))
                     .append(",\"hasVolume\":").append(m.hasVolume)
+                    .append(",\"thicknessFactor\":").append(jsonFloat(m.thicknessFactor))
+                    .append(",\"hasTextureBaseColor\":").append(m.texture != null && "ok".equals(m.texture.status))
+                    .append(",\"nodeName\":\"").append(esc(m.nodeName == null || m.nodeName.isEmpty() ? "unknown" : m.nodeName)).append("\"")
+                    .append(",\"meshName\":\"").append(esc(m.meshName == null || m.meshName.isEmpty() ? "unknown" : m.meshName)).append("\"")
+                    .append(",\"primitiveIndex\":").append(m.primitiveIndex)
+                    .append(",\"glassCandidate\":").append(glassCandidate(m))
+                    .append(",\"glassCandidateReason\":\"").append(esc(glassCandidateReason(m))).append("\"")
                     .append(",\"alphaCutoff\":").append(jsonFloat(m.alphaCutoff))
                     .append(",\"alphaTextureStatus\":\"").append(esc(m.texture == null ? "missing" : m.texture.status)).append("\"")
                     .append(",\"alphaMaskAppliedStatus\":\"").append(esc(m.alphaMode == 1 ? "shader_discard_enabled" : "not_mask")).append("\"")
@@ -7228,16 +7271,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             String name = m.materialName == null ? "" : m.materialName.toLowerCase(Locale.US);
             if (name.contains("hair") || name.contains("fur")) return "HairThin";
             if (m.materialTypeHint == 8) return "Emissive";
+            if (glassCandidate(m)) return "Glass";
             if (m.alphaMode == 1 || m.materialTypeHint == 5 || m.materialTypeHint == 7) return "Cutout";
-            return glassCandidateScore(m) >= 0.72f ? "Glass" : "Opaque";
+            return "Opaque";
         }
 
         private static String materialRoleSource(MaterialInfo m, String role) {
             if (m == null) return "none";
             if ("Glass".equals(role)) {
-                if (m.hasTransmission || m.hasVolume) return "transmission_or_volume_extension";
+                if (m.transmissionFactor > 0.0f || m.hasVolume) return "transmission_or_volume_extension";
                 String name = m.materialName == null ? "" : m.materialName.toLowerCase(Locale.US);
-                if (name.contains("glass") || name.contains("window") || name.contains("lens") || name.contains("transparent") || name.contains("crystal")) return "material_name_glass_keyword";
+                if (name.contains("glass") || name.contains("window") || name.contains("windshield") || name.contains("pane") || name.contains("bottle") || name.contains("vase")) return "material_name_glass_keyword";
                 return "alpha_blend_base_color_alpha";
             }
             if ("Cutout".equals(role)) return "alpha_mask_cutout";
@@ -7262,6 +7306,30 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (m.materialTypeHint == 8) score -= 0.65f;
             if (badOpaqueName) score -= extensionGlass || alphaGlass ? 0.42f : 1.15f;
             return score;
+        }
+
+        private static boolean glassCandidate(MaterialInfo m) {
+            return !"non_glass_rejected".equals(glassCandidateReason(m));
+        }
+
+        private static String glassCandidateReason(MaterialInfo m) {
+            if (m == null) return "invalid_material";
+            String name = m.materialName == null ? "" : m.materialName.toLowerCase(Locale.US);
+            ArrayList<String> reasons = new ArrayList<>();
+            if (name.contains("glass") || name.contains("window") || name.contains("windshield") || name.contains("pane") || name.contains("bottle") || name.contains("vase")) reasons.add("material_name_keyword");
+            if (m.alphaMode == 2) reasons.add("alphaMode_BLEND");
+            if (m.alphaMode == 1 && m.hasTransmission) reasons.add("alphaMode_MASK_with_transmission");
+            if (m.baseColorFactor[3] < 0.95f) reasons.add("baseColorAlpha_lt_0_95");
+            if (m.transmissionFactor > 0.0f) reasons.add("transmissionFactor_gt_0");
+            if (m.hasVolume) reasons.add("KHR_materials_volume");
+            if (m.materialTypeHint == 6) reasons.add("manual_or_import_role_Glass");
+            if (reasons.isEmpty()) return "non_glass_rejected";
+            StringBuilder b = new StringBuilder();
+            for (int i = 0; i < reasons.size(); i++) {
+                if (i > 0) b.append("|");
+                b.append(reasons.get(i));
+            }
+            return b.toString();
         }
 
         private static int textureReferences(JSONObject root) {
@@ -7599,6 +7667,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         IndexReader indices;
         int vertexCount = 0;
         int materialIndex = -1;
+        int meshIndex = -1;
+        String meshName = "";
+        String nodeName = "";
+        int primitiveIndex = -1;
     }
 
     private static final class TangentBuildResult {
@@ -7637,7 +7709,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String emissiveTextureStatus = "missing";
         String alphaModeText = "OPAQUE";
         boolean hasTransmission = false;
+        float transmissionFactor = 0.0f;
         boolean hasVolume = false;
+        float thicknessFactor = 0.0f;
+        String meshName = "unknown";
+        String nodeName = "unknown";
+        int primitiveIndex = -1;
         String metallicRoughnessStatus = "missing";
         String normalMapStatus = "missing";
         String normalMapAppliedStatus = "missing";
@@ -7652,6 +7729,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         int tangentMissingCount = 0;
         int tangentFallbackCount = 0;
         int tangentDegenerateTriangleCount = 0;
+
+        void notePrimitive(String mesh, String node, int primitive) {
+            if (primitiveIndex >= 0) return;
+            meshName = mesh == null || mesh.isEmpty() ? "unknown" : mesh;
+            nodeName = node == null || node.isEmpty() ? "unknown" : node;
+            primitiveIndex = primitive;
+        }
     }
 
     private static final class BaseColorTexture {

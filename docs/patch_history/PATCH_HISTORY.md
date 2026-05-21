@@ -2,6 +2,27 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P30C — Independent Live Glass Controls
+
+Scope:
+
+- Updated only the existing clean Transparent v1 glass early-return formula.
+- P30A/P30B clean path and slot isolation are preserved.
+- Opacity now controls center alpha/density only.
+- Edge controls rim mask strength/width only.
+- Tint stays weak in the center and stronger on the rim without full-surface paint.
+- Clarity controls haze/smoky body amount, not direct opacity.
+- Thickness uses an angled/rim thickness mask for edge/body depth.
+- Roughness dims/softens the rim and adds slight matte body feel without overriding opacity.
+- Old fake/PBR/baseColor/reflection glass code remains bypassed for Transparent v1.
+- Diagnostics mark `P30C_independent_live_controls` and keep pixel/visual proof unavailable.
+
+Honesty limits:
+
+- Pixel readback is still not implemented.
+- Visual verification is still manual.
+- No visual success is claimed.
+
 ## Patch P29E — Transparent Glass Proof Fix
 
 Scope:

@@ -365,3 +365,20 @@ Result:
 - Diagnostics export active/skipped glass-like slots, skip reasons, and per-slot `drawnOpaque` / `drawnTransparent` status.
 - Pixel readback is still not implemented.
 - Visual verification is still manual.
+
+## P30C Independent Live Glass Controls
+
+Formula marker: `P30C_independent_live_controls`.
+
+P30A proved the clean Transparent v1 glass early-return path. P30B isolated the transparent glass slot policy so the proof path is not polluted by duplicate transmission/volume shells. P30C keeps that clean path and makes live glass controls visibly independent.
+
+Control roles:
+
+- Opacity controls center alpha/density only.
+- Edge controls rim mask strength/width only and does not fill the center.
+- Tint is weak in the center and stronger on the rim; it is not a full-surface plastic paint.
+- Clarity controls haze/smoky body amount, not direct opacity.
+- Thickness uses a rim/angled-surface thickness mask for edge/body depth and avoids global grey fill.
+- Roughness dims/softens the rim and adds slight matte body color without overriding opacity.
+
+Transparent v1 still bypasses old fake/PBR/baseColor/reflection glass code through the clean early return. Pixel readback is still not implemented, diagnostics remain formula/CPU mirror only, and manual visual verification is required.

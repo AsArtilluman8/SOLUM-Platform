@@ -289,23 +289,64 @@ float contactGroundingMask(vec3 localPos, vec3 normalDir) {
     return clamp(bottom * mix(0.45, 1.0, radial) * mix(0.55, 1.0, upward), 0.0, 1.0);
 }
 
-vec4 renderCleanGlassV1(vec3 normalDir, vec3 viewDir, vec3 tint, float opacity, float edge)
+vec4 renderCleanGlassV1(
+    vec3 normalDir,
+    vec3 viewDir,
+    vec3 tint,
+    float opacity,
+    float edge,
+    float clarity,
+    float thickness,
+    float roughness
+)
 {
     vec3 nClean = normalize(normalDir);
     vec3 vClean = normalize(viewDir);
 
     float ndotv = clamp(abs(dot(nClean, vClean)), 0.0, 1.0);
 
-    float rawRim = pow(max(1.0 - ndotv, 0.0), max(edge, 1.25));
-    float rimMask = smoothstep(0.80, 0.98, rawRim);
+    // Rim: 0 in center, 1 near silhouette.
+    float rawRim = pow(max(1.0 - ndotv, 0.0), max(edge, 0.80));
+    float rimMask = smoothstep(0.45, 0.95, rawRim);
 
-    float centerAlpha = clamp(opacity * 0.030, 0.0, 0.035);
-    float rimAlpha = rimMask * clamp(0.020 + edge * 0.010, 0.020, 0.050);
-    float outAlpha = clamp(centerAlpha + rimAlpha, 0.0, 0.080);
+    // Separate opacity response. Stronger than proof mode, but still transparent.
+    float centerAlpha = clamp(opacity * 0.16, 0.0, 0.18);
 
-    vec3 centerRgb = tint * 0.003;
-    vec3 rimRgb = rimMask * (tint * 0.12 + vec3(0.035));
-    vec3 outRgb = centerRgb + rimRgb;
+    // Edge alpha: only rim.
+    float rimAlpha = rimMask * clamp(0.035 + edge * 0.035, 0.035, 0.14);
+
+    // Thickness: mostly rim/angled surfaces, not full center.
+    float thicknessMask = smoothstep(0.10, 0.85, 1.0 - ndotv);
+    float thicknessAlpha = thicknessMask * clamp(thickness * 0.075, 0.0, 0.10);
+
+    // Clarity controls haze, not hidden opacity.
+    float haze = (1.0 - clarity);
+    float hazeAlpha = clamp(haze * opacity * 0.045, 0.0, 0.06);
+
+    // Final alpha. Must not exceed 0.32.
+    float outAlpha = clamp(centerAlpha + rimAlpha + thicknessAlpha + hazeAlpha, 0.0, 0.32);
+
+    vec3 safeTint = clamp(tint, vec3(0.0), vec3(1.0));
+
+    // Center color is weak, not material fill.
+    vec3 centerRgb = safeTint * (0.018 + haze * 0.035);
+
+    // Rim color is stronger and masked.
+    vec3 rimRgb = rimMask * (safeTint * 0.38 + vec3(0.10));
+
+    // Thickness color is darker/smokier and masked.
+    vec3 thicknessRgb = thicknessMask * safeTint * thickness * 0.08;
+
+    // Roughness dims rim and adds slight matte body.
+    float rough = clamp(roughness, 0.0, 1.0);
+    rimRgb *= mix(1.15, 0.65, rough);
+    vec3 roughRgb = safeTint * rough * opacity * 0.025;
+
+    // Final RGB.
+    vec3 outRgb = centerRgb + rimRgb + thicknessRgb + roughRgb;
+
+    // Hard clamp to avoid white/grey plastic.
+    outRgb = clamp(outRgb, vec3(0.0), vec3(0.42));
 
     return vec4(outRgb, outAlpha);
 }
@@ -359,7 +400,16 @@ void main() {
     vec3 l = normalize(-vec3(pc.sunDirectionX, pc.sunDirectionY, pc.sunDirectionZ));
     vec3 v = normalize(vec3(0.0, 0.0, 1.0));
     if (glassActive && transparentGlassRequested) {
-        fragColor = renderCleanGlassV1(n, v, glassTint, glassOpacityInput, glassEdgeInput);
+        fragColor = renderCleanGlassV1(
+            n,
+            v,
+            glassTint,
+            glassOpacityInput,
+            clamp(pc.glassEdge, 0.0, 2.5),
+            glassClarityInput,
+            glassThicknessInput,
+            glassRoughInput
+        );
         return;
     }
     vec3 rawBaseColor = inColor * pc.baseColorFactor.rgb * texel.rgb;

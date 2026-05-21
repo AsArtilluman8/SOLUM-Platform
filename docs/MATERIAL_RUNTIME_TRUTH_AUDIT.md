@@ -382,3 +382,21 @@ Control roles:
 - Roughness dims/softens the rim and adds slight matte body color without overriding opacity.
 
 Transparent v1 still bypasses old fake/PBR/baseColor/reflection glass code through the clean early return. Pixel readback is still not implemented, diagnostics remain formula/CPU mirror only, and manual visual verification is required.
+
+## P30D Glass Truth Trap / Draw Path Probe
+
+P30D adds runtime diagnostic trap modes to prove which shader path, pass, and material slot is actually visible. This is a truth probe, not a beauty/tuning patch, and it does not claim visual success.
+
+Trap interpretation:
+
+- Off: normal P30C rendering.
+- Clean Path RED: P30C clean glass early-return fragments become red.
+- Old/Fallback GREEN: non-clean glass/fallback branch fragments become green.
+- Active Glass BLUE: active routed glass draw becomes blue.
+- Opaque Glass YELLOW: glass-like role drawn in opaque pass becomes yellow.
+- Hide Glass: routed/glass-like fragments are discarded.
+- Hide Non-Glass: non-glass fragments are discarded.
+- Slot Heatmap: every material slot gets a stable debug color.
+- Full Shader Test PURPLE: all fragments in `triangle.frag.glsl` become purple before material/glass branch logic.
+
+Diagnostics export the selected trap mode, last-frame trap observations, last draw slot/pass/path, live glass values at draw submission, and per-slot `drawnOpaqueLastFrame` / `drawnTransparentLastFrame` fields. Pixel readback remains not implemented, so trap colors require manual Android verification.

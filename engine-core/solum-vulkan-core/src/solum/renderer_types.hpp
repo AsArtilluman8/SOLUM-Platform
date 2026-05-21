@@ -86,6 +86,8 @@ struct MaterialConstants {
     float glassClarity = 0.82f;
     float glassThickness = 0.34f;
     int activeGlassSlotCount = 1;
+    int glassTrapMode = 0;
+    int glassTrapDrawPass = 0;
 };
 
 inline const char* lightPresetName(int preset) {
@@ -216,6 +218,23 @@ inline const char* materialTypeHintName(int hint) {
     if (hint == 7) return "decal_like";
     if (hint == 8) return "emissive_like";
     return "unknown";
+}
+
+inline const char* glassTrapModeName(int mode) {
+    if (mode == 1) return "Clean Path RED";
+    if (mode == 2) return "Old/Fallback GREEN";
+    if (mode == 3) return "Active Glass BLUE";
+    if (mode == 4) return "Opaque Glass YELLOW";
+    if (mode == 5) return "Hide Glass";
+    if (mode == 6) return "Hide Non-Glass";
+    if (mode == 7) return "Slot Heatmap";
+    if (mode == 8) return "Full Shader Test PURPLE";
+    return "Off";
+}
+
+inline const char* glassTrapPassName(int pass) {
+    if (pass == 1) return "transparent";
+    return "opaque";
 }
 
 inline const char* brightnessPresetName(int preset) {
@@ -953,6 +972,30 @@ struct ModelRenderState {
     std::string transparentPassRenderedGlassSlots = "none";
     std::string duplicateTransmissionVolumeSkipped = "false";
     std::string glassSlotDrawDiagnostics = "[]";
+    int glassTrapModeIndex = 0;
+    std::string glassTrapModeName = "Off";
+    std::string glassTrapModeRuntimeEnabled = "false";
+    std::string glassTrapLastFrameActive = "false";
+    std::string glassTrapLastFrameAnyCleanPath = "false";
+    std::string glassTrapLastFrameAnyOldFallback = "false";
+    std::string glassTrapLastFrameAnyOpaqueGlass = "false";
+    std::string glassTrapLastFrameAnyTransparentGlass = "false";
+    std::string glassTrapLastFrameAnyFullShaderTest = "false";
+    std::string glassTrapLastFrameAnySlotHeatmap = "false";
+    int glassTrapLastDrawSlotIndex = -1;
+    std::string glassTrapLastDrawMaterialName = "none";
+    std::string glassTrapLastDrawPassName = "none";
+    std::string glassTrapLastDrawCleanPathUsed = "false";
+    std::string glassTrapLastDrawOldFallbackUsed = "false";
+    std::string glassTrapLastDrawOpaqueUsed = "false";
+    std::string glassTrapLastDrawTransparentUsed = "false";
+    float glassTrapLastDrawOpacity = 0.0f;
+    float glassTrapLastDrawEdge = 0.0f;
+    int glassTrapLastDrawTintPreset = 0;
+    float glassTrapLastDrawClarity = 0.0f;
+    float glassTrapLastDrawThickness = 0.0f;
+    float glassTrapLastDrawRoughness = 0.0f;
+    std::string glassTrapLastDrawFormulaVersion = "not_observed";
     std::string transparentGlassSelectedSlotAllowedStatus = "inactive";
     std::string transparentGlassSelectedSlotRejectedStatus = "inactive";
     std::string transparentGlassAutoDetectStatus = "available";

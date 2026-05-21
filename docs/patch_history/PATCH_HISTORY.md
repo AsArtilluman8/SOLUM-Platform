@@ -2,6 +2,23 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P30D — Glass Truth Trap / Draw Path Probe
+
+Scope:
+
+- Added a runtime Glass Trap button cycling Off, Clean Path RED, Old/Fallback GREEN, Active Glass BLUE, Opaque Glass YELLOW, Hide Glass, Hide Non-Glass, Slot Heatmap, and Full Shader Test PURPLE.
+- Extended push constants with trap mode/pass metadata; pipeline state is unchanged.
+- Added shader trap outputs that affect actual render output, including early Full Shader Test PURPLE.
+- Added draw-loop trap diagnostics for last observed slot/pass/path and live glass values at draw submission.
+- Added per-slot `drawnOpaqueLastFrame` and `drawnTransparentLastFrame` diagnostics.
+- Preserved P30B slot isolation and P30C clean glass formula.
+
+Honesty limits:
+
+- This is not a beauty patch.
+- Pixel readback is still not implemented.
+- No visual success is claimed.
+
 ## Patch P30C — Independent Live Glass Controls
 
 Scope:

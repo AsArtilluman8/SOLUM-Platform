@@ -1036,9 +1036,12 @@ struct RendererCore {
             slotDrawDiagnostics += ",\"baseColorAlpha\":" + std::to_string(slot.baseColorFactor[3]);
             slotDrawDiagnostics += ",\"hasTransmission\":" + std::string(diagnosticsBoolForSlot((int)i, "hasTransmission") ? "true" : "false");
             slotDrawDiagnostics += ",\"hasVolume\":" + std::string(diagnosticsBoolForSlot((int)i, "hasVolume") ? "true" : "false");
+            slotDrawDiagnostics += ",\"isActiveTransparentGlassSlot\":" + std::string(activeProofGlass ? "true" : "false");
             slotDrawDiagnostics += ",\"role\":\"" + std::string(materialRoleNameForSlot((int)i)) + "\"";
             slotDrawDiagnostics += ",\"drawnOpaque\":" + std::string(drawnOpaque ? "true" : "false");
             slotDrawDiagnostics += ",\"drawnTransparent\":" + std::string(drawnTransparent ? "true" : "false");
+            slotDrawDiagnostics += ",\"drawnOpaqueLastFrame\":" + std::string(drawnOpaque ? "true" : "false");
+            slotDrawDiagnostics += ",\"drawnTransparentLastFrame\":" + std::string(drawnTransparent ? "true" : "false");
             slotDrawDiagnostics += ",\"skipReason\":\"" + skipReason + "\"}";
         }
         slotDrawDiagnostics += "]";
@@ -1321,6 +1324,9 @@ struct RendererCore {
         model.transparentPassRenderedGlassSlots = slotListDisplay(activeGlassSlots);
         model.duplicateTransmissionVolumeSkipped = duplicateTransmissionVolumeSkipped ? "true" : "false";
         model.glassSlotDrawDiagnostics = slotDrawDiagnostics;
+        model.glassTrapModeIndex = material.glassTrapMode;
+        model.glassTrapModeName = solum::glassTrapModeName(material.glassTrapMode);
+        model.glassTrapModeRuntimeEnabled = material.glassTrapMode == 0 ? "false" : "true";
         model.transparentGlassSelectedSlotAllowedStatus = selectedGlass ? "ok_selected_glass_allowed" : "not_selected_glass";
         model.transparentGlassSelectedSlotRejectedStatus = (!selectedGlass && (selectedPaint || selectedMetal || selectedFabric || selectedRubber)) ? "ok_rejected_non_glass_selected_slot" : "inactive";
         model.transparentGlassAutoDetectStatus = bestGlassSlot >= 0 ? "ok_best_candidate_found" : "fallback_no_glass_candidate";
@@ -1445,7 +1451,7 @@ struct RendererCore {
         model.transparencyDeferredStatus = "ok_no_full_transparent_sorting_or_glass";
     }
 
-    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, float reflectionContrast, float reflectionSaturation, float motionReflectionScale, float motionClearcoatScale, int selectedSlot, float slotMetallic, float slotRoughness, float slotNormalScale, float slotAo, float slotGloss, float slotCoat, float alphaCutoffValue, float emissiveIntensity, int materialPreset, int glassEnabled, float glassOpacity, float glassEdge, float glassRoughness, int glassTintPreset, int glassRenderMode, int manualGlassSlotOverride, float glassClarity, float glassThickness) {
+    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, float reflectionContrast, float reflectionSaturation, float motionReflectionScale, float motionClearcoatScale, int selectedSlot, float slotMetallic, float slotRoughness, float slotNormalScale, float slotAo, float slotGloss, float slotCoat, float alphaCutoffValue, float emissiveIntensity, int materialPreset, int glassEnabled, float glassOpacity, float glassEdge, float glassRoughness, int glassTintPreset, int glassRenderMode, int manualGlassSlotOverride, float glassClarity, float glassThickness, int glassTrapMode) {
         applyLightPreset(lightPreset);
         material.sunIntensity = clampFloat(sunIntensity, 0.5f, 4.0f);
         material.ambientIntensity = clampFloat(ambientIntensity, 0.1f, 2.0f);
@@ -1481,6 +1487,7 @@ struct RendererCore {
         material.glassRenderMode = ((glassRenderMode % 3) + 3) % 3;
         material.glassClarity = clampFloat(glassClarity, 0.0f, 1.0f);
         material.glassThickness = clampFloat(glassThickness, 0.0f, 1.0f);
+        material.glassTrapMode = ((glassTrapMode % 9) + 9) % 9;
         selectedMaterialSlot = selectedSlot;
         manualGlassSlot = manualGlassSlotOverride;
         selectedSlotMetallicOverride = clampFloat(slotMetallic, 0.0f, 1.0f);
@@ -1915,6 +1922,24 @@ struct RendererCore {
         syncGlassState();
         const bool transparentGlassActive = activeTransparentGlassSlotCount > 0 && material.glassEnabled != 0
             && (material.glassRenderMode == 1 || (material.glassRenderMode == 2 && material.motionReflectionScale > 0.62f));
+        model.glassTrapModeIndex = material.glassTrapMode;
+        model.glassTrapModeName = solum::glassTrapModeName(material.glassTrapMode);
+        model.glassTrapModeRuntimeEnabled = material.glassTrapMode == 0 ? "false" : "true";
+        model.glassTrapLastFrameActive = material.glassTrapMode == 0 ? "false" : "true";
+        model.glassTrapLastFrameAnyCleanPath = "false";
+        model.glassTrapLastFrameAnyOldFallback = "false";
+        model.glassTrapLastFrameAnyOpaqueGlass = "false";
+        model.glassTrapLastFrameAnyTransparentGlass = "false";
+        model.glassTrapLastFrameAnyFullShaderTest = material.glassTrapMode == 8 ? "true" : "false";
+        model.glassTrapLastFrameAnySlotHeatmap = material.glassTrapMode == 7 ? "true" : "false";
+        model.glassTrapLastDrawSlotIndex = -1;
+        model.glassTrapLastDrawMaterialName = "none";
+        model.glassTrapLastDrawPassName = "none";
+        model.glassTrapLastDrawCleanPathUsed = "false";
+        model.glassTrapLastDrawOldFallbackUsed = "false";
+        model.glassTrapLastDrawOpaqueUsed = "false";
+        model.glassTrapLastDrawTransparentUsed = "false";
+        model.glassTrapLastDrawFormulaVersion = "not_observed";
         pc.material = material;
         pushConstantsReady = true;
         materialConstantsReady = true;
@@ -1928,6 +1953,7 @@ struct RendererCore {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, transparentPass ? trianglePipeline.transparentPipeline : trianglePipeline.pipeline);
             for (const auto& range : modelDrawRanges) {
                 const bool rangeGlass = transparentGlassActive && isActiveTransparentGlassSlot(range.materialSlot);
+                const bool roleGlass = rangeGlass || materialRoleForSlotEnum(range.materialSlot) == MaterialRoleGlass;
                 if (transparentPass) {
                     if (!rangeGlass) continue;
                 } else {
@@ -1935,6 +1961,7 @@ struct RendererCore {
                     if (isSkippedCleanProofGlassSlot(range.materialSlot) && isOpaqueTransmissionVolumeSlot(range.materialSlot)) continue;
                 }
                 pc.material = material;
+                pc.material.glassTrapDrawPass = transparentPass ? 1 : 0;
                 if (range.materialSlot >= 0 && (size_t)range.materialSlot < modelMaterialSlots.size()) {
                     const auto& slot = modelMaterialSlots[(size_t)range.materialSlot];
                     const bool rangeActiveGlass = transparentPass && rangeGlass;
@@ -2003,6 +2030,26 @@ struct RendererCore {
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.layout, 0, 1, &set, 0, nullptr);
                 }
                 vkCmdPushConstants(cmd, trianglePipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pc);
+                const bool cleanPathUsed = pc.material.glassEnabled != 0 && pc.material.glassRenderMode == 1 && (pc.material.materialTypeHint == 6 || pc.material.materialPresetHint == 6);
+                const bool oldFallbackUsed = roleGlass && !cleanPathUsed;
+                if (cleanPathUsed) model.glassTrapLastFrameAnyCleanPath = "true";
+                if (oldFallbackUsed) model.glassTrapLastFrameAnyOldFallback = "true";
+                if (roleGlass && !transparentPass) model.glassTrapLastFrameAnyOpaqueGlass = "true";
+                if (rangeGlass && transparentPass) model.glassTrapLastFrameAnyTransparentGlass = "true";
+                model.glassTrapLastDrawSlotIndex = range.materialSlot;
+                model.glassTrapLastDrawMaterialName = materialNameFromDiagnostics(range.materialSlot);
+                model.glassTrapLastDrawPassName = solum::glassTrapPassName(transparentPass ? 1 : 0);
+                model.glassTrapLastDrawCleanPathUsed = cleanPathUsed ? "true" : "false";
+                model.glassTrapLastDrawOldFallbackUsed = oldFallbackUsed ? "true" : "false";
+                model.glassTrapLastDrawOpaqueUsed = (!transparentPass) ? "true" : "false";
+                model.glassTrapLastDrawTransparentUsed = transparentPass ? "true" : "false";
+                model.glassTrapLastDrawOpacity = pc.material.glassOpacity;
+                model.glassTrapLastDrawEdge = pc.material.glassEdge;
+                model.glassTrapLastDrawTintPreset = pc.material.glassTintPreset;
+                model.glassTrapLastDrawClarity = pc.material.glassClarity;
+                model.glassTrapLastDrawThickness = pc.material.glassThickness;
+                model.glassTrapLastDrawRoughness = pc.material.glassRoughness;
+                model.glassTrapLastDrawFormulaVersion = cleanPathUsed ? "P30C_independent_live_controls" : (oldFallbackUsed ? "old_fallback_glass_branch" : "non_glass_shader_branch");
                 if (modelMesh.indexedReady() && range.indexCount > 0) vkCmdDrawIndexed(cmd, range.indexCount, 1, range.firstIndex, 0, 0);
                 else if (range.vertexCount > 0) vkCmdDraw(cmd, range.vertexCount, 1, range.firstVertex, 0);
             }
@@ -2014,6 +2061,13 @@ struct RendererCore {
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.layout, 0, 1, &set, 0, nullptr);
             }
             vkCmdPushConstants(cmd, trianglePipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pc);
+            if (material.glassTrapMode != 0) {
+                model.glassTrapLastDrawSlotIndex = -1;
+                model.glassTrapLastDrawMaterialName = "fallback_validation_mesh";
+                model.glassTrapLastDrawPassName = "opaque";
+                model.glassTrapLastDrawOpaqueUsed = "true";
+                model.glassTrapLastDrawFormulaVersion = "fallback_validation_mesh";
+            }
             validationMesh.bindIndexed(cmd);
             vkCmdDrawIndexed(cmd, validationMesh.indexCount, 1, 0, 0, 0);
         }

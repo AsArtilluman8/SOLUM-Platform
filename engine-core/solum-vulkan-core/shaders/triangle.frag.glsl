@@ -71,6 +71,8 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 308) float glassClarity;
     layout(offset = 312) float glassThickness;
     layout(offset = 316) int activeGlassSlotCount;
+    layout(offset = 320) int glassTrapMode;
+    layout(offset = 324) int glassTrapDrawPass;
 } pc;
 
 float luminance(vec3 c) {
@@ -120,6 +122,16 @@ vec3 materialPresetColor(int preset) {
     if (preset == 6) return vec3(0.38, 0.80, 0.96);
     if (preset == 7) return vec3(0.20, 0.86, 1.00);
     return vec3(0.52, 0.62, 0.60);
+}
+
+vec3 glassTrapSlotHeatmap(int slot) {
+    int s = slot % 6;
+    if (s == 0) return vec3(1.0, 0.0, 0.0);
+    if (s == 1) return vec3(0.0, 1.0, 0.0);
+    if (s == 2) return vec3(0.0, 0.25, 1.0);
+    if (s == 3) return vec3(1.0, 1.0, 0.0);
+    if (s == 4) return vec3(1.0, 0.0, 1.0);
+    return vec3(0.0, 1.0, 1.0);
 }
 
 vec3 glassTintColor(int preset) {
@@ -352,6 +364,10 @@ vec4 renderCleanGlassV1(
 }
 
 void main() {
+    if (pc.glassTrapMode == 8) {
+        fragColor = vec4(1.0, 0.0, 1.0, 1.0);
+        return;
+    }
     vec4 texel = pc.baseColorTextureReady != 0 ? texture(baseColorTexture, inTexcoord0) : vec4(1.0);
     vec4 mr = pc.metallicRoughnessTextureReady != 0 ? texture(metallicRoughnessTexture, inTexcoord0) : vec4(1.0);
     float calibration = clamp(pc.calibrationStrength, 0.0, 1.0);
@@ -360,6 +376,16 @@ void main() {
     float metallic = clamp(pc.metallicFactor * mr.b, 0.0, 1.0);
     bool materialRoleIsGlass = hint == 6 || pc.materialPresetHint == 6;
     bool glassActive = materialRoleIsGlass && pc.glassEnabled != 0;
+    if (pc.glassTrapMode == 7) {
+        fragColor = vec4(glassTrapSlotHeatmap(pc.materialId), 1.0);
+        return;
+    }
+    if (pc.glassTrapMode == 5 && materialRoleIsGlass) {
+        discard;
+    }
+    if (pc.glassTrapMode == 6 && !materialRoleIsGlass) {
+        discard;
+    }
     vec4 glassParams = glassPresetParams(pc.glassTintPreset);
     float glassClarityInput = clamp(pc.glassClarity, 0.0, 1.0);
     float glassThicknessInput = clamp(pc.glassThickness, 0.0, 1.0);
@@ -399,7 +425,19 @@ void main() {
     }
     vec3 l = normalize(-vec3(pc.sunDirectionX, pc.sunDirectionY, pc.sunDirectionZ));
     vec3 v = normalize(vec3(0.0, 0.0, 1.0));
+    if (pc.glassTrapMode == 3 && glassActive) {
+        fragColor = vec4(0.0, 0.25, 1.0, 0.55);
+        return;
+    }
+    if (pc.glassTrapMode == 4 && materialRoleIsGlass && pc.glassTrapDrawPass == 0) {
+        fragColor = vec4(1.0, 1.0, 0.0, 0.75);
+        return;
+    }
     if (glassActive && transparentGlassRequested) {
+        if (pc.glassTrapMode == 1) {
+            fragColor = vec4(1.0, 0.0, 0.0, 0.55);
+            return;
+        }
         fragColor = renderCleanGlassV1(
             n,
             v,
@@ -414,6 +452,10 @@ void main() {
     }
     vec3 rawBaseColor = inColor * pc.baseColorFactor.rgb * texel.rgb;
     vec3 baseColor = normalizeAlbedoEnergy(rawBaseColor, calibration);
+    if (pc.glassTrapMode == 2 && materialRoleIsGlass && !transparentGlassRequested) {
+        fragColor = vec4(0.0, 1.0, 0.0, 0.55);
+        return;
+    }
     if (glassActive && !transparentGlassRequested) {
         metallic = 0.0;
         vec3 cleanFallback = mix(vec3(0.92, 0.98, 1.0), glassTint, pc.glassTintPreset == 6 ? 0.22 : 0.10);

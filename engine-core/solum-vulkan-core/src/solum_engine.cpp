@@ -111,11 +111,12 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetLi
     jint glassRenderMode,
     jint manualGlassSlotOverride,
     jfloat glassClarity,
-    jfloat glassThickness
+    jfloat glassThickness,
+    jint glassTrapMode
 ) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) return;
-    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPreset, calibrationStrength, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPreset, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, selectedSlotGlossOverride, selectedSlotCoatOverride, alphaCutoffValue, emissiveIntensity, materialPreset, glassEnabled, glassOpacity, glassEdge, glassRoughness, glassTintPreset, glassRenderMode, manualGlassSlotOverride, glassClarity, glassThickness);
+    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPreset, calibrationStrength, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPreset, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, selectedSlotGlossOverride, selectedSlotCoatOverride, alphaCutoffValue, emissiveIntensity, materialPreset, glassEnabled, glassOpacity, glassEdge, glassRoughness, glassTintPreset, glassRenderMode, manualGlassSlotOverride, glassClarity, glassThickness, glassTrapMode);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdateUiDiagnostics(
@@ -727,6 +728,30 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"transparentPassRenderedGlassSlots\":\"" + solum::escapeJson(renderer->model.transparentPassRenderedGlassSlots) + "\""
         + ",\"duplicateTransmissionVolumeSkipped\":\"" + solum::escapeJson(renderer->model.duplicateTransmissionVolumeSkipped) + "\""
         + ",\"glassSlotDrawDiagnostics\":" + renderer->model.glassSlotDrawDiagnostics
+        + ",\"glassTrapModeIndex\":" + std::to_string(renderer->model.glassTrapModeIndex)
+        + ",\"glassTrapModeName\":\"" + solum::escapeJson(renderer->model.glassTrapModeName) + "\""
+        + ",\"glassTrapModeRuntimeEnabled\":\"" + solum::escapeJson(renderer->model.glassTrapModeRuntimeEnabled) + "\""
+        + ",\"glassTrapLastFrameActive\":\"" + solum::escapeJson(renderer->model.glassTrapLastFrameActive) + "\""
+        + ",\"glassTrapLastFrameAnyCleanPath\":\"" + solum::escapeJson(renderer->model.glassTrapLastFrameAnyCleanPath) + "\""
+        + ",\"glassTrapLastFrameAnyOldFallback\":\"" + solum::escapeJson(renderer->model.glassTrapLastFrameAnyOldFallback) + "\""
+        + ",\"glassTrapLastFrameAnyOpaqueGlass\":\"" + solum::escapeJson(renderer->model.glassTrapLastFrameAnyOpaqueGlass) + "\""
+        + ",\"glassTrapLastFrameAnyTransparentGlass\":\"" + solum::escapeJson(renderer->model.glassTrapLastFrameAnyTransparentGlass) + "\""
+        + ",\"glassTrapLastFrameAnyFullShaderTest\":\"" + solum::escapeJson(renderer->model.glassTrapLastFrameAnyFullShaderTest) + "\""
+        + ",\"glassTrapLastFrameAnySlotHeatmap\":\"" + solum::escapeJson(renderer->model.glassTrapLastFrameAnySlotHeatmap) + "\""
+        + ",\"glassTrapLastDrawSlotIndex\":" + std::to_string(renderer->model.glassTrapLastDrawSlotIndex)
+        + ",\"glassTrapLastDrawMaterialName\":\"" + solum::escapeJson(renderer->model.glassTrapLastDrawMaterialName) + "\""
+        + ",\"glassTrapLastDrawPassName\":\"" + solum::escapeJson(renderer->model.glassTrapLastDrawPassName) + "\""
+        + ",\"glassTrapLastDrawCleanPathUsed\":\"" + solum::escapeJson(renderer->model.glassTrapLastDrawCleanPathUsed) + "\""
+        + ",\"glassTrapLastDrawOldFallbackUsed\":\"" + solum::escapeJson(renderer->model.glassTrapLastDrawOldFallbackUsed) + "\""
+        + ",\"glassTrapLastDrawOpaqueUsed\":\"" + solum::escapeJson(renderer->model.glassTrapLastDrawOpaqueUsed) + "\""
+        + ",\"glassTrapLastDrawTransparentUsed\":\"" + solum::escapeJson(renderer->model.glassTrapLastDrawTransparentUsed) + "\""
+        + ",\"glassTrapLastDrawOpacity\":" + std::to_string(renderer->model.glassTrapLastDrawOpacity)
+        + ",\"glassTrapLastDrawEdge\":" + std::to_string(renderer->model.glassTrapLastDrawEdge)
+        + ",\"glassTrapLastDrawTintPreset\":" + std::to_string(renderer->model.glassTrapLastDrawTintPreset)
+        + ",\"glassTrapLastDrawClarity\":" + std::to_string(renderer->model.glassTrapLastDrawClarity)
+        + ",\"glassTrapLastDrawThickness\":" + std::to_string(renderer->model.glassTrapLastDrawThickness)
+        + ",\"glassTrapLastDrawRoughness\":" + std::to_string(renderer->model.glassTrapLastDrawRoughness)
+        + ",\"glassTrapLastDrawFormulaVersion\":\"" + solum::escapeJson(renderer->model.glassTrapLastDrawFormulaVersion) + "\""
         + ",\"transparentGlassSelectedSlotAllowedStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassSelectedSlotAllowedStatus) + "\""
         + ",\"transparentGlassSelectedSlotRejectedStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassSelectedSlotRejectedStatus) + "\""
         + ",\"transparentGlassAutoDetectStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassAutoDetectStatus) + "\""

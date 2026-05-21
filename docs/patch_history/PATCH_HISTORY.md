@@ -2,6 +2,35 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P29E — Transparent Glass Proof Fix
+
+Scope:
+
+- Changed only the existing Transparent v1 final glass alpha/RGB proof formula.
+- Center alpha is clamped to `glassOpacityInput * 0.035`, max `0.04`.
+- Rim mask is narrowed with `smoothstep(0.72, 0.96, rawRim)`.
+- Transparent v1 final alpha max is `0.10`.
+- Transparent v1 final RGB is near-black center plus narrow rim only.
+- Transparent v1 final RGB does not use `baseColor`, diffuse, ambient, IBL, or reflection.
+- Diagnostics mark P29E as formula/CPU mirror only, not pixel proof.
+
+Safety:
+
+```text
+shaderFinalGlassFormulaVersion = P29E_proof_clear_center_low_alpha
+shaderFinalGlassRgbMode = near_black_center_narrow_rim_no_reflection
+shaderFinalGlassUsesBaseColorFill = false
+shaderFinalGlassUsesIblOrReflection = false
+glassGreyPlateStillPossibleStatus = should_be_strongly_reduced_no_pixel_readback
+visual ok claimed = no
+```
+
+Deferred:
+
+- Pixel readback.
+- Manual Android visual verification.
+- Final pretty glass/reflection tuning.
+
 ## Patch P29D — Glass Rim Mask Shader Fix
 
 Scope:

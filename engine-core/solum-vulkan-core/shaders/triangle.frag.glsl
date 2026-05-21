@@ -422,18 +422,21 @@ void main() {
     float fakeGlassEdgeAlpha = clamp(0.08 + rimOnly * (0.10 + 0.12 * glassThicknessInput) + glassThicknessInput * 0.025, 0.08, 0.32);
     fakeGlassEdgeAlpha *= mix(0.75, 1.0, glassLayerComp);
     float ndotvGlass = clamp(abs(dot(normalize(n), normalize(v))), 0.0, 1.0);
-    float rawRim = pow(max(1.0 - ndotvGlass, 0.0), max(glassEdgeInput, 0.75));
-    float rimMask = smoothstep(0.12, 0.55, rawRim);
-    float centerAlpha = glassOpacityInput * 0.10;
-    float edgeAlpha = rimMask * clamp(0.08 + glassEdgeInput * 0.045, 0.08, 0.22);
+    float rawRim = pow(max(1.0 - ndotvGlass, 0.0), max(glassEdgeInput, 1.0));
+    float rimMask = smoothstep(0.72, 0.96, rawRim);
+    float centerAlpha = clamp(glassOpacityInput * 0.035, 0.0, 0.04);
+    float edgeAlpha = rimMask * clamp(0.025 + glassEdgeInput * 0.018, 0.025, 0.065);
     float glassSurface = clamp(glassCenterAlpha + fakeGlassEdgeAlpha * 0.58, 0.0, 0.88);
-    float transparentGlassAlpha = transparentGlassRequested ? clamp(centerAlpha + edgeAlpha, 0.0, 0.45) : clamp(glassCenterAlpha, 0.0, 0.96);
+    float transparentGlassAlphaProof = clamp(centerAlpha + edgeAlpha, 0.0, 0.10);
+    float transparentGlassAlpha = transparentGlassRequested ? transparentGlassAlphaProof : clamp(glassCenterAlpha, 0.0, 0.96);
     vec3 transparentGlassRgb = vec3(0.0);
     if (glassActive) {
         if (transparentGlassRequested) {
-            vec3 centerRgb = glassTint * 0.025;
-            vec3 edgeRgb = glassTint * rimMask * 0.45 + vec3(1.0) * rimMask * 0.10;
-            transparentGlassRgb = centerRgb + edgeRgb;
+            vec3 centerRgb = glassTint * 0.006;
+            vec3 edgeRgb = rimMask * (glassTint * 0.20 + vec3(0.06));
+            vec3 transparentGlassRgbProof = centerRgb + edgeRgb;
+            transparentGlassRgb = transparentGlassRgbProof;
+            alpha = transparentGlassAlphaProof;
         } else {
             vec3 hazeColor = mix(glassTint, vec3(luminance(glassTint)), 0.65);
             vec3 centerTint = mix(glassTint, hazeColor, clamp(1.0 - glassClarityInput, 0.0, 1.0));
@@ -444,7 +447,6 @@ void main() {
             baseColor = mix(vec3(0.0), centerTint, glassThickness * 0.22);
             baseColor += thicknessTint * glassThickness * glassFresnel * 0.18;
         }
-        if (transparentGlassRequested) alpha = transparentGlassAlpha;
     }
     specularLight *= mix(1.0, 1.36, paintTarget);
     specularLight += clearcoatLight;

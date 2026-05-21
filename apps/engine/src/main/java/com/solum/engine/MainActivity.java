@@ -2857,6 +2857,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         try {
             if (modelState.parse == null || !modelState.parse.glbValid || modelState.parse.binChunk == null) modelState.parse = GlbParser.parse(active);
             GlbPrimitiveMesh mesh = GlbParser.extractMultiPrimitive(modelState.parse);
+            modelState.p30eTruthTableStatus = mesh.p30eTruthTableStatus;
+            modelState.p30eTruthTableError = mesh.p30eTruthTableError;
+            if (!"ok".equals(mesh.p30eTruthTableStatus)) writeCrashReport("p30e_truth_table_fallback_" + trigger, new IllegalStateException(mesh.p30eTruthTableError), active.getAbsolutePath());
             boolean ok = nativeUploadModelMultiPrimitive(
                 nativeHandle,
                 modelState.activeModelName(),
@@ -2938,6 +2941,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 setModelFallbackState(trigger + ": native model upload/draw failed");
             }
         } catch (Throwable t) {
+            writeCrashReport("cached_glb_restore_failed_" + trigger, t, active.getAbsolutePath());
             modelState.resumeRestoreStatus = "failed";
             modelState.activeModelRestoreResult = "failed_exception";
             setModelFallbackState(trigger + ": " + shortThrowable(t));
@@ -3117,6 +3121,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 modelState.reason = copy.reason;
                 modelState.parse = GlbParser.parse(copy.localFile);
                 if (!modelState.parse.glbValid) {
+                    writeCrashReport("glb_parse_failed_model_import", new IllegalStateException(modelState.parse.reason), copy.localFile.getAbsolutePath());
                     modelState.importStatus = "failed";
                     modelState.importRoute = copy.route;
                     modelState.reason = modelState.parse.reason;
@@ -3126,9 +3131,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 attemptActiveModelGpuUpload("model_import");
                 persistActiveModelMetadata();
             } catch (Throwable t) {
+                writeCrashReport("glb_import_failed", t, uri == null ? "unknown_uri" : uri.toString());
                 modelState.importStatus = "failed";
                 modelState.importRoute = "failed";
                 modelState.reason = shortThrowable(t);
+                modelState.p30eTruthTableStatus = "fallback_after_error";
+                modelState.p30eTruthTableError = modelState.reason;
                 modelState.parse = GlbParseResult.failed(modelState.reason);
                 importGlbButton.setText("Import Failed");
             }
@@ -3219,7 +3227,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (modelState.lastImportedModel.isEmpty() && !models.isEmpty()) modelState.lastImportedModel = models.get(models.size() - 1).getAbsolutePath();
         if (!modelState.activeModelPath.isEmpty()) {
             File active = new File(modelState.localExtractionPath());
-            if (active.exists()) modelState.parse = GlbParser.parse(active);
+            if (active.exists()) {
+                modelState.parse = GlbParser.parse(active);
+                if (!modelState.parse.glbValid) writeCrashReport("scan_cached_glb_parse_failed", new IllegalStateException(modelState.parse.reason), active.getAbsolutePath());
+            }
         }
         if ("not run".equals(modelState.importStatus) && models.isEmpty()) modelState.reason = trigger + ": no .glb files found";
     }
@@ -3530,6 +3541,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         return cachedReportDir;
     }
 
+    private File getCrashLogDir() {
+        File preferred = new File("/storage/emulated/0/Download/SOLUMCreative/crash_logs");
+        if (canWriteDirectory(preferred)) return preferred;
+        File reportDir = getReportDir();
+        File reportCrashDir = new File(reportDir, "crash_logs");
+        if (canWriteDirectory(reportCrashDir)) return reportCrashDir;
+        File internal = new File(getFilesDir(), "solum_crash_logs");
+        internal.mkdirs();
+        return internal;
+    }
+
     private boolean canWriteDirectory(File dir) {
         try {
             if (!(dir.mkdirs() || dir.exists())) return false;
@@ -3670,6 +3692,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"skippedPbrTextureCount\": " + jsonNumberField(renderLab, "skippedPbrTextureCount", String.valueOf(modelState.skippedPbrTextureCount)) + ",\n"
             + "  \"pbrTextureFallbackCount\": " + jsonNumberField(renderLab, "pbrTextureFallbackCount", String.valueOf(modelState.pbrTextureFallbackCount)) + ",\n"
             + "  \"materialSlotDiagnostics\": " + jsonArrayField(renderLab, "materialSlotDiagnostics", modelState.materialSlotDiagnostics) + ",\n"
+            + "  \"p30eTruthTableStatus\": \"" + escape(jsonStringField(renderLab, "p30eTruthTableStatus", modelState.p30eTruthTableStatus)) + "\",\n"
+            + "  \"p30eTruthTableError\": \"" + escape(jsonStringField(renderLab, "p30eTruthTableError", modelState.p30eTruthTableError)) + "\",\n"
             + "  \"materialCalibrationStatus\": \"" + escape(jsonStringField(renderLab, "materialCalibrationStatus", modelState.materialCalibrationStatus)) + "\",\n"
             + "  \"materialCalibrationMode\": \"" + escape(jsonStringField(renderLab, "materialCalibrationMode", modelState.materialCalibrationMode)) + "\",\n"
             + "  \"albedoEnergyStatus\": \"" + escape(jsonStringField(renderLab, "albedoEnergyStatus", modelState.albedoEnergyStatus)) + "\",\n"
@@ -5087,6 +5111,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         int skippedPbrTextureCount = 0;
         int pbrTextureFallbackCount = 0;
         String materialSlotDiagnostics = "[]";
+        String p30eTruthTableStatus = "ok";
+        String p30eTruthTableError = "none";
         String materialCalibrationStatus = "ok";
         String materialCalibrationMode = "shader_uniform_upload_lightweight";
         String albedoEnergyStatus = "ok_normalized";
@@ -5979,6 +6005,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"skippedPbrTextureCount\": " + skippedPbrTextureCount + ",\n"
                 + "  \"pbrTextureFallbackCount\": " + pbrTextureFallbackCount + ",\n"
                 + "  \"materialSlotDiagnostics\": " + materialSlotDiagnostics + ",\n"
+                + "  \"p30eTruthTableStatus\": \"" + esc(p30eTruthTableStatus) + "\",\n"
+                + "  \"p30eTruthTableError\": \"" + esc(p30eTruthTableError) + "\",\n"
                 + "  \"materialCalibrationStatus\": \"" + esc(materialCalibrationStatus) + "\",\n"
                 + "  \"materialCalibrationMode\": \"" + esc(materialCalibrationMode) + "\",\n"
                 + "  \"albedoEnergyStatus\": \"" + esc(albedoEnergyStatus) + "\",\n"
@@ -6503,16 +6531,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
 
         private static String[] nodeNamesByMesh(JSONArray nodes, int meshCount) {
-            String[] out = new String[Math.max(0, meshCount)];
-            if (nodes == null) return out;
-            for (int i = 0; i < nodes.length(); i++) {
-                JSONObject node = nodes.optJSONObject(i);
-                if (node == null) continue;
-                int meshIndex = node.optInt("mesh", -1);
-                if (meshIndex < 0 || meshIndex >= out.length || (out[meshIndex] != null && !out[meshIndex].isEmpty())) continue;
-                out[meshIndex] = node.optString("name", "");
+            try {
+                String[] out = new String[Math.max(0, meshCount)];
+                if (nodes == null) return out;
+                for (int i = 0; i < nodes.length(); i++) {
+                    JSONObject node = nodes.optJSONObject(i);
+                    if (node == null) continue;
+                    int meshIndex = node.optInt("mesh", -1);
+                    if (meshIndex < 0 || meshIndex >= out.length || (out[meshIndex] != null && !out[meshIndex].isEmpty())) continue;
+                    out[meshIndex] = node.optString("name", "");
+                }
+                return out;
+            } catch (Throwable ignored) {
+                return new String[Math.max(0, meshCount)];
             }
-            return out;
         }
 
         static GlbPrimitiveMesh extractFirstPrimitive(GlbParseResult parsed) throws Exception {
@@ -6525,7 +6557,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             JSONArray accessors = root.optJSONArray("accessors");
             JSONArray bufferViews = root.optJSONArray("bufferViews");
             if (meshes == null || meshes.length() == 0) throw new IllegalStateException("no_meshes_in_glb");
-            String[] nodeNamesByMesh = nodeNamesByMesh(nodes, meshes.length());
+            String[] nodeNamesByMesh = nodeNamesByMesh(nodes, meshes == null ? 0 : meshes.length());
             JSONObject mesh = meshes.optJSONObject(0);
             if (mesh == null) throw new IllegalStateException("mesh_0_missing");
             JSONArray primitives = mesh.optJSONArray("primitives");
@@ -6644,10 +6676,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                         AccessorReader tangents = tangentAccessor >= 0 ? AccessorReader.create(accessors, bufferViews, parsed.binChunk, tangentAccessor, 5126, "VEC4", "TANGENT") : null;
                         PrimitiveSource src = new PrimitiveSource();
                         src.primitive = primitive;
-                        src.meshIndex = meshIndex;
-                        src.meshName = mesh == null ? "" : mesh.optString("name", "");
-                        src.nodeName = meshIndex >= 0 && meshIndex < nodeNamesByMesh.length ? nodeNamesByMesh[meshIndex] : "";
-                        src.primitiveIndex = primitiveIndex;
+                        try {
+                            src.meshIndex = meshIndex;
+                            src.meshName = mesh == null ? "unknown" : mesh.optString("name", "unknown");
+                            src.nodeName = meshIndex >= 0 && nodeNamesByMesh != null && meshIndex < nodeNamesByMesh.length && nodeNamesByMesh[meshIndex] != null && !nodeNamesByMesh[meshIndex].isEmpty() ? nodeNamesByMesh[meshIndex] : "unknown";
+                            src.primitiveIndex = primitiveIndex >= 0 ? primitiveIndex : -1;
+                        } catch (Throwable ignored) {
+                            src.meshIndex = -1;
+                            src.meshName = "unknown";
+                            src.nodeName = "unknown";
+                            src.primitiveIndex = -1;
+                        }
                         src.positions = positions;
                         src.normals = normals;
                         src.texcoords = texcoords;
@@ -6738,7 +6777,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 }
                 if (materialSlot >= 0 && materialSlot < materials.size()) {
                     MaterialInfo mat = materials.get(materialSlot);
-                    mat.notePrimitive(src.meshName, src.nodeName, src.primitiveIndex);
+                    if (src != null) mat.notePrimitive(src.meshName, src.nodeName, src.primitiveIndex);
                     mat.tangentStatus = primitiveTangentStatus;
                     mat.tangentMissingCount += primitiveTangentMissing;
                     mat.tangentFallbackCount += primitiveTangentFallback;
@@ -6829,35 +6868,47 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             out.normalMapStatus = aggregateStatus(materials, TEX_NORMAL);
             out.normalMapAppliedStatus = normalAppliedStatus(out.normalMapStatus, out.tangentStatus);
             out.occlusionMapStatus = aggregateStatus(materials, TEX_OCCLUSION);
-            out.materialSlotDiagnostics = materialSlotDiagnostics(materials);
+            try {
+                out.materialSlotDiagnostics = materialSlotDiagnostics(materials);
+                out.p30eTruthTableStatus = "ok";
+                out.p30eTruthTableError = "none";
+            } catch (Throwable t) {
+                out.materialSlotDiagnostics = "[]";
+                out.p30eTruthTableStatus = "fallback_after_error";
+                out.p30eTruthTableError = shortStaticThrowable(t);
+            }
             out.reason = skipped.isEmpty() ? "all supported primitives uploaded" : joinReasons(skipped);
             return out;
         }
 
         private static List<MaterialInfo> readMaterials(JSONObject root, byte[] bin, int textureSlotLimit) {
             List<MaterialInfo> out = new ArrayList<>();
-            JSONArray materials = root.optJSONArray("materials");
+            JSONArray materials = root == null ? null : root.optJSONArray("materials");
             int count = materials == null ? 1 : Math.max(1, materials.length());
             for (int i = 0; i < count; i++) {
                 JSONObject material = materials == null ? null : materials.optJSONObject(i);
                 MaterialInfo info = new MaterialInfo();
-                info.materialName = material == null ? "" : material.optString("name", "");
-                info.baseColorFactor = readBaseColorFactor(root, i);
-                JSONObject pbr = material == null ? null : material.optJSONObject("pbrMetallicRoughness");
-                info.metallicFactor = pbr == null ? 0.0f : (float)pbr.optDouble("metallicFactor", 1.0);
-                info.roughnessFactor = pbr == null ? 1.0f : (float)pbr.optDouble("roughnessFactor", 1.0);
-                String alpha = material == null ? "OPAQUE" : material.optString("alphaMode", "OPAQUE");
-                info.alphaModeText = alpha;
-                info.alphaMode = "MASK".equals(alpha) ? 1 : ("BLEND".equals(alpha) ? 2 : 0);
-                info.alphaCutoff = material == null ? 0.5f : (float)material.optDouble("alphaCutoff", 0.5);
-                info.doubleSided = material != null && material.optBoolean("doubleSided", false);
-                JSONObject extensions = material == null ? null : material.optJSONObject("extensions");
-                info.hasTransmission = extensions != null && extensions.optJSONObject("KHR_materials_transmission") != null;
-                info.hasVolume = extensions != null && extensions.optJSONObject("KHR_materials_volume") != null;
-                JSONObject transmission = extensions == null ? null : extensions.optJSONObject("KHR_materials_transmission");
-                JSONObject volume = extensions == null ? null : extensions.optJSONObject("KHR_materials_volume");
-                info.transmissionFactor = transmission == null ? 0.0f : (float)transmission.optDouble("transmissionFactor", 0.0);
-                info.thicknessFactor = volume == null ? 0.0f : (float)volume.optDouble("thicknessFactor", 0.0);
+                try {
+                    info.materialName = material == null ? "" : material.optString("name", "");
+                    info.baseColorFactor = readBaseColorFactor(root, i);
+                    JSONObject pbr = material == null ? null : material.optJSONObject("pbrMetallicRoughness");
+                    info.metallicFactor = pbr == null ? 0.0f : (float)pbr.optDouble("metallicFactor", 1.0);
+                    info.roughnessFactor = pbr == null ? 1.0f : (float)pbr.optDouble("roughnessFactor", 1.0);
+                    String alpha = material == null ? "OPAQUE" : material.optString("alphaMode", "OPAQUE");
+                    info.alphaModeText = alpha == null || alpha.isEmpty() ? "OPAQUE" : alpha;
+                    info.alphaMode = "MASK".equals(info.alphaModeText) ? 1 : ("BLEND".equals(info.alphaModeText) ? 2 : 0);
+                    info.alphaCutoff = material == null ? 0.5f : (float)material.optDouble("alphaCutoff", 0.5);
+                    info.doubleSided = material != null && material.optBoolean("doubleSided", false);
+                    JSONObject extensions = material == null ? null : material.optJSONObject("extensions");
+                    JSONObject transmission = extensions == null ? null : extensions.optJSONObject("KHR_materials_transmission");
+                    JSONObject volume = extensions == null ? null : extensions.optJSONObject("KHR_materials_volume");
+                    info.hasTransmission = transmission != null;
+                    info.hasVolume = volume != null;
+                    info.transmissionFactor = transmission == null ? 0.0f : (float)transmission.optDouble("transmissionFactor", 0.0);
+                    info.thicknessFactor = volume == null ? 0.0f : (float)volume.optDouble("thicknessFactor", 0.0);
+                } catch (Throwable t) {
+                    info.applyP30eFallback(shortStaticThrowable(t));
+                }
                 JSONArray emissive = material == null ? null : material.optJSONArray("emissiveFactor");
                 if (emissive != null && emissive.length() >= 3) for (int e = 0; e < 3; e++) info.emissiveFactor[e] = (float)emissive.optDouble(e, 0.0);
                 info.emissiveTextureStatus = material != null && material.optJSONObject("emissiveTexture") != null ? "metadata_only" : "missing";
@@ -6940,6 +6991,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
         private static float clampUnitRange(float value, float min, float max) {
             return Math.max(min, Math.min(max, value));
+        }
+
+        private static String shortStaticThrowable(Throwable t) {
+            if (t == null) return "unknown";
+            String msg = t.getMessage();
+            if (msg == null || msg.isEmpty()) msg = "no message";
+            return t.getClass().getSimpleName() + ": " + msg;
         }
 
         private static void addPbrTexture(List<BaseColorTexture> out, BaseColorTexture texture, int limit) {
@@ -7194,9 +7252,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
 
         private static String materialSlotDiagnostics(List<MaterialInfo> materials) {
+            if (materials == null) return "[]";
             StringBuilder b = new StringBuilder("[");
             for (int i = 0; i < materials.size(); i++) {
                 MaterialInfo m = materials.get(i);
+                if (m == null) m = MaterialInfo.p30eFallback("null_material_info");
                 String role = materialRoleName(m);
                 if (i > 0) b.append(",");
                 b.append("{\"slot\":").append(i)
@@ -7246,6 +7306,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     .append(",\"primitiveIndex\":").append(m.primitiveIndex)
                     .append(",\"glassCandidate\":").append(glassCandidate(m))
                     .append(",\"glassCandidateReason\":\"").append(esc(glassCandidateReason(m))).append("\"")
+                    .append(",\"p30eTruthTableStatus\":\"").append(esc(m.p30eTruthTableStatus)).append("\"")
+                    .append(",\"p30eTruthTableError\":\"").append(esc(m.p30eTruthTableError)).append("\"")
                     .append(",\"alphaCutoff\":").append(jsonFloat(m.alphaCutoff))
                     .append(",\"alphaTextureStatus\":\"").append(esc(m.texture == null ? "missing" : m.texture.status)).append("\"")
                     .append(",\"alphaMaskAppliedStatus\":\"").append(esc(m.alphaMode == 1 ? "shader_discard_enabled" : "not_mask")).append("\"")
@@ -7278,6 +7340,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
         private static String materialRoleSource(MaterialInfo m, String role) {
             if (m == null) return "none";
+            if ("fallback_after_error".equals(m.p30eTruthTableStatus)) return "diagnostic_fallback_after_error";
             if ("Glass".equals(role)) {
                 if (m.transmissionFactor > 0.0f || m.hasVolume) return "transmission_or_volume_extension";
                 String name = m.materialName == null ? "" : m.materialName.toLowerCase(Locale.US);
@@ -7309,11 +7372,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
 
         private static boolean glassCandidate(MaterialInfo m) {
+            if (m != null && "fallback_after_error".equals(m.p30eTruthTableStatus)) return false;
             return !"non_glass_rejected".equals(glassCandidateReason(m));
         }
 
         private static String glassCandidateReason(MaterialInfo m) {
             if (m == null) return "invalid_material";
+            if ("fallback_after_error".equals(m.p30eTruthTableStatus)) return "diagnostic_fallback_after_error";
             String name = m.materialName == null ? "" : m.materialName.toLowerCase(Locale.US);
             ArrayList<String> reasons = new ArrayList<>();
             if (name.contains("glass") || name.contains("window") || name.contains("windshield") || name.contains("pane") || name.contains("bottle") || name.contains("vase")) reasons.add("material_name_keyword");
@@ -7643,6 +7708,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         int skippedPbrTextureCount = 0;
         int pbrTextureFallbackCount = 0;
         String materialSlotDiagnostics = "[]";
+        String p30eTruthTableStatus = "ok";
+        String p30eTruthTableError = "none";
         float modelScale;
         int vertexCount;
         int indexCount;
@@ -7715,6 +7782,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String meshName = "unknown";
         String nodeName = "unknown";
         int primitiveIndex = -1;
+        String p30eTruthTableStatus = "ok";
+        String p30eTruthTableError = "none";
         String metallicRoughnessStatus = "missing";
         String normalMapStatus = "missing";
         String normalMapAppliedStatus = "missing";
@@ -7731,10 +7800,30 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         int tangentDegenerateTriangleCount = 0;
 
         void notePrimitive(String mesh, String node, int primitive) {
-            if (primitiveIndex >= 0) return;
-            meshName = mesh == null || mesh.isEmpty() ? "unknown" : mesh;
-            nodeName = node == null || node.isEmpty() ? "unknown" : node;
-            primitiveIndex = primitive;
+            try {
+                if (primitiveIndex >= 0) return;
+                meshName = mesh == null || mesh.isEmpty() ? "unknown" : mesh;
+                nodeName = node == null || node.isEmpty() ? "unknown" : node;
+                primitiveIndex = primitive >= 0 ? primitive : -1;
+            } catch (Throwable t) {
+                applyP30eFallback(GlbParser.shortStaticThrowable(t));
+            }
+        }
+
+        void applyP30eFallback(String error) {
+            nodeName = "unknown";
+            meshName = "unknown";
+            primitiveIndex = -1;
+            transmissionFactor = 0.0f;
+            thicknessFactor = 0.0f;
+            p30eTruthTableStatus = "fallback_after_error";
+            p30eTruthTableError = error == null || error.isEmpty() ? "unknown" : error;
+        }
+
+        static MaterialInfo p30eFallback(String error) {
+            MaterialInfo info = new MaterialInfo();
+            info.applyP30eFallback(error);
+            return info;
         }
     }
 
@@ -7927,8 +8016,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void writeCrashReport(String stage, Throwable throwable) {
+        writeCrashReport(stage, throwable, modelState == null ? "unknown" : modelState.activeModelPath);
+    }
+
+    private void writeCrashReport(String stage, Throwable throwable, String activeFile) {
         try {
-            File dir = getReportDir();
+            File dir = getCrashLogDir();
             String ts = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
             File out = new File(dir, "runtime_crash_" + ts + ".txt");
             try (PrintWriter pw = new PrintWriter(new FileWriter(out))) {
@@ -7936,10 +8029,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 pw.println("stage=" + stage);
                 pw.println("time=" + ts);
                 pw.println("thread=" + Thread.currentThread().getName());
-                pw.println("throwable=" + throwable.getClass().getName());
-                pw.println("message=" + throwable.getMessage());
+                pw.println("activeFile=" + (activeFile == null || activeFile.isEmpty() ? "unknown" : activeFile));
+                pw.println("activeModelName=" + (modelState == null ? "unknown" : modelState.activeModelName()));
+                pw.println("throwable=" + (throwable == null ? "unknown" : throwable.getClass().getName()));
+                pw.println("message=" + (throwable == null ? "unknown" : throwable.getMessage()));
                 pw.println();
-                throwable.printStackTrace(pw);
+                if (throwable != null) throwable.printStackTrace(pw);
             }
         } catch (Throwable ignored) { }
     }

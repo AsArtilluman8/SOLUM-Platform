@@ -2997,3 +2997,23 @@ Prove GLB glass routing per material slot without changing the P30C glass beauty
 - P30B slot isolation intent.
 - P30C clean path.
 - Visual success is not claimed.
+
+## Patch P30E Hotfix — Guard GLB Truth Diagnostics Crash
+
+### Goal
+
+Stop cached GLB restore and GLB import crashes caused by P30E Java-side truth-table enrichment.
+
+### Changed
+
+- Added file-based crash reports for cached restore, GLB import, GLB parse, and P30E truth-table fallback phases.
+- Guarded P30E node/mesh/primitive/material diagnostic enrichment with safe fallback values.
+- Kept material slot diagnostics generation from crashing import; failed diagnostics fall back to `[]`.
+- Exported `p30eTruthTableStatus` and `p30eTruthTableError` in runtime/model diagnostics.
+
+### Not changed
+
+- Glass shader formula.
+- Glass trap visuals.
+- Vulkan pipeline state.
+- P30B/P30C/P30D rendering behavior.

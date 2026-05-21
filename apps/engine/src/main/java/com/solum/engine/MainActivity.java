@@ -1568,10 +1568,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 39) return "Preset Response";
         if (index == 40) return "Material Energy Guard";
         if (index == 41) return "Selected Slot Preset";
-        if (view == 42) return "P31B Slot Heatmap";
-        if (view == 43) return "P31B Glass Candidates";
-        if (view == 44) return "P31B Selected Slot";
-        if (view == 45) return "P31B Full Shader Purple";
+        if (index == 42) return "P31B Slot Heatmap";
+        if (index == 43) return "P31B Glass Candidates";
+        if (index == 44) return "P31B Selected Slot";
+        if (index == 45) return "P31B Full Shader Purple";
         return "Final Shaded";
     }
 

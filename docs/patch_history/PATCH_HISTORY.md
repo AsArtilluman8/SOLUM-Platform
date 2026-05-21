@@ -2910,3 +2910,27 @@ Add a clean isolated early-return path for Transparent v1 glass.
 
 - Pixel readback is still not implemented.
 - Visual verification is still manual.
+
+---
+
+## Patch P30B — Glass Slot Isolation and Routing Fix
+
+### Goal
+
+Keep Transparent v1 proof glass from rendering multiple glass-like material slots at once.
+
+### Changed
+
+- Added `P30B_single_clean_glass_slot_proof` slot policy.
+- Manual selected glass slot has priority when valid.
+- Auto routing prefers one alpha/blend glass slot.
+- OPAQUE transmission/volume glass-like slots are skipped from the transparent proof path.
+- Duplicate transmission/volume shells can be skipped from opaque pass in proof mode.
+- Added active/skipped slot diagnostics and per-slot `drawnOpaque` / `drawnTransparent` status.
+
+### Not changed
+
+- Glass shader formula.
+- Pipeline/blend/depth state.
+- GLB importer and node transforms.
+- Pixel readback or visual proof claims.

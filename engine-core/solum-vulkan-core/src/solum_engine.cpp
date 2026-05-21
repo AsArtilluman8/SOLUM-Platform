@@ -711,6 +711,22 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"activeTransparentGlassMaterialRole\":\"" + solum::escapeJson(renderer->model.activeTransparentGlassMaterialRole) + "\""
         + ",\"activeTransparentGlassRoleSource\":\"" + solum::escapeJson(renderer->model.activeTransparentGlassRoleSource) + "\""
         + ",\"activeTransparentGlassSlotSource\":\"" + solum::escapeJson(renderer->model.activeTransparentGlassSlotSource) + "\""
+        + ",\"glassSlotPolicyVersion\":\"" + solum::escapeJson(renderer->model.glassSlotPolicyVersion) + "\""
+        + ",\"glassSlotPolicyMode\":\"" + solum::escapeJson(renderer->model.glassSlotPolicyMode) + "\""
+        + ",\"activeTransparentGlassSlotCount\":" + std::to_string(renderer->model.activeTransparentGlassSlotCount)
+        + ",\"activeTransparentGlassSlotList\":\"" + solum::escapeJson(renderer->model.activeTransparentGlassSlotList) + "\""
+        + ",\"skippedGlassLikeSlotCount\":" + std::to_string(renderer->model.skippedGlassLikeSlotCount)
+        + ",\"skippedGlassLikeSlotList\":\"" + solum::escapeJson(renderer->model.skippedGlassLikeSlotList) + "\""
+        + ",\"skippedGlassLikeSlotReasons\":\"" + solum::escapeJson(renderer->model.skippedGlassLikeSlotReasons) + "\""
+        + ",\"selectedMaterialSlotIndex\":" + std::to_string(renderer->model.selectedMaterialSlotIndex)
+        + ",\"selectedMaterialSlotName\":\"" + solum::escapeJson(renderer->model.selectedMaterialSlotName) + "\""
+        + ",\"selectedMaterialSlotRole\":\"" + solum::escapeJson(renderer->model.selectedMaterialSlotRole) + "\""
+        + ",\"manualGlassSlotIndex\":" + std::to_string(renderer->model.manualGlassSlotIndex)
+        + ",\"manualGlassSlotName\":\"" + solum::escapeJson(renderer->model.manualGlassSlotName) + "\""
+        + ",\"opaquePassSkippedGlassSlots\":\"" + solum::escapeJson(renderer->model.opaquePassSkippedGlassSlots) + "\""
+        + ",\"transparentPassRenderedGlassSlots\":\"" + solum::escapeJson(renderer->model.transparentPassRenderedGlassSlots) + "\""
+        + ",\"duplicateTransmissionVolumeSkipped\":\"" + solum::escapeJson(renderer->model.duplicateTransmissionVolumeSkipped) + "\""
+        + ",\"glassSlotDrawDiagnostics\":" + renderer->model.glassSlotDrawDiagnostics
         + ",\"transparentGlassSelectedSlotAllowedStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassSelectedSlotAllowedStatus) + "\""
         + ",\"transparentGlassSelectedSlotRejectedStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassSelectedSlotRejectedStatus) + "\""
         + ",\"transparentGlassAutoDetectStatus\":\"" + solum::escapeJson(renderer->model.transparentGlassAutoDetectStatus) + "\""

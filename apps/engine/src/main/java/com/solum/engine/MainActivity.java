@@ -4528,6 +4528,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"activeTransparentGlassMaterialRole\": \"" + escape(jsonStringField(renderLab, "activeTransparentGlassMaterialRole", modelState.activeTransparentGlassMaterialRole)) + "\",\n"
             + indent + "\"activeTransparentGlassRoleSource\": \"" + escape(jsonStringField(renderLab, "activeTransparentGlassRoleSource", modelState.activeTransparentGlassRoleSource)) + "\",\n"
             + indent + "\"activeTransparentGlassSlotSource\": \"" + escape(jsonStringField(renderLab, "activeTransparentGlassSlotSource", modelState.activeTransparentGlassSlotSource)) + "\",\n"
+            + indent + "\"glassSlotPolicyVersion\": \"" + escape(jsonStringField(renderLab, "glassSlotPolicyVersion", modelState.glassSlotPolicyVersion)) + "\",\n"
+            + indent + "\"glassSlotPolicyMode\": \"" + escape(jsonStringField(renderLab, "glassSlotPolicyMode", modelState.glassSlotPolicyMode)) + "\",\n"
+            + indent + "\"activeTransparentGlassSlotCount\": " + jsonNumberField(renderLab, "activeTransparentGlassSlotCount", String.valueOf(modelState.activeTransparentGlassSlotCount)) + ",\n"
+            + indent + "\"activeTransparentGlassSlotList\": \"" + escape(jsonStringField(renderLab, "activeTransparentGlassSlotList", modelState.activeTransparentGlassSlotList)) + "\",\n"
+            + indent + "\"skippedGlassLikeSlotCount\": " + jsonNumberField(renderLab, "skippedGlassLikeSlotCount", String.valueOf(modelState.skippedGlassLikeSlotCount)) + ",\n"
+            + indent + "\"skippedGlassLikeSlotList\": \"" + escape(jsonStringField(renderLab, "skippedGlassLikeSlotList", modelState.skippedGlassLikeSlotList)) + "\",\n"
+            + indent + "\"skippedGlassLikeSlotReasons\": \"" + escape(jsonStringField(renderLab, "skippedGlassLikeSlotReasons", modelState.skippedGlassLikeSlotReasons)) + "\",\n"
+            + indent + "\"selectedMaterialSlotIndex\": " + jsonNumberField(renderLab, "selectedMaterialSlotIndex", String.valueOf(modelState.selectedMaterialSlotIndex)) + ",\n"
+            + indent + "\"selectedMaterialSlotName\": \"" + escape(jsonStringField(renderLab, "selectedMaterialSlotName", modelState.selectedMaterialSlotName)) + "\",\n"
+            + indent + "\"selectedMaterialSlotRole\": \"" + escape(jsonStringField(renderLab, "selectedMaterialSlotRole", modelState.selectedMaterialSlotRole)) + "\",\n"
+            + indent + "\"manualGlassSlotIndex\": " + jsonNumberField(renderLab, "manualGlassSlotIndex", String.valueOf(modelState.manualGlassSlotIndex)) + ",\n"
+            + indent + "\"manualGlassSlotName\": \"" + escape(jsonStringField(renderLab, "manualGlassSlotName", modelState.manualGlassSlotName)) + "\",\n"
+            + indent + "\"opaquePassSkippedGlassSlots\": \"" + escape(jsonStringField(renderLab, "opaquePassSkippedGlassSlots", modelState.opaquePassSkippedGlassSlots)) + "\",\n"
+            + indent + "\"transparentPassRenderedGlassSlots\": \"" + escape(jsonStringField(renderLab, "transparentPassRenderedGlassSlots", modelState.transparentPassRenderedGlassSlots)) + "\",\n"
+            + indent + "\"duplicateTransmissionVolumeSkipped\": \"" + escape(jsonStringField(renderLab, "duplicateTransmissionVolumeSkipped", modelState.duplicateTransmissionVolumeSkipped)) + "\",\n"
+            + indent + "\"glassSlotDrawDiagnostics\": " + jsonArrayField(renderLab, "glassSlotDrawDiagnostics", modelState.glassSlotDrawDiagnostics) + ",\n"
             + indent + "\"transparentGlassSelectedSlotAllowedStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassSelectedSlotAllowedStatus", modelState.transparentGlassSelectedSlotAllowedStatus)) + "\",\n"
             + indent + "\"transparentGlassSelectedSlotRejectedStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassSelectedSlotRejectedStatus", modelState.transparentGlassSelectedSlotRejectedStatus)) + "\",\n"
             + indent + "\"transparentGlassAutoDetectStatus\": \"" + escape(jsonStringField(renderLab, "transparentGlassAutoDetectStatus", modelState.transparentGlassAutoDetectStatus)) + "\",\n"
@@ -5532,6 +5548,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String activeTransparentGlassMaterialRole = "Unknown";
         String activeTransparentGlassRoleSource = "none";
         String activeTransparentGlassSlotSource = "none";
+        String glassSlotPolicyVersion = "none";
+        String glassSlotPolicyMode = "none";
+        int activeTransparentGlassSlotCount = 0;
+        String activeTransparentGlassSlotList = "none";
+        int skippedGlassLikeSlotCount = 0;
+        String skippedGlassLikeSlotList = "none";
+        String skippedGlassLikeSlotReasons = "none";
+        int selectedMaterialSlotIndex = -1;
+        String selectedMaterialSlotName = "none";
+        String selectedMaterialSlotRole = "Unknown";
+        int manualGlassSlotIndex = -1;
+        String manualGlassSlotName = "none";
+        String opaquePassSkippedGlassSlots = "none";
+        String transparentPassRenderedGlassSlots = "none";
+        String duplicateTransmissionVolumeSkipped = "false";
+        String glassSlotDrawDiagnostics = "[]";
         String transparentGlassSelectedSlotAllowedStatus = "inactive";
         String transparentGlassSelectedSlotRejectedStatus = "inactive";
         String transparentGlassAutoDetectStatus = "available";

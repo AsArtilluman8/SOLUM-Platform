@@ -349,3 +349,19 @@ Result:
 - This is a proof path, not final pretty glass.
 - Pixel readback is still not implemented.
 - Visual verification is still manual.
+
+## P30B Glass Slot Isolation and Routing Fix
+
+P30B changes slot policy/routing diagnostics only. It does not change the P30A glass shader formula, pipeline, blend/depth state, GLB importer, or node transforms.
+
+Result:
+
+- Transparent v1 proof routing uses `P30B_single_clean_glass_slot_proof`.
+- Manual selected glass slot has priority when valid.
+- Auto routing prefers one alpha/blend glass slot.
+- OPAQUE transmission/volume glass-like slots are skipped from the transparent proof path.
+- Duplicate transmission/volume shells can also be skipped from the opaque pass in proof mode.
+- Active Transparent v1 proof slots are limited to one.
+- Diagnostics export active/skipped glass-like slots, skip reasons, and per-slot `drawnOpaque` / `drawnTransparent` status.
+- Pixel readback is still not implemented.
+- Visual verification is still manual.

@@ -289,6 +289,27 @@ float contactGroundingMask(vec3 localPos, vec3 normalDir) {
     return clamp(bottom * mix(0.45, 1.0, radial) * mix(0.55, 1.0, upward), 0.0, 1.0);
 }
 
+vec4 renderCleanGlassV1(vec3 normalDir, vec3 viewDir, vec3 tint, float opacity, float edge)
+{
+    vec3 nClean = normalize(normalDir);
+    vec3 vClean = normalize(viewDir);
+
+    float ndotv = clamp(abs(dot(nClean, vClean)), 0.0, 1.0);
+
+    float rawRim = pow(max(1.0 - ndotv, 0.0), max(edge, 1.25));
+    float rimMask = smoothstep(0.80, 0.98, rawRim);
+
+    float centerAlpha = clamp(opacity * 0.030, 0.0, 0.035);
+    float rimAlpha = rimMask * clamp(0.020 + edge * 0.010, 0.020, 0.050);
+    float outAlpha = clamp(centerAlpha + rimAlpha, 0.0, 0.080);
+
+    vec3 centerRgb = tint * 0.003;
+    vec3 rimRgb = rimMask * (tint * 0.12 + vec3(0.035));
+    vec3 outRgb = centerRgb + rimRgb;
+
+    return vec4(outRgb, outAlpha);
+}
+
 void main() {
     vec4 texel = pc.baseColorTextureReady != 0 ? texture(baseColorTexture, inTexcoord0) : vec4(1.0);
     vec4 mr = pc.metallicRoughnessTextureReady != 0 ? texture(metallicRoughnessTexture, inTexcoord0) : vec4(1.0);
@@ -325,23 +346,7 @@ void main() {
     if (!transparentGlassRequested && pc.alphaMode == 1 && alpha < cutoff) {
         discard;
     }
-    vec3 rawBaseColor = inColor * pc.baseColorFactor.rgb * texel.rgb;
-    vec3 baseColor = normalizeAlbedoEnergy(rawBaseColor, calibration);
     vec3 glassTint = glassTintColor(pc.glassTintPreset);
-    if (glassActive && !transparentGlassRequested) {
-        metallic = 0.0;
-        vec3 cleanFallback = mix(vec3(0.92, 0.98, 1.0), glassTint, pc.glassTintPreset == 6 ? 0.22 : 0.10);
-        float weakMaterial = pc.baseColorTextureReady == 0 ? 1.0 : 0.0;
-        float dirtyGrey = 1.0 - clamp(abs(baseColor.r - baseColor.g) + abs(baseColor.g - baseColor.b), 0.0, 1.0);
-        baseColor = mix(baseColor, cleanFallback, clamp(0.78 * weakMaterial + 0.42 * dirtyGrey * glassClarityInput, 0.0, 0.94));
-        baseColor = mix(baseColor, glassTint, pc.glassTintPreset == 0 || pc.glassTintPreset == 1 ? 0.06 : (pc.glassTintPreset == 6 ? 0.18 : 0.14));
-    } else if (glassActive) {
-        metallic = 0.0;
-    }
-    if (pc.activeDebugView == 1) {
-        fragColor = vec4(rawBaseColor, alpha);
-        return;
-    }
     vec3 n = normalize(inNormal);
     if (!gl_FrontFacing) n = -n;
     if (pc.normalTextureReady != 0) {
@@ -353,10 +358,30 @@ void main() {
     }
     vec3 l = normalize(-vec3(pc.sunDirectionX, pc.sunDirectionY, pc.sunDirectionZ));
     vec3 v = normalize(vec3(0.0, 0.0, 1.0));
+    if (glassActive && transparentGlassRequested) {
+        fragColor = renderCleanGlassV1(n, v, glassTint, glassOpacityInput, glassEdgeInput);
+        return;
+    }
+    vec3 rawBaseColor = inColor * pc.baseColorFactor.rgb * texel.rgb;
+    vec3 baseColor = normalizeAlbedoEnergy(rawBaseColor, calibration);
+    if (glassActive && !transparentGlassRequested) {
+        metallic = 0.0;
+        vec3 cleanFallback = mix(vec3(0.92, 0.98, 1.0), glassTint, pc.glassTintPreset == 6 ? 0.22 : 0.10);
+        float weakMaterial = pc.baseColorTextureReady == 0 ? 1.0 : 0.0;
+        float dirtyGrey = 1.0 - clamp(abs(baseColor.r - baseColor.g) + abs(baseColor.g - baseColor.b), 0.0, 1.0);
+        baseColor = mix(baseColor, cleanFallback, clamp(0.78 * weakMaterial + 0.42 * dirtyGrey * glassClarityInput, 0.0, 0.94));
+        baseColor = mix(baseColor, glassTint, pc.glassTintPreset == 0 || pc.glassTintPreset == 1 ? 0.06 : (pc.glassTintPreset == 6 ? 0.18 : 0.14));
+    } else if (glassActive) {
+        metallic = 0.0;
+    }
     vec3 h = normalize(l + v);
     vec3 sunColor = vec3(pc.sunColorR, pc.sunColorG, pc.sunColorB);
     vec3 ambientColor = vec3(pc.ambientColorR, pc.ambientColorG, pc.ambientColorB);
     float ndotl = max(dot(n, l), 0.0);
+    if (pc.activeDebugView == 1) {
+        fragColor = vec4(rawBaseColor, alpha);
+        return;
+    }
     if (pc.activeDebugView == 2) {
         fragColor = vec4(n * 0.5 + 0.5, alpha);
         return;

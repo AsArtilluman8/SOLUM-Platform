@@ -2889,3 +2889,24 @@ legacyGlassMaterialReportNotShaderTruth = yes
 
 - Android screenshot verification.
 - Pixel readback.
+
+---
+
+## Patch P30A — Clean Glass Render Path v1
+
+### Goal
+
+Add a clean isolated early-return path for Transparent v1 glass.
+
+### Changed
+
+- Transparent v1 glass now returns directly from `renderCleanGlassV1`.
+- Old PBR/baseColor/fake/reflection glass code is bypassed for Transparent v1.
+- Clean path alpha max is `0.080`.
+- Center RGB is near black.
+- This is a proof path, not final pretty glass.
+
+### Honesty limits
+
+- Pixel readback is still not implemented.
+- Visual verification is still manual.

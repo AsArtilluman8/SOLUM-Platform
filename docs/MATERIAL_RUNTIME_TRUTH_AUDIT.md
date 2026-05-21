@@ -335,3 +335,17 @@ Diagnostics honesty:
 - `glassGreyPlateStillPossibleStatus = reduced_rim_mask_applied_not_pixel_verified`
 - pixel readback is still not implemented
 - visual verification is still manual
+
+## P30A Clean Glass Render Path v1
+
+P30A adds a clean early-return render path for Transparent v1 glass.
+
+Result:
+
+- Transparent v1 glass now uses an early-return clean path.
+- Old PBR/baseColor/fake/reflection glass code is bypassed for Transparent v1.
+- Alpha max is `0.080`.
+- Center RGB is near black.
+- This is a proof path, not final pretty glass.
+- Pixel readback is still not implemented.
+- Visual verification is still manual.

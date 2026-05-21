@@ -15,5 +15,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "SOLUM-Platform"
-include ':apps:engine'
-include ':apps:solum-companion'
+include ":apps:engine"
+include ":apps:solum-companion"

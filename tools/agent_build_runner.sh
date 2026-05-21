@@ -149,7 +149,7 @@ java -version 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL" >/dev/null || true
 if [ -x "./gradlew" ]; then
   ./gradlew --version 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL" >/dev/null || true
 elif [ "$HAS_GRADLE_MARKERS" -eq 1 ] && command -v gradle >/dev/null 2>&1; then
-  gradle --version 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL" >/dev/null || true
+  gradle --no-daemon --version 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL" >/dev/null || true
 fi
 
 path_state "ANDROID_HOME" "${ANDROID_HOME:-}"
@@ -189,14 +189,14 @@ if [ -f "./gradlew" ]; then
   BUILD_CMD="./gradlew assembleDebug"
   GRADLE_VALIDATION_STATUS="valid_gradlew"
 elif [ "$HAS_GRADLE_MARKERS" -eq 1 ] && command -v gradle >/dev/null 2>&1; then
-  log "gradle_project_validation=gradle -q projects"
+  log "gradle_project_validation=gradle --no-daemon -p "$ROOT" -q projects"
   set +e
-  gradle -q projects 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL"
+  gradle --no-daemon -p "$ROOT" -q projects 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL"
   GRADLE_VALIDATION_CODE=${PIPESTATUS[0]}
   set -e
 
   if [ "$GRADLE_VALIDATION_CODE" -eq 0 ]; then
-    BUILD_CMD="gradle assembleDebug"
+    BUILD_CMD="gradle --no-daemon -p "$ROOT" assembleDebug"
     GRADLE_VALIDATION_STATUS="valid_global_gradle"
   else
     GRADLE_VALIDATION_STATUS="invalid_global_gradle"

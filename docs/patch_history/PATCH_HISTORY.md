@@ -1,3 +1,18 @@
+## Patch P31D — Safe Glass Auto Test
+
+Scope:
+- Added one-button `Glass Auto Test` in Material panel.
+- Writes `/storage/emulated/0/Download/SOLUM_GLASS_AUTOTEST/SOLUM_GLASS_AUTOTEST_*.zip`.
+- ZIP includes `glass_autotest_report.txt`, `glass_autotest_state.json`, `material_slots.json`, `render_lab_state.json`.
+- Safe CPU/material route test only.
+- No pixel readback.
+- No glass shader formula change.
+- No transparent pass change.
+
+Purpose:
+- Stop manual screenshot probing.
+- Identify whether current failure is no glass candidate, alpha fallback/cutout/opaque route, metadata found but no real transparent route, or inconclusive requiring native draw-range counters.
+
 ## Patch P31C — Split Glass Truth Debug State
 
 Scope:

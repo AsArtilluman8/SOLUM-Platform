@@ -121,6 +121,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button resetAlphaButton;
     private Button materialViewButton;
     private Button glassTruthButton;
+    private Button glassAutoTestButton;
     private Button reloadActiveModelButton;
     private TextView materialStatusView;
     private SeekBar sunSlider;
@@ -661,6 +662,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         glassTruthButton = compactButton("Glass Truth: Off");
         glassTruthButton.setOnClickListener(v -> cycleGlassTruthView());
         materialPanel.addView(glassTruthButton);
+        glassAutoTestButton = compactButton("Glass Auto Test");
+        glassAutoTestButton.setOnClickListener(v -> runGlassAutoTest());
+        materialPanel.addView(glassAutoTestButton);
         inspectorPanel.addView(materialPanel);
 
         debugPanel = new LinearLayout(this);
@@ -1016,6 +1020,253 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         } catch (Throwable ignored) {
             return null;
         }
+    }
+
+    private void runGlassAutoTest() {
+        try {
+            int oldGlassTruth = activeGlassTruthViewIndex;
+            int oldDebug = activeDebugViewIndex;
+            applyLightingControls();
+
+            File root = new File(Environment.getExternalStorageDirectory(), "Download/SOLUM_GLASS_AUTOTEST");
+            if (!root.exists()) root.mkdirs();
+            String stamp = utcTimestamp().replace(":", "").replace("-", "").replace("T", "_").replace("Z", "");
+            File dir = new File(root, "P31D_" + stamp);
+            if (!dir.exists()) dir.mkdirs();
+
+            String report = buildGlassAutoTestReport();
+            String renderLab = getRenderLabStateForExport();
+            String slots = modelState.materialSlotDiagnostics == null ? "[]" : modelState.materialSlotDiagnostics;
+            String stateJson = buildGlassAutoTestJson(renderLab, slots);
+
+            File reportFile = new File(dir, "glass_autotest_report.txt");
+            File stateFile = new File(dir, "glass_autotest_state.json");
+            File slotsFile = new File(dir, "material_slots.json");
+            writeTextFile(reportFile, report);
+            writeTextFile(stateFile, stateJson);
+            writeTextFile(slotsFile, slots);
+
+            File zipFile = new File(root, "SOLUM_GLASS_AUTOTEST_" + stamp + ".zip");
+            ZipOutputStream zos = new ZipOutputStream(new java.io.FileOutputStream(zipFile));
+            try {
+                addTextZipEntry(zos, "glass_autotest_report.txt", report);
+                addTextZipEntry(zos, "glass_autotest_state.json", stateJson);
+                addTextZipEntry(zos, "material_slots.json", slots);
+                addTextZipEntry(zos, "render_lab_state.json", renderLab);
+            } finally {
+                try { zos.close(); } catch (Throwable ignored) {}
+            }
+
+            activeGlassTruthViewIndex = oldGlassTruth;
+            activeDebugViewIndex = oldDebug;
+            modelState.glassMetadataStatus = "p31d_auto_test_saved";
+            if (diagnosticsStatusView != null) {
+                diagnosticsStatusView.setText("Glass Auto Test saved:\n" + zipFile.getAbsolutePath());
+            }
+            if (glassAutoTestButton != null) {
+                glassAutoTestButton.setText("Glass Auto Test: saved");
+            }
+            updateStatus();
+        } catch (Throwable t) {
+            writeCrashReport("p31d_glass_auto_test_failed", t);
+            if (diagnosticsStatusView != null) diagnosticsStatusView.setText("Glass Auto Test failed: " + shortThrowable(t));
+            if (glassAutoTestButton != null) glassAutoTestButton.setText("Glass Auto Test: failed");
+        }
+    }
+
+    private String buildGlassAutoTestReport() {
+        StringBuilder out = new StringBuilder();
+        JSONArray slots;
+        try {
+            slots = new JSONArray(modelState.materialSlotDiagnostics == null ? "[]" : modelState.materialSlotDiagnostics);
+        } catch (Throwable t) {
+            slots = new JSONArray();
+        }
+
+        int candidateCount = 0;
+        int glassLikeHintCount = 0;
+        int alphaBlendCount = 0;
+        int alphaMaskCount = 0;
+        int selectedCandidate = 0;
+        String selectedLine = "selected slot unavailable";
+        String firstCandidateLine = "none";
+
+        out.append("SOLUM Glass Auto Test P31D\n");
+        out.append("timestamp: ").append(utcTimestamp()).append("\n");
+        out.append("mode: safe_cpu_route_no_pixel_readback\n\n");
+
+        out.append("MODEL\n");
+        out.append("activeModelName: ").append(modelState.activeModelName()).append("\n");
+        out.append("importStatus: ").append(modelState.importStatus).append("\n");
+        out.append("importRoute: ").append(modelState.importRoute).append("\n");
+        out.append("gpuUploadStatus: ").append(modelState.gpuUploadStatus).append("\n");
+        out.append("drawStatus: ").append(modelState.drawStatus).append("\n");
+        out.append("primitiveCount rendered/skipped/total: ")
+            .append(modelState.primitiveCountRendered).append("/")
+            .append(modelState.primitiveCountSkipped).append("/")
+            .append(modelState.primitiveCountTotal).append("\n");
+        out.append("materialSlotCount: ").append(slots.length()).append("\n\n");
+
+        out.append("UI / SHADER COMMAND ROUTE\n");
+        out.append("uiDebugIndex: ").append(activeDebugViewIndex).append(" -> ").append(materialDebugViewName(activeDebugViewIndex)).append("\n");
+        out.append("glassTruthIndex: ").append(activeGlassTruthViewIndex).append(" -> ").append(glassTruthLabel(activeGlassTruthViewIndex)).append("\n");
+        out.append("effectiveShaderDebugIndex: ").append(effectiveShaderDebugViewIndex()).append(" -> ").append(materialDebugViewName(effectiveShaderDebugViewIndex())).append("\n");
+        out.append("nativeLoaded: ").append(nativeLoaded).append("\n");
+        out.append("nativeHandleNonZero: ").append(nativeHandle != 0L).append("\n\n");
+
+        out.append("MATERIAL SLOTS\n");
+        for (int i = 0; i < slots.length(); i++) {
+            JSONObject slot = slots.optJSONObject(i);
+            if (slot == null) continue;
+            String name = slot.optString("materialName", "slot_" + i);
+            String hint = slot.optString("materialTypeHint", "unknown");
+            String alpha = slot.optString("alphaMode", "unknown");
+            String lowerName = name.toLowerCase(Locale.US);
+            boolean candidate = slot.optBoolean("glassCandidate", false)
+                || hint.contains("glass")
+                || lowerName.contains("glass")
+                || lowerName.contains("window")
+                || lowerName.contains("windshield")
+                || lowerName.contains("vase");
+            if (candidate) {
+                candidateCount++;
+                if ("none".equals(firstCandidateLine)) firstCandidateLine = "slot " + i + " " + name + " hint=" + hint + " alpha=" + alpha;
+            }
+            if (hint.contains("glass")) glassLikeHintCount++;
+            if ("BLEND".equals(alpha)) alphaBlendCount++;
+            if ("MASK".equals(alpha)) alphaMaskCount++;
+            if (i == selectedMaterialSlot) {
+                selectedCandidate = candidate ? 1 : 0;
+                selectedLine = "slot " + i + " " + name + " hint=" + hint + " alpha=" + alpha + " candidate=" + candidate;
+            }
+            out.append("[").append(i).append("] ")
+                .append(name)
+                .append(" | hint=").append(hint)
+                .append(" | alpha=").append(alpha)
+                .append(" | candidate=").append(candidate)
+                .append(" | reason=").append(slot.optString("glassCandidateReason", "n/a"))
+                .append(" | baseColorTex=").append(slot.optInt("baseColorTextureSlot", -1))
+                .append(" | mrTex=").append(slot.optInt("metallicRoughnessTextureSlot", -1))
+                .append(" | normalTex=").append(slot.optInt("normalTextureSlot", -1))
+                .append(" | doubleSided=").append(slot.optBoolean("doubleSided", false))
+                .append("\n");
+        }
+        out.append("\n");
+
+        out.append("GLASS CANDIDATE SUMMARY\n");
+        out.append("candidateCount: ").append(candidateCount).append("\n");
+        out.append("glassLikeHintCount: ").append(glassLikeHintCount).append("\n");
+        out.append("alphaBlendCount: ").append(alphaBlendCount).append("\n");
+        out.append("alphaMaskCount: ").append(alphaMaskCount).append("\n");
+        out.append("selectedSlot: ").append(selectedMaterialSlot).append("\n");
+        out.append("selectedSlotCandidate: ").append(selectedCandidate == 1).append("\n");
+        out.append("selectedSlotLine: ").append(selectedLine).append("\n");
+        out.append("firstCandidate: ").append(firstCandidateLine).append("\n\n");
+
+        out.append("CURRENT RENDER ROUTE FIELDS\n");
+        out.append("glassMetadataStatus: ").append(modelState.glassMetadataStatus).append("\n");
+        out.append("alphaBlendStatus: ").append(modelState.alphaBlendStatus).append("\n");
+        out.append("transparencyDeferredStatus: ").append(modelState.transparencyDeferredStatus).append("\n");
+        out.append("alphaFallbackStatus: ").append(modelState.alphaFallbackStatus).append("\n");
+        out.append("alphaNoNewPassStatus: ").append(modelState.alphaNoNewPassStatus).append("\n");
+        out.append("debugViewStatus: ").append(modelState.debugViewStatus).append("\n");
+        out.append("selectedMaterialDebugViewStatus: ").append(modelState.selectedMaterialDebugViewStatus).append("\n\n");
+
+        String diagnosis;
+        String nextFix;
+        if (slots.length() == 0) {
+            diagnosis = "FAIL_NO_MATERIAL_SLOTS";
+            nextFix = "fix GLB material extraction before glass route";
+        } else if (candidateCount == 0) {
+            diagnosis = "FAIL_NO_GLASS_CANDIDATE";
+            nextFix = "improve GLB glass classifier: material name/transmission/volume/baseColor alpha";
+        } else if (modelState.transparencyDeferredStatus != null && modelState.transparencyDeferredStatus.toLowerCase(Locale.US).contains("no_full_transparent")) {
+            diagnosis = "FOUND_GLASS_METADATA_BUT_NO_REAL_TRANSPARENT_ROUTE";
+            nextFix = "add clean transparent pass for glass candidate slots and skip their opaque draw";
+        } else if (modelState.alphaBlendStatus != null && modelState.alphaBlendStatus.toLowerCase(Locale.US).contains("fallback")) {
+            diagnosis = "FOUND_ALPHA_BLEND_FALLBACK_CUTOUT_OR_OPAQUE";
+            nextFix = "route BLEND/glass slots away from alpha fallback into glass transparent path";
+        } else {
+            diagnosis = "CANDIDATE_FOUND_ROUTE_NOT_PROVEN";
+            nextFix = "add native draw-range counters: drawnOpaque/drawnTransparent per slot";
+        }
+
+        out.append("DIAGNOSIS\n");
+        out.append("result: ").append(diagnosis).append("\n");
+        out.append("mostLikelyCause: ");
+        if (candidateCount > 0) {
+            out.append("glass-like material exists, but current safe branch still reports no full transparent sorting/glass route or alpha fallback risk.\n");
+        } else {
+            out.append("glass material was not identified from current metadata.\n");
+        }
+        out.append("nextExactFix: ").append(nextFix).append("\n\n");
+
+        out.append("LIMITS\n");
+        out.append("- no pixel readback\n");
+        out.append("- no framebuffer proof\n");
+        out.append("- safe CPU/material/route report only\n");
+        out.append("- if this report is inconclusive, next patch must add native draw-range counters, not glass formula\n");
+        return out.toString();
+    }
+
+    private String buildGlassAutoTestJson(String renderLab, String slots) {
+        String diagnosis = "unknown";
+        int candidateCount = 0;
+        try {
+            JSONArray arr = new JSONArray(slots == null ? "[]" : slots);
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject slot = arr.optJSONObject(i);
+                if (slot == null) continue;
+                String name = slot.optString("materialName", "").toLowerCase(Locale.US);
+                String hint = slot.optString("materialTypeHint", "").toLowerCase(Locale.US);
+                if (slot.optBoolean("glassCandidate", false) || hint.contains("glass") || name.contains("glass") || name.contains("window") || name.contains("windshield") || name.contains("vase")) {
+                    candidateCount++;
+                }
+            }
+        } catch (Throwable ignored) {}
+        if (candidateCount <= 0) diagnosis = "FAIL_NO_GLASS_CANDIDATE";
+        else if (modelState.transparencyDeferredStatus != null && modelState.transparencyDeferredStatus.toLowerCase(Locale.US).contains("no_full_transparent")) diagnosis = "FOUND_GLASS_METADATA_BUT_NO_REAL_TRANSPARENT_ROUTE";
+        else if (modelState.alphaBlendStatus != null && modelState.alphaBlendStatus.toLowerCase(Locale.US).contains("fallback")) diagnosis = "FOUND_ALPHA_BLEND_FALLBACK_CUTOUT_OR_OPAQUE";
+        else diagnosis = "CANDIDATE_FOUND_ROUTE_NOT_PROVEN";
+
+        return "{\n"
+            + "  \"patch\": \"P31D_safe_glass_auto_test\",\n"
+            + "  \"timestamp\": \"" + escape(utcTimestamp()) + "\",\n"
+            + "  \"mode\": \"safe_cpu_route_no_pixel_readback\",\n"
+            + "  \"activeModelName\": \"" + escape(modelState.activeModelName()) + "\",\n"
+            + "  \"importStatus\": \"" + escape(modelState.importStatus) + "\",\n"
+            + "  \"drawStatus\": \"" + escape(modelState.drawStatus) + "\",\n"
+            + "  \"candidateCount\": " + candidateCount + ",\n"
+            + "  \"selectedMaterialSlot\": " + selectedMaterialSlot + ",\n"
+            + "  \"selectedMaterialSlotCount\": " + selectedMaterialSlotCount + ",\n"
+            + "  \"uiDebugIndex\": " + activeDebugViewIndex + ",\n"
+            + "  \"glassTruthIndex\": " + activeGlassTruthViewIndex + ",\n"
+            + "  \"effectiveShaderDebugIndex\": " + effectiveShaderDebugViewIndex() + ",\n"
+            + "  \"glassMetadataStatus\": \"" + escape(modelState.glassMetadataStatus) + "\",\n"
+            + "  \"alphaBlendStatus\": \"" + escape(modelState.alphaBlendStatus) + "\",\n"
+            + "  \"transparencyDeferredStatus\": \"" + escape(modelState.transparencyDeferredStatus) + "\",\n"
+            + "  \"diagnosis\": \"" + escape(diagnosis) + "\",\n"
+            + "  \"materialSlots\": " + (slots == null || slots.isEmpty() ? "[]" : slots) + ",\n"
+            + "  \"renderLab\": " + (renderLab == null || renderLab.isEmpty() ? "{}" : renderLab) + "\n"
+            + "}\n";
+    }
+
+    private void writeTextFile(File file, String content) throws java.io.IOException {
+        File parent = file.getParentFile();
+        if (parent != null && !parent.exists()) parent.mkdirs();
+        FileWriter fw = new FileWriter(file, false);
+        try {
+            fw.write(content == null ? "" : content);
+        } finally {
+            try { fw.close(); } catch (Throwable ignored) {}
+        }
+    }
+
+    private void addTextZipEntry(ZipOutputStream zos, String name, String content) throws java.io.IOException {
+        zos.putNextEntry(new ZipEntry(name));
+        byte[] bytes = (content == null ? "" : content).getBytes(StandardCharsets.UTF_8);
+        zos.write(bytes, 0, bytes.length);
+        zos.closeEntry();
     }
 
     private void seedSelectedSlotOverridesFromDiagnostics() {

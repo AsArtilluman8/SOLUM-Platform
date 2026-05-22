@@ -214,6 +214,18 @@ struct PrimitiveDrawRange {
     int textureSlot = -1;
 };
 
+enum class RuntimeMaterialClass : int {
+    Opaque = 0,
+    Cutout = 1,
+    TransparentGlass = 2
+};
+
+inline const char* runtimeMaterialClassName(RuntimeMaterialClass materialClass) {
+    if (materialClass == RuntimeMaterialClass::Cutout) return "CUTOUT";
+    if (materialClass == RuntimeMaterialClass::TransparentGlass) return "TRANSPARENT_GLASS";
+    return "OPAQUE";
+}
+
 struct MaterialSlotState {
     float baseColorFactor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
     float metallicFactor = 0.0f;
@@ -231,6 +243,7 @@ struct MaterialSlotState {
     float emissiveFactor[3] = { 0.0f, 0.0f, 0.0f };
     int emissiveTextureSlot = -1;
     int materialPresetHint = 0;
+    RuntimeMaterialClass runtimeClass = RuntimeMaterialClass::Opaque;
 };
 
 struct ModelRenderState {
@@ -716,6 +729,19 @@ struct ModelRenderState {
     std::string glassNoTextureRebuildStatus = "ok";
     std::string glassNoModelReuploadStatus = "ok";
     std::string glassNoNewShadowPassStatus = "ok";
+    uint32_t opaqueDrawRangeCount = 0;
+    uint32_t cutoutDrawRangeCount = 0;
+    uint32_t glassMaterialCount = 0;
+    uint32_t glassDrawRangeCount = 0;
+    bool glassQueueDrawn = false;
+    bool glassPipelineCreated = false;
+    bool glassPipelineBound = false;
+    bool glassBlendEnabled = false;
+    bool glassDepthWriteEnabled = true;
+    bool opaqueSkippedGlass = false;
+    float glassOpacityCurrent = 0.44f;
+    std::string glassRouteStatus = "not_initialized";
+    std::string runtimeMaterialClassStatus = "OPAQUE_CUTOUT_TRANSPARENT_GLASS";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;
     float fpsLastStable = 0.0f;

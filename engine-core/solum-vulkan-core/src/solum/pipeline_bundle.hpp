@@ -2,6 +2,7 @@
 #include "mesh_resource.hpp"
 #include "generated/solum_triangle_vert_spv.h"
 #include "generated/solum_triangle_frag_spv.h"
+#include "generated/solum_glass_frag_spv.h"
 
 namespace solum {
 
@@ -36,12 +37,12 @@ struct PipelineBundle {
         return module;
     }
 
-    bool createTrianglePipeline(VkDevice inDevice, VkRenderPass renderPass, VkExtent2D extent, std::string& error) {
+    bool createPipeline(VkDevice inDevice, VkRenderPass renderPass, VkExtent2D extent, const uint32_t* fragWords, size_t fragWordCount, const char* fragLabel, bool transparentGlass, std::string& error) {
         destroy();
         device = inDevice;
         VkShaderModule vert = createShaderModule(device, SOL_TRIANGLE_VERT_SPV, SOL_TRIANGLE_VERT_SPV_WORD_COUNT, "triangle.vert", error);
         if (vert == VK_NULL_HANDLE) return false;
-        VkShaderModule frag = createShaderModule(device, SOL_TRIANGLE_FRAG_SPV, SOL_TRIANGLE_FRAG_SPV_WORD_COUNT, "triangle.frag", error);
+        VkShaderModule frag = createShaderModule(device, fragWords, fragWordCount, fragLabel, error);
         if (frag == VK_NULL_HANDLE) { vkDestroyShaderModule(device, vert, nullptr); return false; }
 
         VkPipelineShaderStageCreateInfo stages[2]{};
@@ -108,12 +109,21 @@ struct PipelineBundle {
         msaa.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
         VkPipelineDepthStencilStateCreateInfo depth{ VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
         depth.depthTestEnable = VK_TRUE;
-        depth.depthWriteEnable = VK_TRUE;
+        depth.depthWriteEnable = transparentGlass ? VK_FALSE : VK_TRUE;
         depth.depthCompareOp = VK_COMPARE_OP_LESS;
         depth.depthBoundsTestEnable = VK_FALSE;
         depth.stencilTestEnable = VK_FALSE;
         VkPipelineColorBlendAttachmentState blendAttachment{};
         blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        if (transparentGlass) {
+            blendAttachment.blendEnable = VK_TRUE;
+            blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+            blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+        }
         VkPipelineColorBlendStateCreateInfo blend{ VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
         blend.attachmentCount = 1;
         blend.pAttachments = &blendAttachment;
@@ -160,6 +170,14 @@ struct PipelineBundle {
         vkDestroyShaderModule(device, vert, nullptr);
         if (r != VK_SUCCESS) { error = "GraphicsPipeline failed: " + vkResultName(r); return false; }
         return true;
+    }
+
+    bool createTrianglePipeline(VkDevice inDevice, VkRenderPass renderPass, VkExtent2D extent, std::string& error) {
+        return createPipeline(inDevice, renderPass, extent, SOL_TRIANGLE_FRAG_SPV, SOL_TRIANGLE_FRAG_SPV_WORD_COUNT, "triangle.frag", false, error);
+    }
+
+    bool createGlassPipeline(VkDevice inDevice, VkRenderPass renderPass, VkExtent2D extent, std::string& error) {
+        return createPipeline(inDevice, renderPass, extent, SOL_GLASS_FRAG_SPV, SOL_GLASS_FRAG_SPV_WORD_COUNT, "glass.frag", true, error);
     }
 };
 

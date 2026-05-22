@@ -100,9 +100,13 @@ struct RendererCore {
     MeshResource modelMesh;
     TextureResource baseColorTexture;
     std::vector<PrimitiveDrawRange> modelDrawRanges;
+    std::vector<PrimitiveDrawRange> opaqueQueue;
+    std::vector<PrimitiveDrawRange> cutoutQueue;
+    std::vector<PrimitiveDrawRange> glassQueue;
     std::vector<MaterialSlotState> modelMaterialSlots;
     std::vector<PbrMaterialTextureSet> materialTextureSets;
     PipelineBundle trianglePipeline;
+    PipelineBundle glassPipeline;
     VkDescriptorPool textureDescriptorPool = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> textureDescriptorSets;
     uint64_t framesRendered = 0;
@@ -129,6 +133,42 @@ struct RendererCore {
     float selectedSlotCoatOverride = 0.0f;
     float selectedSlotEmissiveIntensity = 0.0f;
     int activeMaterialPreset = MaterialPresetBalanced;
+
+    RuntimeMaterialClass classifyRuntimeMaterial(const MaterialSlotState& slot) const {
+        if (slot.materialTypeHint == 6) return RuntimeMaterialClass::TransparentGlass;
+        if (slot.alphaMode == 1) return RuntimeMaterialClass::Cutout;
+        return RuntimeMaterialClass::Opaque;
+    }
+
+    void rebuildRenderQueues() {
+        opaqueQueue.clear();
+        cutoutQueue.clear();
+        glassQueue.clear();
+        uint32_t glassMaterials = 0;
+        for (auto& slot : modelMaterialSlots) {
+            slot.runtimeClass = classifyRuntimeMaterial(slot);
+            if (slot.runtimeClass == RuntimeMaterialClass::TransparentGlass) ++glassMaterials;
+        }
+        for (const auto& range : modelDrawRanges) {
+            RuntimeMaterialClass materialClass = RuntimeMaterialClass::Opaque;
+            if (range.materialSlot >= 0 && (size_t)range.materialSlot < modelMaterialSlots.size()) {
+                materialClass = modelMaterialSlots[(size_t)range.materialSlot].runtimeClass;
+            }
+            if (materialClass == RuntimeMaterialClass::TransparentGlass) glassQueue.push_back(range);
+            else if (materialClass == RuntimeMaterialClass::Cutout) cutoutQueue.push_back(range);
+            else opaqueQueue.push_back(range);
+        }
+        model.opaqueDrawRangeCount = (uint32_t)opaqueQueue.size();
+        model.cutoutDrawRangeCount = (uint32_t)cutoutQueue.size();
+        model.glassMaterialCount = glassMaterials;
+        model.glassDrawRangeCount = (uint32_t)glassQueue.size();
+        model.opaqueSkippedGlass = !glassQueue.empty();
+        model.glassPipelineCreated = glassPipeline.pipeline != VK_NULL_HANDLE;
+        model.glassBlendEnabled = glassPipeline.pipeline != VK_NULL_HANDLE;
+        model.glassDepthWriteEnabled = false;
+        model.glassOpacityCurrent = material.glassOpacity;
+        model.glassRouteStatus = glassQueue.empty() ? "active_no_glass_ranges" : "active_glass_queue_ready";
+    }
 
     void setOutputRoot(const std::string& root) { outputRoot = root; diagnostics.outputRoot = root; }
 
@@ -396,7 +436,7 @@ struct RendererCore {
         model.metalReflectionStatus = "ok_tinted_stronger";
         model.plasticReflectionStatus = "ok_glossy_limited";
         model.rubberReflectionStatus = "ok_low_reflection";
-        model.glassMetadataReflectionStatus = "foundation_single_pass_fake_transparency";
+        model.glassMetadataReflectionStatus = "p32_transparent_glass_queue";
         model.materialPresetReflectionStatus = "ok";
         model.fakeCubemapDebugViewStatus = "shader_applied";
         model.reflectionZonesDebugViewStatus = "shader_applied";
@@ -717,9 +757,10 @@ struct RendererCore {
             selectedMetal = slot.materialTypeHint == 2;
             selectedPaint = slot.materialTypeHint == 1;
         }
-        const bool active = material.glassEnabled != 0 || selectedGlass || activeMaterialPreset == 6;
-        model.glassMaterialStatus = active ? "ok_foundation_single_pass" : "available";
-        model.glassMode = "single_pass_fake_transparency_no_refraction";
+        rebuildRenderQueues();
+        const bool active = !glassQueue.empty();
+        model.glassMaterialStatus = active ? "ok_transparent_glass_materials_detected" : "available";
+        model.glassMode = "transparent_glass_queue_pipeline";
         model.glassOpacity = material.glassOpacity;
         model.glassTintStatus = "ok_preset_tint";
         model.glassTintColor = glassTintColorString(material.glassTintPreset);
@@ -727,11 +768,11 @@ struct RendererCore {
         model.glassEdgeReflectionStatus = "ok_uniform_edge_boost";
         model.glassReflectionSourceStatus = "p24_fake_cubemap_probe";
         model.glassRoughnessResponseStatus = "ok_roughness_reduces_clarity";
-        model.glassThicknessFakeStatus = "ok_edge_tint_darken";
-        model.glassTransparencyMode = "safe_single_pass_fake_opacity";
-        model.glassSortingStatus = "safe_no_full_transparent_sorting";
+        model.glassThicknessFakeStatus = "not_used";
+        model.glassTransparencyMode = "vulkan_blend_straight_alpha";
+        model.glassSortingStatus = "glass_after_opaque_cutout";
         model.glassRefractionStatus = "deferred_not_real_refraction";
-        model.glassPerformanceStatus = "ok_uniform_shader_no_pass_no_sort";
+        model.glassPerformanceStatus = "ok_separate_queue_no_texture_rebuild";
         model.glassUiStatus = "ok_compact_material_tab";
         model.glassEnableButtonStatus = "ok";
         model.glassPresetStatus = "ok";
@@ -747,12 +788,12 @@ struct RendererCore {
         model.glassUniformUpdateStatus = "ok_uniform_only";
         model.glassPresetIntegrationStatus = "ok_selected_slot_only";
         model.glassPresetAppliedSlot = selectedMaterialSlot;
-        model.glassPresetAppliedStatus = active ? "ok_selected_slot_uniform_only" : "available";
-        model.glassSelectedSlotRoutingStatus = "ok_selected_slot_or_glass_hint";
+        model.glassPresetAppliedStatus = active ? "ok_glass_materials_only" : "available";
+        model.glassSelectedSlotRoutingStatus = "ok_runtime_class_transparent_glass_only";
         model.glassFabricGuardStatus = selectedFabric ? "ok_guard_blocks_transparency" : "ok";
         model.glassMetalGuardStatus = selectedMetal ? "ok_metal_preserved_unless_selected_glass_preset" : "ok";
         model.glassCarPaintGuardStatus = selectedPaint ? "ok_car_paint_preserved_unless_selected_glass_preset" : "ok";
-        model.glassVisualResponseStatus = active ? "ok_visible_tint_opacity_edge_reflection" : "available";
+        model.glassVisualResponseStatus = active ? "route_active_requires_visual_verify" : "available";
         model.glassOpacityResponseStatus = "ok_base_surface_reduced";
         model.glassTintResponseStatus = "ok_tint_colors_surface";
         model.glassFresnelResponseStatus = "ok_grazing_angle_boost";
@@ -767,13 +808,18 @@ struct RendererCore {
         model.glassTintDebugViewStatus = "shader_applied";
         model.glassSafetyDebugViewStatus = "shader_applied";
         model.p24ReflectionPreservedStatus = "ok";
-        model.p25PerformanceStatus = "ok_single_pass_uniform_shader_math";
+        model.p25PerformanceStatus = "superseded_by_p32_glass_queue";
         model.glassNoRefractionPassStatus = "ok";
         model.glassNoScreenRefractionStatus = "ok";
-        model.glassNoFullSortingStatus = "ok";
+        model.glassNoFullSortingStatus = "replaced_by_queue_order_no_per_triangle_sort";
         model.glassNoTextureRebuildStatus = "ok";
         model.glassNoModelReuploadStatus = "ok";
         model.glassNoNewShadowPassStatus = "ok";
+        model.glassPipelineCreated = glassPipeline.pipeline != VK_NULL_HANDLE;
+        model.glassBlendEnabled = glassPipeline.pipeline != VK_NULL_HANDLE;
+        model.glassDepthWriteEnabled = false;
+        model.glassOpacityCurrent = material.glassOpacity;
+        model.glassRouteStatus = active && model.glassPipelineCreated ? "active" : (active ? "blocked_pipeline_missing" : "active_no_glass_ranges");
     }
 
     void syncAlphaCutoutState() {
@@ -790,14 +836,14 @@ struct RendererCore {
             if (slot.doubleSided) doubleCount++;
             if (slot.materialTypeHint == 5) cutoutCount++;
             if (slot.materialTypeHint == 0) fabricCount++;
-            if (slot.materialTypeHint == 6) glassCount++;
+            if (slot.runtimeClass == RuntimeMaterialClass::TransparentGlass) glassCount++;
             if (slot.materialTypeHint == 7) decalCount++;
         }
         const bool selectedDouble = selectedMaterialSlot >= 0 && (size_t)selectedMaterialSlot < modelMaterialSlots.size() && modelMaterialSlots[(size_t)selectedMaterialSlot].doubleSided;
         model.alphaMaterialStatus = (maskCount > 0 || blendCount > 0) ? "ok_alpha_metadata_detected" : "ok_opaque_materials";
         model.alphaModeSupportStatus = "ok_opaque_mask_blend_metadata";
         model.alphaMaskStatus = maskCount > 0 ? "ok_mask_discard_shader" : "ok_no_mask_material";
-        model.alphaBlendStatus = blendCount > 0 ? "fallback_no_sorting_blend_as_cutout_or_opaque" : "ok_no_blend_material";
+        model.alphaBlendStatus = blendCount > 0 ? "routed_to_transparent_glass_when_detected" : "ok_no_blend_material";
         model.alphaDiscardStatus = (maskCount > 0 || blendCount > 0) ? "ok_shader_discard_for_safe_cutout" : "inactive_opaque";
         model.alphaTextureChannelStatus = "baseColor_alpha_channel_sampled_when_texture_ready";
         model.alphaFallbackStatus = blendCount > 0 ? "blend_deferred_safe_cutout_or_opaque" : "none";
@@ -809,9 +855,9 @@ struct RendererCore {
         model.thinMaterialPolishStatus = "ok_cutout_double_sided_hint_foundation";
         model.cutoutMaterialHintStatus = cutoutCount > 0 ? "ok" : "ok_available";
         model.fabricEdgeStatus = fabricCount > 0 ? "ok_fabric_like_matte_edges" : "ok_available";
-        model.glassMetadataStatus = glassCount > 0 ? "metadata_only_render_safe_cutout_or_opaque" : "none";
+        model.glassMetadataStatus = glassCount > 0 ? "runtime_class_transparent_glass" : "none";
         model.decalMaterialHintStatus = decalCount > 0 ? "ok" : "ok_available";
-        model.transparencyDeferredStatus = "ok_no_full_transparent_sorting_or_glass";
+        model.transparencyDeferredStatus = "transparent_glass_queue_after_opaque_cutout";
     }
 
     bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, float reflectionContrast, float reflectionSaturation, float motionReflectionScale, float motionClearcoatScale, int selectedSlot, float slotMetallic, float slotRoughness, float slotNormalScale, float slotAo, float slotGloss, float slotCoat, float alphaCutoffValue, float emissiveIntensity, int materialPreset, int glassEnabled, float glassOpacity, float glassEdge, float glassRoughness, int glassTintPreset) {
@@ -884,9 +930,13 @@ struct RendererCore {
         baseColorTexture.destroy();
         modelMesh.destroy();
         modelDrawRanges.clear();
+        opaqueQueue.clear();
+        cutoutQueue.clear();
+        glassQueue.clear();
         modelMaterialSlots.clear();
         validationMesh.destroy();
         trianglePipeline.destroy();
+        glassPipeline.destroy();
         if (inFlight != VK_NULL_HANDLE) { vkDestroyFence(device, inFlight, nullptr); inFlight = VK_NULL_HANDLE; }
         if (renderFinished != VK_NULL_HANDLE) { vkDestroySemaphore(device, renderFinished, nullptr); renderFinished = VK_NULL_HANDLE; }
         if (imageAvailable != VK_NULL_HANDLE) { vkDestroySemaphore(device, imageAvailable, nullptr); imageAvailable = VK_NULL_HANDLE; }
@@ -1274,7 +1324,6 @@ struct RendererCore {
         rp.clearValueCount = 2;
         rp.pClearValues = clear;
         vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.pipeline);
         PushConstants pc{};
         pc.mvp = buildMvp();
         syncLightingModelState();
@@ -1283,9 +1332,14 @@ struct RendererCore {
         materialConstantsReady = true;
         meshAttributeLayoutReady = sizeof(Vertex3D) == 60;
         if (model.modelReady() && modelMesh.ready() && !modelDrawRanges.empty()) {
+            rebuildRenderQueues();
             modelMesh.bind(cmd);
             if (modelMesh.indexedReady()) vkCmdBindIndexBuffer(cmd, modelMesh.indexBuffer.buffer, 0, modelMesh.indexType);
-            for (const auto& range : modelDrawRanges) {
+            auto drawQueue = [&](const std::vector<PrimitiveDrawRange>& queue, PipelineBundle& pipeline, bool glassPass) {
+                if (queue.empty() || pipeline.pipeline == VK_NULL_HANDLE) return;
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline);
+                if (glassPass) model.glassPipelineBound = true;
+            for (const auto& range : queue) {
                 pc.material = material;
                 if (range.materialSlot >= 0 && (size_t)range.materialSlot < modelMaterialSlots.size()) {
                     const auto& slot = modelMaterialSlots[(size_t)range.materialSlot];
@@ -1309,12 +1363,17 @@ struct RendererCore {
                         pc.material.alphaCutoff = material.alphaCutoff;
                         pc.material.emissiveIntensity = selectedSlotEmissiveIntensity;
                         pc.material.materialPresetHint = activeMaterialPreset;
-                        pc.material.glassEnabled = (material.glassEnabled != 0 || activeMaterialPreset == 6) ? 1 : 0;
+                        pc.material.glassEnabled = glassPass ? material.glassEnabled : 0;
                     } else {
                         pc.material.glossSliderValue = 0.0f;
                         pc.material.paintGlossSliderValue = 0.0f;
                         pc.material.emissiveIntensity = 0.0f;
-                        pc.material.glassEnabled = slot.materialTypeHint == 6 ? 1 : 0;
+                        pc.material.glassEnabled = glassPass ? material.glassEnabled : 0;
+                    }
+                    if (!glassPass && slot.runtimeClass != RuntimeMaterialClass::TransparentGlass && pc.material.materialPresetHint == MaterialPresetGlassMetadata) pc.material.materialPresetHint = slot.materialPresetHint;
+                    if (glassPass) {
+                        pc.material.materialPresetHint = MaterialPresetGlassMetadata;
+                        pc.material.glassEnabled = material.glassEnabled;
                     }
                     if (((material.activeDebugView >= 27 && material.activeDebugView <= 31) || material.activeDebugView == 41) && range.materialSlot != selectedMaterialSlot) {
                         pc.material.activeDebugView = 0;
@@ -1336,16 +1395,24 @@ struct RendererCore {
                 }
                 if (range.materialSlot >= 0 && (size_t)range.materialSlot < textureDescriptorSets.size()) {
                     VkDescriptorSet set = textureDescriptorSets[(size_t)range.materialSlot];
-                    if (set != VK_NULL_HANDLE) vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.layout, 0, 1, &set, 0, nullptr);
+                    if (set != VK_NULL_HANDLE) vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout, 0, 1, &set, 0, nullptr);
                 } else if (!textureDescriptorSets.empty() && textureDescriptorSets[0] != VK_NULL_HANDLE) {
                     VkDescriptorSet set = textureDescriptorSets[0];
-                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.layout, 0, 1, &set, 0, nullptr);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout, 0, 1, &set, 0, nullptr);
                 }
-                vkCmdPushConstants(cmd, trianglePipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pc);
+                vkCmdPushConstants(cmd, pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pc);
                 if (modelMesh.indexedReady() && range.indexCount > 0) vkCmdDrawIndexed(cmd, range.indexCount, 1, range.firstIndex, 0, 0);
                 else if (range.vertexCount > 0) vkCmdDraw(cmd, range.vertexCount, 1, range.firstVertex, 0);
             }
+                if (glassPass) model.glassQueueDrawn = true;
+            };
+            model.glassQueueDrawn = false;
+            model.glassPipelineBound = false;
+            drawQueue(opaqueQueue, trianglePipeline, false);
+            drawQueue(cutoutQueue, trianglePipeline, false);
+            drawQueue(glassQueue, glassPipeline, true);
         } else {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.pipeline);
             if (!textureDescriptorSets.empty() && textureDescriptorSets[0] != VK_NULL_HANDLE) {
                 VkDescriptorSet set = textureDescriptorSets[0];
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline.layout, 0, 1, &set, 0, nullptr);
@@ -1521,6 +1588,7 @@ struct RendererCore {
         modelDrawRanges.assign(ranges, ranges + rangeCount);
         modelMaterialSlots.assign(slots, slots + slotCount);
         if (modelMaterialSlots.empty()) modelMaterialSlots.push_back(MaterialSlotState{});
+        rebuildRenderQueues();
         model.activeModelName = name.empty() ? "imported.glb" : name;
         model.activeModelPath = path;
         model.activePrimitiveIndex = 0;
@@ -1807,6 +1875,10 @@ struct RendererCore {
         if (!validationMesh.createFoundationCube(physicalDevice, device, error)) { fail("MeshResource cube failed: " + error); return false; }
         meshAttributeLayoutReady = validationMesh.vertexCount == 24 && sizeof(Vertex3D) == 60;
         if (!trianglePipeline.createTrianglePipeline(device, renderPass, extent, error)) { fail("PipelineBundle failed: " + error); return false; }
+        if (!glassPipeline.createGlassPipeline(device, renderPass, extent, error)) { fail("Glass PipelineBundle failed: " + error); return false; }
+        model.glassPipelineCreated = true;
+        model.glassBlendEnabled = true;
+        model.glassDepthWriteEnabled = false;
         if (!createCommandsAndSync()) return false;
         if (!createFallbackBaseColorTexture(error)) { fail("Fallback texture failed: " + error); return false; }
         return true;

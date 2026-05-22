@@ -82,8 +82,10 @@ trap cleanup EXIT
 
 compile_one "$COMPILER" vert "$SHADER_DIR/triangle.vert" "$TMP_DIR/triangle.vert.spv" SOL_TRIANGLE_VERT_SPV "$OUT_DIR/solum_triangle_vert_spv.h"
 compile_one "$COMPILER" frag "$SHADER_DIR/triangle.frag.glsl" "$TMP_DIR/triangle.frag.spv" SOL_TRIANGLE_FRAG_SPV "$OUT_DIR/solum_triangle_frag_spv.h"
+compile_one "$COMPILER" frag "$SHADER_DIR/glass.frag.glsl" "$TMP_DIR/glass.frag.spv" SOL_GLASS_FRAG_SPV "$OUT_DIR/solum_glass_frag_spv.h"
 
 echo "SOLUM SHADER BUILD: OK"
 echo "Compiler: $COMPILER"
 echo "Generated: $OUT_DIR/solum_triangle_vert_spv.h"
 echo "Generated: $OUT_DIR/solum_triangle_frag_spv.h"
+echo "Generated: $OUT_DIR/solum_glass_frag_spv.h"

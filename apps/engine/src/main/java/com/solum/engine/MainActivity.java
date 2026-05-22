@@ -1038,7 +1038,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleGlassTintPreset() {
-        glassTintPresetIndex = (glassTintPresetIndex + 1) % 4;
+        glassTintPresetIndex = (glassTintPresetIndex + 1) % 5;
         glassEnabled = true;
         activeMaterialPresetIndex = 6;
         applyLightingControls();
@@ -1053,16 +1053,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private String glassTintPresetName(int preset) {
         if (preset == 1) return "Blue";
-        if (preset == 2) return "Smoke";
-        if (preset == 3) return "Green";
+        if (preset == 2) return "Warm";
+        if (preset == 3) return "Smoke";
+        if (preset == 4) return "Green";
         return "Clear";
     }
 
     private String glassTintColorStatus(int preset) {
-        if (preset == 1) return "0.55,0.82,1.00";
-        if (preset == 2) return "0.46,0.50,0.56";
-        if (preset == 3) return "0.55,1.00,0.72";
-        return "0.92,0.98,1.00";
+        if (preset == 1) return "0.36,0.74,1.00";
+        if (preset == 2) return "1.00,0.72,0.42";
+        if (preset == 3) return "0.34,0.38,0.44";
+        if (preset == 4) return "0.40,1.00,0.62";
+        return "0.94,0.99,1.00";
     }
 
     private void cycleAlphaDebugView() {
@@ -2766,9 +2768,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         poster.post(() -> {
             try {
                 applyLightingControls();
-                exportEngineDiagnostics("glass_route_test");
+                syncFpsDiagnosticsToNative();
+                applyLightingControls();
                 File reportDir = getGlassRouteTestDir();
                 String renderLab = getRenderLabStateForExport();
+                exportEngineDiagnostics("glass_route_test");
                 String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
                 File txt = new File(reportDir, "glass_route_test_" + stamp + ".txt");
                 String body = glassRouteTestBody(renderLab);
@@ -3761,11 +3765,24 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"glassRouteStatus\": \"" + escape(jsonStringField(renderLab, "glassRouteStatus", modelState.glassRouteStatus)) + "\",\n";
     }
 
+    private int skipJsonValueWhitespace(String json, int start) {
+        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
+        return start;
+    }
+
     private String jsonStringField(String json, String key, String fallback) {
         String marker = "\"" + key + "\":\"";
         int start = json.indexOf(marker);
-        if (start < 0) return fallback;
-        start += marker.length();
+        if (start >= 0) {
+            start += marker.length();
+        } else {
+            marker = "\"" + key + "\":";
+            start = json.indexOf(marker);
+            if (start < 0) return fallback;
+            start = skipJsonValueWhitespace(json, start + marker.length());
+            if (start >= json.length() || json.charAt(start) != '"') return fallback;
+            start++;
+        }
         int end = json.indexOf('"', start);
         return end > start ? json.substring(start, end) : fallback;
     }
@@ -3774,7 +3791,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String marker = "\"" + key + "\":";
         int start = json.indexOf(marker);
         if (start < 0) return fallback;
-        start += marker.length();
+        start = skipJsonValueWhitespace(json, start + marker.length());
         int end = start;
         while (end < json.length()) {
             char c = json.charAt(end);
@@ -3788,7 +3805,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String marker = "\"" + key + "\":";
         int start = json.indexOf(marker);
         if (start < 0) return fallback;
-        start += marker.length();
+        start = skipJsonValueWhitespace(json, start + marker.length());
         if (json.startsWith("true", start)) return "true";
         if (json.startsWith("false", start)) return "false";
         return fallback;

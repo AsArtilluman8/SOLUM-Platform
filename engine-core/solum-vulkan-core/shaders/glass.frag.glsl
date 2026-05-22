@@ -71,10 +71,11 @@ layout(push_constant) uniform PushConstants {
 } pc;
 
 vec3 glassTintColor(int preset) {
-    if (preset == 1) return vec3(0.55, 0.82, 1.00);
-    if (preset == 2) return vec3(0.46, 0.50, 0.56);
-    if (preset == 3) return vec3(0.55, 1.00, 0.72);
-    return vec3(0.92, 0.98, 1.00);
+    if (preset == 1) return vec3(0.36, 0.74, 1.00);
+    if (preset == 2) return vec3(1.00, 0.72, 0.42);
+    if (preset == 3) return vec3(0.34, 0.38, 0.44);
+    if (preset == 4) return vec3(0.40, 1.00, 0.62);
+    return vec3(0.94, 0.99, 1.00);
 }
 
 vec3 toneMap(vec3 color) {
@@ -100,12 +101,12 @@ void main() {
         n = normalize(mat3(t, b, n) * normalize(mapN));
     }
 
-    float roughness = clamp(mix(pc.roughnessFactor * mr.g, pc.glassRoughness, 0.82), 0.04, 1.0);
-    float alpha = clamp(pc.baseColorFactor.a * texel.a * pc.glassOpacity, 0.02, 1.0);
+    float roughness = clamp(mix(pc.roughnessFactor * mr.g, pc.glassRoughness, 0.72), 0.04, 1.0);
+    float alpha = clamp(pc.baseColorFactor.a * texel.a * pc.glassOpacity, 0.0, 1.0);
     vec3 tint = glassTintColor(pc.glassTintPreset);
-    vec3 base = mix(inColor * pc.baseColorFactor.rgb * texel.rgb, tint, 0.68);
+    vec3 base = mix(inColor * pc.baseColorFactor.rgb * texel.rgb, tint, 0.86);
     vec3 v = normalize(vec3(0.0, 0.0, 1.0));
-    float smoothNormalWeight = clamp(0.22 + roughness * 0.18, 0.0, 0.36);
+    float smoothNormalWeight = clamp(0.12 + roughness * 0.12, 0.0, 0.24);
     n = normalize(mix(n, v, smoothNormalWeight));
     float ndotv = clamp(dot(n, v), 0.0, 1.0);
     float rim = pow(1.0 - ndotv, mix(2.6, 1.35, clamp(pc.glassEdge, 0.0, 2.0) * 0.5));
@@ -116,9 +117,9 @@ void main() {
     vec3 sun = vec3(pc.sunColorR, pc.sunColorG, pc.sunColorB) * pc.sunIntensity;
     vec3 ambient = vec3(pc.ambientColorR, pc.ambientColorG, pc.ambientColorB) * max(pc.ambientIntensity, pc.ambientFloor);
     vec3 edge = tint * rim * clamp(pc.glassEdge, 0.0, 2.0);
-    vec3 rgb = base * ambient * mix(0.28, 0.58, alpha);
-    rgb += sun * edge * mix(0.38, 0.94, 1.0 - roughness);
-    rgb += sun * spec * (0.20 + clamp(pc.glassEdge, 0.0, 2.0) * 0.28);
+    vec3 rgb = base * (ambient * 0.62 + vec3(0.22));
+    rgb += sun * edge * mix(0.42, 1.05, 1.0 - roughness);
+    rgb += sun * spec * (0.24 + clamp(pc.glassEdge, 0.0, 2.0) * 0.30);
     rgb = toneMap(rgb * pc.exposureValue);
     fragColor = vec4(rgb, alpha);
 }

@@ -730,16 +730,18 @@ struct RendererCore {
 
     const char* glassTintPresetName(int preset) const {
         if (preset == 1) return "Blue";
-        if (preset == 2) return "Smoke";
-        if (preset == 3) return "Green";
+        if (preset == 2) return "Warm";
+        if (preset == 3) return "Smoke";
+        if (preset == 4) return "Green";
         return "Clear";
     }
 
     const char* glassTintColorString(int preset) const {
-        if (preset == 1) return "0.55,0.82,1.00";
-        if (preset == 2) return "0.46,0.50,0.56";
-        if (preset == 3) return "0.55,1.00,0.72";
-        return "0.92,0.98,1.00";
+        if (preset == 1) return "0.36,0.74,1.00";
+        if (preset == 2) return "1.00,0.72,0.42";
+        if (preset == 3) return "0.34,0.38,0.44";
+        if (preset == 4) return "0.40,1.00,0.62";
+        return "0.94,0.99,1.00";
     }
 
     void syncGlassState() {
@@ -892,7 +894,7 @@ struct RendererCore {
         material.glassOpacity = clampFloat(glassOpacity, 0.0f, 1.0f);
         material.glassEdge = clampFloat(glassEdge, 0.0f, 2.0f);
         material.glassRoughness = clampFloat(glassRoughness, 0.0f, 1.0f);
-        material.glassTintPreset = ((glassTintPreset % 4) + 4) % 4;
+        material.glassTintPreset = ((glassTintPreset % 5) + 5) % 5;
         selectedMaterialSlot = selectedSlot;
         selectedSlotMetallicOverride = clampFloat(slotMetallic, 0.0f, 1.0f);
         selectedSlotRoughnessOverride = clampFloat(slotRoughness, 0.0f, 1.0f);

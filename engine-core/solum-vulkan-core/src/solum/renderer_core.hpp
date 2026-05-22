@@ -135,7 +135,7 @@ struct RendererCore {
     int activeMaterialPreset = MaterialPresetBalanced;
 
     RuntimeMaterialClass classifyRuntimeMaterial(const MaterialSlotState& slot) const {
-        if (slot.materialTypeHint == 6) return RuntimeMaterialClass::TransparentGlass;
+        if (slot.materialTypeHint == 6 && material.glassEnabled != 0) return RuntimeMaterialClass::TransparentGlass;
         if (slot.alphaMode == 1) return RuntimeMaterialClass::Cutout;
         return RuntimeMaterialClass::Opaque;
     }
@@ -147,7 +147,7 @@ struct RendererCore {
         uint32_t glassMaterials = 0;
         for (auto& slot : modelMaterialSlots) {
             slot.runtimeClass = classifyRuntimeMaterial(slot);
-            if (slot.runtimeClass == RuntimeMaterialClass::TransparentGlass) ++glassMaterials;
+            if (slot.materialTypeHint == 6) ++glassMaterials;
         }
         for (const auto& range : modelDrawRanges) {
             RuntimeMaterialClass materialClass = RuntimeMaterialClass::Opaque;
@@ -167,7 +167,8 @@ struct RendererCore {
         model.glassBlendEnabled = glassPipeline.pipeline != VK_NULL_HANDLE;
         model.glassDepthWriteEnabled = false;
         model.glassOpacityCurrent = material.glassOpacity;
-        model.glassRouteStatus = glassQueue.empty() ? "active_no_glass_ranges" : "active_glass_queue_ready";
+        model.glassEnabled = material.glassEnabled != 0;
+        model.glassRouteStatus = material.glassEnabled == 0 ? "disabled_by_ui_opaque_fallback" : (glassQueue.empty() ? "active_no_glass_ranges" : "active_glass_queue_ready");
     }
 
     void setOutputRoot(const std::string& root) { outputRoot = root; diagnostics.outputRoot = root; }
@@ -729,19 +730,15 @@ struct RendererCore {
 
     const char* glassTintPresetName(int preset) const {
         if (preset == 1) return "Blue";
-        if (preset == 2) return "Green";
-        if (preset == 3) return "Smoke";
-        if (preset == 4) return "Warm";
-        if (preset == 5) return "Magic";
+        if (preset == 2) return "Smoke";
+        if (preset == 3) return "Green";
         return "Clear";
     }
 
     const char* glassTintColorString(int preset) const {
         if (preset == 1) return "0.55,0.82,1.00";
-        if (preset == 2) return "0.55,1.00,0.72";
-        if (preset == 3) return "0.48,0.52,0.58";
-        if (preset == 4) return "1.00,0.78,0.52";
-        if (preset == 5) return "0.82,0.58,1.00";
+        if (preset == 2) return "0.46,0.50,0.56";
+        if (preset == 3) return "0.55,1.00,0.72";
         return "0.92,0.98,1.00";
     }
 
@@ -758,7 +755,7 @@ struct RendererCore {
             selectedPaint = slot.materialTypeHint == 1;
         }
         rebuildRenderQueues();
-        const bool active = !glassQueue.empty();
+        const bool active = material.glassEnabled != 0 && !glassQueue.empty();
         model.glassMaterialStatus = active ? "ok_transparent_glass_materials_detected" : "available";
         model.glassMode = "transparent_glass_queue_pipeline";
         model.glassOpacity = material.glassOpacity;
@@ -776,7 +773,7 @@ struct RendererCore {
         model.glassUiStatus = "ok_compact_material_tab";
         model.glassEnableButtonStatus = "ok";
         model.glassPresetStatus = "ok";
-        model.activeGlassPreset = active ? "Glass Foundation" : "Balanced";
+        model.activeGlassPreset = material.glassEnabled != 0 ? "Glass Foundation" : "Glass Off";
         model.glassOpacitySliderStatus = "ok";
         model.glassOpacityValue = material.glassOpacity;
         model.glassTintPresetStatus = "ok";
@@ -819,7 +816,10 @@ struct RendererCore {
         model.glassBlendEnabled = glassPipeline.pipeline != VK_NULL_HANDLE;
         model.glassDepthWriteEnabled = false;
         model.glassOpacityCurrent = material.glassOpacity;
-        model.glassRouteStatus = active && model.glassPipelineCreated ? "active" : (active ? "blocked_pipeline_missing" : "active_no_glass_ranges");
+        model.glassEnabled = material.glassEnabled != 0;
+        model.glassMissingNormalCount = active ? model.tangentMissingCount : 0;
+        model.glassNormalStatus = !active ? "inactive" : (model.tangentMissingCount > 0 ? "missing_or_flat_normals_detected" : "smooth_normals_or_tangents_available");
+        model.glassRouteStatus = material.glassEnabled == 0 ? "disabled_by_ui_opaque_fallback" : (active && model.glassPipelineCreated ? "active" : (active ? "blocked_pipeline_missing" : "active_no_glass_ranges"));
     }
 
     void syncAlphaCutoutState() {
@@ -892,7 +892,7 @@ struct RendererCore {
         material.glassOpacity = clampFloat(glassOpacity, 0.0f, 1.0f);
         material.glassEdge = clampFloat(glassEdge, 0.0f, 2.0f);
         material.glassRoughness = clampFloat(glassRoughness, 0.0f, 1.0f);
-        material.glassTintPreset = ((glassTintPreset % 6) + 6) % 6;
+        material.glassTintPreset = ((glassTintPreset % 4) + 4) % 4;
         selectedMaterialSlot = selectedSlot;
         selectedSlotMetallicOverride = clampFloat(slotMetallic, 0.0f, 1.0f);
         selectedSlotRoughnessOverride = clampFloat(slotRoughness, 0.0f, 1.0f);
@@ -1381,6 +1381,12 @@ struct RendererCore {
                     pc.material.alphaMode = slot.alphaMode;
                     pc.material.materialId = range.materialSlot;
                     pc.material.materialTypeHint = slot.materialTypeHint;
+                    if (!glassPass && material.glassEnabled == 0 && slot.materialTypeHint == 6) {
+                        pc.material.materialTypeHint = 4;
+                        pc.material.materialPresetHint = MaterialPresetBalanced;
+                        pc.material.alphaMode = 0;
+                        pc.material.baseColorFactor[3] = 1.0f;
+                    }
                     const size_t materialIndex = (size_t)range.materialSlot;
                     pc.material.baseColorTextureReady = (materialIndex < materialTextureSets.size() && materialTextureSets[materialIndex].baseColorUploaded) ? 1 : 0;
                     pc.material.metallicRoughnessTextureReady = (materialIndex < materialTextureSets.size() && materialTextureSets[materialIndex].metallicRoughnessUploaded) ? 1 : 0;

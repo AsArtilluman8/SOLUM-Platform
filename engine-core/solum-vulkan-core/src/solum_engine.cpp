@@ -570,6 +570,9 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"glassDepthWriteEnabled\":" + std::string(renderer->model.glassDepthWriteEnabled ? "true" : "false")
         + ",\"opaqueSkippedGlass\":" + std::string(renderer->model.opaqueSkippedGlass ? "true" : "false")
         + ",\"glassOpacityCurrent\":" + std::to_string(renderer->model.glassOpacityCurrent)
+        + ",\"glassEnabled\":" + std::string(renderer->model.glassEnabled ? "true" : "false")
+        + ",\"glassMissingNormalCount\":" + std::to_string(renderer->model.glassMissingNormalCount)
+        + ",\"glassNormalStatus\":\"" + solum::escapeJson(renderer->model.glassNormalStatus) + "\""
         + ",\"glassRouteStatus\":\"" + solum::escapeJson(renderer->model.glassRouteStatus) + "\""
         + ",\"inspectorUiStatus\":\"" + solum::escapeJson(renderer->model.inspectorUiStatus) + "\""
         + ",\"inspectorUiMode\":\"" + solum::escapeJson(renderer->model.inspectorUiMode) + "\""

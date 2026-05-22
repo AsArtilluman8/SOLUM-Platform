@@ -72,10 +72,8 @@ layout(push_constant) uniform PushConstants {
 
 vec3 glassTintColor(int preset) {
     if (preset == 1) return vec3(0.55, 0.82, 1.00);
-    if (preset == 2) return vec3(0.55, 1.00, 0.72);
-    if (preset == 3) return vec3(0.48, 0.52, 0.58);
-    if (preset == 4) return vec3(1.00, 0.78, 0.52);
-    if (preset == 5) return vec3(0.82, 0.58, 1.00);
+    if (preset == 2) return vec3(0.46, 0.50, 0.56);
+    if (preset == 3) return vec3(0.55, 1.00, 0.72);
     return vec3(0.92, 0.98, 1.00);
 }
 
@@ -107,11 +105,20 @@ void main() {
     vec3 tint = glassTintColor(pc.glassTintPreset);
     vec3 base = mix(inColor * pc.baseColorFactor.rgb * texel.rgb, tint, 0.68);
     vec3 v = normalize(vec3(0.0, 0.0, 1.0));
-    float rim = pow(clamp(1.0 - max(dot(n, v), 0.0), 0.0, 1.0), 3.0);
+    float smoothNormalWeight = clamp(0.22 + roughness * 0.18, 0.0, 0.36);
+    n = normalize(mix(n, v, smoothNormalWeight));
+    float ndotv = clamp(dot(n, v), 0.0, 1.0);
+    float rim = pow(1.0 - ndotv, mix(2.6, 1.35, clamp(pc.glassEdge, 0.0, 2.0) * 0.5));
+    vec3 l = normalize(-vec3(pc.sunDirectionX, pc.sunDirectionY, pc.sunDirectionZ));
+    vec3 h = normalize(l + v);
+    float specPower = mix(72.0, 16.0, roughness);
+    float spec = pow(max(dot(n, h), 0.0), specPower) * mix(1.15, 0.34, roughness);
     vec3 sun = vec3(pc.sunColorR, pc.sunColorG, pc.sunColorB) * pc.sunIntensity;
     vec3 ambient = vec3(pc.ambientColorR, pc.ambientColorG, pc.ambientColorB) * max(pc.ambientIntensity, pc.ambientFloor);
     vec3 edge = tint * rim * clamp(pc.glassEdge, 0.0, 2.0);
-    vec3 rgb = base * ambient * mix(0.20, 0.52, alpha) + sun * edge * mix(0.20, 0.78, 1.0 - roughness);
+    vec3 rgb = base * ambient * mix(0.28, 0.58, alpha);
+    rgb += sun * edge * mix(0.38, 0.94, 1.0 - roughness);
+    rgb += sun * spec * (0.20 + clamp(pc.glassEdge, 0.0, 2.0) * 0.28);
     rgb = toneMap(rgb * pc.exposureValue);
     fragColor = vec4(rgb, alpha);
 }

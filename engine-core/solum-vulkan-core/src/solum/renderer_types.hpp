@@ -77,7 +77,7 @@ struct MaterialConstants {
     float reflectionSaturation = 1.12f;
     float motionReflectionScale = 1.0f;
     float motionClearcoatScale = 1.0f;
-    int glassEnabled = 0;
+    int glassEnabled = 1;
     float glassOpacity = 0.44f;
     float glassEdge = 1.15f;
     float glassRoughness = 0.22f;
@@ -742,6 +742,9 @@ struct ModelRenderState {
     float glassOpacityCurrent = 0.44f;
     std::string glassRouteStatus = "not_initialized";
     std::string runtimeMaterialClassStatus = "OPAQUE_CUTOUT_TRANSPARENT_GLASS";
+    bool glassEnabled = true;
+    uint32_t glassMissingNormalCount = 0;
+    std::string glassNormalStatus = "unknown";
     float fpsCurrent = 0.0f;
     float frameTimeMs = 0.0f;
     float fpsLastStable = 0.0f;

@@ -438,6 +438,9 @@ struct RuntimeDiagnostics {
         f << "  \"glassDepthWriteEnabled\": " << (model.glassDepthWriteEnabled ? "true" : "false") << ",\n";
         f << "  \"opaqueSkippedGlass\": " << (model.opaqueSkippedGlass ? "true" : "false") << ",\n";
         f << "  \"glassOpacityCurrent\": " << model.glassOpacityCurrent << ",\n";
+        f << "  \"glassEnabled\": " << (model.glassEnabled ? "true" : "false") << ",\n";
+        f << "  \"glassMissingNormalCount\": " << model.glassMissingNormalCount << ",\n";
+        f << "  \"glassNormalStatus\": \"" << escapeJson(model.glassNormalStatus) << "\",\n";
         f << "  \"glassRouteStatus\": \"" << escapeJson(model.glassRouteStatus) << "\",\n";
         f << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";

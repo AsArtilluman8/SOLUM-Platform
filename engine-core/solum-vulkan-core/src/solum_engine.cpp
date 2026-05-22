@@ -574,6 +574,13 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"glassMissingNormalCount\":" + std::to_string(renderer->model.glassMissingNormalCount)
         + ",\"glassNormalStatus\":\"" + solum::escapeJson(renderer->model.glassNormalStatus) + "\""
         + ",\"glassRouteStatus\":\"" + solum::escapeJson(renderer->model.glassRouteStatus) + "\""
+        + ",\"showGlassGeometryEnabled\":" + std::string(renderer->model.showGlassGeometryEnabled ? "true" : "false")
+        + ",\"showGlassGeometryStatus\":\"" + solum::escapeJson(renderer->model.showGlassGeometryStatus) + "\""
+        + ",\"semanticOpaqueGlassFallbackActive\":" + std::to_string(renderer->model.semanticOpaqueGlassFallbackActive)
+        + ",\"glassFallbackAlphaApplied\":" + std::to_string(renderer->model.glassFallbackAlphaApplied)
+        + ",\"glassVisibleFallbackReason\":\"" + solum::escapeJson(renderer->model.glassVisibleFallbackReason) + "\""
+        + ",\"glassMaterialNames\":" + (renderer->model.glassMaterialNames.empty() ? "[]" : renderer->model.glassMaterialNames)
+        + ",\"glassClassificationReason\":" + (renderer->model.glassClassificationReason.empty() ? "[]" : renderer->model.glassClassificationReason)
         + ",\"inspectorUiStatus\":\"" + solum::escapeJson(renderer->model.inspectorUiStatus) + "\""
         + ",\"inspectorUiMode\":\"" + solum::escapeJson(renderer->model.inspectorUiMode) + "\""
         + ",\"activeInspectorTab\":\"" + solum::escapeJson(renderer->model.activeInspectorTab) + "\""

@@ -84,6 +84,11 @@ struct MaterialConstants {
     int glassTintPreset = 0;
 };
 
+inline float semanticGlassFallbackAlpha(float opacity) {
+    const float t = opacity < 0.0f ? 0.0f : (opacity > 1.0f ? 1.0f : opacity);
+    return 0.20f + t * 0.54f;
+}
+
 inline const char* lightPresetName(int preset) {
     if (preset == 1) return "Studio";
     if (preset == 2) return "Outdoor";
@@ -159,6 +164,7 @@ inline const char* materialDebugViewName(int view) {
     if (view == 55) return "Glass Reflection";
     if (view == 56) return "Glass Tint";
     if (view == 57) return "Glass Safety Status";
+    if (view == 58) return "Show Glass Geometry";
     return "Final Shaded";
 }
 
@@ -721,6 +727,13 @@ struct ModelRenderState {
     std::string glassReflectionDebugViewStatus = "shader_applied";
     std::string glassTintDebugViewStatus = "shader_applied";
     std::string glassSafetyDebugViewStatus = "shader_applied";
+    std::string showGlassGeometryStatus = "off";
+    bool showGlassGeometryEnabled = false;
+    uint32_t semanticOpaqueGlassFallbackActive = 0;
+    float glassFallbackAlphaApplied = 0.0f;
+    std::string glassVisibleFallbackReason = "none";
+    std::string glassMaterialNames = "[]";
+    std::string glassClassificationReason = "[]";
     std::string p24ReflectionPreservedStatus = "ok";
     std::string p25PerformanceStatus = "ok_single_pass_uniform_shader_math";
     std::string glassNoRefractionPassStatus = "ok";

@@ -426,6 +426,13 @@ struct RuntimeDiagnostics {
         f << "  \"reflectionNoModelReuploadStatus\": \"" << escapeJson(model.reflectionNoModelReuploadStatus) << "\",\n";
         f << "  \"noFrameFileWriteStatus\": \"" << escapeJson(model.noFrameFileWriteStatus) << "\",\n";
         f << "  \"noFrameGlbParseStatus\": \"" << escapeJson(model.noFrameGlbParseStatus) << "\",\n";
+        f << "  \"showGlassGeometryEnabled\": " << (model.showGlassGeometryEnabled ? "true" : "false") << ",\n";
+        f << "  \"showGlassGeometryStatus\": \"" << escapeJson(model.showGlassGeometryStatus) << "\",\n";
+        f << "  \"semanticOpaqueGlassFallbackActive\": " << model.semanticOpaqueGlassFallbackActive << ",\n";
+        f << "  \"glassFallbackAlphaApplied\": " << model.glassFallbackAlphaApplied << ",\n";
+        f << "  \"glassVisibleFallbackReason\": \"" << escapeJson(model.glassVisibleFallbackReason) << "\",\n";
+        f << "  \"glassMaterialNames\": " << (model.glassMaterialNames.empty() ? "[]" : model.glassMaterialNames) << ",\n";
+        f << "  \"glassClassificationReason\": " << (model.glassClassificationReason.empty() ? "[]" : model.glassClassificationReason) << ",\n";
         f << "  \"runtimeMaterialClassStatus\": \"" << escapeJson(model.runtimeMaterialClassStatus) << "\",\n";
         f << "  \"opaqueDrawRangeCount\": " << model.opaqueDrawRangeCount << ",\n";
         f << "  \"cutoutDrawRangeCount\": " << model.cutoutDrawRangeCount << ",\n";

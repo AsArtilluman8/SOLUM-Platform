@@ -24,6 +24,7 @@ RESOLVED_ANDROID_SDK="$(resolve_android_sdk)"
 is_android_termux() { [ -d "/data/data/com.termux" ] || [ "$(uname -o 2>/dev/null || true)" = "Android" ]; }
 is_executable_on_device() { local bin="$1"; [ -x "$bin" ] || return 1; "$bin" --version >/dev/null 2>&1; }
 find_android_clang() {
+  for termux_cxx in "/data/data/com.termux/files/usr/bin/clang++" "/data/data/com.termux/files/usr/bin/clang"; do if is_android_termux && is_executable_on_device "$termux_cxx"; then echo "$termux_cxx"; return; fi; done
   if is_android_termux && command -v clang++ >/dev/null 2>&1; then command -v clang++; return; fi
   if command -v aarch64-linux-android26-clang++ >/dev/null 2>&1; then local cxx; cxx="$(command -v aarch64-linux-android26-clang++)"; if is_executable_on_device "$cxx"; then echo "$cxx"; return; fi; fi
   for ndk_root in "${ANDROID_NDK_HOME:-}" "${ANDROID_NDK_ROOT:-}"; do if [ -n "$ndk_root" ]; then local ndk_cxx="$ndk_root/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang++"; if is_executable_on_device "$ndk_cxx"; then echo "$ndk_cxx"; return; fi; fi; done

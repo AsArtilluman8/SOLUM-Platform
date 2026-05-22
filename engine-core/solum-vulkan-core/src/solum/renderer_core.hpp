@@ -145,9 +145,13 @@ struct RendererCore {
         cutoutQueue.clear();
         glassQueue.clear();
         uint32_t glassMaterials = 0;
+        uint32_t semanticOpaqueFallbacks = 0;
         for (auto& slot : modelMaterialSlots) {
             slot.runtimeClass = classifyRuntimeMaterial(slot);
-            if (slot.materialTypeHint == 6) ++glassMaterials;
+            if (slot.materialTypeHint == 6) {
+                ++glassMaterials;
+                if (slot.alphaMode == 0 && slot.baseColorFactor[3] >= 0.98f) ++semanticOpaqueFallbacks;
+            }
         }
         for (const auto& range : modelDrawRanges) {
             RuntimeMaterialClass materialClass = RuntimeMaterialClass::Opaque;
@@ -168,6 +172,11 @@ struct RendererCore {
         model.glassDepthWriteEnabled = false;
         model.glassOpacityCurrent = material.glassOpacity;
         model.glassEnabled = material.glassEnabled != 0;
+        model.semanticOpaqueGlassFallbackActive = material.glassEnabled != 0 ? semanticOpaqueFallbacks : 0;
+        model.glassFallbackAlphaApplied = semanticOpaqueFallbacks > 0 && material.glassEnabled != 0 ? semanticGlassFallbackAlpha(material.glassOpacity) : 0.0f;
+        model.glassVisibleFallbackReason = model.semanticOpaqueGlassFallbackActive > 0 ? "semantic_opaque_glass_alpha_one_safe_fallback" : "none";
+        model.showGlassGeometryEnabled = material.activeDebugView == 58;
+        model.showGlassGeometryStatus = model.showGlassGeometryEnabled ? "enabled_debug_overlay" : "off";
         model.glassRouteStatus = material.glassEnabled == 0 ? "disabled_by_ui_opaque_fallback" : (glassQueue.empty() ? "active_no_glass_ranges" : "active_glass_queue_ready");
     }
 
@@ -739,9 +748,33 @@ struct RendererCore {
     const char* glassTintColorString(int preset) const {
         if (preset == 1) return "0.36,0.74,1.00";
         if (preset == 2) return "1.00,0.72,0.42";
-        if (preset == 3) return "0.34,0.38,0.44";
+        if (preset == 3) return "0.52,0.58,0.64";
         if (preset == 4) return "0.40,1.00,0.62";
         return "0.94,0.99,1.00";
+    }
+
+    std::string diagnosticsFieldList(const char* key, bool skipEmpty = true) const {
+        if (model.materialSlotDiagnostics.empty()) return "[]";
+        const std::string needle = std::string("\"") + key + "\":\"";
+        std::string out = "[";
+        size_t pos = 0;
+        bool first = true;
+        while ((pos = model.materialSlotDiagnostics.find(needle, pos)) != std::string::npos) {
+            pos += needle.size();
+            const size_t end = model.materialSlotDiagnostics.find("\"", pos);
+            if (end == std::string::npos) break;
+            const std::string value = model.materialSlotDiagnostics.substr(pos, end - pos);
+            if (!skipEmpty || !value.empty()) {
+                if (!first) out += ",";
+                out += "\"";
+                out += value;
+                out += "\"";
+                first = false;
+            }
+            pos = end + 1;
+        }
+        out += "]";
+        return out;
     }
 
     void syncGlassState() {
@@ -799,13 +832,19 @@ struct RendererCore {
         model.glassReflectionResponseStatus = "ok_p24_probe_visible_guarded";
         model.glassEnergyGuardStatus = "ok_clamped";
         model.glassOverbrightGuardStatus = "ok";
-        model.glassInvisibleGuardStatus = "ok_minimum_surface_kept";
+        model.glassInvisibleGuardStatus = model.semanticOpaqueGlassFallbackActive > 0 ? "ok_semantic_opaque_fallback_alpha_kept_visible" : "ok_minimum_surface_kept";
         model.glassMaskDebugViewStatus = "shader_applied";
         model.glassOpacityDebugViewStatus = "shader_applied";
         model.glassFresnelDebugViewStatus = "shader_applied";
         model.glassReflectionDebugViewStatus = "shader_applied";
         model.glassTintDebugViewStatus = "shader_applied";
         model.glassSafetyDebugViewStatus = "shader_applied";
+        model.showGlassGeometryEnabled = material.activeDebugView == 58;
+        model.showGlassGeometryStatus = model.showGlassGeometryEnabled ? "enabled_debug_overlay" : "off";
+        model.glassFallbackAlphaApplied = model.semanticOpaqueGlassFallbackActive > 0 ? semanticGlassFallbackAlpha(material.glassOpacity) : 0.0f;
+        model.glassVisibleFallbackReason = model.semanticOpaqueGlassFallbackActive > 0 ? "semantic_opaque_glass_alpha_one_safe_fallback" : "none";
+        model.glassMaterialNames = diagnosticsFieldList("glassMaterialName");
+        model.glassClassificationReason = diagnosticsFieldList("glassClassificationReason");
         model.p24ReflectionPreservedStatus = "ok";
         model.p25PerformanceStatus = "superseded_by_p32_glass_queue";
         model.glassNoRefractionPassStatus = "ok";
@@ -866,7 +905,7 @@ struct RendererCore {
         applyLightPreset(lightPreset);
         material.sunIntensity = clampFloat(sunIntensity, 0.5f, 4.0f);
         material.ambientIntensity = clampFloat(ambientIntensity, 0.1f, 2.0f);
-        material.activeDebugView = ((activeDebugView % 58) + 58) % 58;
+        material.activeDebugView = ((activeDebugView % 59) + 59) % 59;
         material.toneMappingMode = ((toneMappingMode % 3) + 3) % 3;
         material.exposureValue = clampFloat(exposureValue, 0.8f, 3.0f);
         material.ambientFloor = clampFloat(ambientFloor, 0.0f, 0.35f);

@@ -602,6 +602,13 @@ struct RenderLabState {
         f << indent << "  \"glassReflectionDebugViewStatus\": \"" << escapeJson(model.glassReflectionDebugViewStatus) << "\",\n";
         f << indent << "  \"glassTintDebugViewStatus\": \"" << escapeJson(model.glassTintDebugViewStatus) << "\",\n";
         f << indent << "  \"glassSafetyDebugViewStatus\": \"" << escapeJson(model.glassSafetyDebugViewStatus) << "\",\n";
+        f << indent << "  \"showGlassGeometryEnabled\": " << (model.showGlassGeometryEnabled ? "true" : "false") << ",\n";
+        f << indent << "  \"showGlassGeometryStatus\": \"" << escapeJson(model.showGlassGeometryStatus) << "\",\n";
+        f << indent << "  \"semanticOpaqueGlassFallbackActive\": " << model.semanticOpaqueGlassFallbackActive << ",\n";
+        f << indent << "  \"glassFallbackAlphaApplied\": " << model.glassFallbackAlphaApplied << ",\n";
+        f << indent << "  \"glassVisibleFallbackReason\": \"" << escapeJson(model.glassVisibleFallbackReason) << "\",\n";
+        f << indent << "  \"glassMaterialNames\": " << (model.glassMaterialNames.empty() ? "[]" : model.glassMaterialNames) << ",\n";
+        f << indent << "  \"glassClassificationReason\": " << (model.glassClassificationReason.empty() ? "[]" : model.glassClassificationReason) << ",\n";
         f << indent << "  \"p24ReflectionPreservedStatus\": \"" << escapeJson(model.p24ReflectionPreservedStatus) << "\",\n";
         f << indent << "  \"p25PerformanceStatus\": \"" << escapeJson(model.p25PerformanceStatus) << "\",\n";
         f << indent << "  \"glassNoRefractionPassStatus\": \"" << escapeJson(model.glassNoRefractionPassStatus) << "\",\n";

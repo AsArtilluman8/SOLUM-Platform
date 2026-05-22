@@ -128,6 +128,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button glassEnableButton;
     private Button glassTintPresetButton;
     private Button glassDebugButton;
+    private Button showGlassGeometryButton;
     private Button emissiveDebugButton;
     private Button alphaModeDebugButton;
     private Button doubleSidedDebugButton;
@@ -711,6 +712,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         glassDebugButton = compactButton("Glass Debug");
         glassDebugButton.setOnClickListener(v -> cycleGlassDebugView());
         materialPanel.addView(glassDebugButton);
+        showGlassGeometryButton = compactButton("Show Glass Geometry");
+        showGlassGeometryButton.setOnClickListener(v -> toggleShowGlassGeometry());
+        materialPanel.addView(showGlassGeometryButton);
         glassRouteTestButton = compactButton("Glass Route Test");
         glassRouteTestButton.setOnClickListener(v -> exportGlassRouteTestFromButton());
         materialPanel.addView(glassRouteTestButton);
@@ -989,7 +993,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleMaterialView() {
-        activeDebugViewIndex = (activeDebugViewIndex + 1) % 58;
+        activeDebugViewIndex = (activeDebugViewIndex + 1) % 59;
         applyLightingControls();
         updateStatus();
     }
@@ -1051,6 +1055,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         updateStatus();
     }
 
+    private void toggleShowGlassGeometry() {
+        activeDebugViewIndex = activeDebugViewIndex == 58 ? 0 : 58;
+        glassEnabled = true;
+        applyLightingControls();
+        updateStatus();
+    }
+
     private String glassTintPresetName(int preset) {
         if (preset == 1) return "Blue";
         if (preset == 2) return "Warm";
@@ -1062,7 +1073,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private String glassTintColorStatus(int preset) {
         if (preset == 1) return "0.36,0.74,1.00";
         if (preset == 2) return "1.00,0.72,0.42";
-        if (preset == 3) return "0.34,0.38,0.44";
+        if (preset == 3) return "0.52,0.58,0.64";
         if (preset == 4) return "0.40,1.00,0.62";
         return "0.94,0.99,1.00";
     }
@@ -1505,6 +1516,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (glassOpacityButton != null) glassOpacityButton.setText("Glass Opacity " + oneDecimal(glassOpacity));
         if (glassEdgeButton != null) glassEdgeButton.setText("Glass Edge " + oneDecimal(glassEdge));
         if (glassRoughnessButton != null) glassRoughnessButton.setText("Glass Rough " + oneDecimal(glassRoughness));
+        if (showGlassGeometryButton != null) showGlassGeometryButton.setText(activeDebugViewIndex == 58 ? "Show Glass Geometry: On" : "Show Glass Geometry");
         if (emissiveSlider != null) emissiveSlider.setProgress(sliderProgress(emissiveIntensity, 0.0f, 2.0f));
         if (emissiveDebugButton != null) emissiveDebugButton.setText("Emissive View");
         if (alphaModeDebugButton != null) alphaModeDebugButton.setText("Alpha: " + materialDebugViewName(activeDebugViewIndex));
@@ -1844,6 +1856,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (index == 55) return "Glass Reflection";
         if (index == 56) return "Glass Tint";
         if (index == 57) return "Glass Safety Status";
+        if (index == 58) return "Show Glass Geometry";
         return "Final Shaded";
     }
 
@@ -2816,6 +2829,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "glassDepthWriteEnabled=" + jsonBooleanField(renderLab, "glassDepthWriteEnabled", String.valueOf(modelState.glassDepthWriteEnabled)) + "\n"
             + "glassOpacityCurrent=" + jsonNumberField(renderLab, "glassOpacityCurrent", jsonFloat(glassOpacity)) + "\n"
             + "glassEnabled=" + jsonBooleanField(renderLab, "glassEnabled", String.valueOf(glassEnabled)) + "\n"
+            + "showGlassGeometryEnabled=" + jsonBooleanField(renderLab, "showGlassGeometryEnabled", String.valueOf(activeDebugViewIndex == 58)) + "\n"
+            + "semanticOpaqueGlassFallbackActive=" + jsonNumberField(renderLab, "semanticOpaqueGlassFallbackActive", "0") + "\n"
+            + "glassFallbackAlphaApplied=" + jsonNumberField(renderLab, "glassFallbackAlphaApplied", "0") + "\n"
+            + "glassVisibleFallbackReason=" + jsonStringField(renderLab, "glassVisibleFallbackReason", "none") + "\n"
+            + "glassMaterialNames=" + jsonArrayField(renderLab, "glassMaterialNames", "[]") + "\n"
+            + "glassClassificationReason=" + jsonArrayField(renderLab, "glassClassificationReason", "[]") + "\n"
             + "glassRouteStatus=" + jsonStringField(renderLab, "glassRouteStatus", modelState.glassRouteStatus) + "\n";
     }
 
@@ -3739,6 +3758,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"glassReflectionDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "glassReflectionDebugViewStatus", modelState.glassReflectionDebugViewStatus)) + "\",\n"
             + indent + "\"glassTintDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "glassTintDebugViewStatus", modelState.glassTintDebugViewStatus)) + "\",\n"
             + indent + "\"glassSafetyDebugViewStatus\": \"" + escape(jsonStringField(renderLab, "glassSafetyDebugViewStatus", modelState.glassSafetyDebugViewStatus)) + "\",\n"
+            + indent + "\"showGlassGeometryEnabled\": " + jsonBooleanField(renderLab, "showGlassGeometryEnabled", String.valueOf(activeDebugViewIndex == 58)) + ",\n"
+            + indent + "\"showGlassGeometryStatus\": \"" + escape(jsonStringField(renderLab, "showGlassGeometryStatus", activeDebugViewIndex == 58 ? "enabled_debug_overlay" : "off")) + "\",\n"
+            + indent + "\"semanticOpaqueGlassFallbackActive\": " + jsonNumberField(renderLab, "semanticOpaqueGlassFallbackActive", "0") + ",\n"
+            + indent + "\"glassFallbackAlphaApplied\": " + jsonNumberField(renderLab, "glassFallbackAlphaApplied", "0") + ",\n"
+            + indent + "\"glassVisibleFallbackReason\": \"" + escape(jsonStringField(renderLab, "glassVisibleFallbackReason", "none")) + "\",\n"
+            + indent + "\"glassMaterialNames\": " + jsonArrayField(renderLab, "glassMaterialNames", "[]") + ",\n"
+            + indent + "\"glassClassificationReason\": " + jsonArrayField(renderLab, "glassClassificationReason", "[]") + ",\n"
             + indent + "\"p24ReflectionPreservedStatus\": \"" + escape(jsonStringField(renderLab, "p24ReflectionPreservedStatus", modelState.p24ReflectionPreservedStatus)) + "\",\n"
             + indent + "\"p25PerformanceStatus\": \"" + escape(jsonStringField(renderLab, "p25PerformanceStatus", modelState.p25PerformanceStatus)) + "\",\n"
             + indent + "\"glassNoRefractionPassStatus\": \"" + escape(jsonStringField(renderLab, "glassNoRefractionPassStatus", modelState.glassNoRefractionPassStatus)) + "\",\n"
@@ -5687,18 +5713,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             boolean hasBase = info.texture != null && "ok".equals(info.texture.status);
             boolean hasMr = info.metallicRoughnessTexture != null && "ok".equals(info.metallicRoughnessTexture.status);
             boolean alphaHint = info.alphaMode == 1 || info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f;
-            boolean glassHint = name.contains("glass") || name.contains("window") || name.contains("transparent")
+            boolean thinCutoutExclusion = name.contains("foliage") || name.contains("grass") || name.contains("fabric")
+                || name.contains("cloth") || name.contains("leaf") || name.contains("leaves") || name.contains("petal")
+                || name.contains("cutout") || name.contains("hair") || name.contains("grille") || name.contains("grid")
+                || name.contains("card");
+            boolean glassHint = !thinCutoutExclusion && (name.contains("glass") || name.contains("window") || name.contains("lens") || name.contains("windshield") || name.contains("transparent")
                 || info.alphaMode == 2
                 || info.baseColorFactor[3] < 0.98f
                 || info.hasTransmissionExtension
                 || info.hasVolumeExtension
                 || info.transmissionFactor > 0.001f
                 || info.volumeThicknessFactor > 0.001f
-                || info.clearcoatFactor > 0.65f;
+                || info.clearcoatFactor > 0.65f);
             if (luminance(info.emissiveFactor) > 0.001f || "metadata_only".equals(info.emissiveTextureStatus)) return 8;
             if (glassHint) return 6;
             if (name.contains("decal") || name.contains("sticker") || name.contains("label") || (alphaHint && info.roughnessFactor < 0.36f && info.metallicFactor < 0.2f)) return 7;
-            if (alphaHint || info.doubleSided || name.contains("leaf") || name.contains("leaves") || name.contains("hair") || name.contains("grille") || name.contains("grid") || name.contains("card")) return 5;
+            if (alphaHint || info.doubleSided || thinCutoutExclusion) return 5;
             if (info.metallicFactor >= 0.65f || name.contains("metal") || name.contains("chrome") || name.contains("steel")) return 2;
             if (name.contains("fabric") || name.contains("cloth") || name.contains("seat") || name.contains("carpet") || (info.roughnessFactor >= 0.78f && info.metallicFactor < 0.15f && info.alphaMode == 0)) return 0;
             if (name.contains("rubber") || name.contains("tire") || name.contains("tyre") || name.contains("black") || (info.roughnessFactor >= 0.55f && info.metallicFactor < 0.08f && !hasBase)) return 3;
@@ -5716,6 +5746,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (hint == 7) return "decal_like";
             if (hint == 8) return "emissive_like";
             return "unknown";
+        }
+
+        private static String materialClassificationReason(MaterialInfo info) {
+            String name = info.materialName == null ? "" : info.materialName.toLowerCase(Locale.US);
+            if (info.materialTypeHint == 6) {
+                if (name.contains("glass")) return "semantic_name_glass";
+                if (name.contains("window")) return "semantic_name_window";
+                if (name.contains("lens")) return "semantic_name_lens";
+                if (info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f) return "physical_transparency";
+                if (info.hasTransmissionExtension || info.transmissionFactor > 0.001f) return "gltf_transmission";
+                if (info.hasVolumeExtension || info.volumeThicknessFactor > 0.001f) return "gltf_volume";
+                if (info.clearcoatFactor > 0.65f) return "clearcoat_glass_like";
+                return "glass_hint";
+            }
+            if (info.materialTypeHint == 5) return "cutout_or_thin_exclusion";
+            if (info.materialTypeHint == 0) return "fabric_or_matte_exclusion";
+            return "material_properties";
         }
 
         private static float calibratedRoughness(MaterialInfo info) {
@@ -5998,8 +6045,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 if (i > 0) b.append(",");
                 b.append("{\"slot\":").append(i)
                     .append(",\"materialName\":\"").append(esc(m.materialName == null || m.materialName.isEmpty() ? "slot_" + i : m.materialName)).append("\"")
+                    .append(",\"glassMaterialName\":\"").append(esc(m.materialTypeHint == 6 ? (m.materialName == null || m.materialName.isEmpty() ? "slot_" + i : m.materialName) : "")).append("\"")
                     .append(",\"materialTypeHint\":\"").append(esc(materialTypeHintName(m.materialTypeHint))).append("\"")
                     .append(",\"runtimeMaterialClass\":\"").append(esc(m.materialTypeHint == 6 ? "TRANSPARENT_GLASS" : (m.alphaMode == 1 ? "CUTOUT" : "OPAQUE"))).append("\"")
+                    .append(",\"glassClassificationReason\":\"").append(esc(materialClassificationReason(m))).append("\"")
+                    .append(",\"semanticOpaqueGlassFallbackActive\":").append(m.materialTypeHint == 6 && m.alphaMode == 0 && m.baseColorFactor[3] >= 0.98f)
+                    .append(",\"glassVisibleFallbackReason\":\"").append(esc(m.materialTypeHint == 6 && m.alphaMode == 0 && m.baseColorFactor[3] >= 0.98f ? "semantic_opaque_glass_alpha_one_safe_fallback" : "none")).append("\"")
                     .append(",\"calibrationApplied\":true")
                     .append(",\"albedoLuminance\":").append(jsonFloat(m.albedoLuminance))
                     .append(",\"calibratedRoughness\":").append(jsonFloat(m.calibratedRoughness))
@@ -6039,6 +6090,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     .append(",\"doubleSidedAppliedStatus\":\"").append(esc(m.doubleSided ? "normal_flip_foundation_pipeline_cull_none" : "not_double_sided")).append("\"")
                     .append(",\"glassAppliedStatus\":\"").append(esc(m.materialTypeHint == 6 ? "applied_glass_like_hint" : "available_selected_slot_preset_only")).append("\"")
                     .append(",\"glassOpacityApplied\":").append(jsonFloat(m.materialTypeHint == 6 ? 0.44f : 1.0f))
+                    .append(",\"glassFallbackAlphaApplied\":").append(jsonFloat(m.materialTypeHint == 6 && m.alphaMode == 0 && m.baseColorFactor[3] >= 0.98f ? 0.44f : 0.0f))
                     .append(",\"glassTintApplied\":\"").append(esc(m.materialTypeHint == 6 ? "clear_default" : "none")).append("\"")
                     .append(",\"glassEdgeReflectionApplied\":\"").append(esc(m.materialTypeHint == 6 ? "p24_probe_edge_fresnel" : "none")).append("\"")
                     .append(",\"glassRoughnessApplied\":").append(jsonFloat(m.materialTypeHint == 6 ? calibratedRoughness(m) : m.roughnessFactor))

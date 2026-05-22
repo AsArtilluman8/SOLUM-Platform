@@ -2,6 +2,366 @@
 
 Этот файл фиксирует историю патчей, результаты, ошибки, диагностику и следующие шаги.
 
+## Patch P30D — Glass Truth Trap / Draw Path Probe
+
+Scope:
+
+- Added a runtime Glass Trap button cycling Off, Clean Path RED, Old/Fallback GREEN, Active Glass BLUE, Opaque Glass YELLOW, Hide Glass, Hide Non-Glass, Slot Heatmap, and Full Shader Test PURPLE.
+- Extended push constants with trap mode/pass metadata; pipeline state is unchanged.
+- Added shader trap outputs that affect actual render output, including early Full Shader Test PURPLE.
+- Added draw-loop trap diagnostics for last observed slot/pass/path and live glass values at draw submission.
+- Added per-slot `drawnOpaqueLastFrame` and `drawnTransparentLastFrame` diagnostics.
+- Preserved P30B slot isolation and P30C clean glass formula.
+
+Honesty limits:
+
+- This is not a beauty patch.
+- Pixel readback is still not implemented.
+- No visual success is claimed.
+
+## Patch P30C — Independent Live Glass Controls
+
+Scope:
+
+- Updated only the existing clean Transparent v1 glass early-return formula.
+- P30A/P30B clean path and slot isolation are preserved.
+- Opacity now controls center alpha/density only.
+- Edge controls rim mask strength/width only.
+- Tint stays weak in the center and stronger on the rim without full-surface paint.
+- Clarity controls haze/smoky body amount, not direct opacity.
+- Thickness uses an angled/rim thickness mask for edge/body depth.
+- Roughness dims/softens the rim and adds slight matte body feel without overriding opacity.
+- Old fake/PBR/baseColor/reflection glass code remains bypassed for Transparent v1.
+- Diagnostics mark `P30C_independent_live_controls` and keep pixel/visual proof unavailable.
+
+Honesty limits:
+
+- Pixel readback is still not implemented.
+- Visual verification is still manual.
+- No visual success is claimed.
+
+## Patch P29E — Transparent Glass Proof Fix
+
+Scope:
+
+- Changed only the existing Transparent v1 final glass alpha/RGB proof formula.
+- Center alpha is clamped to `glassOpacityInput * 0.035`, max `0.04`.
+- Rim mask is narrowed with `smoothstep(0.72, 0.96, rawRim)`.
+- Transparent v1 final alpha max is `0.10`.
+- Transparent v1 final RGB is near-black center plus narrow rim only.
+- Transparent v1 final RGB does not use `baseColor`, diffuse, ambient, IBL, or reflection.
+- Diagnostics mark P29E as formula/CPU mirror only, not pixel proof.
+
+Safety:
+
+```text
+shaderFinalGlassFormulaVersion = P29E_proof_clear_center_low_alpha
+shaderFinalGlassRgbMode = near_black_center_narrow_rim_no_reflection
+shaderFinalGlassUsesBaseColorFill = false
+shaderFinalGlassUsesIblOrReflection = false
+glassGreyPlateStillPossibleStatus = should_be_strongly_reduced_no_pixel_readback
+visual ok claimed = no
+```
+
+Deferred:
+
+- Pixel readback.
+- Manual Android visual verification.
+- Final pretty glass/reflection tuning.
+
+## Patch P29D — Glass Rim Mask Shader Fix
+
+Scope:
+
+- Changed only the existing Transparent v1 glass shader formula.
+- Pipeline/pass/UI/import code not changed.
+- GLB node transforms not changed.
+- `edgeAlpha` and `edgeRgb` now require `rimMask`.
+- Center alpha is `glassOpacityInput * 0.10`.
+- Final alpha uses `centerAlpha + edgeAlpha`, not global `max(centerAlpha, edgeAlpha)`.
+- Center RGB no longer uses `baseColor`, PBR, ambient, or IBL fill.
+- Runtime diagnostics describe the rim mask and final glass alpha/RGB formula honestly.
+
+Safety:
+
+```text
+shaderFinalGlassRimMaskMeaning = zero_center_one_edge
+shaderFinalGlassRgbMode = dark_center_masked_rim
+shaderFinalGlassUsesBaseColorFill = false
+shaderFinalGlassCpuMirrorStatus = mirrors_shader_formula_not_pixel_readback
+glassGreyPlateStillPossibleStatus = reduced_rim_mask_applied_not_pixel_verified
+pixel readback implemented = no
+visual verification = manual required
+```
+
+Deferred:
+
+- Pixel readback.
+- Android screenshot/manual visual verification.
+- GLB node transform fix.
+
+## Patch P29C — Glass Proof Render
+
+Scope:
+
+- Changed Transparent v1 glass shader formula to use clear center plus visible edge/rim.
+- Kept center alpha below opacity; `centerAlpha` is not direct opacity.
+- Kept tint light so Clear/Crystal/Blue/Green/Warm do not become paint fill.
+- Removed opaque material `baseColor` fill from Transparent v1 glass center.
+- Kept Glass Enable as the branch gate.
+- Kept fake fallback separate from Transparent v1 proof.
+- Added shader-final diagnostics:
+  `glassProofMode`, `shaderFinalGlassCenterAlpha`,
+  `shaderFinalGlassEdgeAlpha`, `shaderFinalGlassFinalAlpha`,
+  `shaderFinalGlassTintStrength`, `shaderFinalGlassRgbMode`,
+  `shaderFinalGlassUsesBaseColorFill`,
+  `shaderFinalGlassCpuMirrorStatus`.
+- Renamed debug view 65 to `Shader Final Glass Alpha`.
+
+Safety:
+
+```text
+visual formula changed = yes
+new fake mode added = no
+UI sliders/buttons/redesign added = no
+pixel readback implemented = no
+visual ok claimed = no
+```
+
+Proof limits:
+
+- Diagnostics are shader formula / CPU mirror values, not framebuffer proof.
+- Manual Android visual verification is still required.
+
+## Patch P29B — Material Runtime Truth Cleanup
+
+Scope:
+
+- Marked `materialSlotDiagnostics` as metadata/report only:
+  `materialSlotDiagnosticsTruth = metadata_only_not_shader_input`.
+- Added shader truth marker:
+  `shaderTruthSource = push_constants_per_draw`.
+- Marked debug views and route diagnostics as not visual proof:
+  `debugViewsAreVisualProof = false`, `glassRouteIsVisualProof = false`.
+- Marked pixel/readback state:
+  `pixelReadbackStatus = not_implemented`,
+  `visualVerificationStatus = manual_required_no_pixel_readback`.
+- Kept legacy slot glass fields legacy-prefixed and explicitly marked:
+  `legacyGlassOpacityApplied`, `legacyGlassTintApplied`,
+  `legacyGlassRoughnessApplied`,
+  `legacyGlassMaterialReportNotShaderTruth = yes`.
+- Added CPU estimate labels:
+  `glassCpuEstimateStatus = estimate_only_not_pixel_proof`,
+  `glassShaderFinalAlphaReadbackStatus = not_available_no_pixel_readback`,
+  `glassCpuEstimatedCenterAlpha`, `glassCpuEstimatedEdgeAlpha`.
+- Split selected/edit/active/diagnostic meanings:
+  `selectedSlotPurpose = ui_edit_target`,
+  `activeGlassSlotsPurpose = transparent_render_routing`,
+  `debugInspectedSlotPurpose = diagnostics_display_target`,
+  `debugInspectedMaterialSlotMode = currently_selected_slot_alias`,
+  `selectedVsActiveGlassSlotStatus = separate_concepts`.
+- Added route truth:
+  `glassRoute`, `glassRouteReason`, `glassVisualBranchActive`,
+  `glassTransparentPassActive`, `glassFakeFallbackActive`.
+- Clarified preset role:
+  `materialPresetRole = fills_live_sliders`,
+  `materialPresetIsShaderTruth = false`,
+  live glass controls remain `live_push_constant`.
+
+Safety:
+
+```text
+shader visual formula changed = no
+new fake glass mode added = no
+UI sliders/buttons/redesign added = no
+visual proof claimed = no
+```
+
+Deferred:
+
+- P29C final alpha/RGB/pixel or manual screenshot proof.
+
+## Patch P29A — Material Runtime Truth Audit
+
+Scope:
+
+- Added `docs/MATERIAL_RUNTIME_TRUTH_AUDIT.md`.
+- Mapped material/glass truth flow:
+  UI -> Java -> JNI -> C++ runtime state -> PushConstants -> Shader -> Diagnostics.
+- Audited `glassEnabled`, render mode, opacity, tint, clarity, thickness, roughness, edge, selected slot, active glass slots, material hints, alpha, and material slot diagnostics.
+- Listed conflicts between live sliders, presets, selected-slot overrides, active glass slot routing, fake fallback, CPU diagnostics, shader debug views, and legacy material reports.
+- Added P29B cleanup plan and P29C proof plan.
+
+Safety:
+
+```text
+shader visual formula changed = no
+new fake glass mode added = no
+render pass logic changed = no
+diagnostics behavior changed = no
+materialSlotDiagnostics treated as shader truth = no
+```
+
+Deferred:
+
+- P29B cleanup/rename of legacy fields.
+- P29C glass proof path with final alpha/RGB proof.
+- Pixel readback/manual Android visual proof.
+
+## Patch P28E — True Glass Material Path Fix
+
+Scope:
+
+- Glass role separated from Opaque/Cutout/Emissive/HairThin.
+- Renderer now builds a fixed glass slot list and renders up to 3 glass slots in the transparent pass.
+- Opaque/Cutout pass excludes Glass; Cutout keeps alpha cutoff/discard.
+- Transparent glass shader uses slider values directly for opacity, clarity, roughness, thickness and tint preset.
+- Fake visual-ok glass diagnostics renamed to state/formula/runtime-pending statuses.
+
+Key diagnostics:
+
+```text
+glassSlotsCount = count
+glassSlotsDisplay = 1/N material, ...
+opaqueSlotsDisplay = 1/N material, ...
+cutoutSlotsDisplay = 1/N material, ...
+transparentGlassSlotLimit = 3
+transparentGlassSlotsRendered = count
+glassVisualQualityStatus = runtime_visual_pending
+transparentPipelineActuallyUsedStatus = transparent_pipeline_bound / inactive
+```
+
+Out of scope:
+
+- SSR, ray tracing, mirror, refraction, shadows, CSM.
+- New scenes or model-name hardcode.
+- Visual success claim without Android screenshots.
+
+## Patch P28D — Glass Foundation Repair
+
+Scope:
+
+- Repaired Transparent v1 Final Shaded glass formula so center color/ambient/diffuse contribution is strongly reduced and edge/fresnel/glint stays visible.
+- Transparent glass continues to bypass early alpha cutoff/discard; non-glass P21 alpha/cutout path is preserved.
+- Transparent pipeline keeps blending `SRC_ALPHA / ONE_MINUS_SRC_ALPHA`, depth write disabled, depth test enabled.
+- Transparent pipeline depth compare is now `LESS_OR_EQUAL` only for the transparent pipeline to reduce equal-depth glass shell rejection.
+- Glass candidate scoring now uses material-slot metadata/name only and penalizes opaque/body/paint/metal/fabric/rubber/base/interior material names.
+- Material UI now distinguishes Selected Slot from Active Glass Slot with 1-based user-facing slot numbering and explicit apply/render-path labels.
+- Diagnostics now report state/pipeline/CPU estimates honestly and mark visual result as not visually verified without GPU readback.
+- Camera/control hot path throttles inspector diagnostics rebuilds while preserving live FPS and debug export.
+
+Key diagnostics:
+
+```text
+p28dGlassFoundationRepairStatus = active_formula_repaired_no_pixel_readback
+glassFinalShadedFormulaStatus = shader_branch_center_scaled_edge_retained / inactive_or_fake_fallback
+transparentPipelineActuallyUsedStatus = pipeline_bound / inactive_fake_or_auto_fallback
+glassDiagnosticsHonestyStatus = state_reported_no_pixel_readback
+glassVisualVerificationStatus = not_visually_verified
+selectedVsActiveGlassSlotStatus = same_slot / different_selected_slot_active_glass_slot / no_active_glass_slot
+cameraHotPathDiagnosticsStatus = throttled_no_file_write_while_moving
+```
+
+Out of scope:
+
+- Real refraction, SSR, raytracing, mirrors.
+- Shadows, CSM.
+- New scenes or broad debug-view expansion.
+
+## Patch P28C — Transparent Glass Final Render Path Fix
+
+Scope:
+
+- Fixed Transparent v1 Final Shaded glass path.
+- Glass now bypasses the early alpha cutout/discard branch before computed glass alpha is applied.
+- Final Shaded transparent glass uses live opacity, clarity, thickness, roughness, and tint uniforms.
+- Center lighting/color contribution is scaled down for transparent glass while edge/fresnel remains visible.
+- Active Transparent v1 glass slot stays routed through the transparent pipeline; non-active selected slots are not glass-shaded in the opaque pass.
+- P21 alpha/cutout behavior remains for non-glass materials.
+
+Key diagnostics:
+
+```text
+p28cTransparentRenderFixStatus = transparent_pipeline_bound
+glassDiscardBypassStatus = state_reported_glass_skips_cutout_discard
+glassFinalShaderAlphaStatus = formula_attempted
+glassFinalUsesLiveUniformsStatus = state_reported
+transparentPipelineActuallyUsedStatus = transparent_pipeline_bound / inactive_fake_or_auto_fallback
+p21AlphaCutoutPreservedStatus = ok
+```
+
+Out of scope:
+
+- Real refraction, SSR, raytracing, mirrors.
+- Shadows, CSM.
+- New UI or preset expansion.
+
+## Patch P28B — Make Glass Actually Transparent / Live Shader Fix
+
+Scope:
+
+- Scene25 preserved.
+- Reworked role=Glass shader path so opacity, clarity, thickness, roughness, and tint presets affect live push-constant rendering.
+- Center alpha now stays transparent at low opacity; edge alpha/Fresnel remains separate.
+- Thickness darkens/tints edges only.
+- Candidate scoring now prefers transmission/volume extensions, BLEND alpha, baseColor alpha, and glass/window/lens/transparent/crystal material names while penalizing opaque names.
+- Simple presets: Clear, Crystal, Blue, Green, Smoke, Warm, Dark.
+
+Key diagnostics:
+
+```text
+p28bGlassFixStatus = state_reported
+glassCandidateScoringStatus = ok_name_alpha_transmission_scoring
+glassUniformAppliedToShaderStatus = state_reported
+glassLiveSliderResponseStatus = state_reported
+glassPresetLiveApplyStatus = state_reported
+glassFinalCenterAlpha = live_numeric
+glassActuallyTransparentStatus = not_visually_verified / inactive
+glassGreyPlateStillPossibleStatus = reduced / possible_low_clarity_or_high_opacity
+glassNoAssetHardcodeStatus = ok_universal_role_based
+```
+
+Out of scope:
+
+- ToyCar or slot hardcode.
+- Shadows, CSM, raytracing, SSR, real mirror, real refraction.
+- Full UI redesign.
+
+## Patch P28 — Universal Glass Visual Quality Pack / Grey Glass Fix
+
+Scope:
+
+- Scene25 Glass Visual Quality Lab.
+- Active scene: `scene25_glass_visual_quality_lab`.
+- Universal role=Glass quality formula for weak/partial GLB materials.
+- Clean fallback when baseColor/roughness/normal textures are missing.
+- OPAQUE alphaMode override for role=Glass Transparent v1 routing.
+- Better center clarity, edge highlight, fake thickness, and reflection balance.
+- Presets: Clear Glass, Smoke Glass, Green Glass, Crystal Lite, Warm Glass, Dark Tinted Glass.
+- Material tab adds Glass Clarity and Glass Thickness sliders.
+- Debug views: Glass Center Alpha, Glass Edge Reflection, Glass Thickness, Glass Clarity, Glass Fallback Material, Glass Final Composite.
+
+Key diagnostics:
+
+```text
+glassGreyPlateFixStatus = formula_attempted
+glassWeakMaterialFallbackStatus = ok_missing_textures_handled
+glassNoAssetHardcodeStatus = ok_universal_role_based
+glassOpaqueAlphaModeOverrideStatus = ok_role_glass_overrides_opaque_alpha_mode
+p28VisualGlassStatus = ok
+p27bRoutingPreservedStatus = ok
+transparentGlassPassPreservedStatus = ok_opaque_first_active_glass_after
+p28PerformanceStatus = ok_uniform_shader_math_only
+```
+
+Out of scope:
+
+- ToyCar or slot hardcode.
+- Shadows, shadow maps, CSM.
+- Raytracing, SSR, real mirror, real refraction.
+- OBJ/FBX import.
+- Texture rebuild/model reupload while sliders move.
+
 ## Patch P27 — Transparent Glass Pass v1
 
 Scope:
@@ -2470,3 +2830,190 @@ transparentGlassRoutingMode = auto_best_glass_candidate / manual_override / tran
 - No real mirror.
 - No SSR.
 - No shadows.
+
+---
+
+## Patch P28F — Glass Source Of Truth Fix
+
+### Goal
+
+Make Transparent v1 route active Glass roles through an explicit glass slot list and keep live glass sliders as the shader source of truth.
+
+### Changed
+
+- Raised the fixed transparent glass slot list to 4 active slots.
+- Routed transparent pass draw checks through `isActiveTransparentGlassSlot`.
+- Added honest glass diagnostics for active slot list, live/shader inputs, preset mix removal, visual verification, and CPU/GPU mismatch risk.
+- Reworked transparent glass Final Shaded output to use a separate `transparentGlassRgb` path instead of normal material RGB.
+- Kept non-glass cutout alpha discard and opaque material routing separate.
+
+### Safety
+
+```text
+glassFinalVisualVerified = not_available_no_pixel_readback
+glassPresetMixRemovedStatus = shader_uses_live_uniforms_directly
+glassPresetMixInShader = no
+glassUsesNormalMaterialRgb = no
+transparentGlassSlotsRendered = active glass slot count within fixed limit
+```
+
+### Deferred
+
+- User Android screenshot verification.
+- Full transparent sorting.
+- Real refraction, SSR, mirrors, shadows, water, hair.
+
+---
+
+## Patch P28G — Remove Fake Glass Architecture
+
+### Goal
+
+Remove the fake-glass architecture path from Transparent v1 so Glass is routed and shaded as its own material/render path.
+
+### Changed
+
+- Kept `activeTransparentGlassSlot` only as a legacy diagnostic and used `activeTransparentGlassSlots[4]` plus `isActiveTransparentGlassSlot` for draw routing.
+- Manual override now replaces the active glass slot list with the chosen slot; auto mode renders all detected glass slots up to the fixed limit.
+- Opaque pass skips only active transparent glass slots; inactive glass roles can render outside the transparent pass when Glass Enabled is off.
+- Transparent shader branch now requires material role Glass, `glassEnabled != 0`, and Transparent v1.
+- Transparent glass final color uses `glassCenter + glassEdge + glassSpecular`, not normal material RGB.
+
+### Safety
+
+```text
+glassSingleSlotDrawRemoved = yes
+glassUsesSlotList = yes
+glassPresetMixInShader = no
+glassUsesNormalMaterialRgb = no
+glassFinalVisualVerified = not_available_no_pixel_readback
+glassDebugTruthStatus = state_reported_not_visual_proof
+gitCommitContainsP28H = yes
+apkBuiltFromCommittedTree = yes
+```
+
+### Deferred
+
+- User Android screenshot verification.
+- Pixel readback.
+- Full transparent sorting.
+
+---
+
+## Patch P28I — Real Glass Visual Response Fix
+
+### Goal
+
+Make Transparent v1 glass visually lighter: transparent center, visible rim/specular, weak tint, and layer compensation for multiple glass slots.
+
+### Changed
+
+- Reduced transparent center alpha so opacity no longer maps directly to final alpha.
+- Added `activeGlassSlotCount` push constant and layer compensation for stacked glass slots.
+- Rebalanced transparent glass RGB into light center tint, rim edge, thickness edge, frost haze, and spec/glint.
+- Limited thickness contribution to edges instead of full-surface haze.
+- Marked static per-slot glass diagnostics as legacy material report, not shader truth.
+
+### Safety
+
+```text
+glassRuntimeTruthSource = live_push_constants
+glassVisualFormulaVersion = P28I_light_center_visible_edge
+glassVisualVerified = not_available_no_pixel_readback
+legacyGlassMaterialReportNotShaderTruth = yes
+```
+
+### Deferred
+
+- Android screenshot verification.
+- Pixel readback.
+
+---
+
+## Patch P30A — Clean Glass Render Path v1
+
+### Goal
+
+Add a clean isolated early-return path for Transparent v1 glass.
+
+### Changed
+
+- Transparent v1 glass now returns directly from `renderCleanGlassV1`.
+- Old PBR/baseColor/fake/reflection glass code is bypassed for Transparent v1.
+- Clean path alpha max is `0.080`.
+- Center RGB is near black.
+- This is a proof path, not final pretty glass.
+
+### Honesty limits
+
+- Pixel readback is still not implemented.
+- Visual verification is still manual.
+
+---
+
+## Patch P30B — Glass Slot Isolation and Routing Fix
+
+### Goal
+
+Keep Transparent v1 proof glass from rendering multiple glass-like material slots at once.
+
+### Changed
+
+- Added `P30B_single_clean_glass_slot_proof` slot policy.
+- Manual selected glass slot has priority when valid.
+- Auto routing prefers one alpha/blend glass slot.
+- OPAQUE transmission/volume glass-like slots are skipped from the transparent proof path.
+- Duplicate transmission/volume shells can be skipped from opaque pass in proof mode.
+- Added active/skipped slot diagnostics and per-slot `drawnOpaque` / `drawnTransparent` status.
+
+### Not changed
+
+- Glass shader formula.
+- Pipeline/blend/depth state.
+- GLB importer and node transforms.
+- Pixel readback or visual proof claims.
+
+## Patch P30E — Universal GLB Glass Slot Truth / Pass Routing Audit
+
+### Goal
+
+Prove GLB glass routing per material slot without changing the P30C glass beauty formula.
+
+### Changed
+
+- Added `universalGlassSlotTruthTable` diagnostics for slot/material/alpha/transmission/volume/classifier/policy/pass/shader control truth.
+- Added GLB-aware glass candidate reasons, including OPAQUE + transmission/volume/name glass.
+- Added active transparent slot policy diagnostics and rejected candidate list.
+- Added trap modes:
+  - `Glass Candidates WHITE`
+  - `Transparent Draw CYAN`
+- Kept draw truth fields sourced from actual draw submission points.
+
+### Not changed
+
+- Glass beauty formula.
+- Vulkan blend/depth/cull state.
+- GLB transforms or import geometry.
+- P30B slot isolation intent.
+- P30C clean path.
+- Visual success is not claimed.
+
+## Patch P30E Hotfix — Guard GLB Truth Diagnostics Crash
+
+### Goal
+
+Stop cached GLB restore and GLB import crashes caused by P30E Java-side truth-table enrichment.
+
+### Changed
+
+- Added file-based crash reports for cached restore, GLB import, GLB parse, and P30E truth-table fallback phases.
+- Guarded P30E node/mesh/primitive/material diagnostic enrichment with safe fallback values.
+- Kept material slot diagnostics generation from crashing import; failed diagnostics fall back to `[]`.
+- Exported `p30eTruthTableStatus` and `p30eTruthTableError` in runtime/model diagnostics.
+
+### Not changed
+
+- Glass shader formula.
+- Glass trap visuals.
+- Vulkan pipeline state.
+- P30B/P30C/P30D rendering behavior.

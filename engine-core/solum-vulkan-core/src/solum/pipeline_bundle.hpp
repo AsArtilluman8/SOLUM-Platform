@@ -105,7 +105,7 @@ struct PipelineBundle {
         VkPipelineDepthStencilStateCreateInfo depth{ VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
         depth.depthTestEnable = VK_TRUE;
         depth.depthWriteEnable = transparent ? VK_FALSE : VK_TRUE;
-        depth.depthCompareOp = VK_COMPARE_OP_LESS;
+        depth.depthCompareOp = transparent ? VK_COMPARE_OP_LESS_OR_EQUAL : VK_COMPARE_OP_LESS;
         depth.depthBoundsTestEnable = VK_FALSE;
         depth.stencilTestEnable = VK_FALSE;
         VkPipelineColorBlendAttachmentState blendAttachment{};

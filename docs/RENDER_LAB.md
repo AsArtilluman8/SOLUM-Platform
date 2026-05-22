@@ -2,6 +2,135 @@
 
 Render Lab — controlled scene set for future Vulkan renderer validation.
 
+## Scene25 Glass Visual Quality Lab
+
+Patch: P28 — Universal Glass Visual Quality Pack / Grey Glass Fix
+
+Active scene:
+
+```text
+scene25_glass_visual_quality_lab
+Scene25 Glass Visual Quality Lab
+```
+
+Scene25 preserves Scene24 Transparent v1 routing and adds a universal role-based glass quality pass. Glass is still a mobile-friendly game-glass illusion: no SSR, no raytracing, no real mirror, no real refraction, no shadows, no CSM, and no extra offscreen cubemap.
+
+Core behavior:
+
+- Only the active `role=Glass` slot is routed through Transparent v1.
+- Non-glass slots stay opaque unless explicitly assigned as Glass.
+- Weak GLB glass materials with missing baseColor, roughness, normal, or OPAQUE alpha metadata get clean glass fallback parameters.
+- Center transparency is separated from edge Fresnel/reflection.
+- Fake thickness darkens/tints edges, not the full center.
+- P24/P26 reflection contribution remains procedural and clamped.
+
+Glass presets:
+
+- Clear Glass
+- Smoke Glass
+- Green Glass
+- Crystal Lite
+- Warm Glass
+- Dark Tinted Glass
+
+Material tab additions:
+
+- Glass Clarity `0.0-1.0`
+- Glass Thickness `0.0-1.0`
+- Active Glass summary keeps slot/name/role/source.
+- Preset and quality summary shows center clarity, edge, and thickness.
+
+Debug views:
+
+- Glass Center Alpha
+- Glass Edge Reflection
+- Glass Thickness
+- Glass Clarity
+- Glass Fallback Material
+- Glass Final Composite
+
+Required diagnostics:
+
+```text
+glassVisualQualityStatus
+glassGreyPlateFixStatus
+glassClarityStatus
+glassCenterTransparencyStatus
+glassEdgeHighlightStatus
+glassFakeThicknessStatus
+glassPresetVisualStatus
+glassFallbackMaterialStatus
+glassWeakMaterialFallbackStatus = ok_missing_textures_handled
+glassNoAssetHardcodeStatus = ok_universal_role_based
+glassPresetCount
+activeGlassPreset
+glassPresetClearStatus
+glassPresetSmokeStatus
+glassPresetGreenStatus
+glassPresetCrystalStatus
+glassPresetWarmStatus
+glassPresetDarkStatus
+glassPresetNoTextureDependencyStatus
+transparentGlassQualityStatus
+transparentGlassCenterAlphaStatus
+transparentGlassEdgeAlphaStatus
+transparentGlassDepthBehaviorStatus
+transparentGlassBackgroundVisibilityStatus
+transparentGlassInteriorVisibilityStatus
+transparentGlassBlendPreservedStatus
+transparentGlassPassPreservedStatus
+glassQualityUiStatus
+glassClaritySliderStatus
+glassClarityValue
+glassThicknessSliderStatus
+glassThicknessValue
+glassQualitySummaryUiStatus
+activeGlassSummaryPreservedStatus
+glassCenterAlphaDebugViewStatus
+glassEdgeReflectionDebugViewStatus
+glassThicknessDebugViewStatus
+glassClarityDebugViewStatus
+glassFallbackMaterialDebugViewStatus
+glassFinalCompositeDebugViewStatus
+glassMissingBaseColorFallbackStatus
+glassMissingRoughnessFallbackStatus
+glassOpaqueAlphaModeOverrideStatus
+glassFallbackOpacityStatus
+glassFallbackRoughnessStatus
+glassFallbackTintStatus
+p28VisualGlassStatus
+p27bRoutingPreservedStatus
+p27TransparentPassPreservedStatus
+p26GlassPolishPreservedStatus
+p25GlassPreservedStatus
+p24ReflectionPreservedStatus
+p23ClearcoatPreservedStatus
+p22EmissivePreservedStatus
+p22PresetsPreservedStatus
+p21AlphaPreservedStatus
+p20RuntimeWorkflowPreservedStatus
+p19SlotControlsPreservedStatus
+p18IblPreservedStatus
+p28PerformanceStatus
+p28NoRaytraceStatus
+p28NoSsrStatus
+p28NoRealMirrorStatus
+p28NoRealRefractionStatus
+p28NoShadowStatus
+p28NoCsmStatus
+p28NoOffscreenCubemapStatus
+p28NoTextureRebuildStatus
+p28NoModelReuploadStatus
+p28NoFrameGlbParseStatus
+p28NoFrameFileWriteStatus
+p28UniformOnlyStatus
+fpsStatus
+fpsUpdateMode
+fpsCurrent
+debugZipStatus
+debugZipPath
+```
+
 ## Scene24 Transparent Glass Pass Lab
 
 Patch: P27 — Transparent Glass Pass v1

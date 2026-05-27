@@ -3246,7 +3246,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         appendGlassDetailSlot(b, "Standalone working glass", standalone, standalone == null ? -1 : standalone.optInt("slot", -1), renderLab, tintRgba);
         appendGlassDetailSlot(b, "Car glass specific", carGlass, carGlass == null ? -1 : carGlass.optInt("slot", -1), renderLab, tintRgba);
         b.append("Notes:\n");
-        b.append("  shaderAlpha=N/A when exact bound fragment value is not exported; shaderAlphaEstimate uses current CPU-side shader formula.\n");
+        b.append("  ShaderAlpha is CPU-known from push constants plus current glass shader formula when material is glass; otherwise N/A.\n");
         b.append("  drawRangeId is from Java GLB range diagnostics when available.\n");
         return b.toString();
     }
@@ -3265,7 +3265,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String textureStatus = exists ? slot.optString("baseColorTextureStatus", "missing") : "N/A";
         String appliedOpacity = semanticGlass ? jsonFloat(glassOpacity) : "N/A";
         String appliedTint = semanticGlass ? tintRgba : "N/A";
-        String shaderAlphaEstimate = semanticGlass ? shaderAlphaEstimate(slot) : "N/A";
+        String formula = glassFormulaForSlot(slot);
+        String shaderAlpha = semanticGlass || "BLEND".equals(alphaMode) ? shaderAlphaEstimate(slot) : "N/A";
+        String shaderTint = semanticGlass || "BLEND".equals(alphaMode) ? tintRgba : "N/A";
         String routeReason = routeReasonForSlot(slot, slotIndex, renderLab);
         String slotValue = exists ? String.valueOf(slotIndex) : "N/A";
         b.append("\n").append(title).append(":\n");
@@ -3282,11 +3284,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         b.append("  ").append(prefix).append("InOpaqueQueue=").append(inOpaqueQueue).append("\n");
         b.append("  ").append(prefix).append("InTransparentQueue=").append(inTransparentQueue).append("\n");
         b.append("  ").append(prefix).append("DrawRange=").append(drawRangeSummaryForMaterial(slotIndex)).append("\n");
+        b.append("  ").append(prefix).append("Formula=").append(formula).append("\n");
         b.append("  ").append(prefix).append("AppliedOpacity=").append(appliedOpacity).append("\n");
         b.append("  ").append(prefix).append("AppliedTintRgba=").append(appliedTint).append("\n");
-        b.append("  ").append(prefix).append("ShaderAlpha=N/A\n");
-        b.append("  ").append(prefix).append("ShaderAlphaEstimate=").append(shaderAlphaEstimate).append("\n");
-        b.append("  ").append(prefix).append("ShaderTintRgba=N/A\n");
+        b.append("  ").append(prefix).append("ShaderAlpha=").append(shaderAlpha).append("\n");
+        b.append("  ").append(prefix).append("ShaderAlphaSource=").append("N/A".equals(shaderAlpha) ? "N/A" : "cpu_known_push_constant_formula").append("\n");
+        b.append("  ").append(prefix).append("ShaderTintRgba=").append(shaderTint).append("\n");
+        b.append("  ").append(prefix).append("ShaderTintSource=").append("N/A".equals(shaderTint) ? "N/A" : "cpu_known_push_constant").append("\n");
         b.append("  ").append(prefix).append("RouteReason=").append(routeReason).append("\n");
     }
 
@@ -3330,14 +3334,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private String shaderAlphaEstimate(JSONObject slot) {
         float sourceAlpha = parseFloatOr(slot == null ? "" : slot.optString("baseColorAlpha", "1.0"), 1.0f);
         String alphaMode = slot == null ? "OPAQUE" : slot.optString("alphaMode", "OPAQUE");
+        boolean semanticOpaque = slot != null && "glass_like".equals(slot.optString("materialTypeHint", "")) && "OPAQUE".equals(alphaMode) && sourceAlpha >= 0.98f;
         float out;
-        if ("OPAQUE".equals(alphaMode) && sourceAlpha >= 0.98f) {
-            out = 0.20f + clamp(glassOpacity, 0.0f, 1.0f) * 0.54f;
+        if (semanticOpaque) {
+            out = clamp(glassOpacity, 0.035f, 0.92f);
         } else {
             out = sourceAlpha * (0.28f + (1.0f - 0.28f) * clamp(glassOpacity, 0.0f, 1.0f));
             out = clamp(out, 0.08f, 0.94f);
         }
         return jsonFloat(out);
+    }
+
+    private String glassFormulaForSlot(JSONObject slot) {
+        if (slot == null) return "N/A";
+        String alphaMode = slot.optString("alphaMode", "UNKNOWN");
+        boolean semantic = "glass_like".equals(slot.optString("materialTypeHint", ""));
+        float sourceAlpha = parseFloatOr(slot.optString("baseColorAlpha", "1.0"), 1.0f);
+        if (semantic && "OPAQUE".equals(alphaMode) && sourceAlpha >= 0.98f) return "semantic_opaque_ui_body_alpha_rim_guard";
+        if ("BLEND".equals(alphaMode)) return "normal_blend_glass_formula_preserved";
+        if (semantic) return "semantic_nonopaque_normal_glass_formula";
+        return "not_glass";
     }
 
     private String drawRangeSummaryForMaterial(int materialSlot) {

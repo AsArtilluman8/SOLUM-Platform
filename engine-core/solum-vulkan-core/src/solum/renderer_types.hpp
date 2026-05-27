@@ -87,7 +87,8 @@ struct MaterialConstants {
 
 inline float semanticGlassFallbackAlpha(float opacity) {
     const float t = opacity < 0.0f ? 0.0f : (opacity > 1.0f ? 1.0f : opacity);
-    return 0.20f + t * 0.54f;
+    const float bodyAlpha = t < 0.035f ? 0.035f : (t > 0.92f ? 0.92f : t);
+    return bodyAlpha;
 }
 
 inline const char* lightPresetName(int preset) {

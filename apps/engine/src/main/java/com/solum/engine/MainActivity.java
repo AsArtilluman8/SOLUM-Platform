@@ -103,6 +103,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button debugZipButton;
     private Button glassRouteTestButton;
     private Button glassDetailTestButton;
+    private Button materialLabTestButton;
+    private Button debugMaterialLabTestButton;
     private Button debugGlassRouteTestButton;
     private Button debugGlassDetailTestButton;
     private Button chooseFolderButton;
@@ -763,6 +765,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         glassDetailTestButton = compactButton("Glass Detail Test");
         glassDetailTestButton.setOnClickListener(v -> showGlassDetailTestFromButton());
         materialPanel.addView(glassDetailTestButton);
+        materialLabTestButton = compactButton("Material Lab Test");
+        materialLabTestButton.setOnClickListener(v -> showMaterialLabTestFromButton());
+        materialPanel.addView(materialLabTestButton);
         resetSelectedSlotButton = compactButton("Reset Selected Slot");
         resetSelectedSlotButton.setOnClickListener(v -> resetSelectedMaterialSlot());
         materialPanel.addView(resetSelectedSlotButton);
@@ -800,12 +805,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         debugGlassRouteTestButton.setOnClickListener(v -> exportGlassRouteTestFromButton());
         debugGlassDetailTestButton = compactButton("Glass Detail Test");
         debugGlassDetailTestButton.setOnClickListener(v -> showGlassDetailTestFromButton());
+        debugMaterialLabTestButton = compactButton("Material Lab Test");
+        debugMaterialLabTestButton.setOnClickListener(v -> showMaterialLabTestFromButton());
         diagnosticsStatusView.setBackgroundColor(Color.TRANSPARENT);
         debugPanel.addView(chooseFolderButton);
         debugPanel.addView(exportButton);
         debugPanel.addView(debugZipButton);
         debugPanel.addView(debugGlassRouteTestButton);
         debugPanel.addView(debugGlassDetailTestButton);
+        debugPanel.addView(debugMaterialLabTestButton);
         debugPanel.addView(diagnosticsStatusView);
         inspectorPanel.addView(debugPanel);
         root.addView(dockScroll);
@@ -3229,6 +3237,373 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             updateDiagnosticsStatusPanel();
             if (glassDetailTestButton != null) glassDetailTestButton.setEnabled(true);
         });
+    }
+
+    private void showMaterialLabTestFromButton() {
+        if (materialLabTestButton != null) {
+            materialLabTestButton.setEnabled(false);
+            materialLabTestButton.setText("Material Lab...");
+        }
+        if (debugMaterialLabTestButton != null) {
+            debugMaterialLabTestButton.setEnabled(false);
+            debugMaterialLabTestButton.setText("Material Lab...");
+        }
+        View poster = materialLabTestButton != null ? materialLabTestButton : statusView;
+        poster.post(() -> {
+            try {
+                MaterialLabMesh mesh = buildMaterialLabMesh();
+                selectedMaterialSlot = -1;
+                selectedMaterialSlotCount = mesh.materials.size();
+                manualGlassSlotOverride = -1;
+                selectedSlotMetallicOverride = 0.0f;
+                selectedSlotRoughnessOverride = 0.10f;
+                selectedSlotNormalScaleOverride = 1.0f;
+                selectedSlotAoOverride = 1.0f;
+                glassEnabled = true;
+                glassRenderModeIndex = 2;
+                glassTypeIndex = 0;
+                glassOpacity = 0.48f;
+                glassEdge = 1.55f;
+                glassRoughness = 0.10f;
+                glassTintPresetIndex = 7;
+                lightPresetIndex = 3;
+                environmentPresetIndex = 3;
+                environmentIntensity = 1.28f;
+                reflectionIntensity = 1.55f;
+                reflectionContrast = 1.46f;
+                reflectionSaturation = 1.18f;
+                specularBoost = 2.18f;
+                glossSliderValue = 0.76f;
+                paintGlossSliderValue = 0.86f;
+                clearcoatIntensity = 1.05f;
+                clearcoatRoughness = 0.16f;
+                emissiveIntensity = 1.15f;
+                activeMaterialPresetIndex = 0;
+                activeDebugViewIndex = 0;
+                boolean ok = nativeUploadModelMultiPrimitive(
+                    nativeHandle,
+                    "Material Lab Test",
+                    "procedural://material_lab_test",
+                    mesh.vertexData,
+                    mesh.indexData,
+                    mesh.rangeData,
+                    mesh.materialData,
+                    mesh.boundsMin,
+                    mesh.boundsMax,
+                    mesh.boundsCenter,
+                    mesh.modelScale,
+                    mesh.primitiveCountTotal,
+                    0,
+                    0,
+                    "P35 procedural material lab samples"
+                );
+                if (!ok) throw new IllegalStateException("native material lab upload failed");
+                modelState.activeModelPath = "procedural://material_lab_test";
+                modelState.gpuUploadStatus = "ok";
+                modelState.drawStatus = "ok";
+                modelState.meshDrawStatus = "ok";
+                modelState.uploadedVertexCount = mesh.vertexData.length / 15;
+                modelState.uploadedIndexCount = mesh.indexData.length;
+                modelState.primitiveCountTotal = mesh.primitiveCountTotal;
+                modelState.primitiveCountRendered = mesh.primitiveCountTotal;
+                modelState.primitiveCountSkipped = 0;
+                modelState.unsupportedPrimitiveCount = 0;
+                modelState.materialSlotCount = mesh.materials.size();
+                modelState.materialSlotCountRendered = mesh.materials.size();
+                modelState.textureSlotCount = 0;
+                modelState.textureUploadStatus = "missing";
+                modelState.baseColorTextureStatus = "missing";
+                modelState.pbrMapsStatus = "missing_procedural_material_lab";
+                modelState.metallicRoughnessStatus = "missing_procedural_factors";
+                modelState.normalMapStatus = "missing_procedural_normals";
+                modelState.normalMapAppliedStatus = "missing_procedural_normals";
+                modelState.occlusionMapStatus = "missing";
+                modelState.tangentStatus = "ok_procedural_sphere_tangents";
+                modelState.tangentSource = "procedural_material_lab";
+                modelState.materialSlotDiagnostics = materialLabSlotDiagnostics(mesh.materials);
+                modelState.materialDrawRangeDiagnostics = mesh.rangeDiagnostics;
+                modelState.fallbackCubeVisible = false;
+                modelState.fallbackCubeStatus = "off";
+                modelState.reason = "Material Lab Test: procedural samples visible without GLB";
+                applyLightingControls();
+                syncFpsDiagnosticsToNative();
+                String renderLab = getRenderLabStateForExport();
+                String body = materialLabTestBody(renderLab);
+                if (materialStatusView != null) materialStatusView.setText(body);
+                if (diagnosticsStatusView != null) diagnosticsStatusView.setText(body);
+                ClipboardManager clipboard = (ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText("Material Lab Test", body));
+                Log.i(TAG_DIAG, body);
+                debugZipStatus = "ok";
+                debugZipReason = "material_lab_test_copied_to_clipboard";
+                debugZipIncludedFiles = "on_screen_clipboard_logcat_procedural_mesh";
+                if (materialLabTestButton != null) materialLabTestButton.setText("Material Lab Test: shown");
+                if (debugMaterialLabTestButton != null) debugMaterialLabTestButton.setText("Material Lab Test: shown");
+                exportEngineDiagnostics("material_lab_test");
+            } catch (Throwable t) {
+                debugZipStatus = "failed";
+                debugZipReason = shortThrowable(t);
+                writeCrashReport("material_lab_test_failed", t);
+                if (materialLabTestButton != null) materialLabTestButton.setText("Material Lab Failed");
+                if (debugMaterialLabTestButton != null) debugMaterialLabTestButton.setText("Material Lab Failed");
+            }
+            updateDiagnosticsStatusPanel();
+            if (materialLabTestButton != null) materialLabTestButton.setEnabled(true);
+            if (debugMaterialLabTestButton != null) debugMaterialLabTestButton.setEnabled(true);
+        });
+    }
+
+    private String materialLabTestBody(String renderLab) {
+        return "Material Lab Test\n"
+            + "- sample count=6\n"
+            + "- Matte: route=OpaquePbr, roughness=0.88, specular=low\n"
+            + "- Metal: route=Metal, metalness=1.00, roughness=0.34, specular=strong_hard_fake_probe\n"
+            + "- Chrome: route=Chrome, chromeFactor=1.00, roughness=0.08, specular=strongest_reflection_band_no_ssr\n"
+            + "- Glossy Paint: route=OpaquePbr, glossyFactor=0.86, clearcoat=1.05, bodyColor=preserved\n"
+            + "- Glass: route=GlassBlend, formula=glass_blend_final_polish\n"
+            + "- Emission: route=Emission, emissiveIntensity=1.15\n"
+            + "routeOpaquePbrCount=" + jsonNumberField(renderLab, "routeOpaquePbrCount", "0") + "\n"
+            + "routeMetalCount=" + jsonNumberField(renderLab, "routeMetalCount", "0") + "\n"
+            + "routeChromeCount=" + jsonNumberField(renderLab, "routeChromeCount", "0") + "\n"
+            + "routeGlassBlendCount=" + jsonNumberField(renderLab, "routeGlassBlendCount", "0") + "\n"
+            + "routeEmissionCount=" + jsonNumberField(renderLab, "routeEmissionCount", "0") + "\n"
+            + "routeFoliageCutoutCount=" + jsonNumberField(renderLab, "routeFoliageCutoutCount", "0") + "\n"
+            + "routeFabricHairCount=" + jsonNumberField(renderLab, "routeFabricHairCount", "0") + "\n"
+            + "GlassBlendProtected=existing route GlassBlend + formula glass_blend_final_polish\n"
+            + "GlassSemanticOpaqueProtected=not selected/not tuned; preview route remains unchanged\n"
+            + "VisualNotes=Chrome shiniest, Metal harder than Matte, Glossy Paint clearcoat over body color\n";
+    }
+
+    private MaterialLabMesh buildMaterialLabMesh() {
+        final int slices = 18;
+        final int stacks = 12;
+        final float radius = 0.36f;
+        final float[] xs = new float[] {-2.35f, -1.42f, -0.48f, 0.48f, 1.42f, 2.35f};
+        List<Float> vertices = new ArrayList<>();
+        List<Integer> indices = new ArrayList<>();
+        List<Integer> ranges = new ArrayList<>();
+        List<MaterialInfo> materials = new ArrayList<>();
+        addLabMaterial(materials, "Matte", MaterialRoute.OpaquePbr, 0.58f, 0.60f, 0.56f, 1.0f, 0.0f, 0.88f, 4, 0f, 0f, 0f);
+        addLabMaterial(materials, "Metal", MaterialRoute.Metal, 0.58f, 0.66f, 0.74f, 1.0f, 1.0f, 0.34f, 2, 0f, 0f, 0f);
+        addLabMaterial(materials, "Chrome", MaterialRoute.Chrome, 0.92f, 0.96f, 1.0f, 1.0f, 1.0f, 0.08f, 2, 0f, 0f, 0f);
+        addLabMaterial(materials, "Glossy Paint", MaterialRoute.OpaquePbr, 0.88f, 0.12f, 0.08f, 1.0f, 0.0f, 0.24f, 1, 0f, 0f, 0f);
+        addLabMaterial(materials, "Glass", MaterialRoute.GlassBlend, 0.76f, 0.94f, 1.0f, 0.42f, 0.0f, 0.10f, 6, 0f, 0f, 0f);
+        addLabMaterial(materials, "Emission", MaterialRoute.Emission, 0.08f, 0.55f, 1.0f, 1.0f, 0.0f, 0.32f, 8, 0.08f, 0.60f, 1.0f);
+        for (int sample = 0; sample < materials.size(); sample++) {
+            int firstIndex = indices.size();
+            int firstVertex = vertices.size() / 15;
+            appendUvSphere(vertices, indices, xs[sample], 0.0f, 0.0f, radius, slices, stacks);
+            ranges.add(firstIndex);
+            ranges.add(indices.size() - firstIndex);
+            ranges.add(firstVertex);
+            ranges.add((vertices.size() / 15) - firstVertex);
+            ranges.add(sample);
+            ranges.add(-1);
+        }
+        MaterialLabMesh mesh = new MaterialLabMesh();
+        mesh.vertexData = toFloatArray(vertices);
+        mesh.indexData = toIntArray(indices);
+        mesh.rangeData = toIntArray(ranges);
+        mesh.materialData = materialLabMaterialData(materials);
+        mesh.materials = materials;
+        mesh.boundsMin = new float[] {-2.8f, -0.45f, -0.45f};
+        mesh.boundsMax = new float[] {2.8f, 0.45f, 0.45f};
+        mesh.boundsCenter = new float[] {0f, 0f, 0f};
+        mesh.modelScale = 1.0f;
+        mesh.primitiveCountTotal = materials.size();
+        mesh.rangeDiagnostics = materialLabRangeDiagnostics(materials);
+        return mesh;
+    }
+
+    private void addLabMaterial(List<MaterialInfo> materials, String name, MaterialRoute route, float r, float g, float b, float a, float metal, float rough, int hint, float er, float eg, float eb) {
+        MaterialInfo info = new MaterialInfo();
+        info.materialName = name;
+        info.baseColorFactor = new float[] {r, g, b, a};
+        info.alphaMode = route == MaterialRoute.GlassBlend ? 2 : 0;
+        info.alphaModeText = info.alphaMode == 2 ? "BLEND" : "OPAQUE";
+        info.alphaCutoff = 0.02f;
+        info.doubleSided = true;
+        info.textureSlot = -1;
+        info.metallicFactor = metal;
+        info.roughnessFactor = rough;
+        info.normalScale = 1.0f;
+        info.occlusionStrength = 1.0f;
+        info.materialTypeHint = hint;
+        info.materialRoute = route;
+        info.materialRouteReason = route == MaterialRoute.Chrome ? "explicit_material_lab_chrome"
+            : (route == MaterialRoute.Metal ? "explicit_material_lab_metal"
+            : (route == MaterialRoute.GlassBlend ? "explicit_material_lab_glass_blend"
+            : (route == MaterialRoute.Emission ? "explicit_material_lab_emission" : "explicit_material_lab_opaque_pbr")));
+        info.emissiveFactor = new float[] {er, eg, eb};
+        info.emissiveTextureStatus = route == MaterialRoute.Emission ? "metadata_only" : "missing";
+        info.metallicRoughnessStatus = "procedural_factors";
+        info.normalMapStatus = "procedural_normals";
+        info.normalMapAppliedStatus = "procedural_normals";
+        info.occlusionMapStatus = "missing";
+        info.tangentStatus = "ok_procedural";
+        info.albedoLuminance = materialLabLuminance(info.baseColorFactor);
+        info.calibratedRoughness = rough;
+        info.calibratedMetallic = metal;
+        info.aoInfluence = 0.0f;
+        info.clearcoatFactor = "Glossy Paint".equals(name) ? 1.0f : 0.0f;
+        materials.add(info);
+    }
+
+    private void appendUvSphere(List<Float> vertices, List<Integer> indices, float cx, float cy, float cz, float radius, int slices, int stacks) {
+        int baseVertex = vertices.size() / 15;
+        for (int y = 0; y <= stacks; y++) {
+            float v = (float)y / (float)stacks;
+            float theta = (float)Math.PI * v;
+            float sinTheta = (float)Math.sin(theta);
+            float cosTheta = (float)Math.cos(theta);
+            for (int x = 0; x <= slices; x++) {
+                float u = (float)x / (float)slices;
+                float phi = (float)(Math.PI * 2.0) * u;
+                float sinPhi = (float)Math.sin(phi);
+                float cosPhi = (float)Math.cos(phi);
+                float nx = sinTheta * cosPhi;
+                float ny = cosTheta;
+                float nz = sinTheta * sinPhi;
+                float tx = -sinPhi;
+                float tz = cosPhi;
+                vertices.add(cx + nx * radius);
+                vertices.add(cy + ny * radius);
+                vertices.add(cz + nz * radius);
+                vertices.add(nx);
+                vertices.add(ny);
+                vertices.add(nz);
+                vertices.add(u);
+                vertices.add(v);
+                vertices.add(1.0f);
+                vertices.add(1.0f);
+                vertices.add(1.0f);
+                vertices.add(tx);
+                vertices.add(0.0f);
+                vertices.add(tz);
+                vertices.add(1.0f);
+            }
+        }
+        int row = slices + 1;
+        for (int y = 0; y < stacks; y++) {
+            for (int x = 0; x < slices; x++) {
+                int a = baseVertex + y * row + x;
+                int b = a + row;
+                indices.add(a);
+                indices.add(b);
+                indices.add(a + 1);
+                indices.add(a + 1);
+                indices.add(b);
+                indices.add(b + 1);
+            }
+        }
+    }
+
+    private float materialLabLuminance(float[] rgb) {
+        if (rgb == null || rgb.length < 3) return 0.0f;
+        return rgb[0] * 0.2126f + rgb[1] * 0.7152f + rgb[2] * 0.0722f;
+    }
+
+    private float[] toFloatArray(List<Float> values) {
+        float[] out = new float[values.size()];
+        for (int i = 0; i < values.size(); i++) out[i] = values.get(i);
+        return out;
+    }
+
+    private int[] toIntArray(List<Integer> values) {
+        int[] out = new int[values.size()];
+        for (int i = 0; i < values.size(); i++) out[i] = values.get(i);
+        return out;
+    }
+
+    private String materialLabRangeDiagnostics(List<MaterialInfo> materials) {
+        StringBuilder b = new StringBuilder("[");
+        for (int i = 0; i < materials.size(); i++) {
+            if (i > 0) b.append(",");
+            MaterialInfo m = materials.get(i);
+            b.append("{\"drawRange\":").append(i)
+                .append(",\"materialSlot\":").append(i)
+                .append(",\"materialName\":\"").append(esc(m.materialName)).append("\"")
+                .append(",\"materialRoute\":\"").append(esc(m.materialRoute.name())).append("\"")
+                .append("}");
+        }
+        return b.append("]").toString();
+    }
+
+    private String materialLabSlotDiagnostics(List<MaterialInfo> materials) {
+        StringBuilder b = new StringBuilder("[");
+        for (int i = 0; i < materials.size(); i++) {
+            if (i > 0) b.append(",");
+            MaterialInfo m = materials.get(i);
+            b.append("{\"slot\":").append(i)
+                .append(",\"materialName\":\"").append(esc(m.materialName)).append("\"")
+                .append(",\"materialTypeHint\":\"").append(esc(materialLabTypeHintName(m.materialTypeHint))).append("\"")
+                .append(",\"materialRoute\":\"").append(esc(m.materialRoute.name())).append("\"")
+                .append(",\"materialRouteReason\":\"").append(esc(m.materialRouteReason)).append("\"")
+                .append(",\"runtimeMaterialClass\":\"").append(esc(m.materialRoute == MaterialRoute.GlassBlend ? "TRANSPARENT_GLASS" : "OPAQUE")).append("\"")
+                .append(",\"baseColorRgba\":\"(").append(jsonFloat(m.baseColorFactor[0])).append(",").append(jsonFloat(m.baseColorFactor[1])).append(",").append(jsonFloat(m.baseColorFactor[2])).append(",").append(jsonFloat(m.baseColorFactor[3])).append(")\"")
+                .append(",\"baseColorAlpha\":\"").append(jsonFloat(m.baseColorFactor[3])).append("\"")
+                .append(",\"baseColorFactor\":[").append(jsonFloat(m.baseColorFactor[0])).append(",").append(jsonFloat(m.baseColorFactor[1])).append(",").append(jsonFloat(m.baseColorFactor[2])).append(",").append(jsonFloat(m.baseColorFactor[3])).append("]")
+                .append(",\"metallicFactor\":").append(jsonFloat(m.metallicFactor))
+                .append(",\"roughnessFactor\":").append(jsonFloat(m.roughnessFactor))
+                .append(",\"normalMapStatus\":\"").append(esc(m.normalMapStatus)).append("\"")
+                .append(",\"normalScale\":").append(jsonFloat(m.normalScale))
+                .append(",\"occlusionStrength\":").append(jsonFloat(m.occlusionStrength))
+                .append(",\"emissiveFactor\":[").append(jsonFloat(m.emissiveFactor[0])).append(",").append(jsonFloat(m.emissiveFactor[1])).append(",").append(jsonFloat(m.emissiveFactor[2])).append("]")
+                .append(",\"emissiveTextureStatus\":\"").append(esc(m.emissiveTextureStatus)).append("\"")
+                .append(",\"materialPresetHint\":\"").append(esc(materialLabPresetHintName(m))).append("\"")
+                .append(",\"clearcoatWeight\":").append(jsonFloat("Glossy Paint".equals(m.materialName) ? 1.05f : 0.0f))
+                .append(",\"glassAppliedStatus\":\"").append(esc(m.materialRoute == MaterialRoute.GlassBlend ? "applied_glass_blend_final_polish" : "not_glass")).append("\"")
+                .append(",\"glassGuardApplied\":\"").append(esc(m.materialRoute == MaterialRoute.GlassBlend ? "glassblend_protected" : "non_glass_preserved")).append("\"")
+                .append(",\"alphaMode\":\"").append(esc(m.alphaModeText)).append("\"")
+                .append(",\"doubleSided\":").append(m.doubleSided)
+                .append("}");
+        }
+        return b.append("]").toString();
+    }
+
+    private String materialLabTypeHintName(int hint) {
+        if (hint == 1) return "paint_like";
+        if (hint == 2) return "metal_like";
+        if (hint == 6) return "glass_like";
+        if (hint == 8) return "emissive_like";
+        return "unknown";
+    }
+
+    private String materialLabPresetHintName(MaterialInfo info) {
+        if (info.materialTypeHint == 1) return "Car Paint";
+        if (info.materialTypeHint == 2) return "Metal";
+        if (info.materialTypeHint == 6) return "Glass Foundation";
+        if (info.materialTypeHint == 8) return "Emissive Safe";
+        return "Balanced";
+    }
+
+    private float[] materialLabMaterialData(List<MaterialInfo> materials) {
+        float[] out = new float[Math.max(1, materials.size()) * 21];
+        for (int i = 0; i < materials.size(); i++) {
+            MaterialInfo m = materials.get(i);
+            out[i * 21] = m.baseColorFactor[0];
+            out[i * 21 + 1] = m.baseColorFactor[1];
+            out[i * 21 + 2] = m.baseColorFactor[2];
+            out[i * 21 + 3] = m.baseColorFactor[3];
+            out[i * 21 + 4] = m.alphaMode;
+            out[i * 21 + 5] = m.alphaCutoff;
+            out[i * 21 + 6] = m.doubleSided ? 1f : 0f;
+            out[i * 21 + 7] = -1f;
+            out[i * 21 + 8] = m.metallicFactor;
+            out[i * 21 + 9] = m.roughnessFactor;
+            out[i * 21 + 10] = -1f;
+            out[i * 21 + 11] = -1f;
+            out[i * 21 + 12] = -1f;
+            out[i * 21 + 13] = m.normalScale;
+            out[i * 21 + 14] = m.occlusionStrength;
+            out[i * 21 + 15] = m.materialTypeHint;
+            out[i * 21 + 16] = clamp(m.emissiveFactor[0], 0.0f, 1.0f);
+            out[i * 21 + 17] = clamp(m.emissiveFactor[1], 0.0f, 1.0f);
+            out[i * 21 + 18] = clamp(m.emissiveFactor[2], 0.0f, 1.0f);
+            out[i * 21 + 19] = m.materialRoute == MaterialRoute.Emission ? i : -1f;
+            out[i * 21 + 20] = m.materialRoute.ordinal();
+        }
+        return out;
     }
 
     private String glassRouteTestBody(String renderLab) {
@@ -7521,6 +7896,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         int textureSlotLimit = 8;
         int skippedTextureCount = 0;
         String reason = "not_run";
+    }
+
+    private static final class MaterialLabMesh {
+        float[] vertexData;
+        int[] indexData;
+        int[] rangeData;
+        float[] materialData;
+        float[] boundsMin;
+        float[] boundsMax;
+        float[] boundsCenter;
+        float modelScale;
+        int primitiveCountTotal;
+        List<MaterialInfo> materials = new ArrayList<>();
+        String rangeDiagnostics = "[]";
     }
 
     private static final class PrimitiveSource {

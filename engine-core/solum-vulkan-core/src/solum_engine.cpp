@@ -560,6 +560,29 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"reflectionNoModelReuploadStatus\":\"" + solum::escapeJson(renderer->model.reflectionNoModelReuploadStatus) + "\""
         + ",\"noFrameFileWriteStatus\":\"" + solum::escapeJson(renderer->model.noFrameFileWriteStatus) + "\""
         + ",\"noFrameGlbParseStatus\":\"" + solum::escapeJson(renderer->model.noFrameGlbParseStatus) + "\""
+        + ",\"runtimeMaterialClassStatus\":\"" + solum::escapeJson(renderer->model.runtimeMaterialClassStatus) + "\""
+        + ",\"opaqueDrawRangeCount\":" + std::to_string(renderer->model.opaqueDrawRangeCount)
+        + ",\"cutoutDrawRangeCount\":" + std::to_string(renderer->model.cutoutDrawRangeCount)
+        + ",\"glassMaterialCount\":" + std::to_string(renderer->model.glassMaterialCount)
+        + ",\"glassDrawRangeCount\":" + std::to_string(renderer->model.glassDrawRangeCount)
+        + ",\"glassQueueDrawn\":" + std::string(renderer->model.glassQueueDrawn ? "true" : "false")
+        + ",\"glassPipelineCreated\":" + std::string(renderer->model.glassPipelineCreated ? "true" : "false")
+        + ",\"glassPipelineBound\":" + std::string(renderer->model.glassPipelineBound ? "true" : "false")
+        + ",\"glassBlendEnabled\":" + std::string(renderer->model.glassBlendEnabled ? "true" : "false")
+        + ",\"glassDepthWriteEnabled\":" + std::string(renderer->model.glassDepthWriteEnabled ? "true" : "false")
+        + ",\"opaqueSkippedGlass\":" + std::string(renderer->model.opaqueSkippedGlass ? "true" : "false")
+        + ",\"glassOpacityCurrent\":" + std::to_string(renderer->model.glassOpacityCurrent)
+        + ",\"glassEnabled\":" + std::string(renderer->model.glassEnabled ? "true" : "false")
+        + ",\"glassMissingNormalCount\":" + std::to_string(renderer->model.glassMissingNormalCount)
+        + ",\"glassNormalStatus\":\"" + solum::escapeJson(renderer->model.glassNormalStatus) + "\""
+        + ",\"glassRouteStatus\":\"" + solum::escapeJson(renderer->model.glassRouteStatus) + "\""
+        + ",\"showGlassGeometryEnabled\":" + std::string(renderer->model.showGlassGeometryEnabled ? "true" : "false")
+        + ",\"showGlassGeometryStatus\":\"" + solum::escapeJson(renderer->model.showGlassGeometryStatus) + "\""
+        + ",\"semanticOpaqueGlassFallbackActive\":" + std::to_string(renderer->model.semanticOpaqueGlassFallbackActive)
+        + ",\"glassFallbackAlphaApplied\":" + std::to_string(renderer->model.glassFallbackAlphaApplied)
+        + ",\"glassVisibleFallbackReason\":\"" + solum::escapeJson(renderer->model.glassVisibleFallbackReason) + "\""
+        + ",\"glassMaterialNames\":" + (renderer->model.glassMaterialNames.empty() ? "[]" : renderer->model.glassMaterialNames)
+        + ",\"glassClassificationReason\":" + (renderer->model.glassClassificationReason.empty() ? "[]" : renderer->model.glassClassificationReason)
         + ",\"inspectorUiStatus\":\"" + solum::escapeJson(renderer->model.inspectorUiStatus) + "\""
         + ",\"inspectorUiMode\":\"" + solum::escapeJson(renderer->model.inspectorUiMode) + "\""
         + ",\"activeInspectorTab\":\"" + solum::escapeJson(renderer->model.activeInspectorTab) + "\""
@@ -910,6 +933,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
             slots[i].emissiveFactor[2] = materials[i * 20u + 18u];
             slots[i].emissiveTextureSlot = (int)materials[i * 20u + 19u];
             slots[i].materialPresetHint = slots[i].materialTypeHint == 1 ? 1 : (slots[i].materialTypeHint == 2 ? 2 : (slots[i].materialTypeHint == 0 ? 3 : (slots[i].materialTypeHint == 3 ? 4 : (slots[i].materialTypeHint == 6 ? 6 : 0))));
+            slots[i].runtimeClass = slots[i].materialTypeHint == 6 ? solum::RuntimeMaterialClass::TransparentGlass : (slots[i].alphaMode == 1 ? solum::RuntimeMaterialClass::Cutout : solum::RuntimeMaterialClass::Opaque);
         }
     } else if (materials && materialFloatCount >= 16 && (materialFloatCount % 16) == 0) {
         slots.resize((size_t)materialFloatCount / 16u);
@@ -930,6 +954,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
             slots[i].normalScale = materials[i * 16u + 13u];
             slots[i].occlusionStrength = materials[i * 16u + 14u];
             slots[i].materialTypeHint = (int)materials[i * 16u + 15u];
+            slots[i].runtimeClass = slots[i].materialTypeHint == 6 ? solum::RuntimeMaterialClass::TransparentGlass : (slots[i].alphaMode == 1 ? solum::RuntimeMaterialClass::Cutout : solum::RuntimeMaterialClass::Opaque);
         }
     } else if (materials && materialFloatCount >= 8 && (materialFloatCount % 8) == 0) {
         slots.resize((size_t)materialFloatCount / 8u);
@@ -942,6 +967,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
             slots[i].alphaCutoff = materials[i * 8u + 5u];
             slots[i].doubleSided = materials[i * 8u + 6u] != 0.0f;
             slots[i].baseColorTextureSlot = (int)materials[i * 8u + 7u];
+            slots[i].runtimeClass = slots[i].alphaMode == 1 ? solum::RuntimeMaterialClass::Cutout : solum::RuntimeMaterialClass::Opaque;
         }
     } else {
         slots.resize(1);

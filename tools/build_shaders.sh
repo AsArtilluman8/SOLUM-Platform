@@ -7,6 +7,12 @@ OUT_DIR="$ROOT/engine-core/solum-vulkan-core/src/generated"
 mkdir -p "$OUT_DIR"
 
 find_shader_compiler() {
+  for compiler in "/data/data/com.termux/files/usr/bin/glslc" "/data/data/com.termux/files/usr/bin/glslangValidator"; do
+    if [ -x "$compiler" ] && "$compiler" --version >/dev/null 2>&1; then
+      echo "$compiler"
+      return 0
+    fi
+  done
   if command -v glslc >/dev/null 2>&1; then
     echo "glslc"
     return 0
@@ -58,13 +64,13 @@ compile_one() {
   local symbol="$5"
   local header="$6"
 
-  if [ "$compiler" = "glslc" ]; then
-    glslc -fshader-stage="$stage" "$input" -o "$temp_spv"
+  if [ "$(basename "$compiler")" = "glslc" ]; then
+    "$compiler" -fshader-stage="$stage" "$input" -o "$temp_spv"
   else
     local glslang_stage="$stage"
     if [ "$stage" = "vert" ]; then glslang_stage="vert"; fi
     if [ "$stage" = "frag" ]; then glslang_stage="frag"; fi
-    glslangValidator -V -S "$glslang_stage" "$input" -o "$temp_spv" >/dev/null
+    "$compiler" -V -S "$glslang_stage" "$input" -o "$temp_spv" >/dev/null
   fi
   emit_header "$temp_spv" "$symbol" "$header"
 }
@@ -77,13 +83,15 @@ COMPILER="$(find_shader_compiler)" || {
 }
 
 TMP_DIR="$(mktemp -d)"
-cleanup() { rm -rf "$TMP_DIR"; }
+cleanup() { rm -r "$TMP_DIR"; }
 trap cleanup EXIT
 
 compile_one "$COMPILER" vert "$SHADER_DIR/triangle.vert" "$TMP_DIR/triangle.vert.spv" SOL_TRIANGLE_VERT_SPV "$OUT_DIR/solum_triangle_vert_spv.h"
 compile_one "$COMPILER" frag "$SHADER_DIR/triangle.frag.glsl" "$TMP_DIR/triangle.frag.spv" SOL_TRIANGLE_FRAG_SPV "$OUT_DIR/solum_triangle_frag_spv.h"
+compile_one "$COMPILER" frag "$SHADER_DIR/glass.frag.glsl" "$TMP_DIR/glass.frag.spv" SOL_GLASS_FRAG_SPV "$OUT_DIR/solum_glass_frag_spv.h"
 
 echo "SOLUM SHADER BUILD: OK"
 echo "Compiler: $COMPILER"
 echo "Generated: $OUT_DIR/solum_triangle_vert_spv.h"
 echo "Generated: $OUT_DIR/solum_triangle_frag_spv.h"
+echo "Generated: $OUT_DIR/solum_glass_frag_spv.h"

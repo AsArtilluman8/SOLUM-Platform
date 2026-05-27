@@ -2,6 +2,7 @@
 #include "mesh_resource.hpp"
 #include "generated/solum_triangle_vert_spv.h"
 #include "generated/solum_triangle_frag_spv.h"
+#include "generated/solum_glass_frag_spv.h"
 
 namespace solum {
 
@@ -10,16 +11,13 @@ struct PipelineBundle {
     VkDescriptorSetLayout textureSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
-    VkPipeline transparentPipeline = VK_NULL_HANDLE;
 
     void destroy() {
         if (device != VK_NULL_HANDLE) {
-            if (transparentPipeline != VK_NULL_HANDLE) vkDestroyPipeline(device, transparentPipeline, nullptr);
             if (pipeline != VK_NULL_HANDLE) vkDestroyPipeline(device, pipeline, nullptr);
             if (layout != VK_NULL_HANDLE) vkDestroyPipelineLayout(device, layout, nullptr);
             if (textureSetLayout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(device, textureSetLayout, nullptr);
         }
-        transparentPipeline = VK_NULL_HANDLE;
         pipeline = VK_NULL_HANDLE;
         layout = VK_NULL_HANDLE;
         textureSetLayout = VK_NULL_HANDLE;
@@ -39,7 +37,14 @@ struct PipelineBundle {
         return module;
     }
 
-    bool createGraphicsPipeline(VkRenderPass renderPass, VkExtent2D extent, bool transparent, VkShaderModule vert, VkShaderModule frag, VkPipeline& outPipeline, std::string& error) {
+    bool createPipeline(VkDevice inDevice, VkRenderPass renderPass, VkExtent2D extent, const uint32_t* fragWords, size_t fragWordCount, const char* fragLabel, bool transparentGlass, std::string& error) {
+        destroy();
+        device = inDevice;
+        VkShaderModule vert = createShaderModule(device, SOL_TRIANGLE_VERT_SPV, SOL_TRIANGLE_VERT_SPV_WORD_COUNT, "triangle.vert", error);
+        if (vert == VK_NULL_HANDLE) return false;
+        VkShaderModule frag = createShaderModule(device, fragWords, fragWordCount, fragLabel, error);
+        if (frag == VK_NULL_HANDLE) { vkDestroyShaderModule(device, vert, nullptr); return false; }
+
         VkPipelineShaderStageCreateInfo stages[2]{};
         stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -104,13 +109,13 @@ struct PipelineBundle {
         msaa.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
         VkPipelineDepthStencilStateCreateInfo depth{ VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
         depth.depthTestEnable = VK_TRUE;
-        depth.depthWriteEnable = transparent ? VK_FALSE : VK_TRUE;
+        depth.depthWriteEnable = transparentGlass ? VK_FALSE : VK_TRUE;
         depth.depthCompareOp = VK_COMPARE_OP_LESS;
         depth.depthBoundsTestEnable = VK_FALSE;
         depth.stencilTestEnable = VK_FALSE;
         VkPipelineColorBlendAttachmentState blendAttachment{};
         blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        if (transparent) {
+        if (transparentGlass) {
             blendAttachment.blendEnable = VK_TRUE;
             blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
             blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
@@ -122,32 +127,6 @@ struct PipelineBundle {
         VkPipelineColorBlendStateCreateInfo blend{ VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
         blend.attachmentCount = 1;
         blend.pAttachments = &blendAttachment;
-
-        VkGraphicsPipelineCreateInfo pipe{ VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
-        pipe.stageCount = 2;
-        pipe.pStages = stages;
-        pipe.pVertexInputState = &vertexInput;
-        pipe.pInputAssemblyState = &assembly;
-        pipe.pViewportState = &viewportState;
-        pipe.pRasterizationState = &raster;
-        pipe.pMultisampleState = &msaa;
-        pipe.pDepthStencilState = &depth;
-        pipe.pColorBlendState = &blend;
-        pipe.layout = layout;
-        pipe.renderPass = renderPass;
-        pipe.subpass = 0;
-        VkResult r = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipe, nullptr, &outPipeline);
-        if (r != VK_SUCCESS) { error = std::string(transparent ? "Transparent" : "Opaque") + " GraphicsPipeline failed: " + vkResultName(r); return false; }
-        return true;
-    }
-
-    bool createTrianglePipeline(VkDevice inDevice, VkRenderPass renderPass, VkExtent2D extent, std::string& error) {
-        destroy();
-        device = inDevice;
-        VkShaderModule vert = createShaderModule(device, SOL_TRIANGLE_VERT_SPV, SOL_TRIANGLE_VERT_SPV_WORD_COUNT, "triangle.vert", error);
-        if (vert == VK_NULL_HANDLE) return false;
-        VkShaderModule frag = createShaderModule(device, SOL_TRIANGLE_FRAG_SPV, SOL_TRIANGLE_FRAG_SPV_WORD_COUNT, "triangle.frag", error);
-        if (frag == VK_NULL_HANDLE) { vkDestroyShaderModule(device, vert, nullptr); return false; }
 
         VkPushConstantRange push{};
         push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -173,11 +152,32 @@ struct PipelineBundle {
         r = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &layout);
         if (r != VK_SUCCESS) { error = "PipelineLayout failed: " + vkResultName(r); vkDestroyShaderModule(device, frag, nullptr); vkDestroyShaderModule(device, vert, nullptr); return false; }
 
-        bool ok = createGraphicsPipeline(renderPass, extent, false, vert, frag, pipeline, error)
-            && createGraphicsPipeline(renderPass, extent, true, vert, frag, transparentPipeline, error);
+        VkGraphicsPipelineCreateInfo pipe{ VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+        pipe.stageCount = 2;
+        pipe.pStages = stages;
+        pipe.pVertexInputState = &vertexInput;
+        pipe.pInputAssemblyState = &assembly;
+        pipe.pViewportState = &viewportState;
+        pipe.pRasterizationState = &raster;
+        pipe.pMultisampleState = &msaa;
+        pipe.pDepthStencilState = &depth;
+        pipe.pColorBlendState = &blend;
+        pipe.layout = layout;
+        pipe.renderPass = renderPass;
+        pipe.subpass = 0;
+        r = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipe, nullptr, &pipeline);
         vkDestroyShaderModule(device, frag, nullptr);
         vkDestroyShaderModule(device, vert, nullptr);
-        return ok;
+        if (r != VK_SUCCESS) { error = "GraphicsPipeline failed: " + vkResultName(r); return false; }
+        return true;
+    }
+
+    bool createTrianglePipeline(VkDevice inDevice, VkRenderPass renderPass, VkExtent2D extent, std::string& error) {
+        return createPipeline(inDevice, renderPass, extent, SOL_TRIANGLE_FRAG_SPV, SOL_TRIANGLE_FRAG_SPV_WORD_COUNT, "triangle.frag", false, error);
+    }
+
+    bool createGlassPipeline(VkDevice inDevice, VkRenderPass renderPass, VkExtent2D extent, std::string& error) {
+        return createPipeline(inDevice, renderPass, extent, SOL_GLASS_FRAG_SPV, SOL_GLASS_FRAG_SPV_WORD_COUNT, "glass.frag", true, error);
     }
 };
 

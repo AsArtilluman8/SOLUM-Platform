@@ -909,7 +909,35 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
         drawRanges[i].textureSlot = ranges[i * 6u + 5u];
     }
     std::vector<solum::MaterialSlotState> slots;
-    if (materials && materialFloatCount >= 20 && (materialFloatCount % 20) == 0) {
+    if (materials && materialFloatCount >= 21 && (materialFloatCount % 21) == 0) {
+        slots.resize((size_t)materialFloatCount / 21u);
+        for (size_t i = 0; i < slots.size(); ++i) {
+            slots[i].baseColorFactor[0] = materials[i * 21u];
+            slots[i].baseColorFactor[1] = materials[i * 21u + 1u];
+            slots[i].baseColorFactor[2] = materials[i * 21u + 2u];
+            slots[i].baseColorFactor[3] = materials[i * 21u + 3u];
+            slots[i].alphaMode = (int)materials[i * 21u + 4u];
+            slots[i].alphaCutoff = materials[i * 21u + 5u];
+            slots[i].doubleSided = materials[i * 21u + 6u] != 0.0f;
+            slots[i].baseColorTextureSlot = (int)materials[i * 21u + 7u];
+            slots[i].metallicFactor = materials[i * 21u + 8u];
+            slots[i].roughnessFactor = materials[i * 21u + 9u];
+            slots[i].metallicRoughnessTextureSlot = (int)materials[i * 21u + 10u];
+            slots[i].normalTextureSlot = (int)materials[i * 21u + 11u];
+            slots[i].occlusionTextureSlot = (int)materials[i * 21u + 12u];
+            slots[i].normalScale = materials[i * 21u + 13u];
+            slots[i].occlusionStrength = materials[i * 21u + 14u];
+            slots[i].materialTypeHint = (int)materials[i * 21u + 15u];
+            slots[i].emissiveFactor[0] = materials[i * 21u + 16u];
+            slots[i].emissiveFactor[1] = materials[i * 21u + 17u];
+            slots[i].emissiveFactor[2] = materials[i * 21u + 18u];
+            slots[i].emissiveTextureSlot = (int)materials[i * 21u + 19u];
+            int route = (int)materials[i * 21u + 20u];
+            slots[i].materialRoute = route >= 0 && route <= 10 ? static_cast<solum::MaterialRoute>(route) : solum::MaterialRoute::Unknown;
+            slots[i].materialPresetHint = slots[i].materialTypeHint == 1 ? 1 : (slots[i].materialTypeHint == 2 ? 2 : (slots[i].materialTypeHint == 0 ? 3 : (slots[i].materialTypeHint == 3 ? 4 : (slots[i].materialTypeHint == 6 ? 6 : 0))));
+            slots[i].runtimeClass = solum::RuntimeMaterialClass::Opaque;
+        }
+    } else if (materials && materialFloatCount >= 20 && (materialFloatCount % 20) == 0) {
         slots.resize((size_t)materialFloatCount / 20u);
         for (size_t i = 0; i < slots.size(); ++i) {
             slots[i].baseColorFactor[0] = materials[i * 20u];
@@ -932,8 +960,9 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
             slots[i].emissiveFactor[1] = materials[i * 20u + 17u];
             slots[i].emissiveFactor[2] = materials[i * 20u + 18u];
             slots[i].emissiveTextureSlot = (int)materials[i * 20u + 19u];
+            slots[i].materialRoute = slots[i].materialTypeHint == 6 ? (slots[i].alphaMode == 2 ? solum::MaterialRoute::GlassBlend : solum::MaterialRoute::GlassSemanticOpaque) : (slots[i].alphaMode == 1 || slots[i].materialTypeHint == 5 ? solum::MaterialRoute::FoliageCutout : solum::MaterialRoute::OpaquePbr);
             slots[i].materialPresetHint = slots[i].materialTypeHint == 1 ? 1 : (slots[i].materialTypeHint == 2 ? 2 : (slots[i].materialTypeHint == 0 ? 3 : (slots[i].materialTypeHint == 3 ? 4 : (slots[i].materialTypeHint == 6 ? 6 : 0))));
-            slots[i].runtimeClass = slots[i].materialTypeHint == 6 ? solum::RuntimeMaterialClass::TransparentGlass : (slots[i].alphaMode == 1 ? solum::RuntimeMaterialClass::Cutout : solum::RuntimeMaterialClass::Opaque);
+            slots[i].runtimeClass = solum::RuntimeMaterialClass::Opaque;
         }
     } else if (materials && materialFloatCount >= 16 && (materialFloatCount % 16) == 0) {
         slots.resize((size_t)materialFloatCount / 16u);
@@ -954,7 +983,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
             slots[i].normalScale = materials[i * 16u + 13u];
             slots[i].occlusionStrength = materials[i * 16u + 14u];
             slots[i].materialTypeHint = (int)materials[i * 16u + 15u];
-            slots[i].runtimeClass = slots[i].materialTypeHint == 6 ? solum::RuntimeMaterialClass::TransparentGlass : (slots[i].alphaMode == 1 ? solum::RuntimeMaterialClass::Cutout : solum::RuntimeMaterialClass::Opaque);
+            slots[i].materialRoute = slots[i].materialTypeHint == 6 ? (slots[i].alphaMode == 2 ? solum::MaterialRoute::GlassBlend : solum::MaterialRoute::GlassSemanticOpaque) : (slots[i].alphaMode == 1 || slots[i].materialTypeHint == 5 ? solum::MaterialRoute::FoliageCutout : solum::MaterialRoute::OpaquePbr);
+            slots[i].runtimeClass = solum::RuntimeMaterialClass::Opaque;
         }
     } else if (materials && materialFloatCount >= 8 && (materialFloatCount % 8) == 0) {
         slots.resize((size_t)materialFloatCount / 8u);
@@ -967,7 +997,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
             slots[i].alphaCutoff = materials[i * 8u + 5u];
             slots[i].doubleSided = materials[i * 8u + 6u] != 0.0f;
             slots[i].baseColorTextureSlot = (int)materials[i * 8u + 7u];
-            slots[i].runtimeClass = slots[i].alphaMode == 1 ? solum::RuntimeMaterialClass::Cutout : solum::RuntimeMaterialClass::Opaque;
+            slots[i].materialRoute = slots[i].alphaMode == 1 ? solum::MaterialRoute::FoliageCutout : solum::MaterialRoute::OpaquePbr;
+            slots[i].runtimeClass = solum::RuntimeMaterialClass::Opaque;
         }
     } else {
         slots.resize(1);

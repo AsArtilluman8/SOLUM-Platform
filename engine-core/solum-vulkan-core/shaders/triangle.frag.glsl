@@ -68,6 +68,8 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 296) float glassRoughness;
     layout(offset = 300) int glassTintPreset;
     layout(offset = 304) int glassRenderMode;
+    layout(offset = 308) int glassType;
+    layout(offset = 312) int materialRoute;
 } pc;
 
 float luminance(vec3 c) {
@@ -120,25 +122,25 @@ vec3 materialPresetColor(int preset) {
 }
 
 vec3 glassTintColor(int preset) {
-    if (preset == 1) return vec3(0.55, 0.82, 1.00);
-    if (preset == 2) return vec3(0.55, 1.00, 0.72);
-    if (preset == 3) return vec3(0.48, 0.52, 0.58);
-    if (preset == 4) return vec3(1.00, 0.78, 0.52);
+    if (preset == 1) return vec3(0.48, 0.78, 1.00);
+    if (preset == 2) return vec3(0.48, 0.94, 0.66);
+    if (preset == 3) return vec3(0.34, 0.38, 0.43);
+    if (preset == 4) return vec3(1.00, 0.70, 0.42);
     if (preset == 5) return vec3(0.82, 0.58, 1.00);
-    if (preset == 6) return vec3(0.70, 0.74, 0.72);
-    if (preset == 7) return vec3(0.86, 0.98, 1.00);
-    return vec3(0.92, 0.98, 1.00);
+    if (preset == 6) return vec3(0.62, 0.67, 0.64);
+    if (preset == 7) return vec3(0.80, 0.97, 1.00);
+    return vec3(0.84, 0.95, 1.00);
 }
 
 vec4 glassPresetParams(int preset) {
-    if (preset == 1) return vec4(0.52, 1.55, 0.16, 1.18);
-    if (preset == 2) return vec4(0.54, 1.48, 0.18, 1.12);
-    if (preset == 3) return vec4(0.68, 1.30, 0.42, 0.82);
-    if (preset == 4) return vec4(0.58, 1.42, 0.20, 1.06);
+    if (preset == 1) return vec4(0.52, 1.58, 0.14, 1.22);
+    if (preset == 2) return vec4(0.54, 1.50, 0.17, 1.16);
+    if (preset == 3) return vec4(0.70, 1.36, 0.46, 0.92);
+    if (preset == 4) return vec4(0.58, 1.46, 0.18, 1.12);
     if (preset == 5) return vec4(0.50, 1.85, 0.18, 1.34);
     if (preset == 6) return vec4(0.74, 1.12, 0.54, 0.72);
     if (preset == 7) return vec4(0.42, 1.95, 0.08, 1.45);
-    return vec4(0.50, 1.62, 0.10, 1.28);
+    return vec4(0.46, 1.66, 0.08, 1.30);
 }
 
 vec3 toneMap(vec3 color) {
@@ -295,11 +297,14 @@ void main() {
     int hint = pc.materialTypeHint;
     float roughnessRaw = clamp(pc.roughnessFactor * mr.g, 0.04, 1.0);
     float metallic = clamp(pc.metallicFactor * mr.b, 0.0, 1.0);
-    bool glassActive = hint == 6 || pc.materialPresetHint == 6 || pc.glassEnabled != 0;
+    bool routedGlassMaterial = hint == 6 || pc.materialRoute == 1 || pc.materialRoute == 2;
+    bool glassActive = routedGlassMaterial && (pc.glassEnabled != 0 || pc.materialPresetHint == 6);
+    bool glassBlendPolish = glassActive && pc.materialRoute == 1 && pc.alphaMode == 2;
+    bool glassSolid = pc.glassType == 1;
     vec4 glassParams = glassPresetParams(pc.glassTintPreset);
-    float glassOpacityInput = max(pc.glassOpacity, glassParams.x);
+    float glassOpacityInput = clamp(mix(pc.glassOpacity, glassParams.x, glassBlendPolish ? 0.16 : 0.34), 0.0, 1.0);
     float glassEdgeInput = max(pc.glassEdge, glassParams.y);
-    float glassRoughInput = clamp(mix(pc.glassRoughness, glassParams.z, 0.38), 0.04, 1.0);
+    float glassRoughInput = clamp(mix(pc.glassRoughness, glassParams.z, glassBlendPolish ? 0.24 : 0.38), 0.04, 1.0);
     float glassReflectionInput = glassParams.w;
     float roughness = remapRoughness(roughnessRaw, metallic, hint, calibration);
     if (glassActive) roughness = clamp(mix(roughness, glassRoughInput, 0.84), 0.04, 1.0);
@@ -397,20 +402,25 @@ void main() {
     if (hint == 0) specularLight *= 0.55;
     float ndotv = max(dot(n, v), 0.0);
     float glassFresnelBase = pow(clamp(1.0 - ndotv, 0.0, 1.0), 3.2);
-    float glassFresnel = clamp(glassFresnelBase * mix(0.92, 1.55, clamp(glassEdgeInput * 0.5, 0.0, 1.0)) + 0.06, 0.0, 1.0);
-    float glassThickness = clamp(glassFresnel * 0.72 + (1.0 - ndotv) * 0.22, 0.0, 1.0);
+    float glassEdgeScale = glassBlendPolish ? mix(1.18, 1.48, 1.0 - glassRoughInput) * (glassSolid ? 0.92 : 1.12) : 1.0;
+    float glassFresnel = clamp(glassFresnelBase * mix(0.92, 1.55, clamp(glassEdgeInput * 0.5, 0.0, 1.0)) * glassEdgeScale + 0.06, 0.0, 1.0);
+    float glassThickness = clamp(glassFresnel * (glassSolid ? 0.86 : 0.60) + (1.0 - ndotv) * (glassSolid ? 0.34 : 0.18), 0.0, 1.0);
     vec3 glassZone = environmentColor(reflectionDir, clamp(roughness * 0.72, 0.02, 1.0));
-    vec3 glassReflection = glassZone * (0.24 + glassFresnel * clamp(glassEdgeInput, 0.0, 2.0)) * mix(1.18, 0.42, roughness) * pc.reflectionIntensity * glassReflectionInput * motionReflection;
+    float blendReflection = glassBlendPolish ? mix(1.16, 1.54, glassFresnel) * (glassSolid ? 1.08 : 1.18) : 1.0;
+    vec3 glassReflection = glassZone * (0.24 + glassFresnel * clamp(glassEdgeInput, 0.0, 2.0)) * mix(1.18, 0.42, roughness) * pc.reflectionIntensity * glassReflectionInput * motionReflection * blendReflection;
     float glassOpacity = clamp(glassOpacityInput, 0.0, 1.0);
     float glassCurve = 1.0 - (1.0 - glassOpacity) * (1.0 - glassOpacity);
-    float glassSurface = clamp(mix(0.32, 0.88, glassCurve), 0.28, 0.92);
-    float transparentGlassAlpha = clamp(mix(0.16, 0.76, glassOpacity) + glassFresnel * 0.16 + roughness * 0.10, 0.12, 0.92);
+    float glassSurface = clamp(mix(glassBlendPolish && !glassSolid ? 0.22 : 0.32, glassSolid ? 0.94 : 0.82, glassCurve), 0.20, 0.94);
+    float transparentGlassAlpha = clamp(mix(0.10, glassSolid ? 0.84 : 0.68, glassOpacity) + glassFresnel * (glassBlendPolish ? 0.22 : 0.16) + roughness * (glassBlendPolish ? 0.06 : 0.10), 0.10, 0.92);
     if (glassActive) {
-        vec3 thicknessTint = mix(glassTint * 0.58, glassTint * 1.16, glassFresnel);
-        diffuseLight *= glassSurface * 0.30;
-        specularLight = specularLight * 0.36 + glassReflection * 1.28;
-        specularLight += thicknessTint * glassFresnel * clamp(glassEdgeInput, 0.0, 2.0) * 0.26;
-        baseColor = mix(baseColor * mix(0.48, 0.82, glassCurve), thicknessTint, glassThickness * 0.34);
+        vec3 thicknessTint = mix(glassTint * (glassSolid ? 0.46 : 0.64), glassTint * (glassSolid ? 1.08 : 1.22), glassFresnel);
+        float blendSpecular = glassBlendPolish ? mix(1.34, 0.72, roughness) * (glassSolid ? 1.08 : 1.18) : 1.0;
+        float frostedBody = glassBlendPolish ? smoothstep(0.46, 0.96, roughness) * 0.24 : 0.0;
+        diffuseLight *= glassSurface * (glassBlendPolish ? (glassSolid ? 0.24 : 0.18) : 0.30);
+        specularLight = specularLight * (glassBlendPolish ? 0.24 : 0.36) + glassReflection * (glassBlendPolish ? 1.48 : 1.28) * blendSpecular;
+        specularLight += thicknessTint * glassFresnel * clamp(glassEdgeInput, 0.0, 2.0) * (glassBlendPolish ? 0.38 : 0.26);
+        baseColor = mix(baseColor * mix(glassSolid ? 0.38 : 0.52, glassSolid ? 0.78 : 0.86, glassCurve), thicknessTint, glassThickness * (glassBlendPolish ? (glassSolid ? 0.52 : 0.30) : 0.34));
+        baseColor = mix(baseColor, mix(baseColor, glassTint, 0.46), frostedBody);
         if (pc.glassRenderMode == 1) alpha = transparentGlassAlpha;
     }
     specularLight *= mix(1.0, 1.36, paintTarget);

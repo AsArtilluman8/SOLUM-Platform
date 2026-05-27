@@ -422,6 +422,15 @@ struct RuntimeDiagnostics {
         f << "  \"plasticReflectionStatus\": \"" << escapeJson(model.plasticReflectionStatus) << "\",\n";
         f << "  \"rubberReflectionStatus\": \"" << escapeJson(model.rubberReflectionStatus) << "\",\n";
         f << "  \"glassMetadataReflectionStatus\": \"" << escapeJson(model.glassMetadataReflectionStatus) << "\",\n";
+        f << "  \"glassBlendFormulaMode\": \"" << escapeJson(model.glassBlendFormulaMode) << "\",\n";
+        f << "  \"glassType\": \"" << escapeJson(model.glassType) << "\",\n";
+        f << "  \"glassBlendBodyAlpha\": " << model.glassBlendBodyAlpha << ",\n";
+        f << "  \"glassBlendEdgeStrength\": " << model.glassBlendEdgeStrength << ",\n";
+        f << "  \"glassBlendSpecularStrength\": " << model.glassBlendSpecularStrength << ",\n";
+        f << "  \"glassBlendTintStrength\": " << model.glassBlendTintStrength << ",\n";
+        f << "  \"glassBlendRoughness\": " << model.glassBlendRoughness << ",\n";
+        f << "  \"glassBlendFakeReflectionStrength\": " << model.glassBlendFakeReflectionStrength << ",\n";
+        f << "  \"normalBlendProtected\": " << (model.normalBlendProtected ? "true" : "false") << ",\n";
         f << "  \"materialPresetReflectionStatus\": \"" << escapeJson(model.materialPresetReflectionStatus) << "\",\n";
         f << "  \"fakeCubemapDebugViewStatus\": \"" << escapeJson(model.fakeCubemapDebugViewStatus) << "\",\n";
         f << "  \"reflectionZonesDebugViewStatus\": \"" << escapeJson(model.reflectionZonesDebugViewStatus) << "\",\n";

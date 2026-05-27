@@ -83,6 +83,8 @@ struct MaterialConstants {
     float glassRoughness = 0.22f;
     int glassTintPreset = 0;
     int glassRenderMode = 2;
+    int glassType = 0;
+    int materialRoute = 0;
 };
 
 inline float semanticGlassFallbackAlpha(float opacity) {
@@ -755,6 +757,15 @@ struct ModelRenderState {
     std::string plasticReflectionStatus = "ok_glossy_limited";
     std::string rubberReflectionStatus = "ok_low_reflection";
     std::string glassMetadataReflectionStatus = "foundation_single_pass_fake_transparency";
+    std::string glassBlendFormulaMode = "glass_blend_final_polish";
+    std::string glassType = "Thin";
+    float glassBlendBodyAlpha = 0.0f;
+    float glassBlendEdgeStrength = 0.0f;
+    float glassBlendSpecularStrength = 0.0f;
+    float glassBlendTintStrength = 0.0f;
+    float glassBlendRoughness = 0.0f;
+    float glassBlendFakeReflectionStrength = 0.0f;
+    bool normalBlendProtected = true;
     std::string materialPresetReflectionStatus = "ok";
     std::string fakeCubemapDebugViewStatus = "shader_applied";
     std::string reflectionZonesDebugViewStatus = "shader_applied";

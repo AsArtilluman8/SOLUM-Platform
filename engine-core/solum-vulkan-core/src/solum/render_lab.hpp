@@ -556,6 +556,15 @@ struct RenderLabState {
         f << indent << "  \"plasticReflectionStatus\": \"" << escapeJson(model.plasticReflectionStatus) << "\",\n";
         f << indent << "  \"rubberReflectionStatus\": \"" << escapeJson(model.rubberReflectionStatus) << "\",\n";
         f << indent << "  \"glassMetadataReflectionStatus\": \"" << escapeJson(model.glassMetadataReflectionStatus) << "\",\n";
+        f << indent << "  \"glassBlendFormulaMode\": \"" << escapeJson(model.glassBlendFormulaMode) << "\",\n";
+        f << indent << "  \"glassType\": \"" << escapeJson(model.glassType) << "\",\n";
+        f << indent << "  \"glassBlendBodyAlpha\": " << model.glassBlendBodyAlpha << ",\n";
+        f << indent << "  \"glassBlendEdgeStrength\": " << model.glassBlendEdgeStrength << ",\n";
+        f << indent << "  \"glassBlendSpecularStrength\": " << model.glassBlendSpecularStrength << ",\n";
+        f << indent << "  \"glassBlendTintStrength\": " << model.glassBlendTintStrength << ",\n";
+        f << indent << "  \"glassBlendRoughness\": " << model.glassBlendRoughness << ",\n";
+        f << indent << "  \"glassBlendFakeReflectionStrength\": " << model.glassBlendFakeReflectionStrength << ",\n";
+        f << indent << "  \"normalBlendProtected\": " << (model.normalBlendProtected ? "true" : "false") << ",\n";
         f << indent << "  \"materialPresetReflectionStatus\": \"" << escapeJson(model.materialPresetReflectionStatus) << "\",\n";
         f << indent << "  \"fakeCubemapDebugViewStatus\": \"" << escapeJson(model.fakeCubemapDebugViewStatus) << "\",\n";
         f << indent << "  \"reflectionZonesDebugViewStatus\": \"" << escapeJson(model.reflectionZonesDebugViewStatus) << "\",\n";

@@ -109,11 +109,12 @@ extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeSetLi
     jfloat glassRoughness,
     jint glassTintPreset,
     jint glassRenderMode,
+    jint glassType,
     jint manualGlassSlotOverride
 ) {
     auto* renderer = reinterpret_cast<solum::RendererCore*>(handle);
     if (!renderer) return;
-    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPreset, calibrationStrength, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPreset, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, selectedSlotGlossOverride, selectedSlotCoatOverride, alphaCutoffValue, emissiveIntensity, materialPreset, glassEnabled, glassOpacity, glassEdge, glassRoughness, glassTintPreset, glassRenderMode, manualGlassSlotOverride);
+    renderer->setLightingControls(lightPreset, sunIntensity, ambientIntensity, activeDebugView, toneMappingMode, exposureValue, ambientFloor, brightnessPreset, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPreset, calibrationStrength, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPreset, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, selectedSlotGlossOverride, selectedSlotCoatOverride, alphaCutoffValue, emissiveIntensity, materialPreset, glassEnabled, glassOpacity, glassEdge, glassRoughness, glassTintPreset, glassRenderMode, glassType, manualGlassSlotOverride);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_solum_engine_MainActivity_nativeUpdateUiDiagnostics(
@@ -545,6 +546,15 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_solum_engine_MainActivity_nativeGe
         + ",\"plasticReflectionStatus\":\"" + solum::escapeJson(renderer->model.plasticReflectionStatus) + "\""
         + ",\"rubberReflectionStatus\":\"" + solum::escapeJson(renderer->model.rubberReflectionStatus) + "\""
         + ",\"glassMetadataReflectionStatus\":\"" + solum::escapeJson(renderer->model.glassMetadataReflectionStatus) + "\""
+        + ",\"glassBlendFormulaMode\":\"" + solum::escapeJson(renderer->model.glassBlendFormulaMode) + "\""
+        + ",\"glassType\":\"" + solum::escapeJson(renderer->model.glassType) + "\""
+        + ",\"glassBlendBodyAlpha\":" + std::to_string(renderer->model.glassBlendBodyAlpha)
+        + ",\"glassBlendEdgeStrength\":" + std::to_string(renderer->model.glassBlendEdgeStrength)
+        + ",\"glassBlendSpecularStrength\":" + std::to_string(renderer->model.glassBlendSpecularStrength)
+        + ",\"glassBlendTintStrength\":" + std::to_string(renderer->model.glassBlendTintStrength)
+        + ",\"glassBlendRoughness\":" + std::to_string(renderer->model.glassBlendRoughness)
+        + ",\"glassBlendFakeReflectionStrength\":" + std::to_string(renderer->model.glassBlendFakeReflectionStrength)
+        + ",\"normalBlendProtected\":" + std::string(renderer->model.normalBlendProtected ? "true" : "false")
         + ",\"materialPresetReflectionStatus\":\"" + solum::escapeJson(renderer->model.materialPresetReflectionStatus) + "\""
         + ",\"fakeCubemapDebugViewStatus\":\"" + solum::escapeJson(renderer->model.fakeCubemapDebugViewStatus) + "\""
         + ",\"reflectionZonesDebugViewStatus\":\"" + solum::escapeJson(renderer->model.reflectionZonesDebugViewStatus) + "\""

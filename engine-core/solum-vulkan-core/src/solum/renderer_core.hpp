@@ -986,6 +986,15 @@ struct RendererCore {
         model.glassEdgeReflectionStatus = "ok_p26_edge_fresnel_boost";
         model.glassReflectionSourceStatus = "p24_fake_cubemap_probe";
         model.glassRoughnessResponseStatus = "ok_roughness_reduces_clarity";
+        model.glassBlendFormulaMode = "glass_blend_final_polish";
+        model.glassType = material.glassType == 1 ? "Solid" : "Thin";
+        model.glassBlendBodyAlpha = clampFloat((material.glassType == 1 ? 0.10f : 0.06f) + material.glassOpacity * (material.glassType == 1 ? 0.74f : 0.58f), 0.10f, 0.92f);
+        model.glassBlendEdgeStrength = clampFloat(0.18f + material.glassEdge * (material.glassType == 1 ? 0.40f : 0.52f), 0.18f, 1.55f);
+        model.glassBlendSpecularStrength = clampFloat((material.glassType == 1 ? 1.08f : 1.18f) * (1.34f - material.glassRoughness * 0.62f), 0.48f, 1.60f);
+        model.glassBlendTintStrength = clampFloat((material.glassType == 1 ? 0.42f : 0.26f) + material.glassOpacity * 0.34f, 0.20f, 0.86f);
+        model.glassBlendRoughness = material.glassRoughness;
+        model.glassBlendFakeReflectionStrength = clampFloat(material.reflectionIntensity * (0.42f + material.glassEdge * 0.32f) * (1.0f - material.glassRoughness * 0.48f), 0.0f, 2.0f);
+        model.normalBlendProtected = true;
         model.glassThicknessFakeStatus = "not_used";
         model.glassTransparencyMode = "vulkan_blend_straight_alpha";
         model.glassSortingStatus = "glass_after_opaque_cutout";
@@ -1206,7 +1215,7 @@ struct RendererCore {
         model.transparencyDeferredStatus = "transparent_glass_queue_after_opaque_cutout";
     }
 
-    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, float reflectionContrast, float reflectionSaturation, float motionReflectionScale, float motionClearcoatScale, int selectedSlot, float slotMetallic, float slotRoughness, float slotNormalScale, float slotAo, float slotGloss, float slotCoat, float alphaCutoffValue, float emissiveIntensity, int materialPreset, int glassEnabled, float glassOpacity, float glassEdge, float glassRoughness, int glassTintPreset, int glassRenderMode, int manualGlassSlotOverride) {
+    bool setLightingControls(int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, float reflectionContrast, float reflectionSaturation, float motionReflectionScale, float motionClearcoatScale, int selectedSlot, float slotMetallic, float slotRoughness, float slotNormalScale, float slotAo, float slotGloss, float slotCoat, float alphaCutoffValue, float emissiveIntensity, int materialPreset, int glassEnabled, float glassOpacity, float glassEdge, float glassRoughness, int glassTintPreset, int glassRenderMode, int glassType, int manualGlassSlotOverride) {
         applyLightPreset(lightPreset);
         material.sunIntensity = clampFloat(sunIntensity, 0.5f, 4.0f);
         material.ambientIntensity = clampFloat(ambientIntensity, 0.1f, 2.0f);
@@ -1240,6 +1249,7 @@ struct RendererCore {
         material.glassRoughness = clampFloat(glassRoughness, 0.0f, 1.0f);
         material.glassTintPreset = ((glassTintPreset % 8) + 8) % 8;
         material.glassRenderMode = ((glassRenderMode % 3) + 3) % 3;
+        material.glassType = glassType == 1 ? 1 : 0;
         selectedMaterialSlot = selectedSlot;
         manualGlassSlot = manualGlassSlotOverride;
         selectedSlotMetallicOverride = clampFloat(slotMetallic, 0.0f, 1.0f);
@@ -1731,6 +1741,11 @@ struct RendererCore {
                     pc.material.alphaMode = slot.alphaMode;
                     pc.material.materialId = range.materialSlot;
                     pc.material.materialTypeHint = slot.materialTypeHint;
+                    MaterialRoute drawRoute = slot.materialRoute;
+                    if (range.materialSlot == manualGlassSlot && slot.alphaMode == 0 && material.glassEnabled != 0) {
+                        drawRoute = MaterialRoute::GlassSemanticOpaque;
+                    }
+                    pc.material.materialRoute = static_cast<int>(drawRoute);
                     if (!glassPass && material.glassEnabled == 0 && slot.materialTypeHint == 6) {
                         pc.material.materialTypeHint = 4;
                         pc.material.materialPresetHint = MaterialPresetBalanced;

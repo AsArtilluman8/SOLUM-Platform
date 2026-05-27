@@ -87,25 +87,30 @@ struct MaterialConstants {
 
 inline float semanticGlassFallbackAlpha(float opacity) {
     const float t = opacity < 0.0f ? 0.0f : (opacity > 1.0f ? 1.0f : opacity);
-    const float density = std::pow(t, 0.78f);
-    const float bodyAlpha = 0.11f + density * 0.67f;
-    if (bodyAlpha < 0.12f) return 0.12f;
-    if (bodyAlpha > 0.82f) return 0.82f;
+    const float density = std::pow(t, 0.86f);
+    const float bodyAlpha = 0.15f + density * 0.67f;
+    if (bodyAlpha < 0.16f) return 0.16f;
+    if (bodyAlpha > 0.84f) return 0.84f;
     return bodyAlpha;
 }
 
-inline float semanticGlassBalancedTintStrength(float opacity) {
+inline float semanticGlassDirectBaseInfluence(float opacity) {
     const float t = opacity < 0.0f ? 0.0f : (opacity > 1.0f ? 1.0f : opacity);
-    const float density = std::pow(t, 0.78f);
-    const float tintStrength = 0.52f + density * 0.34f;
-    if (tintStrength < 0.52f) return 0.52f;
-    if (tintStrength > 0.86f) return 0.86f;
-    return tintStrength;
+    return 0.10f + t * 0.12f;
 }
 
-inline float semanticGlassBalancedRimStrength(float edge) {
+inline float semanticGlassDirectTintInfluence(float opacity) {
+    return 1.0f - semanticGlassDirectBaseInfluence(opacity);
+}
+
+inline float semanticGlassDirectRimStrength(float edge) {
     const float e = edge < 0.0f ? 0.0f : (edge > 2.0f ? 2.0f : edge);
-    return 1.10f + (e * 0.5f) * 0.35f;
+    return 1.18f + (e * 0.5f) * 0.40f;
+}
+
+inline float semanticGlassDirectSpecularStrength(float edge) {
+    const float e = edge < 0.0f ? 0.0f : (edge > 2.0f ? 2.0f : edge);
+    return 0.82f + (e * 0.5f) * 0.42f;
 }
 
 inline const char* lightPresetName(int preset) {

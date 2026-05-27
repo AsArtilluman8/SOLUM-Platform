@@ -508,3 +508,672 @@ Codex/agents may use it for context, but must not implement DRAFT systems unless
 Before implementing any large DRAFT block, ask/confirm scope in the task text.
 
 Safe to implement without new concept discussion only when the task is precise, narrow, and tied to the current roadmap gate.
+---
+
+# SOLUM Platform Roadmap Notes — Glass, Materials, World Reaction, Living World
+
+Status: concept, roadmap, and design memory.  
+These notes are not all final implementation rules. Before any major block is implemented, it must be reviewed with the project owner, sliced into a safe patch, tested on Android/Termux, and validated against FPS, UI workflow, and runtime stability.
+
+This document is intended to prevent loss of the larger SOLUM vision while near-term work continues on glass, materials, FPS, UI, lighting, shadows, and renderer foundation.
+
+---
+
+## 1. Current Foundation Status
+
+SOLUM Platform is currently building the shared foundation for future SOLUM systems:
+
+- Vulkan render core
+- GLB / mesh / material route
+- glass route
+- material diagnostics
+- runtime UI controls
+- Android / Termux build workflow
+- future Labs ecosystem
+- future game/runtime systems
+
+The goal is not only one game scene. The goal is a reusable foundation that can later support:
+
+- SOLUM Engine
+- SOLUM Launcher
+- Material Studio
+- VFX Studio
+- Character Studio
+- Motion Studio
+- World Studio
+- Sound Studio
+- Asset Hub
+- future gameplay prototypes
+
+The runtime must stay clean and lightweight. Heavy experimentation, training, tuning, authoring, and ML can happen in separate labs/tools, then export compact runtime data.
+
+Core direction:
+
+```text
+Labs create and tune.
+Runtime consumes clean data.
+Engine stays fast.
+```
+
+---
+
+## 2. Near-Term Patch Roadmap
+
+This is the current likely direction after P32 merge. The exact order may change if testing exposes blockers.
+
+### P32D1 — Glass Per-Material Diagnostics
+
+Goal: diagnose why normal standalone glass responds to opacity/tint, but car window glass responds weakly or not live.
+
+Required output:
+
+- per-material glass diagnostics
+- selected candidate info
+- car glass material info if detectable
+- applied opacity/tint values
+- shader alpha/tint values
+- queue/pass info
+- exact reason if UI values are not applied
+
+No blind visual fix. Diagnostics first.
+
+### P32D2 — Car Glass Live Opacity/Tint Fix
+
+Goal: fix the exact route found by P32D1.
+
+Acceptance:
+
+- car glass opacity 0.2 / 0.6 / 1.0 visibly differs
+- tint presets visibly differ
+- update is live without moving camera
+- normal standalone glass still works
+- Show Glass Geometry still works
+- Glass On/Off still works
+
+### P32D3 — Glass Quality Hardening
+
+Goal: make glass visually better without heavy refraction.
+
+Possible features:
+
+- thin glass mode
+- solid / thick glass mode
+- rim / edge highlight
+- fake reflection / specular
+- safer double-sided / backface handling
+- better sorting diagnostics
+- mobile-friendly only
+
+Do not add expensive SSR/refraction yet.
+
+### P32D4 — Glass UI / Debug Cleanup
+
+Goal: clean Glass Lab UI after route is stable.
+
+Rules:
+
+- user-facing controls stay simple
+- debug/proof details move under Debug
+- Glass Route Test becomes readable
+- no noisy labels in normal mode
+
+### P33 — Material Route Separation Foundation
+
+Goal: stop mixing unrelated materials in one path.
+
+Separate material routes conceptually:
+
+- Opaque PBR
+- Glass
+- Metal / Chrome
+- Mirror / Reflection special case
+- Fabric / Hair future
+- Foliage / Cutout future
+- Emission future
+- Decal future
+
+Do not implement everything at once. First make architecture clean.
+
+### P34 — Metal / Chrome / Glossy Polish
+
+Goal: improve hard-surface materials after routes are separated.
+
+Focus:
+
+- metalness / roughness response
+- chrome-like highlight
+- glossy paint
+- better specular
+- simple mobile reflection illusion
+- diagnostics per material route
+
+### P35 — Mirror / High Reflection Special Case
+
+Goal: add limited expensive-looking reflection only for rare special surfaces.
+
+Rules:
+
+- not general SSR everywhere
+- special-case mirror / royal glass / hero surface
+- controlled quality
+- mobile fallback
+- debug cost visible
+
+### P36 — UI Cleanup Pass
+
+Goal: organize the editor/lab UI.
+
+Direction:
+
+- top tabs or compact categories
+- Scene / Materials / Glass / Lighting / Debug / Performance
+- hide proof/debug from normal workflow
+- reduce clutter
+- keep touch-friendly controls
+
+### P37 — FPS / Performance Pass
+
+Goal: make renderer measurable and stable.
+
+Track:
+
+- FPS
+- frame time
+- draw count
+- material route counts
+- glass count
+- debug overhead
+- quality presets
+- Mali-friendly defaults
+
+### P38 — Lighting / Shadow Polish
+
+Goal: after material routes are stable, continue light/shadow quality.
+
+Focus:
+
+- sun / ambient balance
+- specular readability
+- cascaded shadow polish
+- local light future
+- mobile-safe cinematic look
+
+### P39 — World Reaction / VFX Prototype Planning
+
+Goal: prepare later integration of reaction physics concepts.
+
+Do not implement full world reaction yet. First define runtime data, impulse events, and test scenes.
+
+---
+
+## 3. Material System Direction
+
+SOLUM materials must not become one mixed shader path where glass, metal, fabric, foliage, mirror, and opaque objects fight each other.
+
+Each material route should eventually have:
+
+- detection rules
+- runtime flags
+- shader path
+- diagnostics
+- UI controls
+- fallback behavior
+- mobile quality level
+
+Glass must not classify all alpha materials as glass. Foliage, grass, fabric, petals, leaves, mask/cutout objects must stay out of glass route unless explicitly assigned.
+
+Semantic material names can help detect glass / window / lens, but must not override every alpha material blindly.
+
+Material route goal:
+
+```text
+Clear route.
+Clear debug.
+Clear fallback.
+No hidden material mixing.
+```
+
+---
+
+## 4. SOLUM Feeling: What the Player Should Feel
+
+SOLUM should not chase perfect AAA simulation first. The priority is believable response.
+
+The player should feel:
+
+- glass is glass, not just a transparent texture
+- metal is heavy and reflective, not just gray
+- water has resistance and movement
+- mud pulls the body down
+- snow compresses under weight
+- grass bends and remembers steps briefly
+- magic has force, shape, sound, and consequence
+- enemies fall because of direction, mass, balance, and surface, not because a generic hit animation played
+- NPCs and crowds feel alive without simulating every person fully
+
+The target is:
+
+```text
+believable response
+clear cause and effect
+mobile-friendly illusion
+good diagnostics
+upgrade path later
+```
+
+Every future system should pass these questions:
+
+1. Does the player feel it?
+2. Does it explain itself visually?
+3. Does it avoid mobile FPS collapse?
+4. Can it be debugged?
+5. Does it add gameplay feeling, not only visual noise?
+6. Can it be reduced to a cheaper quality tier?
+
+---
+
+## 5. Reaction Physics Future Direction
+
+SOLUM world reaction should be based on a shared impulse system:
+
+```text
+event creates impulse
+surface reacts
+body reacts
+VFX reacts
+sound reacts
+NPC reacts
+```
+
+Core future concept:
+
+```text
+WorldImpulse:
+- position
+- direction
+- force
+- radius
+- duration
+- type
+- surface
+- source
+```
+
+This should be "directed believable reaction", not full simulation.
+
+### Surface identity rules
+
+Each surface should react by material identity:
+
+- water: ripples, wake, splash, foam, wetness
+- mud: deep footprints, sticky droplets, wet marks
+- swamp: slow sinking, bubbles, viscous recovery
+- sand: dry depression, dust, soft sliding
+- snow: compressed hole, powder, soft landing
+- grass: bend field, temporary trail, recovery
+- stone: chips/cracks only on strong impact
+- wood: splinters/props reaction
+
+Important rule:
+
+```text
+No rocks from water.
+No dry dust from pure water.
+No boulders from snow/grass unless earth magic or stone source exists.
+```
+
+### Surface feeling target
+
+Water should not be only circles on a plane. It should feel like shallow water:
+
+- foot enters water -> local depression, small splash, ripple
+- walking -> V-shaped wake and wet legs
+- strong impact -> splash crown, droplets, mist, foam
+- lightning on water -> electric ripple / glow
+- fire on water -> steam, not rocks
+
+Mud should feel sticky:
+
+- foot sinks
+- step delays
+- dark wet footprint
+- sticky droplets when foot lifts
+- falling creates mud mark on body
+
+Swamp should feel worse than mud:
+
+- deeper sink
+- slower movement
+- bubbles
+- slow recovery of the hole
+- heavy, sticky falling and getting up
+
+Sand should feel dry:
+
+- shallow depression
+- low dust
+- sliding foot
+- no wet shine
+
+Snow should feel soft and deep:
+
+- compressed footprint
+- powder around step
+- soft landing puff
+- snow marks on boots/knees
+
+Grass should feel alive:
+
+- bends by foot direction
+- bends by wind/impulse wave
+- leaves temporary trail
+- slowly recovers
+
+---
+
+## 6. Character Reaction / Animation Future Direction
+
+Characters should not use one reaction per ability.
+
+Reaction must depend on:
+
+- force
+- distance
+- direction
+- body mass
+- balance
+- current surface
+- stance
+- hit side
+- magic type
+
+Future reaction library:
+
+- micro flinch
+- cover face
+- brace
+- foot adjust
+- step back
+- side stagger
+- spin stagger
+- slip recover
+- knee buckle
+- fall back
+- fall forward
+- side fall
+- trip fall
+- knee collapse
+- airborne launch
+- slide fall
+- lightning spasm
+- heat recoil
+- water slip
+- wind push
+- slash reaction
+
+SOLUM should prefer hybrid/fake active ragdoll:
+
+```text
+animation drives body
+physics adds weight, delay, inertia, landing
+recovery returns character to control
+```
+
+No full ragdoll sack behavior unless explicitly needed.
+
+### Reaction examples
+
+Weak impulse:
+
+- flinch
+- cover face
+- brace
+- foot adjustment
+
+Medium impulse:
+
+- step back
+- side stagger
+- spin stagger
+- slip recover
+- knee buckle
+
+Strong impulse:
+
+- fall back if hit from front/chest
+- fall forward if hit from behind
+- side fall if hit from side
+- trip fall if legs/surface are compromised
+- airborne launch only for strong upward/earth/explosion impulse
+
+Magic-specific:
+
+- Storm Lance should stun/spasm more than throw
+- Azure Tide should slip, push, wet, and disturb water
+- Verdant Pulse should push cloth/grass/leaves/trees
+- Ember Rupture should cause heat recoil, smoke, sparks
+- Earth Break should crack ground and launch debris only from valid surfaces
+- Crimson Slash should create directional stagger/spin, not generic explosion
+
+---
+
+## 7. Magic / VFX Future Direction
+
+Magic must not be only different colors.
+
+Each school/element should have its own silhouette, timing, force profile, sound, and surface reaction.
+
+Examples:
+
+- Crimson Slash: narrow cutting arc, side stagger, water split line
+- Azure Tide: water sheet/wave, wetness, slip
+- Arcane Nova: layered radial force pulse
+- Storm Lance: branching lightning, stun/spasm, electric water ripple
+- Verdant Pulse: wind/nature wave, grass/tree/leaves response
+- Ember Rupture: heat, smoke, sparks, recoil, steam on water
+- Earth Break: cracks, stone chunks only from valid surfaces
+
+Rule:
+
+```text
+If color is removed, the player should still recognize the magic by shape and reaction.
+```
+
+VFX should contain:
+
+- silhouette
+- timing
+- light pulse
+- camera response
+- particles only where they make sense
+- surface-specific reaction
+- sound profile later
+
+VFX should not be:
+
+- same circle with different color
+- generic particle spam
+- rocks from impossible surfaces
+- huge effect without gameplay cause
+
+---
+
+## 8. Progression / Body / School Direction
+
+Future gameplay should not rely only on typical stat tables.
+
+Potential direction:
+
+```text
+Body + Origin + Fate Mark + School + Weapon + Craft + Player Skill
+```
+
+Body should affect how techniques feel:
+
+- light body: speed, agility, easier displacement, faster recovery
+- heavy body: mass, stability, heavier impact, slower recovery
+- trained body: better control, rhythm, balance
+
+School should not erase body identity. It should reinterpret it.
+
+Example:
+
+- light body + Stone School = technical stability, precise counters, not brute force
+- heavy body + Wind School = short powerful mobility, not feather-like movement
+- blacksmith origin + light body = precise weapon balancing, hidden mechanisms, magic channels
+- blacksmith origin + heavy body = heavy weapon forging, armor, guard pressure
+
+Controlled randomness should create identity, not forced rerolls.
+
+Rules:
+
+- no dead classes
+- no useless origins
+- no pure stat-only backgrounds
+- no mandatory rerolling for best start
+- rare path means unusual/hard/dangerous, not automatically stronger
+
+---
+
+## 9. NPC / Animal Behavior Future Direction
+
+SOLUM may use offline ML/training tools for animals, NPC instincts, movement, and animation research.
+
+Runtime rule:
+
+```text
+Heavy ML training stays outside the game runtime.
+Game runtime consumes lightweight exported behavior packages.
+```
+
+Possible exported package:
+
+- behavior JSON
+- instinct profile
+- state machine
+- movement curves
+- procedural animation rules
+- skeleton map
+- animation clips
+- reaction tags
+- debug/explain report
+
+This allows experiments with cats, animals, NPCs, crowd behavior, and movement without shipping heavy ML in the game.
+
+This is especially important for:
+
+- animal movement
+- pet / creature behavior
+- NPC instincts
+- crowd motion
+- non-scripted idle behavior
+- animation selection
+- future Character Studio / Motion Studio
+
+---
+
+## 10. Crowd Audio Future Direction
+
+Crowd audio should use a layered “broom” model:
+
+```text
+far crowd = shared bed
+near important people = selected focus voices
+```
+
+Architecture:
+
+```text
+Crowd Ambience Manager
+- global crowd bed
+- zone emitters
+- focus voice selector
+- NPC voice pool
+- occlusion / muffling
+- distance low-pass
+- ducking for nearby speech
+```
+
+Budget example:
+
+- 1–3 global crowd loops
+- 2–8 zone emitters
+- 2–4 active NPC focus voices
+- 1 important dialogue voice
+
+Audio islands:
+
+- fish stall
+- forge
+- cloth stall
+- tavern
+- port
+- gate
+- market square
+
+The player should feel that many NPCs are alive, while the engine only plays a small controlled number of real voices.
+
+Important sound behavior:
+
+- far crowd is blended murmur
+- nearby NPCs temporarily separate from the murmur
+- distance reduces high frequencies
+- occlusion muffles behind walls/tents
+- close speech ducks crowd bed slightly
+- important dialogue gets highest priority
+
+---
+
+## 11. Launcher / Labs Ecosystem Direction
+
+Long-term SOLUM may have one Launcher APK or central app that connects tools/labs.
+
+Possible apps/labs:
+
+- SOLUM Engine
+- Material Studio
+- VFX Studio
+- Character Studio
+- Motion Studio
+- World Studio
+- Sound Studio
+- Asset Hub
+
+Launcher direction:
+
+- one entry point
+- manage app/lab versions
+- open/install/update local APKs where Android allows
+- no hidden auto-update assumptions outside platform rules
+- keep engine runtime separate from heavy authoring tools
+
+Labs should export runtime-compatible data. They must not become beautiful but incompatible editors.
+
+Rule:
+
+```text
+What looks correct in Lab must export predictably to Engine.
+```
+
+---
+
+## 12. Scope Control Rule
+
+SOLUM has a large vision, but patches must stay grounded.
+
+Before implementing any future system:
+
+1. define the smallest test scene
+2. define the visible feeling
+3. define debug proof
+4. define mobile performance risk
+5. define fallback quality
+6. define what is explicitly not included
+
+Do not add major future systems directly into the renderer foundation without a clear slice.
+
+Near-term priority remains:
+
+```text
+glass -> material route separation -> metal/chrome/gloss -> mirror special case -> UI cleanup -> FPS -> lighting/shadows -> later world reaction/VFX/gameplay
+```

@@ -137,9 +137,79 @@ struct RendererCore {
     int activeTransparentGlassSlot = -1;
 
     RuntimeMaterialClass classifyRuntimeMaterial(const MaterialSlotState& slot) const {
-        if (slot.materialTypeHint == 6 && material.glassEnabled != 0) return RuntimeMaterialClass::TransparentGlass;
-        if (slot.alphaMode == 1) return RuntimeMaterialClass::Cutout;
+        if ((slot.materialRoute == MaterialRoute::GlassBlend || slot.materialRoute == MaterialRoute::GlassSemanticOpaque) && material.glassEnabled != 0) return RuntimeMaterialClass::TransparentGlass;
+        if (slot.materialRoute == MaterialRoute::FoliageCutout || slot.alphaMode == 1) return RuntimeMaterialClass::Cutout;
         return RuntimeMaterialClass::Opaque;
+    }
+
+    const char* alphaModeName(int alphaMode) const {
+        if (alphaMode == 1) return "MASK";
+        if (alphaMode == 2) return "BLEND";
+        return "OPAQUE";
+    }
+
+    const char* materialRouteReason(const MaterialSlotState& slot) const {
+        switch (slot.materialRoute) {
+            case MaterialRoute::GlassBlend: return "semantic_glass_blend_alpha";
+            case MaterialRoute::GlassSemanticOpaque: return "semantic_or_manual_opaque_glass_preview";
+            case MaterialRoute::FoliageCutout: return "mask_cutout_or_foliage_name_guard";
+            case MaterialRoute::FabricHair: return "fabric_hair_name_guard";
+            case MaterialRoute::Emission: return "emissive_factor_or_texture";
+            case MaterialRoute::Decal: return "decal_name_or_alpha_label";
+            case MaterialRoute::Chrome: return "chrome_placeholder";
+            case MaterialRoute::Mirror: return "mirror_placeholder";
+            case MaterialRoute::Metal: return "metal_placeholder";
+            case MaterialRoute::OpaquePbr: return "default_opaque_pbr";
+            default: return "unknown_route";
+        }
+    }
+
+    void updateMaterialRouteDiagnostics() {
+        model.routeOpaquePbrCount = model.routeGlassBlendCount = model.routeGlassSemanticOpaqueCount = 0;
+        model.routeMetalCount = model.routeChromeCount = model.routeMirrorCount = 0;
+        model.routeFoliageCutoutCount = model.routeFabricHairCount = 0;
+        model.routeEmissionCount = model.routeDecalCount = model.routeUnknownCount = 0;
+        for (size_t i = 0; i < modelMaterialSlots.size(); ++i) {
+            const auto& slot = modelMaterialSlots[i];
+            MaterialRoute route = slot.materialRoute;
+            if ((int)i == manualGlassSlot && slot.alphaMode == 0) route = MaterialRoute::GlassSemanticOpaque;
+            switch (route) {
+                case MaterialRoute::OpaquePbr: ++model.routeOpaquePbrCount; break;
+                case MaterialRoute::GlassBlend: ++model.routeGlassBlendCount; break;
+                case MaterialRoute::GlassSemanticOpaque: ++model.routeGlassSemanticOpaqueCount; break;
+                case MaterialRoute::Metal: ++model.routeMetalCount; break;
+                case MaterialRoute::Chrome: ++model.routeChromeCount; break;
+                case MaterialRoute::Mirror: ++model.routeMirrorCount; break;
+                case MaterialRoute::FoliageCutout: ++model.routeFoliageCutoutCount; break;
+                case MaterialRoute::FabricHair: ++model.routeFabricHairCount; break;
+                case MaterialRoute::Emission: ++model.routeEmissionCount; break;
+                case MaterialRoute::Decal: ++model.routeDecalCount; break;
+                default: ++model.routeUnknownCount; break;
+            }
+        }
+        model.selectedMaterialIndex = selectedMaterialSlot;
+        model.selectedManualGlass = manualGlassSlot == selectedMaterialSlot && selectedMaterialSlot >= 0;
+        model.selectedDrawQueue = "none";
+        if (selectedMaterialSlot >= 0 && (size_t)selectedMaterialSlot < modelMaterialSlots.size()) {
+            const auto& selected = modelMaterialSlots[(size_t)selectedMaterialSlot];
+            MaterialRoute route = selected.materialRoute;
+            const bool manualOpaqueGlass = model.selectedManualGlass && selected.alphaMode == 0;
+            if (manualOpaqueGlass) route = MaterialRoute::GlassSemanticOpaque;
+            model.selectedAlphaMode = alphaModeName(selected.alphaMode);
+            model.selectedBaseColorAlpha = selected.baseColorFactor[3];
+            model.selectedSemanticGlass = model.selectedManualGlass || selected.materialRoute == MaterialRoute::GlassBlend || selected.materialRoute == MaterialRoute::GlassSemanticOpaque || selected.materialTypeHint == 6;
+            model.selectedMaterialRoute = materialRouteName(route);
+            model.selectedMaterialRouteReason = manualOpaqueGlass ? "manual_glass_override_opaque_preview" : materialRouteReason(selected);
+            if (selected.runtimeClass == RuntimeMaterialClass::TransparentGlass) model.selectedDrawQueue = "glass";
+            else if (selected.runtimeClass == RuntimeMaterialClass::Cutout) model.selectedDrawQueue = "cutout";
+            else model.selectedDrawQueue = "opaque";
+        } else {
+            model.selectedAlphaMode = "OPAQUE";
+            model.selectedBaseColorAlpha = 1.0f;
+            model.selectedSemanticGlass = false;
+            model.selectedMaterialRoute = "Unknown";
+            model.selectedMaterialRouteReason = "no_selected_material";
+        }
     }
 
     void rebuildRenderQueues() {
@@ -148,13 +218,21 @@ struct RendererCore {
         glassQueue.clear();
         uint32_t glassMaterials = 0;
         uint32_t semanticOpaqueFallbacks = 0;
-        for (auto& slot : modelMaterialSlots) {
+        for (size_t i = 0; i < modelMaterialSlots.size(); ++i) {
+            auto& slot = modelMaterialSlots[i];
             slot.runtimeClass = classifyRuntimeMaterial(slot);
-            if (slot.materialTypeHint == 6) {
+            if ((int)i == manualGlassSlot && slot.alphaMode == 0 && material.glassEnabled != 0) {
+                slot.runtimeClass = RuntimeMaterialClass::TransparentGlass;
+            }
+            if (slot.materialRoute == MaterialRoute::GlassBlend || slot.materialRoute == MaterialRoute::GlassSemanticOpaque) {
                 ++glassMaterials;
-                if (slot.alphaMode == 0 && slot.baseColorFactor[3] >= 0.98f) ++semanticOpaqueFallbacks;
+                if (slot.materialRoute == MaterialRoute::GlassSemanticOpaque) ++semanticOpaqueFallbacks;
+            } else if ((int)i == manualGlassSlot && slot.alphaMode == 0) {
+                ++glassMaterials;
+                ++semanticOpaqueFallbacks;
             }
         }
+        updateMaterialRouteDiagnostics();
         for (const auto& range : modelDrawRanges) {
             RuntimeMaterialClass materialClass = RuntimeMaterialClass::Opaque;
             if (range.materialSlot >= 0 && (size_t)range.materialSlot < modelMaterialSlots.size()) {
@@ -176,7 +254,7 @@ struct RendererCore {
         model.glassEnabled = material.glassEnabled != 0;
         model.semanticOpaqueGlassFallbackActive = material.glassEnabled != 0 ? semanticOpaqueFallbacks : 0;
         model.glassFallbackAlphaApplied = semanticOpaqueFallbacks > 0 && material.glassEnabled != 0 ? semanticGlassFallbackAlpha(material.glassOpacity) : 0.0f;
-        model.glassVisibleFallbackReason = model.semanticOpaqueGlassFallbackActive > 0 ? "semantic_opaque_glass_alpha_one_safe_fallback" : "none";
+        model.glassVisibleFallbackReason = model.semanticOpaqueGlassFallbackActive > 0 ? "semantic_opaque_direct_glass" : "none";
         model.showGlassGeometryEnabled = material.activeDebugView == 74;
         model.showGlassGeometryStatus = model.showGlassGeometryEnabled ? "enabled_debug_overlay" : "off";
         model.glassRouteStatus = material.glassEnabled == 0 ? "disabled_by_ui_opaque_fallback" : (glassQueue.empty() ? "active_no_glass_ranges" : "active_glass_queue_ready");
@@ -803,15 +881,14 @@ struct RendererCore {
     }
 
     float materialRoleConfidence(const MaterialSlotState& slot) const {
-        if (slot.materialTypeHint == 6) return 0.94f;
-        if (slot.alphaMode == 2 || slot.baseColorFactor[3] < 0.98f) return 0.72f;
+        if (slot.materialRoute == MaterialRoute::GlassBlend || slot.materialRoute == MaterialRoute::GlassSemanticOpaque) return 0.94f;
         if (slot.materialTypeHint == 1 || slot.materialTypeHint == 2 || slot.materialTypeHint == 0 || slot.materialTypeHint == 3 || slot.materialTypeHint == 8) return 0.82f;
         return 0.38f;
     }
 
     const char* materialRoleSource(const MaterialSlotState& slot) const {
-        if (slot.materialTypeHint == 6) return "glass_like_hint_or_name_alpha";
-        if (slot.alphaMode == 2 || slot.baseColorFactor[3] < 0.98f) return "alpha_metadata";
+        if (slot.materialRoute == MaterialRoute::GlassBlend || slot.materialRoute == MaterialRoute::GlassSemanticOpaque) return "semantic_glass_route";
+        if (slot.alphaMode == 2 || slot.baseColorFactor[3] < 0.98f) return "alpha_metadata_non_glass";
         if (slot.materialTypeHint == 1) return "paint_hint_or_factor";
         if (slot.materialTypeHint == 2) return "metal_hint_or_factor";
         if (slot.materialTypeHint == 0) return "fabric_hint_or_roughness";
@@ -826,8 +903,7 @@ struct RendererCore {
         for (size_t i = 0; i < modelMaterialSlots.size(); ++i) {
             const auto& slot = modelMaterialSlots[i];
             float score = -1.0f;
-            if (slot.materialTypeHint == 6) score = 0.94f;
-            else if ((slot.alphaMode == 2 || slot.baseColorFactor[3] < 0.98f) && slot.materialTypeHint != 0 && slot.materialTypeHint != 1 && slot.materialTypeHint != 2 && slot.materialTypeHint != 3 && slot.materialTypeHint != 8) score = 0.68f;
+            if (slot.materialRoute == MaterialRoute::GlassBlend || slot.materialRoute == MaterialRoute::GlassSemanticOpaque) score = 0.94f;
             if (score > bestScore) {
                 bestScore = score;
                 best = (int)i;
@@ -952,7 +1028,7 @@ struct RendererCore {
         model.glassReflectionResponseStatus = "ok_p24_probe_visible_guarded";
         model.glassEnergyGuardStatus = "ok_clamped";
         model.glassOverbrightGuardStatus = "ok";
-        model.glassInvisibleGuardStatus = model.semanticOpaqueGlassFallbackActive > 0 ? "ok_semantic_opaque_fallback_alpha_kept_visible" : "ok_minimum_surface_kept";
+        model.glassInvisibleGuardStatus = model.semanticOpaqueGlassFallbackActive > 0 ? "ok_semantic_opaque_direct_glass_body_rim_specular" : "ok_minimum_surface_kept";
         model.glassMaskDebugViewStatus = "shader_applied";
         model.glassOpacityDebugViewStatus = "shader_applied";
         model.glassFresnelDebugViewStatus = "shader_applied";
@@ -969,7 +1045,7 @@ struct RendererCore {
         model.showGlassGeometryEnabled = material.activeDebugView == 74;
         model.showGlassGeometryStatus = model.showGlassGeometryEnabled ? "enabled_debug_overlay" : "off";
         model.glassFallbackAlphaApplied = model.semanticOpaqueGlassFallbackActive > 0 ? semanticGlassFallbackAlpha(material.glassOpacity) : 0.0f;
-        model.glassVisibleFallbackReason = model.semanticOpaqueGlassFallbackActive > 0 ? "semantic_opaque_glass_alpha_one_safe_fallback" : "none";
+        model.glassVisibleFallbackReason = model.semanticOpaqueGlassFallbackActive > 0 ? "semantic_opaque_direct_glass" : "none";
         model.glassMaterialNames = diagnosticsFieldList("glassMaterialName");
         model.glassClassificationReason = diagnosticsFieldList("glassClassificationReason");
         model.p25GlassPreservedStatus = "ok";
@@ -1007,7 +1083,7 @@ struct RendererCore {
         model.selectedMaterialRoleSource = selectedMaterialSlot >= 0 && (size_t)selectedMaterialSlot < modelMaterialSlots.size() ? materialRoleSource(modelMaterialSlots[(size_t)selectedMaterialSlot]) : "none";
         model.materialRoleCandidateCount = (uint32_t)modelMaterialSlots.size();
         model.glassCandidateCount = 0;
-        for (const auto& slot : modelMaterialSlots) if (slot.materialTypeHint == 6 || slot.alphaMode == 2 || slot.baseColorFactor[3] < 0.98f) model.glassCandidateCount++;
+        for (const auto& slot : modelMaterialSlots) if (slot.materialRoute == MaterialRoute::GlassBlend || slot.materialRoute == MaterialRoute::GlassSemanticOpaque) model.glassCandidateCount++;
         model.bestGlassCandidateSlot = bestGlassSlot;
         model.bestGlassCandidateName = materialNameFromDiagnostics(bestGlassSlot);
         model.bestGlassCandidateConfidence = bestGlassSlot >= 0 ? materialRoleConfidence(modelMaterialSlots[(size_t)bestGlassSlot]) : 0.0f;

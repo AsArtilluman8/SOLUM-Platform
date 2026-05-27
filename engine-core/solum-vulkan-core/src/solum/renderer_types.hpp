@@ -87,7 +87,30 @@ struct MaterialConstants {
 
 inline float semanticGlassFallbackAlpha(float opacity) {
     const float t = opacity < 0.0f ? 0.0f : (opacity > 1.0f ? 1.0f : opacity);
-    return 0.20f + t * 0.54f;
+    const float density = std::pow(t, 0.86f);
+    const float bodyAlpha = 0.15f + density * 0.67f;
+    if (bodyAlpha < 0.16f) return 0.16f;
+    if (bodyAlpha > 0.84f) return 0.84f;
+    return bodyAlpha;
+}
+
+inline float semanticGlassDirectBaseInfluence(float opacity) {
+    const float t = opacity < 0.0f ? 0.0f : (opacity > 1.0f ? 1.0f : opacity);
+    return 0.10f + t * 0.12f;
+}
+
+inline float semanticGlassDirectTintInfluence(float opacity) {
+    return 1.0f - semanticGlassDirectBaseInfluence(opacity);
+}
+
+inline float semanticGlassDirectRimStrength(float edge) {
+    const float e = edge < 0.0f ? 0.0f : (edge > 2.0f ? 2.0f : edge);
+    return 1.18f + (e * 0.5f) * 0.40f;
+}
+
+inline float semanticGlassDirectSpecularStrength(float edge) {
+    const float e = edge < 0.0f ? 0.0f : (edge > 2.0f ? 2.0f : edge);
+    return 0.82f + (e * 0.5f) * 0.42f;
 }
 
 inline const char* lightPresetName(int preset) {
@@ -244,10 +267,40 @@ enum class RuntimeMaterialClass : int {
     TransparentGlass = 2
 };
 
+enum class MaterialRoute : int {
+    OpaquePbr = 0,
+    GlassBlend = 1,
+    GlassSemanticOpaque = 2,
+    Metal = 3,
+    Chrome = 4,
+    Mirror = 5,
+    FoliageCutout = 6,
+    FabricHair = 7,
+    Emission = 8,
+    Decal = 9,
+    Unknown = 10
+};
+
 inline const char* runtimeMaterialClassName(RuntimeMaterialClass materialClass) {
     if (materialClass == RuntimeMaterialClass::Cutout) return "CUTOUT";
     if (materialClass == RuntimeMaterialClass::TransparentGlass) return "TRANSPARENT_GLASS";
     return "OPAQUE";
+}
+
+inline const char* materialRouteName(MaterialRoute route) {
+    switch (route) {
+        case MaterialRoute::OpaquePbr: return "OpaquePbr";
+        case MaterialRoute::GlassBlend: return "GlassBlend";
+        case MaterialRoute::GlassSemanticOpaque: return "GlassSemanticOpaque";
+        case MaterialRoute::Metal: return "Metal";
+        case MaterialRoute::Chrome: return "Chrome";
+        case MaterialRoute::Mirror: return "Mirror";
+        case MaterialRoute::FoliageCutout: return "FoliageCutout";
+        case MaterialRoute::FabricHair: return "FabricHair";
+        case MaterialRoute::Emission: return "Emission";
+        case MaterialRoute::Decal: return "Decal";
+        default: return "Unknown";
+    }
 }
 
 struct MaterialSlotState {
@@ -267,6 +320,7 @@ struct MaterialSlotState {
     float emissiveFactor[3] = { 0.0f, 0.0f, 0.0f };
     int emissiveTextureSlot = -1;
     int materialPresetHint = 0;
+    MaterialRoute materialRoute = MaterialRoute::OpaquePbr;
     RuntimeMaterialClass runtimeClass = RuntimeMaterialClass::Opaque;
 };
 
@@ -317,6 +371,25 @@ struct ModelRenderState {
     uint32_t skippedPbrTextureCount = 0;
     uint32_t pbrTextureFallbackCount = 0;
     std::string materialSlotDiagnostics = "[]";
+    uint32_t routeOpaquePbrCount = 0;
+    uint32_t routeGlassBlendCount = 0;
+    uint32_t routeGlassSemanticOpaqueCount = 0;
+    uint32_t routeMetalCount = 0;
+    uint32_t routeChromeCount = 0;
+    uint32_t routeMirrorCount = 0;
+    uint32_t routeFoliageCutoutCount = 0;
+    uint32_t routeFabricHairCount = 0;
+    uint32_t routeEmissionCount = 0;
+    uint32_t routeDecalCount = 0;
+    uint32_t routeUnknownCount = 0;
+    int selectedMaterialIndex = 0;
+    std::string selectedAlphaMode = "OPAQUE";
+    float selectedBaseColorAlpha = 1.0f;
+    bool selectedSemanticGlass = false;
+    bool selectedManualGlass = false;
+    std::string selectedMaterialRoute = "Unknown";
+    std::string selectedMaterialRouteReason = "none";
+    std::string selectedDrawQueue = "none";
     std::string lightingStatus = "ok";
     float sunDirection[3] = { -0.35f, -0.82f, -0.45f };
     float sunColor[3] = { 1.0f, 0.96f, 0.88f };

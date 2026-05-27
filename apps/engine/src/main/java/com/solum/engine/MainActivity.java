@@ -1,7 +1,10 @@
 package com.solum.engine;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
@@ -76,6 +79,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static final int TEX_OCCLUSION = 3;
     private static final long FPS_SAMPLE_WINDOW_NS = 1_000_000_000L;
 
+    private enum MaterialRoute {
+        OpaquePbr,
+        GlassBlend,
+        GlassSemanticOpaque,
+        Metal,
+        Chrome,
+        Mirror,
+        FoliageCutout,
+        FabricHair,
+        Emission,
+        Decal,
+        Unknown
+    }
+
     private long nativeHandle = 0L;
     private TextView statusView;
     private TextView diagnosticsStatusView;
@@ -85,7 +102,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button quickExportButton;
     private Button debugZipButton;
     private Button glassRouteTestButton;
+    private Button glassDetailTestButton;
     private Button debugGlassRouteTestButton;
+    private Button debugGlassDetailTestButton;
     private Button chooseFolderButton;
     private Button importGlbButton;
     private Button scanModelsButton;
@@ -736,6 +755,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         glassRouteTestButton = compactButton("Glass Route Test");
         glassRouteTestButton.setOnClickListener(v -> exportGlassRouteTestFromButton());
         materialPanel.addView(glassRouteTestButton);
+        glassDetailTestButton = compactButton("Glass Detail Test");
+        glassDetailTestButton.setOnClickListener(v -> showGlassDetailTestFromButton());
+        materialPanel.addView(glassDetailTestButton);
         resetSelectedSlotButton = compactButton("Reset Selected Slot");
         resetSelectedSlotButton.setOnClickListener(v -> resetSelectedMaterialSlot());
         materialPanel.addView(resetSelectedSlotButton);
@@ -771,11 +793,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         debugZipButton.setOnClickListener(v -> exportDebugZipFromButton());
         debugGlassRouteTestButton = compactButton("Glass Route Test");
         debugGlassRouteTestButton.setOnClickListener(v -> exportGlassRouteTestFromButton());
+        debugGlassDetailTestButton = compactButton("Glass Detail Test");
+        debugGlassDetailTestButton.setOnClickListener(v -> showGlassDetailTestFromButton());
         diagnosticsStatusView.setBackgroundColor(Color.TRANSPARENT);
         debugPanel.addView(chooseFolderButton);
         debugPanel.addView(exportButton);
         debugPanel.addView(debugZipButton);
         debugPanel.addView(debugGlassRouteTestButton);
+        debugPanel.addView(debugGlassDetailTestButton);
         debugPanel.addView(diagnosticsStatusView);
         inspectorPanel.addView(debugPanel);
         root.addView(dockScroll);
@@ -1201,7 +1226,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if ("Glass".equals(role)) return 0.94f;
         if ("Paint".equals(role) || "Metal".equals(role) || "Fabric".equals(role) || "Rubber".equals(role) || "Emissive".equals(role)) return 0.82f;
         String alpha = slot.optString("alphaMode", "OPAQUE");
-        if ("BLEND".equals(alpha) || slot.optDouble("glassOpacityApplied", 1.0) < 0.98) return 0.68f;
+        if ("GlassBlend".equals(slot.optString("materialRoute", "")) || "GlassSemanticOpaque".equals(slot.optString("materialRoute", ""))) return 0.94f;
+        if ("BLEND".equals(alpha) || slot.optDouble("glassOpacityApplied", 1.0) < 0.98) return 0.38f;
         return 0.38f;
     }
 
@@ -1214,7 +1240,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if ("Fabric".equals(role)) return "fabric_hint_or_roughness";
         if ("Rubber".equals(role)) return "rubber_hint_or_roughness";
         if ("Emissive".equals(role)) return "emissive_factor_or_texture";
-        if ("BLEND".equals(slot.optString("alphaMode", "OPAQUE"))) return "alpha_metadata";
+        if ("BLEND".equals(slot.optString("alphaMode", "OPAQUE"))) return "alpha_metadata_non_glass";
         return "fallback_unknown";
     }
 
@@ -1228,7 +1254,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             String role = materialRoleFromSlot(slot);
             float score = -1.0f;
             if ("Glass".equals(role)) score = materialRoleConfidence(slot);
-            else if ("BLEND".equals(slot.optString("alphaMode", "OPAQUE")) && !"Paint".equals(role) && !"Metal".equals(role) && !"Fabric".equals(role) && !"Rubber".equals(role) && !"Emissive".equals(role)) score = 0.68f;
             if (score > bestScore) {
                 bestScore = score;
                 best = i;
@@ -2379,6 +2404,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
     }
 
+    private int parseIntOr(String raw, int fallback) {
+        try {
+            if (raw == null || raw.isEmpty()) return fallback;
+            return Integer.parseInt(raw);
+        } catch (Throwable ignored) {
+            return fallback;
+        }
+    }
+
     private String oneDecimal(float v) { return String.format(Locale.US, "%.1f", v); }
 
     private int intJsonField(String key, int fallback) {
@@ -2600,6 +2634,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 modelState.tangentBuildMode = mesh.tangentBuildMode;
                 modelState.pbrTextureSlotCount = mesh.pbrTextureSlotCount;
                 modelState.materialSlotDiagnostics = mesh.materialSlotDiagnostics;
+                modelState.materialDrawRangeDiagnostics = mesh.materialDrawRangeDiagnostics;
                 modelState.persistedModelBounds = "[" + jsonFloat(mesh.boundsMin[0]) + "," + jsonFloat(mesh.boundsMin[1]) + "," + jsonFloat(mesh.boundsMin[2]) + "]-[" + jsonFloat(mesh.boundsMax[0]) + "," + jsonFloat(mesh.boundsMax[1]) + "," + jsonFloat(mesh.boundsMax[2]) + "]";
                 modelState.persistedModelScale = mesh.modelScale;
                 selectedMaterialSlotCount = mesh.materialSlotCount;
@@ -3144,6 +3179,40 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         });
     }
 
+    private void showGlassDetailTestFromButton() {
+        if (glassDetailTestButton != null) {
+            glassDetailTestButton.setEnabled(false);
+            glassDetailTestButton.setText("Glass Detail...");
+        }
+        View poster = glassDetailTestButton != null ? glassDetailTestButton : statusView;
+        poster.post(() -> {
+            try {
+                applyLightingControls();
+                syncFpsDiagnosticsToNative();
+                String renderLab = getRenderLabStateForExport();
+                String body = glassDetailTestBody(renderLab);
+                if (materialStatusView != null) materialStatusView.setText(body);
+                if (diagnosticsStatusView != null) diagnosticsStatusView.setText(body);
+                ClipboardManager clipboard = (ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText("Glass Detail Test", body));
+                Log.i(TAG_DIAG, body);
+                debugZipStatus = "ok";
+                debugZipReason = "glass_detail_test_copied_to_clipboard";
+                debugZipIncludedFiles = "on_screen_clipboard_logcat";
+                if (glassDetailTestButton != null) glassDetailTestButton.setText("Glass Detail Test: copied");
+                if (debugGlassDetailTestButton != null) debugGlassDetailTestButton.setText("Glass Detail Test: copied");
+            } catch (Throwable t) {
+                debugZipStatus = "failed";
+                debugZipReason = shortThrowable(t);
+                writeCrashReport("glass_detail_test_failed", t);
+                if (glassDetailTestButton != null) glassDetailTestButton.setText("Glass Detail Failed");
+                if (debugGlassDetailTestButton != null) debugGlassDetailTestButton.setText("Glass Detail Failed");
+            }
+            updateDiagnosticsStatusPanel();
+            if (glassDetailTestButton != null) glassDetailTestButton.setEnabled(true);
+        });
+    }
+
     private String glassRouteTestBody(String renderLab) {
         return "SOLUM Glass Route Test\n"
             + "scene=" + SCENE_ID + "\n"
@@ -3162,8 +3231,232 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "glassVisibleFallbackReason=" + jsonStringField(renderLab, "glassVisibleFallbackReason", "none") + "\n"
             + "glassMaterialNames=" + jsonArrayField(renderLab, "glassMaterialNames", "[]") + "\n"
             + "glassClassificationReason=" + jsonArrayField(renderLab, "glassClassificationReason", "[]") + "\n"
+            + "routeOpaquePbrCount=" + jsonNumberField(renderLab, "routeOpaquePbrCount", "0") + "\n"
+            + "routeGlassBlendCount=" + jsonNumberField(renderLab, "routeGlassBlendCount", "0") + "\n"
+            + "routeGlassSemanticOpaqueCount=" + jsonNumberField(renderLab, "routeGlassSemanticOpaqueCount", "0") + "\n"
+            + "routeFoliageCutoutCount=" + jsonNumberField(renderLab, "routeFoliageCutoutCount", "0") + "\n"
+            + "routeFabricHairCount=" + jsonNumberField(renderLab, "routeFabricHairCount", "0") + "\n"
+            + "routeEmissionCount=" + jsonNumberField(renderLab, "routeEmissionCount", "0") + "\n"
+            + "selectedMaterialRoute=" + jsonStringField(renderLab, "selectedMaterialRoute", "Unknown") + "\n"
+            + "selectedMaterialRouteReason=" + jsonStringField(renderLab, "selectedMaterialRouteReason", "none") + "\n"
             + "glassRouteStatus=" + jsonStringField(renderLab, "glassRouteStatus", modelState.glassRouteStatus) + "\n";
     }
+
+    private String glassDetailTestBody(String renderLab) {
+        JSONObject selected = selectedMaterialJson();
+        JSONObject standalone = standaloneGlassCandidateJson();
+        JSONObject carGlass = carGlassCandidateJson();
+        String tint = glassTintColorStatus(glassTintPresetIndex);
+        String tintRgba = "(" + tint + ",1.00)";
+        StringBuilder b = new StringBuilder();
+        b.append("Glass Detail Test\n");
+        b.append("Global glass state:\n");
+        b.append("  glassEnabled=").append(glassEnabled).append("\n");
+        b.append("  glassRenderMode=").append(glassRenderModeName(glassRenderModeIndex)).append("\n");
+        b.append("  uiOpacity=").append(jsonFloat(glassOpacity)).append("\n");
+        b.append("  uiTintName=").append(glassTintPresetName(glassTintPresetIndex)).append("\n");
+        b.append("  uiTintRgba=").append(tintRgba).append("\n");
+        b.append("  glassMaterialCount=").append(jsonNumberField(renderLab, "glassMaterialCount", String.valueOf(modelState.glassMaterialCount))).append("\n");
+        b.append("  glassDrawRangeCount=").append(jsonNumberField(renderLab, "glassDrawRangeCount", String.valueOf(modelState.glassDrawRangeCount))).append("\n");
+        b.append("  transparentDrawCount=N/A\n");
+        b.append("  glassPipelineCreated=").append(jsonBooleanField(renderLab, "glassPipelineCreated", String.valueOf(modelState.glassPipelineCreated))).append("\n");
+        b.append("  glassPipelineBound=").append(jsonBooleanField(renderLab, "glassPipelineBound", String.valueOf(modelState.glassPipelineBound))).append("\n");
+        b.append("  glassQueueDrawn=").append(jsonBooleanField(renderLab, "glassQueueDrawn", String.valueOf(modelState.glassQueueDrawn))).append("\n");
+        b.append("  glassBlendEnabled=").append(jsonBooleanField(renderLab, "glassBlendEnabled", String.valueOf(modelState.glassBlendEnabled))).append("\n");
+        b.append("  glassDepthWriteEnabled=").append(jsonBooleanField(renderLab, "glassDepthWriteEnabled", String.valueOf(modelState.glassDepthWriteEnabled))).append("\n");
+        b.append("  routeGlassBlendCount=").append(jsonNumberField(renderLab, "routeGlassBlendCount", "0")).append("\n");
+        b.append("  routeGlassSemanticOpaqueCount=").append(jsonNumberField(renderLab, "routeGlassSemanticOpaqueCount", "0")).append("\n");
+        b.append("  routeFoliageCutoutCount=").append(jsonNumberField(renderLab, "routeFoliageCutoutCount", "0")).append("\n");
+        appendGlassDetailSlot(b, "Selected/current candidate", selected, selectedMaterialSlot, renderLab, tintRgba);
+        appendGlassDetailSlot(b, "Standalone working glass", standalone, standalone == null ? -1 : standalone.optInt("slot", -1), renderLab, tintRgba);
+        appendGlassDetailSlot(b, "Car glass specific", carGlass, carGlass == null ? -1 : carGlass.optInt("slot", -1), renderLab, tintRgba);
+        b.append("Notes:\n");
+        b.append("  ShaderAlpha/body/tint/rim/spec values are CPU-known mirrors of the glass shader formula when material is glass; otherwise N/A.\n");
+        b.append("  drawRangeId is from Java GLB range diagnostics when available.\n");
+        return b.toString();
+    }
+
+    private void appendGlassDetailSlot(StringBuilder b, String title, JSONObject slot, int slotIndex, String renderLab, String tintRgba) {
+        boolean exists = slot != null && slotIndex >= 0;
+        String prefix = title.startsWith("Car") ? "carGlass" : (title.startsWith("Standalone") ? "standaloneGlass" : "selected");
+        String alphaMode = exists ? slot.optString("alphaMode", "UNKNOWN") : "N/A";
+        boolean semanticGlass = exists && "glass_like".equals(slot.optString("materialTypeHint", ""));
+        boolean manualGlass = exists && manualGlassSlotOverride == slotIndex;
+        String materialRoute = exists ? slot.optString("materialRoute", semanticGlass ? ("BLEND".equals(alphaMode) ? "GlassBlend" : "GlassSemanticOpaque") : "Unknown") : "N/A";
+        boolean glassFormulaApplies = semanticGlass || manualGlass;
+        boolean inGlassQueue = exists && semanticGlass && glassEnabled;
+        boolean inOpaqueQueue = exists && !semanticGlass && "OPAQUE".equals(alphaMode);
+        boolean inTransparentQueue = inGlassQueue;
+        String baseColor = exists ? slot.optString("baseColorRgba", "N/A") : "N/A";
+        String alpha = exists ? slot.optString("baseColorAlpha", "N/A") : "N/A";
+        String textureStatus = exists ? slot.optString("baseColorTextureStatus", "missing") : "N/A";
+        String appliedOpacity = glassFormulaApplies ? jsonFloat(glassOpacity) : "N/A";
+        String appliedTint = glassFormulaApplies ? tintRgba : "N/A";
+        String formula = glassFormulaForSlot(slot);
+        String shaderAlpha = glassFormulaApplies || "BLEND".equals(alphaMode) ? shaderAlphaEstimate(slot) : "N/A";
+        String shaderTint = glassFormulaApplies || "BLEND".equals(alphaMode) ? tintRgba : "N/A";
+        String formulaMode = formulaModeForSlot(slot, slotIndex);
+        boolean directGlass = semanticOpaqueDirectSlot(slot, slotIndex);
+        String bodyAlpha = directGlass ? jsonFloat(semanticDirectBodyAlpha()) : "N/A";
+        String rimStrength = directGlass ? jsonFloat(semanticDirectRimStrength()) : "N/A";
+        String specularStrength = directGlass ? jsonFloat(semanticDirectSpecularStrength()) : "N/A";
+        String baseColorInfluence = directGlass ? jsonFloat(semanticDirectBaseColorInfluence()) : "N/A";
+        String uiTintInfluence = directGlass ? jsonFloat(semanticDirectUiTintInfluence()) : ("BLEND".equals(alphaMode) ? "normal_blend_shader_mix_0.74" : "N/A");
+        String routeReason = routeReasonForSlot(slot, slotIndex, renderLab);
+        String slotValue = exists ? String.valueOf(slotIndex) : "N/A";
+        b.append("\n").append(title).append(":\n");
+        b.append("  ").append(prefix).append("CandidateIndex=").append(slotValue).append("\n");
+        b.append("  ").append(prefix).append("MaterialIndex=").append(slotValue).append("\n");
+        b.append("  ").append(prefix).append("MaterialName=").append(exists ? slot.optString("materialName", "slot_" + slotIndex) : "N/A").append("\n");
+        b.append("  ").append(prefix).append("AlphaMode=").append(alphaMode).append("\n");
+        b.append("  ").append(prefix).append("BaseColorRgba=").append(baseColor).append("\n");
+        b.append("  ").append(prefix).append("BaseColorAlpha=").append(alpha).append("\n");
+        b.append("  ").append(prefix).append("HasBaseColorTexture=").append("ok".equals(textureStatus)).append(" status=").append(textureStatus).append("\n");
+        b.append("  ").append(prefix).append("SemanticGlass=").append(semanticGlass).append("\n");
+        b.append("  ").append(prefix).append("ManualGlass=").append(manualGlass).append("\n");
+        b.append("  ").append(prefix).append("MaterialRoute=").append(materialRoute).append("\n");
+        b.append("  ").append(prefix).append("MaterialRouteReason=").append(exists ? slot.optString("materialRouteReason", "none") : "N/A").append("\n");
+        b.append("  ").append(prefix).append("InGlassQueue=").append(inGlassQueue).append("\n");
+        b.append("  ").append(prefix).append("InOpaqueQueue=").append(inOpaqueQueue).append("\n");
+        b.append("  ").append(prefix).append("InTransparentQueue=").append(inTransparentQueue).append("\n");
+        b.append("  ").append(prefix).append("DrawRange=").append(drawRangeSummaryForMaterial(slotIndex)).append("\n");
+        b.append("  ").append(prefix).append("Formula=").append(formula).append("\n");
+        b.append("  ").append(prefix).append("FormulaMode=").append(formulaMode).append("\n");
+        b.append("  ").append(prefix).append("BaseColorInfluence=").append(baseColorInfluence).append("\n");
+        b.append("  ").append(prefix).append("UiTintInfluence=").append(uiTintInfluence).append("\n");
+        b.append("  ").append(prefix).append("BodyAlpha=").append(bodyAlpha).append("\n");
+        b.append("  ").append(prefix).append("RimStrength=").append(rimStrength).append("\n");
+        b.append("  ").append(prefix).append("SpecularStrength=").append(specularStrength).append("\n");
+        b.append("  ").append(prefix).append("AppliedOpacity=").append(appliedOpacity).append("\n");
+        b.append("  ").append(prefix).append("AppliedTintRgba=").append(appliedTint).append("\n");
+        b.append("  ").append(prefix).append("ShaderAlpha=").append(shaderAlpha).append("\n");
+        b.append("  ").append(prefix).append("ShaderAlphaSource=").append("N/A".equals(shaderAlpha) ? "N/A" : "cpu_known_push_constant_formula").append("\n");
+        b.append("  ").append(prefix).append("ShaderTintRgba=").append(shaderTint).append("\n");
+        b.append("  ").append(prefix).append("ShaderTintSource=").append("N/A".equals(shaderTint) ? "N/A" : "cpu_known_push_constant").append("\n");
+        b.append("  ").append(prefix).append("RouteReason=").append(routeReason).append("\n");
+    }
+
+    private JSONObject standaloneGlassCandidateJson() {
+        JSONArray slots = materialSlotsJson();
+        JSONObject fallback = null;
+        for (int i = 0; i < slots.length(); i++) {
+            JSONObject slot = slots.optJSONObject(i);
+            if (slot == null || !"glass_like".equals(slot.optString("materialTypeHint", ""))) continue;
+            if (fallback == null) fallback = slot;
+            String name = slot.optString("materialName", "").toLowerCase(Locale.US);
+            if (!name.contains("car") && !name.contains("window") && !name.contains("windshield") && !name.contains("windscreen")) return slot;
+        }
+        return fallback;
+    }
+
+    private JSONObject carGlassCandidateJson() {
+        JSONArray slots = materialSlotsJson();
+        JSONObject fallback = null;
+        for (int i = 0; i < slots.length(); i++) {
+            JSONObject slot = slots.optJSONObject(i);
+            if (slot == null) continue;
+            String name = slot.optString("materialName", "").toLowerCase(Locale.US);
+            boolean semantic = "glass_like".equals(slot.optString("materialTypeHint", ""));
+            boolean carName = name.contains("car") || name.contains("window") || name.contains("windshield") || name.contains("windscreen");
+            if (semantic && carName) return slot;
+            if (fallback == null && semantic) fallback = slot;
+        }
+        return fallback;
+    }
+
+    private String routeReasonForSlot(JSONObject slot, int slotIndex, String renderLab) {
+        if (slot == null || slotIndex < 0) return "N/A";
+        if (slotIndex == parseIntOr(jsonNumberField(renderLab, "activeTransparentGlassSlot", String.valueOf(modelState.activeTransparentGlassSlot)), -1)) {
+            return jsonStringField(renderLab, "activeTransparentGlassSlotSource", modelState.activeTransparentGlassSlotSource);
+        }
+        if ("glass_like".equals(slot.optString("materialTypeHint", ""))) return slot.optString("materialRouteReason", slot.optString("glassClassificationReason", "semantic_glass_material"));
+        return slot.optString("glassGuardApplied", "not_glass");
+    }
+
+    private String shaderAlphaEstimate(JSONObject slot) {
+        float sourceAlpha = parseFloatOr(slot == null ? "" : slot.optString("baseColorAlpha", "1.0"), 1.0f);
+        String alphaMode = slot == null ? "OPAQUE" : slot.optString("alphaMode", "OPAQUE");
+        boolean semanticOpaque = semanticOpaqueDirectSlot(slot, slot == null ? -1 : slot.optInt("slot", -1));
+        float out;
+        if (semanticOpaque) {
+            out = semanticDirectBodyAlpha();
+        } else {
+            out = sourceAlpha * (0.28f + (1.0f - 0.28f) * clamp(glassOpacity, 0.0f, 1.0f));
+            out = clamp(out, 0.08f, 0.94f);
+        }
+        return jsonFloat(out);
+    }
+
+    private String glassFormulaForSlot(JSONObject slot) {
+        if (slot == null) return "N/A";
+        String alphaMode = slot.optString("alphaMode", "UNKNOWN");
+        boolean semantic = "glass_like".equals(slot.optString("materialTypeHint", ""));
+        boolean manual = manualGlassSlotOverride == slot.optInt("slot", -1);
+        float sourceAlpha = parseFloatOr(slot.optString("baseColorAlpha", "1.0"), 1.0f);
+        if ((semantic || manual) && "OPAQUE".equals(alphaMode) && sourceAlpha >= 0.98f) return "semantic_opaque_direct_glass";
+        if ("BLEND".equals(alphaMode)) return "normal_blend_glass_formula_preserved";
+        if (semantic) return "semantic_nonopaque_normal_glass_formula";
+        return "not_glass";
+    }
+
+    private String formulaModeForSlot(JSONObject slot, int slotIndex) {
+        if (semanticOpaqueDirectSlot(slot, slotIndex)) return "semantic_opaque_direct";
+        if (slot != null && "BLEND".equals(slot.optString("alphaMode", "UNKNOWN"))) return "normal_blend";
+        return "N/A";
+    }
+
+    private boolean semanticOpaqueDirectSlot(JSONObject slot, int slotIndex) {
+        if (slot == null) return false;
+        String alphaMode = slot.optString("alphaMode", "UNKNOWN");
+        boolean semantic = "glass_like".equals(slot.optString("materialTypeHint", ""));
+        boolean manual = manualGlassSlotOverride == slotIndex;
+        float sourceAlpha = parseFloatOr(slot.optString("baseColorAlpha", "1.0"), 1.0f);
+        return (semantic || manual) && "OPAQUE".equals(alphaMode) && sourceAlpha >= 0.98f;
+    }
+
+    private float semanticDirectDensity() {
+        return (float)Math.pow(clamp(glassOpacity, 0.0f, 1.0f), 0.86f);
+    }
+
+    private float semanticDirectBodyAlpha() {
+        return clamp(0.15f + semanticDirectDensity() * 0.67f, 0.16f, 0.84f);
+    }
+
+    private float semanticDirectBaseColorInfluence() {
+        return 0.10f + clamp(glassOpacity, 0.0f, 1.0f) * 0.12f;
+    }
+
+    private float semanticDirectUiTintInfluence() {
+        return 1.0f - semanticDirectBaseColorInfluence();
+    }
+
+    private float semanticDirectRimStrength() {
+        return 1.18f + (clamp(glassEdge, 0.0f, 2.0f) * 0.5f) * 0.40f;
+    }
+
+    private float semanticDirectSpecularStrength() {
+        return 0.82f + (clamp(glassEdge, 0.0f, 2.0f) * 0.5f) * 0.42f;
+    }
+
+    private String drawRangeSummaryForMaterial(int materialSlot) {
+        if (materialSlot < 0) return "N/A";
+        try {
+            JSONArray ranges = new JSONArray(modelState.materialDrawRangeDiagnostics == null ? "[]" : modelState.materialDrawRangeDiagnostics);
+            StringBuilder b = new StringBuilder();
+            for (int i = 0; i < ranges.length(); i++) {
+                JSONObject r = ranges.optJSONObject(i);
+                if (r == null || r.optInt("materialSlot", -1) != materialSlot) continue;
+                if (b.length() > 0) b.append("; ");
+                b.append("id=").append(r.optInt("drawRangeId", i))
+                    .append(" start=").append(r.optInt("firstIndex", 0))
+                    .append(" count=").append(r.optInt("indexCount", 0));
+            }
+            return b.length() == 0 ? "N/A" : b.toString();
+        } catch (Throwable ignored) {
+            return "N/A";
+        }
+    }
+
 
     private File getGlassRouteTestDir() throws Exception {
         File dir = new File("/storage/emulated/0/Download/SOLUM_GLASS_ROUTE_TEST");
@@ -3434,6 +3727,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"skippedPbrTextureCount\": " + jsonNumberField(renderLab, "skippedPbrTextureCount", String.valueOf(modelState.skippedPbrTextureCount)) + ",\n"
             + "  \"pbrTextureFallbackCount\": " + jsonNumberField(renderLab, "pbrTextureFallbackCount", String.valueOf(modelState.pbrTextureFallbackCount)) + ",\n"
             + "  \"materialSlotDiagnostics\": " + jsonArrayField(renderLab, "materialSlotDiagnostics", modelState.materialSlotDiagnostics) + ",\n"
+            + "  \"routeOpaquePbrCount\": " + jsonNumberField(renderLab, "routeOpaquePbrCount", "0") + ",\n"
+            + "  \"routeGlassBlendCount\": " + jsonNumberField(renderLab, "routeGlassBlendCount", "0") + ",\n"
+            + "  \"routeGlassSemanticOpaqueCount\": " + jsonNumberField(renderLab, "routeGlassSemanticOpaqueCount", "0") + ",\n"
+            + "  \"routeMetalCount\": " + jsonNumberField(renderLab, "routeMetalCount", "0") + ",\n"
+            + "  \"routeChromeCount\": " + jsonNumberField(renderLab, "routeChromeCount", "0") + ",\n"
+            + "  \"routeMirrorCount\": " + jsonNumberField(renderLab, "routeMirrorCount", "0") + ",\n"
+            + "  \"routeFoliageCutoutCount\": " + jsonNumberField(renderLab, "routeFoliageCutoutCount", "0") + ",\n"
+            + "  \"routeFabricHairCount\": " + jsonNumberField(renderLab, "routeFabricHairCount", "0") + ",\n"
+            + "  \"routeEmissionCount\": " + jsonNumberField(renderLab, "routeEmissionCount", "0") + ",\n"
+            + "  \"routeDecalCount\": " + jsonNumberField(renderLab, "routeDecalCount", "0") + ",\n"
+            + "  \"routeUnknownCount\": " + jsonNumberField(renderLab, "routeUnknownCount", "0") + ",\n"
+            + "  \"selectedMaterialIndex\": " + jsonNumberField(renderLab, "selectedMaterialIndex", String.valueOf(selectedMaterialSlot)) + ",\n"
+            + "  \"selectedAlphaMode\": \"" + escape(jsonStringField(renderLab, "selectedAlphaMode", "OPAQUE")) + "\",\n"
+            + "  \"selectedBaseColorAlpha\": " + jsonNumberField(renderLab, "selectedBaseColorAlpha", "1") + ",\n"
+            + "  \"selectedSemanticGlass\": " + jsonBooleanField(renderLab, "selectedSemanticGlass", "false") + ",\n"
+            + "  \"selectedManualGlass\": " + jsonBooleanField(renderLab, "selectedManualGlass", String.valueOf(manualGlassSlotOverride == selectedMaterialSlot)) + ",\n"
+            + "  \"selectedMaterialRoute\": \"" + escape(jsonStringField(renderLab, "selectedMaterialRoute", "Unknown")) + "\",\n"
+            + "  \"selectedMaterialRouteReason\": \"" + escape(jsonStringField(renderLab, "selectedMaterialRouteReason", "none")) + "\",\n"
+            + "  \"selectedDrawQueue\": \"" + escape(jsonStringField(renderLab, "selectedDrawQueue", "none")) + "\",\n"
+            + "  \"materialDrawRangeDiagnostics\": " + modelState.materialDrawRangeDiagnostics + ",\n"
             + "  \"materialCalibrationStatus\": \"" + escape(jsonStringField(renderLab, "materialCalibrationStatus", modelState.materialCalibrationStatus)) + "\",\n"
             + "  \"materialCalibrationMode\": \"" + escape(jsonStringField(renderLab, "materialCalibrationMode", modelState.materialCalibrationMode)) + "\",\n"
             + "  \"albedoEnergyStatus\": \"" + escape(jsonStringField(renderLab, "albedoEnergyStatus", modelState.albedoEnergyStatus)) + "\",\n"
@@ -5191,6 +5504,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String runtimeStateDebugViewStatus = "ok";
         String restoreStateDebugViewStatus = "ok";
         String uiStateDebugViewStatus = "ok";
+        String materialDrawRangeDiagnostics = "[]";
         String lightingStatus = "ok";
         float[] sunDirection = new float[] { -0.35f, -0.82f, -0.45f };
         float[] sunColor = new float[] { 1.0f, 0.96f, 0.88f };
@@ -6130,6 +6444,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 addPbrTexture(pbrTextures, mi.normalTexture, textureSlotLimit);
                 addPbrTexture(pbrTextures, mi.occlusionTexture, textureSlotLimit);
             }
+            StringBuilder rangeDiagnostics = new StringBuilder("[");
             for (PrimitiveSource src : sources) {
                 int materialSlot = src.materialIndex >= 0 && src.materialIndex < materials.size() ? src.materialIndex : 0;
                 int textureSlot = materialSlot < materials.size() ? materials.get(materialSlot).textureSlot : -1;
@@ -6210,8 +6525,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 ranges.add(src.vertexCount);
                 ranges.add(materialSlot);
                 ranges.add(textureSlot);
+                if (rangeDiagnostics.length() > 1) rangeDiagnostics.append(",");
+                rangeDiagnostics.append("{\"drawRangeId\":").append((ranges.size() / 6) - 1)
+                    .append(",\"materialSlot\":").append(materialSlot)
+                    .append(",\"firstIndex\":").append(rangeFirstIndex)
+                    .append(",\"indexCount\":").append(indices.size() - rangeFirstIndex)
+                    .append(",\"firstVertex\":").append(firstVertex)
+                    .append(",\"vertexCount\":").append(src.vertexCount)
+                    .append(",\"textureSlot\":").append(textureSlot)
+                    .append("}");
                 firstVertex += src.vertexCount;
             }
+            rangeDiagnostics.append("]");
             GlbPrimitiveMesh out = new GlbPrimitiveMesh();
             out.vertexData = toFloatArray(vertexFloats);
             out.indexData = toIntArray(indices);
@@ -6263,6 +6588,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             out.normalMapAppliedStatus = normalAppliedStatus(out.normalMapStatus, out.tangentStatus);
             out.occlusionMapStatus = aggregateStatus(materials, TEX_OCCLUSION);
             out.materialSlotDiagnostics = materialSlotDiagnostics(materials);
+            out.materialDrawRangeDiagnostics = rangeDiagnostics.toString();
             out.reason = skipped.isEmpty() ? "all supported primitives uploaded" : joinReasons(skipped);
             return out;
         }
@@ -6315,6 +6641,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 info.normalMapStatus = info.normalTexture == null ? "missing" : info.normalTexture.status;
                 info.normalMapAppliedStatus = "ok".equals(info.normalMapStatus) ? "blocked_no_tangent" : info.normalMapStatus;
                 info.occlusionMapStatus = info.occlusionTexture == null ? "missing" : info.occlusionTexture.status;
+                info.materialRoute = classifyMaterialRoute(info);
+                info.materialRouteReason = materialRouteReason(info);
                 info.materialTypeHint = materialTypeHint(info);
                 info.albedoLuminance = luminance(info.baseColorFactor);
                 info.calibratedRoughness = calibratedRoughness(info);
@@ -6326,26 +6654,69 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             return out;
         }
 
+        private static boolean nameHasAny(String name, String... tokens) {
+            for (String token : tokens) if (name.contains(token)) return true;
+            return false;
+        }
+
+        private static boolean isFoliageCutoutName(String name) {
+            return nameHasAny(name, "foliage", "grass", "leaf", "leaves", "petal", "plant", "tree", "cutout");
+        }
+
+        private static boolean isFabricHairName(String name) {
+            return nameHasAny(name, "hair", "fur", "fabric", "cloth", "seat", "carpet");
+        }
+
+        private static boolean isSemanticGlass(MaterialInfo info) {
+            String name = info.materialName == null ? "" : info.materialName.toLowerCase(Locale.US);
+            return !isFoliageCutoutName(name) && !isFabricHairName(name) && (nameHasAny(name, "glass", "window", "lens", "windshield", "transparent")
+                || info.hasTransmissionExtension
+                || info.hasVolumeExtension
+                || info.transmissionFactor > 0.001f
+                || info.volumeThicknessFactor > 0.001f);
+        }
+
+        private static MaterialRoute classifyMaterialRoute(MaterialInfo info) {
+            String name = info.materialName == null ? "" : info.materialName.toLowerCase(Locale.US);
+            boolean alphaHint = info.alphaMode == 1 || info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f;
+            if (luminance(info.emissiveFactor) > 0.001f || "metadata_only".equals(info.emissiveTextureStatus)) return MaterialRoute.Emission;
+            if (isFoliageCutoutName(name) || info.alphaMode == 1) return MaterialRoute.FoliageCutout;
+            if (isFabricHairName(name)) return MaterialRoute.FabricHair;
+            if (isSemanticGlass(info)) return info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f ? MaterialRoute.GlassBlend : MaterialRoute.GlassSemanticOpaque;
+            if (nameHasAny(name, "mirror")) return MaterialRoute.Mirror;
+            if (nameHasAny(name, "chrome")) return MaterialRoute.Chrome;
+            if (info.metallicFactor >= 0.65f || nameHasAny(name, "metal", "steel")) return MaterialRoute.Metal;
+            if (nameHasAny(name, "decal", "sticker", "label") || (alphaHint && info.roughnessFactor < 0.36f && info.metallicFactor < 0.2f)) return MaterialRoute.Decal;
+            return MaterialRoute.OpaquePbr;
+        }
+
+        private static String materialRouteReason(MaterialInfo info) {
+            String name = info.materialName == null ? "" : info.materialName.toLowerCase(Locale.US);
+            switch (info.materialRoute) {
+                case GlassBlend: return "semantic_glass_blend_alpha";
+                case GlassSemanticOpaque: return "semantic_opaque_glass_preview";
+                case FoliageCutout: return info.alphaMode == 1 ? "mask_alpha_cutout_route" : "foliage_cutout_name_guard";
+                case FabricHair: return "fabric_hair_name_guard";
+                case Emission: return "emissive_factor_or_texture";
+                case Decal: return "decal_name_or_alpha_label";
+                case Chrome: return "chrome_placeholder";
+                case Mirror: return "mirror_placeholder";
+                case Metal: return "metal_placeholder";
+                case OpaquePbr: return "default_opaque_pbr";
+                default: return "unknown_route";
+            }
+        }
+
         private static int materialTypeHint(MaterialInfo info) {
             String name = info.materialName == null ? "" : info.materialName.toLowerCase(Locale.US);
             boolean hasBase = info.texture != null && "ok".equals(info.texture.status);
             boolean hasMr = info.metallicRoughnessTexture != null && "ok".equals(info.metallicRoughnessTexture.status);
             boolean alphaHint = info.alphaMode == 1 || info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f;
-            boolean thinCutoutExclusion = name.contains("foliage") || name.contains("grass") || name.contains("fabric")
-                || name.contains("cloth") || name.contains("leaf") || name.contains("leaves") || name.contains("petal")
-                || name.contains("cutout") || name.contains("hair") || name.contains("grille") || name.contains("grid")
-                || name.contains("card");
-            boolean glassHint = !thinCutoutExclusion && (name.contains("glass") || name.contains("window") || name.contains("lens") || name.contains("windshield") || name.contains("transparent")
-                || info.alphaMode == 2
-                || info.baseColorFactor[3] < 0.98f
-                || info.hasTransmissionExtension
-                || info.hasVolumeExtension
-                || info.transmissionFactor > 0.001f
-                || info.volumeThicknessFactor > 0.001f
-                || info.clearcoatFactor > 0.65f);
             if (luminance(info.emissiveFactor) > 0.001f || "metadata_only".equals(info.emissiveTextureStatus)) return 8;
-            if (glassHint) return 6;            if (name.contains("decal") || name.contains("sticker") || name.contains("label") || (alphaHint && info.roughnessFactor < 0.36f && info.metallicFactor < 0.2f)) return 7;
-            if (alphaHint || info.doubleSided || thinCutoutExclusion) return 5;
+            if (info.materialRoute == MaterialRoute.GlassBlend || info.materialRoute == MaterialRoute.GlassSemanticOpaque) return 6;
+            if (info.materialRoute == MaterialRoute.Decal) return 7;
+            if (info.materialRoute == MaterialRoute.FoliageCutout) return 5;
+            if (info.materialRoute == MaterialRoute.FabricHair) return 0;
             if (info.metallicFactor >= 0.65f || name.contains("metal") || name.contains("chrome") || name.contains("steel")) return 2;
             if (name.contains("fabric") || name.contains("cloth") || name.contains("seat") || name.contains("carpet") || (info.roughnessFactor >= 0.78f && info.metallicFactor < 0.15f && info.alphaMode == 0)) return 0;
             if (name.contains("rubber") || name.contains("tire") || name.contains("tyre") || name.contains("black") || (info.roughnessFactor >= 0.55f && info.metallicFactor < 0.08f && !hasBase)) return 3;
@@ -6371,10 +6742,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 if (name.contains("glass")) return "semantic_name_glass";
                 if (name.contains("window")) return "semantic_name_window";
                 if (name.contains("lens")) return "semantic_name_lens";
-                if (info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f) return "physical_transparency";
+                if (info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f) return "semantic_physical_transparency";
                 if (info.hasTransmissionExtension || info.transmissionFactor > 0.001f) return "gltf_transmission";
                 if (info.hasVolumeExtension || info.volumeThicknessFactor > 0.001f) return "gltf_volume";
-                if (info.clearcoatFactor > 0.65f) return "clearcoat_glass_like";
                 return "glass_hint";
             }
             if (info.materialTypeHint == 5) return "cutout_or_thin_exclusion";
@@ -6664,12 +7034,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     .append(",\"materialName\":\"").append(esc(m.materialName == null || m.materialName.isEmpty() ? "slot_" + i : m.materialName)).append("\"")
                     .append(",\"glassMaterialName\":\"").append(esc(m.materialTypeHint == 6 ? (m.materialName == null || m.materialName.isEmpty() ? "slot_" + i : m.materialName) : "")).append("\"")
                     .append(",\"materialTypeHint\":\"").append(esc(materialTypeHintName(m.materialTypeHint))).append("\"")
+                    .append(",\"materialRoute\":\"").append(esc(m.materialRoute.name())).append("\"")
+                    .append(",\"materialRouteReason\":\"").append(esc(m.materialRouteReason)).append("\"")
+                    .append(",\"semanticGlass\":").append(m.materialRoute == MaterialRoute.GlassBlend || m.materialRoute == MaterialRoute.GlassSemanticOpaque)
+                    .append(",\"manualGlass\":false")
                     .append(",\"materialRole\":\"").append(esc(materialTypeHintName(m.materialTypeHint))).append("\"")
                     .append(",\"materialRoleSource\":\"").append(esc(m.materialTypeHint == 6 ? "material_name_alpha_or_glass_hint" : "metadata_hint_factor")).append("\"")
-                    .append(",\"runtimeMaterialClass\":\"").append(esc(m.materialTypeHint == 6 ? "TRANSPARENT_GLASS" : (m.alphaMode == 1 ? "CUTOUT" : "OPAQUE"))).append("\"")
+                    .append(",\"runtimeMaterialClass\":\"").append(esc((m.materialRoute == MaterialRoute.GlassBlend || m.materialRoute == MaterialRoute.GlassSemanticOpaque) ? "TRANSPARENT_GLASS" : (m.materialRoute == MaterialRoute.FoliageCutout || m.alphaMode == 1 ? "CUTOUT" : "OPAQUE"))).append("\"")
                     .append(",\"glassClassificationReason\":\"").append(esc(materialClassificationReason(m))).append("\"")
-                    .append(",\"semanticOpaqueGlassFallbackActive\":").append(m.materialTypeHint == 6 && m.alphaMode == 0 && m.baseColorFactor[3] >= 0.98f)
-                    .append(",\"glassVisibleFallbackReason\":\"").append(esc(m.materialTypeHint == 6 && m.alphaMode == 0 && m.baseColorFactor[3] >= 0.98f ? "semantic_opaque_glass_alpha_one_safe_fallback" : "none")).append("\"")                    .append(",\"calibrationApplied\":true")
+                    .append(",\"baseColorRgba\":\"(").append(jsonFloat(m.baseColorFactor[0])).append(",").append(jsonFloat(m.baseColorFactor[1])).append(",").append(jsonFloat(m.baseColorFactor[2])).append(",").append(jsonFloat(m.baseColorFactor[3])).append(")\"")
+                    .append(",\"baseColorAlpha\":\"").append(jsonFloat(m.baseColorFactor[3])).append("\"")
+                    .append(",\"baseColorFactor\":[").append(jsonFloat(m.baseColorFactor[0])).append(",").append(jsonFloat(m.baseColorFactor[1])).append(",").append(jsonFloat(m.baseColorFactor[2])).append(",").append(jsonFloat(m.baseColorFactor[3])).append("]")
+                    .append(",\"semanticOpaqueGlassFallbackActive\":").append(m.materialRoute == MaterialRoute.GlassSemanticOpaque)
+                    .append(",\"glassVisibleFallbackReason\":\"").append(esc(m.materialRoute == MaterialRoute.GlassSemanticOpaque ? "semantic_opaque_direct_glass_preview" : "none")).append("\"")                    .append(",\"calibrationApplied\":true")
                     .append(",\"albedoLuminance\":").append(jsonFloat(m.albedoLuminance))
                     .append(",\"calibratedRoughness\":").append(jsonFloat(m.calibratedRoughness))
                     .append(",\"calibratedMetallic\":").append(jsonFloat(m.calibratedMetallic))
@@ -6706,12 +7083,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     .append(",\"alphaBlendFallbackStatus\":\"").append(esc(m.alphaMode == 2 ? "fallback_no_transparent_sorting" : "not_blend")).append("\"")
                     .append(",\"doubleSided\":").append(m.doubleSided)
                     .append(",\"doubleSidedAppliedStatus\":\"").append(esc(m.doubleSided ? "normal_flip_foundation_pipeline_cull_none" : "not_double_sided")).append("\"")
-                    .append(",\"glassAppliedStatus\":\"").append(esc(m.materialTypeHint == 6 ? "applied_glass_like_hint" : "available_selected_slot_preset_only")).append("\"")
-                    .append(",\"glassOpacityApplied\":").append(jsonFloat(m.materialTypeHint == 6 ? 0.44f : 1.0f))
-                    .append(",\"glassFallbackAlphaApplied\":").append(jsonFloat(m.materialTypeHint == 6 && m.alphaMode == 0 && m.baseColorFactor[3] >= 0.98f ? 0.44f : 0.0f))
-                    .append(",\"glassTintApplied\":\"").append(esc(m.materialTypeHint == 6 ? "clear_default" : "none")).append("\"")
-                    .append(",\"glassEdgeReflectionApplied\":\"").append(esc(m.materialTypeHint == 6 ? "p24_probe_edge_fresnel" : "none")).append("\"")
-                    .append(",\"glassRoughnessApplied\":").append(jsonFloat(m.materialTypeHint == 6 ? calibratedRoughness(m) : m.roughnessFactor))
+                    .append(",\"glassAppliedStatus\":\"").append(esc((m.materialRoute == MaterialRoute.GlassBlend || m.materialRoute == MaterialRoute.GlassSemanticOpaque) ? "applied_glass_route" : "available_selected_slot_preset_only")).append("\"")
+                    .append(",\"glassOpacityApplied\":").append(jsonFloat((m.materialRoute == MaterialRoute.GlassBlend || m.materialRoute == MaterialRoute.GlassSemanticOpaque) ? 0.44f : 1.0f))
+                    .append(",\"glassFallbackAlphaApplied\":").append(jsonFloat(m.materialRoute == MaterialRoute.GlassSemanticOpaque ? 0.481f : 0.0f))
+                    .append(",\"glassTintApplied\":\"").append(esc((m.materialRoute == MaterialRoute.GlassBlend || m.materialRoute == MaterialRoute.GlassSemanticOpaque) ? "clear_default" : "none")).append("\"")
+                    .append(",\"glassEdgeReflectionApplied\":\"").append(esc((m.materialRoute == MaterialRoute.GlassBlend || m.materialRoute == MaterialRoute.GlassSemanticOpaque) ? "p24_probe_edge_fresnel" : "none")).append("\"")
+                    .append(",\"glassRoughnessApplied\":").append(jsonFloat((m.materialRoute == MaterialRoute.GlassBlend || m.materialRoute == MaterialRoute.GlassSemanticOpaque) ? calibratedRoughness(m) : m.roughnessFactor))
                     .append(",\"glassGuardApplied\":\"").append(esc(m.materialTypeHint == 0 || m.materialTypeHint == 2 || m.materialTypeHint == 1 ? "yes_preserve_non_glass" : "no")).append("\"")
                     .append("}");
             }
@@ -6731,30 +7108,31 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
 
         private static float[] materialData(List<MaterialInfo> materials) {
-            float[] out = new float[Math.max(1, materials.size()) * 20];
+            float[] out = new float[Math.max(1, materials.size()) * 21];
             if (materials.isEmpty()) materials.add(new MaterialInfo());
             for (int i = 0; i < materials.size(); i++) {
                 MaterialInfo m = materials.get(i);
-                out[i * 20] = m.baseColorFactor[0];
-                out[i * 20 + 1] = m.baseColorFactor[1];
-                out[i * 20 + 2] = m.baseColorFactor[2];
-                out[i * 20 + 3] = m.baseColorFactor[3];
-                out[i * 20 + 4] = m.alphaMode;
-                out[i * 20 + 5] = m.alphaCutoff;
-                out[i * 20 + 6] = m.doubleSided ? 1f : 0f;
-                out[i * 20 + 7] = m.textureSlot;
-                out[i * 20 + 8] = m.metallicFactor;
-                out[i * 20 + 9] = m.roughnessFactor;
-                out[i * 20 + 10] = m.metallicRoughnessTexture != null && "ok".equals(m.metallicRoughnessTexture.status) ? i : -1f;
-                out[i * 20 + 11] = m.normalTexture != null && "ok".equals(m.normalTexture.status) ? i : -1f;
-                out[i * 20 + 12] = m.occlusionTexture != null && "ok".equals(m.occlusionTexture.status) ? i : -1f;
-                out[i * 20 + 13] = m.normalScale;
-                out[i * 20 + 14] = m.occlusionStrength;
-                out[i * 20 + 15] = m.materialTypeHint;
-                out[i * 20 + 16] = clampUnitRange(m.emissiveFactor[0], 0.0f, 1.0f);
-                out[i * 20 + 17] = clampUnitRange(m.emissiveFactor[1], 0.0f, 1.0f);
-                out[i * 20 + 18] = clampUnitRange(m.emissiveFactor[2], 0.0f, 1.0f);
-                out[i * 20 + 19] = "metadata_only".equals(m.emissiveTextureStatus) ? i : -1f;
+                out[i * 21] = m.baseColorFactor[0];
+                out[i * 21 + 1] = m.baseColorFactor[1];
+                out[i * 21 + 2] = m.baseColorFactor[2];
+                out[i * 21 + 3] = m.baseColorFactor[3];
+                out[i * 21 + 4] = m.alphaMode;
+                out[i * 21 + 5] = m.alphaCutoff;
+                out[i * 21 + 6] = m.doubleSided ? 1f : 0f;
+                out[i * 21 + 7] = m.textureSlot;
+                out[i * 21 + 8] = m.metallicFactor;
+                out[i * 21 + 9] = m.roughnessFactor;
+                out[i * 21 + 10] = m.metallicRoughnessTexture != null && "ok".equals(m.metallicRoughnessTexture.status) ? i : -1f;
+                out[i * 21 + 11] = m.normalTexture != null && "ok".equals(m.normalTexture.status) ? i : -1f;
+                out[i * 21 + 12] = m.occlusionTexture != null && "ok".equals(m.occlusionTexture.status) ? i : -1f;
+                out[i * 21 + 13] = m.normalScale;
+                out[i * 21 + 14] = m.occlusionStrength;
+                out[i * 21 + 15] = m.materialTypeHint;
+                out[i * 21 + 16] = clampUnitRange(m.emissiveFactor[0], 0.0f, 1.0f);
+                out[i * 21 + 17] = clampUnitRange(m.emissiveFactor[1], 0.0f, 1.0f);
+                out[i * 21 + 18] = clampUnitRange(m.emissiveFactor[2], 0.0f, 1.0f);
+                out[i * 21 + 19] = "metadata_only".equals(m.emissiveTextureStatus) ? i : -1f;
+                out[i * 21 + 20] = m.materialRoute.ordinal();
             }
             return out;
         }
@@ -7029,6 +7407,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         int skippedPbrTextureCount = 0;
         int pbrTextureFallbackCount = 0;
         String materialSlotDiagnostics = "[]";
+        String materialDrawRangeDiagnostics = "[]";
         float modelScale;
         int vertexCount;
         int indexCount;
@@ -7090,6 +7469,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         float[] emissiveFactor = new float[] {0f, 0f, 0f};
         String emissiveTextureStatus = "missing";
         String alphaModeText = "OPAQUE";
+        MaterialRoute materialRoute = MaterialRoute.OpaquePbr;
+        String materialRouteReason = "default_opaque_pbr";
         String metallicRoughnessStatus = "missing";
         String normalMapStatus = "missing";
         String normalMapAppliedStatus = "missing";

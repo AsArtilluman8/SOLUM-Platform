@@ -87,8 +87,25 @@ struct MaterialConstants {
 
 inline float semanticGlassFallbackAlpha(float opacity) {
     const float t = opacity < 0.0f ? 0.0f : (opacity > 1.0f ? 1.0f : opacity);
-    const float bodyAlpha = t < 0.035f ? 0.035f : (t > 0.92f ? 0.92f : t);
+    const float density = std::pow(t, 0.78f);
+    const float bodyAlpha = 0.11f + density * 0.67f;
+    if (bodyAlpha < 0.12f) return 0.12f;
+    if (bodyAlpha > 0.82f) return 0.82f;
     return bodyAlpha;
+}
+
+inline float semanticGlassBalancedTintStrength(float opacity) {
+    const float t = opacity < 0.0f ? 0.0f : (opacity > 1.0f ? 1.0f : opacity);
+    const float density = std::pow(t, 0.78f);
+    const float tintStrength = 0.52f + density * 0.34f;
+    if (tintStrength < 0.52f) return 0.52f;
+    if (tintStrength > 0.86f) return 0.86f;
+    return tintStrength;
+}
+
+inline float semanticGlassBalancedRimStrength(float edge) {
+    const float e = edge < 0.0f ? 0.0f : (edge > 2.0f ? 2.0f : edge);
+    return 1.10f + (e * 0.5f) * 0.35f;
 }
 
 inline const char* lightPresetName(int preset) {

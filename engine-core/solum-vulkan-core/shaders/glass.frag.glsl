@@ -106,17 +106,23 @@ void main() {
 
     float roughness = clamp(mix(pc.roughnessFactor * mr.g, pc.glassRoughness, 0.72), 0.04, 1.0);
     float sourceAlpha = clamp(pc.baseColorFactor.a * texel.a, 0.0, 1.0);
-    bool semanticOpaqueGlass = pc.materialTypeHint == 6 && pc.alphaMode == 0 && sourceAlpha > 0.98;
+    bool semanticOpaqueGlass = (pc.materialTypeHint == 6 || pc.materialPresetHint == 6) && pc.alphaMode == 0 && sourceAlpha > 0.98;
     float uiOpacity = clamp(pc.glassOpacity, 0.0, 1.0);
-    float semanticBodyAlpha = clamp(uiOpacity, 0.035, 0.92);
+    float semanticDensity = pow(uiOpacity, 0.78);
+    float semanticBodyAlpha = clamp(0.11 + semanticDensity * 0.67, 0.12, 0.82);
+    float semanticTintStrength = clamp(0.52 + semanticDensity * 0.34, 0.52, 0.86);
+    float semanticRimStrength = mix(1.10, 1.45, clamp(pc.glassEdge, 0.0, 2.0) * 0.5);
     float physicalAlpha = clamp(sourceAlpha * mix(0.28, 1.0, clamp(pc.glassOpacity, 0.0, 1.0)), 0.08, 0.94);
     float alpha = semanticOpaqueGlass ? semanticBodyAlpha : physicalAlpha;
-    vec3 tint = mix(vec3(1.0), glassTintColor(pc.glassTintPreset), semanticOpaqueGlass ? 0.90 : 0.74);
+    vec3 presetTint = glassTintColor(pc.glassTintPreset);
+    vec3 semanticClearTint = mix(vec3(0.70, 0.82, 0.90), presetTint, 0.32);
+    vec3 semanticTint = pc.glassTintPreset == 0 ? semanticClearTint : presetTint;
+    vec3 tint = mix(vec3(1.0), semanticOpaqueGlass ? semanticTint : presetTint, semanticOpaqueGlass ? 0.94 : 0.74);
     vec3 sourceBase = max(inColor * pc.baseColorFactor.rgb * texel.rgb, vec3(0.18));
     if (semanticOpaqueGlass) {
-        sourceBase = mix(sourceBase, vec3(dot(sourceBase, vec3(0.2126, 0.7152, 0.0722))), 0.68);
+        sourceBase = mix(sourceBase, vec3(dot(sourceBase, vec3(0.2126, 0.7152, 0.0722))), 0.55);
     }
-    vec3 base = mix(sourceBase, tint, semanticOpaqueGlass ? mix(0.82, 0.94, uiOpacity) : 0.64);
+    vec3 base = mix(sourceBase, tint, semanticOpaqueGlass ? semanticTintStrength : 0.64);
     vec3 v = normalize(vec3(0.0, 0.0, 1.0));
     float smoothNormalWeight = clamp(0.12 + roughness * 0.12, 0.0, 0.24);
     n = normalize(mix(n, v, smoothNormalWeight));
@@ -134,13 +140,17 @@ void main() {
     vec3 edge = tint * rim * clamp(pc.glassEdge, 0.0, 2.0);
     vec3 fakeReflection = mix(vec3(0.12, 0.16, 0.18), vec3(0.72, 0.86, 1.0), sky);
     fakeReflection += vec3(0.95, 0.98, 1.0) * stripe * 0.30;
-    float bodyVisibility = semanticOpaqueGlass ? mix(0.18, 1.0, uiOpacity) : 1.0;
-    float rimVisibility = semanticOpaqueGlass ? mix(0.72, 1.10, clamp(pc.glassEdge, 0.0, 2.0) * 0.5) : 1.0;
+    float bodyVisibility = semanticOpaqueGlass ? mix(0.42, 1.0, semanticDensity) : 1.0;
+    float rimVisibility = semanticOpaqueGlass ? semanticRimStrength : 1.0;
     vec3 rgb = base * (ambient * 0.50 + vec3(0.24)) * bodyVisibility;
-    rgb += fakeReflection * (0.18 + rim * 0.32 + alpha * 0.18) * mix(1.0, 0.40, roughness) * rimVisibility;
+    rgb += fakeReflection * (0.22 + rim * 0.38 + alpha * 0.16) * mix(1.0, 0.40, roughness) * rimVisibility;
     rgb += sun * edge * mix(0.62, 1.22, 1.0 - roughness) * rimVisibility;
     rgb += sun * spec * (0.32 + clamp(pc.glassEdge, 0.0, 2.0) * 0.34) * rimVisibility;
-    rgb = max(rgb, tint * (semanticOpaqueGlass ? mix(0.08, 0.20, uiOpacity) : 0.08));
+    if (semanticOpaqueGlass) {
+        vec3 semanticHighlight = vec3(0.78, 0.90, 1.0) * (rim * 0.16 + spec * 0.22 + stripe * 0.08);
+        rgb += semanticHighlight * rimVisibility;
+    }
+    rgb = max(rgb, tint * (semanticOpaqueGlass ? mix(0.16, 0.28, semanticDensity) : 0.08));
     rgb = toneMap(rgb * pc.exposureValue);
     if (pc.activeDebugView == 58) {
         float pulse = 0.5 + 0.5 * step(0.5, fract(gl_FragCoord.x * 0.08 + gl_FragCoord.y * 0.08));

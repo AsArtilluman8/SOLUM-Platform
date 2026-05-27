@@ -176,7 +176,7 @@ struct RendererCore {
         model.glassEnabled = material.glassEnabled != 0;
         model.semanticOpaqueGlassFallbackActive = material.glassEnabled != 0 ? semanticOpaqueFallbacks : 0;
         model.glassFallbackAlphaApplied = semanticOpaqueFallbacks > 0 && material.glassEnabled != 0 ? semanticGlassFallbackAlpha(material.glassOpacity) : 0.0f;
-        model.glassVisibleFallbackReason = model.semanticOpaqueGlassFallbackActive > 0 ? "semantic_opaque_ui_body_alpha_rim_guard" : "none";
+        model.glassVisibleFallbackReason = model.semanticOpaqueGlassFallbackActive > 0 ? "semantic_opaque_balanced_visibility" : "none";
         model.showGlassGeometryEnabled = material.activeDebugView == 74;
         model.showGlassGeometryStatus = model.showGlassGeometryEnabled ? "enabled_debug_overlay" : "off";
         model.glassRouteStatus = material.glassEnabled == 0 ? "disabled_by_ui_opaque_fallback" : (glassQueue.empty() ? "active_no_glass_ranges" : "active_glass_queue_ready");
@@ -952,7 +952,7 @@ struct RendererCore {
         model.glassReflectionResponseStatus = "ok_p24_probe_visible_guarded";
         model.glassEnergyGuardStatus = "ok_clamped";
         model.glassOverbrightGuardStatus = "ok";
-        model.glassInvisibleGuardStatus = model.semanticOpaqueGlassFallbackActive > 0 ? "ok_semantic_opaque_rim_visibility_separate_from_body_alpha" : "ok_minimum_surface_kept";
+        model.glassInvisibleGuardStatus = model.semanticOpaqueGlassFallbackActive > 0 ? "ok_semantic_opaque_balanced_body_rim_visibility" : "ok_minimum_surface_kept";
         model.glassMaskDebugViewStatus = "shader_applied";
         model.glassOpacityDebugViewStatus = "shader_applied";
         model.glassFresnelDebugViewStatus = "shader_applied";
@@ -969,7 +969,7 @@ struct RendererCore {
         model.showGlassGeometryEnabled = material.activeDebugView == 74;
         model.showGlassGeometryStatus = model.showGlassGeometryEnabled ? "enabled_debug_overlay" : "off";
         model.glassFallbackAlphaApplied = model.semanticOpaqueGlassFallbackActive > 0 ? semanticGlassFallbackAlpha(material.glassOpacity) : 0.0f;
-        model.glassVisibleFallbackReason = model.semanticOpaqueGlassFallbackActive > 0 ? "semantic_opaque_ui_body_alpha_rim_guard" : "none";
+        model.glassVisibleFallbackReason = model.semanticOpaqueGlassFallbackActive > 0 ? "semantic_opaque_balanced_visibility" : "none";
         model.glassMaterialNames = diagnosticsFieldList("glassMaterialName");
         model.glassClassificationReason = diagnosticsFieldList("glassClassificationReason");
         model.p25GlassPreservedStatus = "ok";

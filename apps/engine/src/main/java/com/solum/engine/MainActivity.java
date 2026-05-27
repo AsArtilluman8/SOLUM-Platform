@@ -78,6 +78,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static final int TEX_NORMAL = 2;
     private static final int TEX_OCCLUSION = 3;
     private static final long FPS_SAMPLE_WINDOW_NS = 1_000_000_000L;
+    private static final float P36_CHROME_REFLECTION_BAND_STRENGTH = 2.35f;
+    private static final float P36_CHROME_GRAZING_BOOST = 1.34f;
+    private static final float P36_METAL_DIFFUSE_SUPPRESSION = 0.80f;
+    private static final float P36_METAL_REFLECTION_STRENGTH = 1.62f;
+    private static final float P36_GLOSSY_CLEARCOAT_STRENGTH = 1.05f;
+    private static final float P36_GLOSSY_SECOND_LOBE_STRENGTH = 0.22f;
 
     private enum MaterialRoute {
         OpaquePbr,
@@ -3362,6 +3368,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "- Glossy Paint: route=OpaquePbr, glossyFactor=0.86, clearcoat=1.05, bodyColor=preserved\n"
             + "- Glass: route=GlassBlend, formula=glass_blend_final_polish\n"
             + "- Emission: route=Emission, emissiveIntensity=1.15\n"
+            + "materialShaderFormulaMode=material_reflection_response_p36\n"
+            + "chromeReflectionBandStrength=" + jsonFloat(P36_CHROME_REFLECTION_BAND_STRENGTH) + "\n"
+            + "chromeGrazingBoost=" + jsonFloat(P36_CHROME_GRAZING_BOOST) + "\n"
+            + "metalDiffuseSuppression=" + jsonFloat(P36_METAL_DIFFUSE_SUPPRESSION) + "\n"
+            + "metalReflectionStrength=" + jsonFloat(P36_METAL_REFLECTION_STRENGTH) + "\n"
+            + "glossyClearcoatStrength=" + jsonFloat(P36_GLOSSY_CLEARCOAT_STRENGTH) + "\n"
+            + "glossySecondLobeStrength=" + jsonFloat(P36_GLOSSY_SECOND_LOBE_STRENGTH) + "\n"
+            + "samples=" + materialLabSampleReport() + "\n"
             + "routeOpaquePbrCount=" + jsonNumberField(renderLab, "routeOpaquePbrCount", "0") + "\n"
             + "routeMetalCount=" + jsonNumberField(renderLab, "routeMetalCount", "0") + "\n"
             + "routeChromeCount=" + jsonNumberField(renderLab, "routeChromeCount", "0") + "\n"
@@ -3539,6 +3553,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 .append(",\"materialTypeHint\":\"").append(esc(materialLabTypeHintName(m.materialTypeHint))).append("\"")
                 .append(",\"materialRoute\":\"").append(esc(m.materialRoute.name())).append("\"")
                 .append(",\"materialRouteReason\":\"").append(esc(m.materialRouteReason)).append("\"")
+                .append(",\"route\":\"").append(esc(m.materialRoute.name())).append("\"")
+                .append(",\"roughness\":").append(jsonFloat(m.roughnessFactor))
+                .append(",\"metalness\":").append(jsonFloat(m.metallicFactor))
+                .append(",\"chromeFactor\":").append(jsonFloat(m.materialRoute == MaterialRoute.Chrome ? 1.0f : 0.0f))
+                .append(",\"glossyFactor\":").append(jsonFloat("Glossy Paint".equals(m.materialName) ? paintGlossSliderValue : 0.0f))
+                .append(",\"specularStrength\":").append(jsonFloat(materialLabSpecularStrength(m)))
+                .append(",\"reflectionResponse\":\"").append(esc(materialLabReflectionResponse(m))).append("\"")
                 .append(",\"runtimeMaterialClass\":\"").append(esc(m.materialRoute == MaterialRoute.GlassBlend ? "TRANSPARENT_GLASS" : "OPAQUE")).append("\"")
                 .append(",\"baseColorRgba\":\"(").append(jsonFloat(m.baseColorFactor[0])).append(",").append(jsonFloat(m.baseColorFactor[1])).append(",").append(jsonFloat(m.baseColorFactor[2])).append(",").append(jsonFloat(m.baseColorFactor[3])).append(")\"")
                 .append(",\"baseColorAlpha\":\"").append(jsonFloat(m.baseColorFactor[3])).append("\"")
@@ -3575,6 +3596,42 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (info.materialTypeHint == 6) return "Glass Foundation";
         if (info.materialTypeHint == 8) return "Emissive Safe";
         return "Balanced";
+    }
+
+    private float materialLabSpecularStrength(MaterialInfo info) {
+        if (info.materialRoute == MaterialRoute.Chrome) return 3.10f;
+        if (info.materialRoute == MaterialRoute.Metal) return 1.62f;
+        if ("Glossy Paint".equals(info.materialName)) return 1.36f + P36_GLOSSY_SECOND_LOBE_STRENGTH;
+        if (info.materialRoute == MaterialRoute.GlassBlend) return 1.48f;
+        if (info.materialRoute == MaterialRoute.Emission) return 0.20f;
+        return 0.18f;
+    }
+
+    private String materialLabReflectionResponse(MaterialInfo info) {
+        if (info.materialRoute == MaterialRoute.Chrome) return "strongest_cool_band_grazing_low_roughness";
+        if (info.materialRoute == MaterialRoute.Metal) return "hard_cold_metal_sheen_less_mirror_than_chrome";
+        if ("Glossy Paint".equals(info.materialName)) return "colored_body_clearcoat_plus_soft_second_lobe";
+        if (info.materialRoute == MaterialRoute.GlassBlend) return "glassblend_final_polish_protected";
+        if (info.materialRoute == MaterialRoute.Emission) return "emissive_route_no_reflection_boost";
+        return "matte_baseline_no_strong_reflection";
+    }
+
+    private String materialLabSampleReport() {
+        MaterialLabMesh mesh = buildMaterialLabMesh();
+        StringBuilder b = new StringBuilder("[");
+        for (int i = 0; i < mesh.materials.size(); i++) {
+            if (i > 0) b.append(",");
+            MaterialInfo m = mesh.materials.get(i);
+            b.append("{\"sample\":\"").append(esc(m.materialName)).append("\"")
+                .append(",\"route\":\"").append(esc(m.materialRoute.name())).append("\"")
+                .append(",\"roughness\":").append(jsonFloat(m.roughnessFactor))
+                .append(",\"metalness\":").append(jsonFloat(m.metallicFactor))
+                .append(",\"chromeFactor\":").append(jsonFloat(m.materialRoute == MaterialRoute.Chrome ? 1.0f : 0.0f))
+                .append(",\"glossyFactor\":").append(jsonFloat("Glossy Paint".equals(m.materialName) ? paintGlossSliderValue : 0.0f))
+                .append(",\"specularStrength\":").append(jsonFloat(materialLabSpecularStrength(m)))
+                .append(",\"reflectionResponse\":\"").append(esc(materialLabReflectionResponse(m))).append("\"}");
+        }
+        return b.append("]").toString();
     }
 
     private float[] materialLabMaterialData(List<MaterialInfo> materials) {
@@ -7155,10 +7212,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         private static MaterialRoute classifyMaterialRoute(MaterialInfo info) {
             String name = info.materialName == null ? "" : info.materialName.toLowerCase(Locale.US);
             boolean alphaHint = info.alphaMode == 1 || info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f;
-            if (luminance(info.emissiveFactor) > 0.001f || "metadata_only".equals(info.emissiveTextureStatus)) return MaterialRoute.Emission;
+            if (isSemanticGlass(info)) return info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f ? MaterialRoute.GlassBlend : MaterialRoute.GlassSemanticOpaque;
             if (isFoliageCutoutName(name) || info.alphaMode == 1) return MaterialRoute.FoliageCutout;
             if (isFabricHairName(name)) return MaterialRoute.FabricHair;
-            if (isSemanticGlass(info)) return info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f ? MaterialRoute.GlassBlend : MaterialRoute.GlassSemanticOpaque;
+            if (luminance(info.emissiveFactor) > 0.001f || "metadata_only".equals(info.emissiveTextureStatus)) return MaterialRoute.Emission;
             if (nameHasAny(name, "mirror")) return MaterialRoute.Mirror;
             if (nameHasAny(name, "chrome")) return MaterialRoute.Chrome;
             if (info.metallicFactor >= 0.65f || nameHasAny(name, "metal", "steel")) return MaterialRoute.Metal;
@@ -7186,17 +7243,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         private static int materialTypeHint(MaterialInfo info) {
             String name = info.materialName == null ? "" : info.materialName.toLowerCase(Locale.US);
             boolean hasBase = info.texture != null && "ok".equals(info.texture.status);
-            boolean hasMr = info.metallicRoughnessTexture != null && "ok".equals(info.metallicRoughnessTexture.status);
-            boolean alphaHint = info.alphaMode == 1 || info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f;
-            if (luminance(info.emissiveFactor) > 0.001f || "metadata_only".equals(info.emissiveTextureStatus)) return 8;
             if (info.materialRoute == MaterialRoute.GlassBlend || info.materialRoute == MaterialRoute.GlassSemanticOpaque) return 6;
+            if (luminance(info.emissiveFactor) > 0.001f || "metadata_only".equals(info.emissiveTextureStatus)) return 8;
             if (info.materialRoute == MaterialRoute.Decal) return 7;
             if (info.materialRoute == MaterialRoute.FoliageCutout) return 5;
             if (info.materialRoute == MaterialRoute.FabricHair) return 0;
             if (info.metallicFactor >= 0.65f || name.contains("metal") || name.contains("chrome") || name.contains("steel")) return 2;
             if (name.contains("fabric") || name.contains("cloth") || name.contains("seat") || name.contains("carpet") || (info.roughnessFactor >= 0.78f && info.metallicFactor < 0.15f && info.alphaMode == 0)) return 0;
             if (name.contains("rubber") || name.contains("tire") || name.contains("tyre") || name.contains("black") || (info.roughnessFactor >= 0.55f && info.metallicFactor < 0.08f && !hasBase)) return 3;
-            if (name.contains("paint") || name.contains("body") || name.contains("coat") || (info.metallicFactor < 0.2f && info.roughnessFactor < 0.72f && (hasBase || hasMr))) return 1;
+            if (nameHasAny(name, "paint", "glossy", "lacquer", "body", "coat")) return 1;
             return 4;
         }
 

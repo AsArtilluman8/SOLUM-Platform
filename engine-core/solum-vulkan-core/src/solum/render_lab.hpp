@@ -185,6 +185,13 @@ struct RenderLabState {
         f << indent << "  \"skippedPbrTextureCount\": " << model.skippedPbrTextureCount << ",\n";
         f << indent << "  \"pbrTextureFallbackCount\": " << model.pbrTextureFallbackCount << ",\n";
         f << indent << "  \"materialSlotDiagnostics\": " << (model.materialSlotDiagnostics.empty() ? "[]" : model.materialSlotDiagnostics) << ",\n";
+        f << indent << "  \"materialShaderFormulaMode\": \"" << escapeJson(model.materialShaderFormulaMode) << "\",\n";
+        f << indent << "  \"chromeReflectionBandStrength\": " << model.chromeReflectionBandStrength << ",\n";
+        f << indent << "  \"chromeGrazingBoost\": " << model.chromeGrazingBoost << ",\n";
+        f << indent << "  \"metalDiffuseSuppression\": " << model.metalDiffuseSuppression << ",\n";
+        f << indent << "  \"metalReflectionStrength\": " << model.metalReflectionStrength << ",\n";
+        f << indent << "  \"glossyClearcoatStrength\": " << model.glossyClearcoatStrength << ",\n";
+        f << indent << "  \"glossySecondLobeStrength\": " << model.glossySecondLobeStrength << ",\n";
         f << indent << "  \"routeOpaquePbrCount\": " << model.routeOpaquePbrCount << ",\n";
         f << indent << "  \"routeGlassBlendCount\": " << model.routeGlassBlendCount << ",\n";
         f << indent << "  \"routeGlassSemanticOpaqueCount\": " << model.routeGlassSemanticOpaqueCount << ",\n";

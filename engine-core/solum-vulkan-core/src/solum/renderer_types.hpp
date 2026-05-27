@@ -373,6 +373,13 @@ struct ModelRenderState {
     uint32_t skippedPbrTextureCount = 0;
     uint32_t pbrTextureFallbackCount = 0;
     std::string materialSlotDiagnostics = "[]";
+    std::string materialShaderFormulaMode = "material_reflection_response_p36";
+    float chromeReflectionBandStrength = 2.35f;
+    float chromeGrazingBoost = 1.34f;
+    float metalDiffuseSuppression = 0.80f;
+    float metalReflectionStrength = 1.62f;
+    float glossyClearcoatStrength = 1.05f;
+    float glossySecondLobeStrength = 0.22f;
     uint32_t routeOpaquePbrCount = 0;
     uint32_t routeGlassBlendCount = 0;
     uint32_t routeGlassSemanticOpaqueCount = 0;

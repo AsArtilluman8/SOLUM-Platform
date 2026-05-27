@@ -104,6 +104,13 @@ struct RuntimeDiagnostics {
         f << "  \"skippedPbrTextureCount\": " << model.skippedPbrTextureCount << ",\n";
         f << "  \"pbrTextureFallbackCount\": " << model.pbrTextureFallbackCount << ",\n";
         f << "  \"materialSlotDiagnostics\": " << (model.materialSlotDiagnostics.empty() ? "[]" : model.materialSlotDiagnostics) << ",\n";
+        f << "  \"materialShaderFormulaMode\": \"" << escapeJson(model.materialShaderFormulaMode) << "\",\n";
+        f << "  \"chromeReflectionBandStrength\": " << model.chromeReflectionBandStrength << ",\n";
+        f << "  \"chromeGrazingBoost\": " << model.chromeGrazingBoost << ",\n";
+        f << "  \"metalDiffuseSuppression\": " << model.metalDiffuseSuppression << ",\n";
+        f << "  \"metalReflectionStrength\": " << model.metalReflectionStrength << ",\n";
+        f << "  \"glossyClearcoatStrength\": " << model.glossyClearcoatStrength << ",\n";
+        f << "  \"glossySecondLobeStrength\": " << model.glossySecondLobeStrength << ",\n";
         f << "  \"routeOpaquePbrCount\": " << model.routeOpaquePbrCount << ",\n";
         f << "  \"routeGlassBlendCount\": " << model.routeGlassBlendCount << ",\n";
         f << "  \"routeGlassSemanticOpaqueCount\": " << model.routeGlassSemanticOpaqueCount << ",\n";

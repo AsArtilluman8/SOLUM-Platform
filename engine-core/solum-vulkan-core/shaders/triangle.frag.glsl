@@ -68,6 +68,7 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 296) float glassRoughness;
     layout(offset = 300) int glassTintPreset;
     layout(offset = 304) int glassRenderMode;
+    layout(offset = 308) int materialRoute;
 } pc;
 
 float luminance(vec3 c) {
@@ -295,6 +296,10 @@ void main() {
     int hint = pc.materialTypeHint;
     float roughnessRaw = clamp(pc.roughnessFactor * mr.g, 0.04, 1.0);
     float metallic = clamp(pc.metallicFactor * mr.b, 0.0, 1.0);
+    bool routeMetal = pc.materialRoute == 3;
+    bool routeChrome = pc.materialRoute == 4;
+    bool routeProtectedMatte = pc.materialRoute == 6 || pc.materialRoute == 7 || hint == 0 || hint == 5;
+    bool routeGlossy = !routeProtectedMatte && !routeMetal && !routeChrome && hint == 1;
     bool glassActive = hint == 6 || pc.materialPresetHint == 6 || pc.glassEnabled != 0;
     vec4 glassParams = glassPresetParams(pc.glassTintPreset);
     float glassOpacityInput = max(pc.glassOpacity, glassParams.x);
@@ -302,6 +307,9 @@ void main() {
     float glassRoughInput = clamp(mix(pc.glassRoughness, glassParams.z, 0.38), 0.04, 1.0);
     float glassReflectionInput = glassParams.w;
     float roughness = remapRoughness(roughnessRaw, metallic, hint, calibration);
+    if (!glassActive && routeMetal) roughness = clamp(mix(roughness, clamp(roughnessRaw, 0.10, 0.46), 0.72), 0.05, 1.0);
+    if (!glassActive && routeChrome) roughness = clamp(mix(roughness, 0.08, 0.88), 0.04, 0.32);
+    if (!glassActive && routeGlossy) roughness = clamp(mix(roughness, clamp(roughnessRaw, 0.16, 0.42), 0.64), 0.05, 1.0);
     if (glassActive) roughness = clamp(mix(roughness, glassRoughInput, 0.84), 0.04, 1.0);
     float glossSlider = clamp(pc.glossSliderValue, 0.0, 1.0);
     float paintSlider = clamp(pc.paintGlossSliderValue, 0.0, 1.0);
@@ -326,6 +334,15 @@ void main() {
     if (glassActive) {
         metallic = 0.0;
         baseColor = mix(baseColor, glassTint, 0.72);
+    } else {
+        if (routeMetal) {
+            metallic = max(metallic, 0.82);
+            baseColor = mix(baseColor, baseColor * vec3(0.84, 0.90, 0.98), 0.34);
+        }
+        if (routeChrome) {
+            metallic = max(metallic, 0.96);
+            baseColor = mix(baseColor, vec3(0.82, 0.86, 0.90), 0.72);
+        }
     }
     if (pc.activeDebugView == 1) {
         fragColor = vec4(rawBaseColor, alpha);
@@ -371,6 +388,31 @@ void main() {
     float specGeometry = geometrySmith(n, v, l, roughness);
     float specDenom = max(4.0 * max(dot(n, v), 0.0) * ndotl, 0.001);
     float glossWeight = materialGlossWeight(hint, metallic, roughness);
+    float routeSpecularBoost = 1.0;
+    float routeReflectionBoost = 1.0;
+    float routeDiffuseScale = 1.0;
+    if (!glassActive && routeMetal) {
+        glossWeight = max(glossWeight, 0.92);
+        routeSpecularBoost = 1.38;
+        routeReflectionBoost = 1.34;
+        routeDiffuseScale = 0.64;
+    }
+    if (!glassActive && routeChrome) {
+        glossWeight = max(glossWeight, 1.26);
+        routeSpecularBoost = 2.05;
+        routeReflectionBoost = 2.10;
+        routeDiffuseScale = 0.26;
+    }
+    if (!glassActive && routeGlossy) {
+        glossWeight = max(glossWeight, 0.72);
+        routeSpecularBoost = 1.28;
+        routeReflectionBoost = 1.16;
+        routeDiffuseScale = 0.92;
+    }
+    if (routeProtectedMatte) {
+        routeSpecularBoost = min(routeSpecularBoost, 0.72);
+        routeReflectionBoost = min(routeReflectionBoost, 0.58);
+    }
     float specEnergy = mix(1.12, 0.34, roughness) * mix(0.72, 1.22, metallic);
     float rim = pow(clamp(1.0 - max(dot(n, v), 0.0), 0.0, 1.0), mix(4.0, 1.6, roughness));
     vec3 reflectionDir = reflect(-v, n);
@@ -381,11 +423,13 @@ void main() {
     float motionReflection = clamp(pc.motionReflectionScale, 0.38, 1.0);
     float motionClearcoat = clamp(pc.motionClearcoatScale, 0.35, 1.0);
     vec3 metalTint = mix(vec3(1.0), baseColor, metallic * 0.58);
+    if (!glassActive && routeMetal) metalTint = mix(metalTint, baseColor * vec3(0.86, 0.94, 1.06), 0.48);
+    if (!glassActive && routeChrome) metalTint = mix(metalTint, vec3(0.92, 0.96, 1.0), 0.82);
     if (hint == 0) metalTint *= 0.22;
-    vec3 iblSpecular = fresnel * iblSpecularColor * metalTint * reflectionRoughnessEnergy * reflectionMaterialWeight * pc.reflectionIntensity * motionReflection;
-    vec3 analyticSpecular = fresnel * iblSpecularColor * metalTint * rim * mix(0.035, 0.24, metallic) * glossWeight * pc.reflectionIntensity * motionReflection;
+    vec3 iblSpecular = fresnel * iblSpecularColor * metalTint * reflectionRoughnessEnergy * reflectionMaterialWeight * pc.reflectionIntensity * motionReflection * routeReflectionBoost;
+    vec3 analyticSpecular = fresnel * iblSpecularColor * metalTint * rim * mix(0.035, 0.24, metallic) * glossWeight * pc.reflectionIntensity * motionReflection * routeReflectionBoost;
     vec3 directSpecular = fresnel * (specDistribution * specGeometry / specDenom) * specEnergy * ndotl * sunColor * pc.sunIntensity;
-    directSpecular *= mix(0.34, 1.0, glossWeight);
+    directSpecular *= mix(0.34, 1.0, glossWeight) * routeSpecularBoost;
     float clearcoatFresnel = 0.04 + 0.96 * pow(clamp(1.0 - max(dot(n, v), 0.0), 0.0, 1.0), 5.0);
     float coatDistribution = distributionGGX(n, h, clearcoatRough);
     float coatHighlight = coatDistribution * geometrySmith(n, v, l, clearcoatRough) / specDenom;
@@ -414,6 +458,14 @@ void main() {
         if (pc.glassRenderMode == 1) alpha = transparentGlassAlpha;
     }
     specularLight *= mix(1.0, 1.36, paintTarget);
+    if (!glassActive && routeChrome) {
+        float chromeLine = pow(max(dot(reflectionDir, normalize(vec3(0.42, 0.74, 0.52))), 0.0), 18.0);
+        specularLight += vec3(1.0, 0.97, 0.88) * chromeLine * pc.reflectionIntensity * 0.90;
+    }
+    if (!glassActive && routeGlossy) {
+        float paintLine = pow(max(dot(reflectionDir, normalize(vec3(-0.28, 0.84, 0.46))), 0.0), 12.0);
+        specularLight += mix(vec3(1.0), baseColor, 0.18) * paintLine * pc.reflectionIntensity * 0.34;
+    }
     specularLight += clearcoatLight;
     float specLum = luminance(specularLight);
     float specGuard = mix(1.45, 2.10, metallic) * mix(1.0, 0.72, calibration) + clearcoatWeight * 0.55;
@@ -449,7 +501,8 @@ void main() {
         fragColor = vec4(pc.baseColorTextureReady != 0 ? 0.1 : 0.85, pc.metallicRoughnessTextureReady != 0 ? 0.85 : 0.1, pc.normalTextureReady != 0 ? 0.85 : 0.1, 1.0);
         return;
     }
-    vec3 ambient = baseColor * (1.0 - metallic * 0.75) * mix(ambientColor * max(pc.ambientIntensity, pc.ambientFloor), iblDiffuseColor, 0.65);
+    vec3 ambient = baseColor * (1.0 - metallic * 0.75) * routeDiffuseScale * mix(ambientColor * max(pc.ambientIntensity, pc.ambientFloor), iblDiffuseColor, 0.65);
+    diffuseLight *= routeDiffuseScale;
     if (glassActive) ambient *= mix(0.34, 0.72, glassOpacity);
     vec3 rgb = (diffuseLight + ambient) * ao + specularLight + emissiveColor;
     float contactMask = contactGroundingMask(inLocalPosition, n);

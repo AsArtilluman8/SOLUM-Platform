@@ -802,6 +802,12 @@ struct RenderLabState {
         f << indent << "  \"selectedManualGlass\": " << (model.selectedManualGlass ? "true" : "false") << ",\n";
         f << indent << "  \"selectedMaterialRoute\": \"" << escapeJson(model.selectedMaterialRoute) << "\",\n";
         f << indent << "  \"selectedMaterialRouteReason\": \"" << escapeJson(model.selectedMaterialRouteReason) << "\",\n";
+        f << indent << "  \"selectedMetalness\": " << model.selectedMetalness << ",\n";
+        f << indent << "  \"selectedRoughness\": " << model.selectedRoughness << ",\n";
+        f << indent << "  \"selectedSpecularStrength\": " << model.selectedSpecularStrength << ",\n";
+        f << indent << "  \"selectedChromeFactor\": " << model.selectedChromeFactor << ",\n";
+        f << indent << "  \"selectedGlossyFactor\": " << model.selectedGlossyFactor << ",\n";
+        f << indent << "  \"materialShaderFormulaMode\": \"" << escapeJson(model.materialShaderFormulaMode) << "\",\n";
         f << indent << "  \"selectedDrawQueue\": \"" << escapeJson(model.selectedDrawQueue) << "\",\n";
         f << indent << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << indent << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";

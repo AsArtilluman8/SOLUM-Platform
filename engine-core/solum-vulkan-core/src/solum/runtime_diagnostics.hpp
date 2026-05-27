@@ -494,6 +494,12 @@ struct RuntimeDiagnostics {
         f << "  \"selectedManualGlass\": " << (model.selectedManualGlass ? "true" : "false") << ",\n";
         f << "  \"selectedMaterialRoute\": \"" << escapeJson(model.selectedMaterialRoute) << "\",\n";
         f << "  \"selectedMaterialRouteReason\": \"" << escapeJson(model.selectedMaterialRouteReason) << "\",\n";
+        f << "  \"selectedMetalness\": " << model.selectedMetalness << ",\n";
+        f << "  \"selectedRoughness\": " << model.selectedRoughness << ",\n";
+        f << "  \"selectedSpecularStrength\": " << model.selectedSpecularStrength << ",\n";
+        f << "  \"selectedChromeFactor\": " << model.selectedChromeFactor << ",\n";
+        f << "  \"selectedGlossyFactor\": " << model.selectedGlossyFactor << ",\n";
+        f << "  \"materialShaderFormulaMode\": \"" << escapeJson(model.materialShaderFormulaMode) << "\",\n";
         f << "  \"selectedDrawQueue\": \"" << escapeJson(model.selectedDrawQueue) << "\",\n";
         f << "  \"fpsCurrent\": " << model.fpsCurrent << ",\n";
         f << "  \"frameTimeMs\": " << model.frameTimeMs << ",\n";

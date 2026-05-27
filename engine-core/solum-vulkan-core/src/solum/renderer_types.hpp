@@ -83,6 +83,7 @@ struct MaterialConstants {
     float glassRoughness = 0.22f;
     int glassTintPreset = 0;
     int glassRenderMode = 2;
+    int materialRoute = 0;
 };
 
 inline float semanticGlassFallbackAlpha(float opacity) {
@@ -389,6 +390,12 @@ struct ModelRenderState {
     bool selectedManualGlass = false;
     std::string selectedMaterialRoute = "Unknown";
     std::string selectedMaterialRouteReason = "none";
+    float selectedMetalness = 0.0f;
+    float selectedRoughness = 1.0f;
+    float selectedSpecularStrength = 0.0f;
+    float selectedChromeFactor = 0.0f;
+    float selectedGlossyFactor = 0.0f;
+    std::string materialShaderFormulaMode = "mobile_pbr_route_foundation";
     std::string selectedDrawQueue = "none";
     std::string lightingStatus = "ok";
     float sunDirection[3] = { -0.35f, -0.82f, -0.45f };

@@ -200,6 +200,15 @@ struct RendererCore {
             model.selectedSemanticGlass = model.selectedManualGlass || selected.materialRoute == MaterialRoute::GlassBlend || selected.materialRoute == MaterialRoute::GlassSemanticOpaque || selected.materialTypeHint == 6;
             model.selectedMaterialRoute = materialRouteName(route);
             model.selectedMaterialRouteReason = manualOpaqueGlass ? "manual_glass_override_opaque_preview" : materialRouteReason(selected);
+            model.selectedMetalness = selected.metallicFactor;
+            model.selectedRoughness = selected.roughnessFactor;
+            const bool chrome = route == MaterialRoute::Chrome;
+            const bool metal = chrome || route == MaterialRoute::Metal;
+            const bool glossy = selected.materialTypeHint == 1 || selected.materialPresetHint == MaterialPresetCarPaint || (route == MaterialRoute::OpaquePbr && selected.roughnessFactor < 0.42f && selected.metallicFactor < 0.25f);
+            model.selectedChromeFactor = chrome ? 1.0f : 0.0f;
+            model.selectedGlossyFactor = glossy ? 1.0f : 0.0f;
+            model.selectedSpecularStrength = (chrome ? 2.4f : (metal ? 1.65f : 0.70f)) + (glossy ? 0.45f : 0.0f);
+            model.materialShaderFormulaMode = chrome ? "p34_chrome_fake_probe_highlight" : (metal ? "p34_metal_cold_tinted_probe" : (glossy ? "p34_glossy_paint_clear_highlight" : "mobile_pbr_route_foundation"));
             if (selected.runtimeClass == RuntimeMaterialClass::TransparentGlass) model.selectedDrawQueue = "glass";
             else if (selected.runtimeClass == RuntimeMaterialClass::Cutout) model.selectedDrawQueue = "cutout";
             else model.selectedDrawQueue = "opaque";
@@ -209,6 +218,12 @@ struct RendererCore {
             model.selectedSemanticGlass = false;
             model.selectedMaterialRoute = "Unknown";
             model.selectedMaterialRouteReason = "no_selected_material";
+            model.selectedMetalness = 0.0f;
+            model.selectedRoughness = 1.0f;
+            model.selectedSpecularStrength = 0.0f;
+            model.selectedChromeFactor = 0.0f;
+            model.selectedGlossyFactor = 0.0f;
+            model.materialShaderFormulaMode = "mobile_pbr_route_foundation";
         }
     }
 
@@ -1731,6 +1746,7 @@ struct RendererCore {
                     pc.material.alphaMode = slot.alphaMode;
                     pc.material.materialId = range.materialSlot;
                     pc.material.materialTypeHint = slot.materialTypeHint;
+                    pc.material.materialRoute = static_cast<int>(slot.materialRoute);
                     if (!glassPass && material.glassEnabled == 0 && slot.materialTypeHint == 6) {
                         pc.material.materialTypeHint = 4;
                         pc.material.materialPresetHint = MaterialPresetBalanced;

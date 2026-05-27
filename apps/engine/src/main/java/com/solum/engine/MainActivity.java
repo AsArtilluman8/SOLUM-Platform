@@ -3232,6 +3232,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "glassMaterialNames=" + jsonArrayField(renderLab, "glassMaterialNames", "[]") + "\n"
             + "glassClassificationReason=" + jsonArrayField(renderLab, "glassClassificationReason", "[]") + "\n"
             + "routeOpaquePbrCount=" + jsonNumberField(renderLab, "routeOpaquePbrCount", "0") + "\n"
+            + "routeMetalCount=" + jsonNumberField(renderLab, "routeMetalCount", "0") + "\n"
+            + "routeChromeCount=" + jsonNumberField(renderLab, "routeChromeCount", "0") + "\n"
+            + "routeMirrorCount=" + jsonNumberField(renderLab, "routeMirrorCount", "0") + "\n"
             + "routeGlassBlendCount=" + jsonNumberField(renderLab, "routeGlassBlendCount", "0") + "\n"
             + "routeGlassSemanticOpaqueCount=" + jsonNumberField(renderLab, "routeGlassSemanticOpaqueCount", "0") + "\n"
             + "routeFoliageCutoutCount=" + jsonNumberField(renderLab, "routeFoliageCutoutCount", "0") + "\n"
@@ -3239,6 +3242,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "routeEmissionCount=" + jsonNumberField(renderLab, "routeEmissionCount", "0") + "\n"
             + "selectedMaterialRoute=" + jsonStringField(renderLab, "selectedMaterialRoute", "Unknown") + "\n"
             + "selectedMaterialRouteReason=" + jsonStringField(renderLab, "selectedMaterialRouteReason", "none") + "\n"
+            + "selectedMetalness=" + jsonNumberField(renderLab, "selectedMetalness", "0") + "\n"
+            + "selectedRoughness=" + jsonNumberField(renderLab, "selectedRoughness", "1") + "\n"
+            + "selectedSpecularStrength=" + jsonNumberField(renderLab, "selectedSpecularStrength", "0") + "\n"
+            + "selectedChromeFactor=" + jsonNumberField(renderLab, "selectedChromeFactor", "0") + "\n"
+            + "selectedGlossyFactor=" + jsonNumberField(renderLab, "selectedGlossyFactor", "0") + "\n"
+            + "materialShaderFormulaMode=" + jsonStringField(renderLab, "materialShaderFormulaMode", "mobile_pbr_route_foundation") + "\n"
             + "glassRouteStatus=" + jsonStringField(renderLab, "glassRouteStatus", modelState.glassRouteStatus) + "\n";
     }
 
@@ -3266,7 +3275,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         b.append("  glassDepthWriteEnabled=").append(jsonBooleanField(renderLab, "glassDepthWriteEnabled", String.valueOf(modelState.glassDepthWriteEnabled))).append("\n");
         b.append("  routeGlassBlendCount=").append(jsonNumberField(renderLab, "routeGlassBlendCount", "0")).append("\n");
         b.append("  routeGlassSemanticOpaqueCount=").append(jsonNumberField(renderLab, "routeGlassSemanticOpaqueCount", "0")).append("\n");
+        b.append("  routeMetalCount=").append(jsonNumberField(renderLab, "routeMetalCount", "0")).append("\n");
+        b.append("  routeChromeCount=").append(jsonNumberField(renderLab, "routeChromeCount", "0")).append("\n");
+        b.append("  routeOpaquePbrCount=").append(jsonNumberField(renderLab, "routeOpaquePbrCount", "0")).append("\n");
         b.append("  routeFoliageCutoutCount=").append(jsonNumberField(renderLab, "routeFoliageCutoutCount", "0")).append("\n");
+        b.append("  selectedMetalness=").append(jsonNumberField(renderLab, "selectedMetalness", "0")).append("\n");
+        b.append("  selectedRoughness=").append(jsonNumberField(renderLab, "selectedRoughness", "1")).append("\n");
+        b.append("  selectedSpecularStrength=").append(jsonNumberField(renderLab, "selectedSpecularStrength", "0")).append("\n");
+        b.append("  selectedChromeFactor=").append(jsonNumberField(renderLab, "selectedChromeFactor", "0")).append("\n");
+        b.append("  selectedGlossyFactor=").append(jsonNumberField(renderLab, "selectedGlossyFactor", "0")).append("\n");
+        b.append("  materialShaderFormulaMode=").append(jsonStringField(renderLab, "materialShaderFormulaMode", "mobile_pbr_route_foundation")).append("\n");
         appendGlassDetailSlot(b, "Selected/current candidate", selected, selectedMaterialSlot, renderLab, tintRgba);
         appendGlassDetailSlot(b, "Standalone working glass", standalone, standalone == null ? -1 : standalone.optInt("slot", -1), renderLab, tintRgba);
         appendGlassDetailSlot(b, "Car glass specific", carGlass, carGlass == null ? -1 : carGlass.optInt("slot", -1), renderLab, tintRgba);
@@ -3745,6 +3763,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"selectedManualGlass\": " + jsonBooleanField(renderLab, "selectedManualGlass", String.valueOf(manualGlassSlotOverride == selectedMaterialSlot)) + ",\n"
             + "  \"selectedMaterialRoute\": \"" + escape(jsonStringField(renderLab, "selectedMaterialRoute", "Unknown")) + "\",\n"
             + "  \"selectedMaterialRouteReason\": \"" + escape(jsonStringField(renderLab, "selectedMaterialRouteReason", "none")) + "\",\n"
+            + "  \"selectedMetalness\": " + jsonNumberField(renderLab, "selectedMetalness", "0") + ",\n"
+            + "  \"selectedRoughness\": " + jsonNumberField(renderLab, "selectedRoughness", "1") + ",\n"
+            + "  \"selectedSpecularStrength\": " + jsonNumberField(renderLab, "selectedSpecularStrength", "0") + ",\n"
+            + "  \"selectedChromeFactor\": " + jsonNumberField(renderLab, "selectedChromeFactor", "0") + ",\n"
+            + "  \"selectedGlossyFactor\": " + jsonNumberField(renderLab, "selectedGlossyFactor", "0") + ",\n"
+            + "  \"materialShaderFormulaMode\": \"" + escape(jsonStringField(renderLab, "materialShaderFormulaMode", "mobile_pbr_route_foundation")) + "\",\n"
             + "  \"selectedDrawQueue\": \"" + escape(jsonStringField(renderLab, "selectedDrawQueue", "none")) + "\",\n"
             + "  \"materialDrawRangeDiagnostics\": " + modelState.materialDrawRangeDiagnostics + ",\n"
             + "  \"materialCalibrationStatus\": \"" + escape(jsonStringField(renderLab, "materialCalibrationStatus", modelState.materialCalibrationStatus)) + "\",\n"
@@ -6685,7 +6709,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (isSemanticGlass(info)) return info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f ? MaterialRoute.GlassBlend : MaterialRoute.GlassSemanticOpaque;
             if (nameHasAny(name, "mirror")) return MaterialRoute.Mirror;
             if (nameHasAny(name, "chrome")) return MaterialRoute.Chrome;
-            if (info.metallicFactor >= 0.65f || nameHasAny(name, "metal", "steel")) return MaterialRoute.Metal;
+            if (info.metallicFactor >= 0.65f || nameHasAny(name, "metal", "steel", "iron", "aluminium", "aluminum", "silver", "gold", "copper", "bronze")) return MaterialRoute.Metal;
             if (nameHasAny(name, "decal", "sticker", "label") || (alphaHint && info.roughnessFactor < 0.36f && info.metallicFactor < 0.2f)) return MaterialRoute.Decal;
             return MaterialRoute.OpaquePbr;
         }
@@ -6699,9 +6723,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 case FabricHair: return "fabric_hair_name_guard";
                 case Emission: return "emissive_factor_or_texture";
                 case Decal: return "decal_name_or_alpha_label";
-                case Chrome: return "chrome_placeholder";
+                case Chrome: return "chrome_name_route_p34";
                 case Mirror: return "mirror_placeholder";
-                case Metal: return "metal_placeholder";
+                case Metal: return info.metallicFactor >= 0.65f ? "metallic_factor_route_p34" : "metal_name_route_p34";
                 case OpaquePbr: return "default_opaque_pbr";
                 default: return "unknown_route";
             }
@@ -6717,10 +6741,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             if (info.materialRoute == MaterialRoute.Decal) return 7;
             if (info.materialRoute == MaterialRoute.FoliageCutout) return 5;
             if (info.materialRoute == MaterialRoute.FabricHair) return 0;
-            if (info.metallicFactor >= 0.65f || name.contains("metal") || name.contains("chrome") || name.contains("steel")) return 2;
+            if (info.materialRoute == MaterialRoute.Chrome || info.materialRoute == MaterialRoute.Metal || info.metallicFactor >= 0.65f || nameHasAny(name, "metal", "chrome", "steel", "iron", "aluminium", "aluminum", "silver", "gold", "copper", "bronze")) return 2;
             if (name.contains("fabric") || name.contains("cloth") || name.contains("seat") || name.contains("carpet") || (info.roughnessFactor >= 0.78f && info.metallicFactor < 0.15f && info.alphaMode == 0)) return 0;
             if (name.contains("rubber") || name.contains("tire") || name.contains("tyre") || name.contains("black") || (info.roughnessFactor >= 0.55f && info.metallicFactor < 0.08f && !hasBase)) return 3;
-            if (name.contains("paint") || name.contains("body") || name.contains("coat") || (info.metallicFactor < 0.2f && info.roughnessFactor < 0.72f && (hasBase || hasMr))) return 1;
+            if (nameHasAny(name, "car paint", "paint", "glossy", "lacquer") || name.contains("body") || name.contains("coat") || (info.metallicFactor < 0.2f && info.roughnessFactor < 0.72f && (hasBase || hasMr))) return 1;
             return 4;
         }
 
@@ -7025,6 +7049,31 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             return anyFailed ? "failed" : "missing";
         }
 
+        private static float routeSpecularStrength(MaterialInfo info) {
+            boolean glossy = info.materialTypeHint == 1;
+            if (info.materialRoute == MaterialRoute.Chrome) return glossy ? 2.85f : 2.40f;
+            if (info.materialRoute == MaterialRoute.Metal) return glossy ? 2.10f : 1.65f;
+            if (glossy) return 1.15f;
+            if (info.materialRoute == MaterialRoute.FoliageCutout || info.materialRoute == MaterialRoute.FabricHair) return 0.32f;
+            return 0.70f;
+        }
+
+        private static float routeChromeFactor(MaterialInfo info) {
+            return info.materialRoute == MaterialRoute.Chrome ? 1.0f : 0.0f;
+        }
+
+        private static float routeGlossyFactor(MaterialInfo info) {
+            return info.materialTypeHint == 1 ? 1.0f : 0.0f;
+        }
+
+        private static String routeShaderFormulaMode(MaterialInfo info) {
+            if (info.materialRoute == MaterialRoute.Chrome) return "p34_chrome_fake_probe_highlight";
+            if (info.materialRoute == MaterialRoute.Metal) return "p34_metal_cold_tinted_probe";
+            if (info.materialTypeHint == 1) return "p34_glossy_paint_clear_highlight";
+            if (info.materialRoute == MaterialRoute.GlassBlend || info.materialRoute == MaterialRoute.GlassSemanticOpaque) return "glass_route_preserved";
+            return "mobile_pbr_route_foundation";
+        }
+
         private static String materialSlotDiagnostics(List<MaterialInfo> materials) {
             StringBuilder b = new StringBuilder("[");
             for (int i = 0; i < materials.size(); i++) {
@@ -7054,6 +7103,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     .append(",\"emissiveGuardApplied\":").append(m.emissiveGuardApplied)
                     .append(",\"metallicFactor\":").append(jsonFloat(m.metallicFactor))
                     .append(",\"roughnessFactor\":").append(jsonFloat(m.roughnessFactor))
+                    .append(",\"selectedMetalness\":").append(jsonFloat(m.metallicFactor))
+                    .append(",\"selectedRoughness\":").append(jsonFloat(m.roughnessFactor))
+                    .append(",\"selectedSpecularStrength\":").append(jsonFloat(routeSpecularStrength(m)))
+                    .append(",\"selectedChromeFactor\":").append(jsonFloat(routeChromeFactor(m)))
+                    .append(",\"selectedGlossyFactor\":").append(jsonFloat(routeGlossyFactor(m)))
+                    .append(",\"materialShaderFormulaMode\":\"").append(esc(routeShaderFormulaMode(m))).append("\"")
                     .append(",\"baseColorTextureStatus\":\"").append(esc(m.texture == null ? "missing" : m.texture.status)).append("\"")
                     .append(",\"metallicRoughnessStatus\":\"").append(esc(m.metallicRoughnessStatus)).append("\"")
                     .append(",\"normalTextureStatus\":\"").append(esc(m.normalMapStatus)).append("\"")

@@ -68,18 +68,33 @@ public class FilamentGlbPreviewActivity extends Activity {
     private long lastHudUpdateNs = 0L;
     private float rollingFrameMs = 0.0f;
     private float rollingFps = 0.0f;
+    private float rollingRenderCpuMs = 0.0f;
+    private long liveFrameCounter = 0L;
     private String modelPath = "";
     private String modelName = "";
     private String loadStatus = "not_started";
     private String lifecycleStatus = "created";
     private String lastLifecycleError = "none";
-    private String qualityFeatureStatus = "wired_dynamic_resolution_aa_ao_bloom_shadows_post";
+    private String qualityFeatureStatus = "medium_mobile_safe";
     private String environmentMode = "procedural_neutral_fallback";
     private String iblStatus = "fallback_no_hdr_asset";
+    private String realIblReady = "false";
+    private String futureIblAssetPath = "none";
     private String cameraStatus = "orbit_drag_pinch_zoom_unit_cube";
     private String lightingStatus = "not_applied";
-    private float indirectLightIntensity = 42_000.0f;
-    private float exposure = 1.15f;
+    private String legacyVulkanReturnStatus = "not_requested";
+    private String actualAA = "FXAA";
+    private int actualSampleCount = 2;
+    private float dynamicMinScale = 0.72f;
+    private float dynamicMaxScale = 0.95f;
+    private boolean aoEnabled = false;
+    private boolean bloomEnabled = false;
+    private boolean shadowsEnabled = false;
+    private boolean refractionEnabled = false;
+    private float sunLightIntensity = 22_000.0f;
+    private float indirectLightIntensity = 11_000.0f;
+    private float fillLightIntensity = 3_500.0f;
+    private float exposure = 0.92f;
 
     private enum FilamentQualityProfile {
         LOW("Low"),
@@ -100,10 +115,10 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private enum LightingPreset {
-        STUDIO("Studio", new float[] {-0.35f, -0.75f, -0.55f}, 55_000.0f, 42_000.0f, 1.15f, new float[] {0.070f, 0.082f, 0.092f, 1.0f}, 14_000.0f, new float[] {0.70f, -0.35f, -0.62f}),
-        BRIGHT("Bright", new float[] {-0.20f, -0.82f, -0.48f}, 82_000.0f, 62_000.0f, 1.32f, new float[] {0.095f, 0.108f, 0.120f, 1.0f}, 20_000.0f, new float[] {0.62f, -0.42f, -0.66f}),
-        CINEMATIC("Cinematic", new float[] {-0.62f, -0.62f, -0.48f}, 38_000.0f, 30_000.0f, 0.98f, new float[] {0.030f, 0.036f, 0.045f, 1.0f}, 7_000.0f, new float[] {0.48f, -0.32f, -0.82f}),
-        NEUTRAL("Neutral", new float[] {-0.35f, -0.82f, -0.45f}, 32_000.0f, 20_000.0f, 1.00f, new float[] {0.040f, 0.047f, 0.052f, 1.0f}, 4_000.0f, new float[] {0.65f, -0.30f, -0.70f});
+        STUDIO("Studio", new float[] {-0.35f, -0.75f, -0.55f}, 22_000.0f, 11_000.0f, 0.92f, new float[] {0.035f, 0.041f, 0.046f, 1.0f}, 3_500.0f, new float[] {0.70f, -0.35f, -0.62f}),
+        BRIGHT("Bright", new float[] {-0.20f, -0.82f, -0.48f}, 30_000.0f, 15_000.0f, 1.00f, new float[] {0.045f, 0.052f, 0.058f, 1.0f}, 5_500.0f, new float[] {0.62f, -0.42f, -0.66f}),
+        CINEMATIC("Cinematic", new float[] {-0.62f, -0.62f, -0.48f}, 15_000.0f, 8_000.0f, 0.82f, new float[] {0.022f, 0.026f, 0.033f, 1.0f}, 2_000.0f, new float[] {0.48f, -0.32f, -0.82f}),
+        NEUTRAL("Neutral", new float[] {-0.35f, -0.82f, -0.45f}, 17_000.0f, 9_000.0f, 0.90f, new float[] {0.030f, 0.035f, 0.040f, 1.0f}, 2_200.0f, new float[] {0.65f, -0.30f, -0.70f});
 
         final String label;
         final float[] sunDirection;
@@ -173,9 +188,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         });
         Button reloadButton = button("Reload");
         reloadButton.setOnClickListener(v -> loadModel());
-        Button closeButton = button("Back to Vulkan");
-        closeButton.setOnClickListener(v -> returnToVulkan());
-        statusView = overlayText(10.0f, 9);
+        Button closeButton = button("Close Preview");
+        closeButton.setOnClickListener(v -> closePreview());
+        statusView = overlayText(10.0f, 12);
         controls.addView(qualityButton);
         controls.addView(lightingButton);
         controls.addView(reloadButton);
@@ -206,12 +221,12 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        returnToVulkan();
+        closePreview();
     }
 
     @Override
     protected void onDestroy() {
-        stopFrames(returningToVulkan ? "returned_to_vulkan" : "destroyed");
+        stopFrames(returningToVulkan ? "close_preview_destroyed" : "destroyed");
         releaseFilamentResources();
         super.onDestroy();
     }
@@ -241,10 +256,14 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
     }
 
-    private void returnToVulkan() {
+    private void closePreview() {
         returningToVulkan = true;
-        lifecycleStatus = "returned_to_vulkan";
-        stopFrames("returned_to_vulkan");
+        legacyVulkanReturnStatus = "known_legacy_return_untested_close_preview_finishes_filament_activity";
+        lifecycleStatus = "close_preview_requested";
+        stopFrames("close_preview_stop_frames");
+        if (surfaceView != null) surfaceView.setOnTouchListener(null);
+        releaseFilamentResources();
+        lifecycleStatus = "close_preview_finish";
         finish();
     }
 
@@ -276,7 +295,11 @@ public class FilamentGlbPreviewActivity extends Activity {
                 modelViewer.getAnimator().applyAnimation(0, seconds);
                 modelViewer.getAnimator().updateBoneMatrices();
             }
+            long renderStartNs = System.nanoTime();
             modelViewer.render(frameTimeNanos);
+            long renderEndNs = System.nanoTime();
+            liveFrameCounter += 1L;
+            updateRenderCpuTiming((renderEndNs - renderStartNs) / 1_000_000.0f);
         } catch (Throwable t) {
             lastLifecycleError = shortMessage(t);
             loadStatus = "render_error: " + lastLifecycleError;
@@ -300,6 +323,12 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (lastHudUpdateNs == 0L || frameTimeNanos - lastHudUpdateNs >= HUD_UPDATE_NS) {
             lastHudUpdateNs = frameTimeNanos;
             updateHud();
+        }
+    }
+
+    private void updateRenderCpuTiming(float cpuMs) {
+        if (cpuMs >= 0.0f && cpuMs < 250.0f) {
+            rollingRenderCpuMs = rollingRenderCpuMs <= 0.0f ? cpuMs : (rollingRenderCpuMs * 0.82f + cpuMs * 0.18f);
         }
     }
 
@@ -379,6 +408,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (modelViewer == null) return;
         try {
             indirectLightIntensity = lightingPreset.indirectIntensity;
+            sunLightIntensity = lightingPreset.sunIntensity;
+            fillLightIntensity = lightingPreset.fillIntensity;
             exposure = lightingPreset.exposure;
             if (indirectLight != null) indirectLight.setIntensity(indirectLightIntensity);
             if (skybox != null) skybox.setColor(lightingPreset.skyColor);
@@ -390,7 +421,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 lights.setDirection(sunInstance, lightingPreset.sunDirection[0], lightingPreset.sunDirection[1], lightingPreset.sunDirection[2]);
                 lights.setIntensity(sunInstance, lightingPreset.sunIntensity);
                 lights.setColor(sunInstance, 1.0f, 0.96f, 0.90f);
-                lights.setShadowCaster(sunInstance, qualityProfile == FilamentQualityProfile.HIGH_PREVIEW);
+                lights.setShadowCaster(sunInstance, shadowsEnabled);
             }
             if (fillLightEntity != 0) {
                 int fillInstance = lights.getInstance(fillLightEntity);
@@ -407,7 +438,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             clear.discard = true;
             clear.clearColor = lightingPreset.skyColor;
             modelViewer.getRenderer().setClearOptions(clear);
-            lightingStatus = "applied_sun_fill_indirect_exposure_clear";
+            lightingStatus = "applied_mobile_safe_sun_fill_indirect_exposure_clear";
         } catch (Throwable t) {
             lastLifecycleError = shortMessage(t);
             lightingStatus = "apply_failed";
@@ -437,26 +468,26 @@ public class FilamentGlbPreviewActivity extends Activity {
                 dynamic.maxScale = 0.82f;
                 dynamic.quality = QualityLevel.LOW;
                 renderQuality.hdrColorBuffer = QualityLevel.LOW;
-                qualityFeatureStatus = "low_dynamic_0_58_0_82_no_aa_no_ao_no_bloom_no_shadows";
+                setActualQualityStatus("NONE", 1, 0.58f, 0.82f, false, false, false, false, "low_mobile_safe_dynamic_0_58_0_82_no_aa_no_ao_no_bloom_no_shadows_no_refraction");
             } else if (qualityProfile == FilamentQualityProfile.HIGH_PREVIEW) {
                 view.setAntiAliasing(AntiAliasing.FXAA);
                 view.setSampleCount(4);
                 view.setAmbientOcclusion(AmbientOcclusion.SSAO);
-                view.setShadowingEnabled(true);
-                view.setScreenSpaceRefractionEnabled(true);
+                view.setShadowingEnabled(false);
+                view.setScreenSpaceRefractionEnabled(false);
                 view.setPostProcessingEnabled(true);
                 ao.enabled = true;
-                ao.quality = QualityLevel.MEDIUM;
-                ao.intensity = 0.35f;
-                bloom.enabled = true;
-                bloom.strength = 0.045f;
+                ao.quality = QualityLevel.LOW;
+                ao.intensity = 0.18f;
+                bloom.enabled = false;
+                bloom.strength = 0.0f;
                 bloom.quality = QualityLevel.LOW;
                 dynamic.enabled = true;
                 dynamic.minScale = 0.86f;
                 dynamic.maxScale = 1.00f;
                 dynamic.quality = QualityLevel.MEDIUM;
                 renderQuality.hdrColorBuffer = QualityLevel.HIGH;
-                qualityFeatureStatus = "high_dynamic_0_86_1_00_fxaa_msaa4_ssao_low_bloom_shadows_refraction";
+                setActualQualityStatus("FXAA", 4, 0.86f, 1.00f, true, false, false, false, "high_preview_mobile_safe_dynamic_0_86_1_00_fxaa_msaa4_ssao_low_no_bloom_no_shadows_no_refraction");
             } else {
                 view.setAntiAliasing(AntiAliasing.FXAA);
                 view.setSampleCount(2);
@@ -471,7 +502,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 dynamic.maxScale = 0.95f;
                 dynamic.quality = QualityLevel.MEDIUM;
                 renderQuality.hdrColorBuffer = QualityLevel.MEDIUM;
-                qualityFeatureStatus = "medium_dynamic_0_72_0_95_fxaa_msaa2_no_ao_no_bloom_no_shadows";
+                setActualQualityStatus("FXAA", 2, 0.72f, 0.95f, false, false, false, false, "medium_mobile_safe_dynamic_0_72_0_95_fxaa_msaa2_no_ao_no_bloom_no_shadows_no_refraction");
             }
             view.setAmbientOcclusionOptions(ao);
             view.setBloomOptions(bloom);
@@ -486,6 +517,18 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (qualityButton != null) qualityButton.setText("Quality: " + qualityProfile.label);
     }
 
+    private void setActualQualityStatus(String aa, int sampleCount, float minScale, float maxScale, boolean ao, boolean bloom, boolean shadows, boolean refraction, String status) {
+        actualAA = aa;
+        actualSampleCount = sampleCount;
+        dynamicMinScale = minScale;
+        dynamicMaxScale = maxScale;
+        aoEnabled = ao;
+        bloomEnabled = bloom;
+        shadowsEnabled = shadows;
+        refractionEnabled = refraction;
+        qualityFeatureStatus = status;
+    }
+
     private void applyColorGrading() {
         if (modelViewer == null) return;
         Engine engine = modelViewer.getEngine();
@@ -494,11 +537,11 @@ public class FilamentGlbPreviewActivity extends Activity {
             engine.destroyColorGrading(colorGrading);
             colorGrading = null;
         }
-        float gradeExposure = qualityProfile == FilamentQualityProfile.LOW ? 0.0f : (qualityProfile == FilamentQualityProfile.HIGH_PREVIEW ? 0.08f : 0.04f);
+        float gradeExposure = 0.0f;
         colorGrading = new ColorGrading.Builder()
             .quality(qualityProfile == FilamentQualityProfile.HIGH_PREVIEW ? ColorGrading.QualityLevel.MEDIUM : ColorGrading.QualityLevel.LOW)
             .exposure(gradeExposure)
-            .contrast(qualityProfile == FilamentQualityProfile.HIGH_PREVIEW ? 1.03f : 1.0f)
+            .contrast(1.0f)
             .saturation(1.0f)
             .build(engine);
         modelViewer.getView().setColorGrading(colorGrading);
@@ -507,7 +550,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void releaseFilamentResources() {
         if (destroyed || destroying) return;
         destroying = true;
-        lifecycleStatus = returningToVulkan ? "returned_to_vulkan" : "destroyed";
+        lifecycleStatus = returningToVulkan ? "close_preview_releasing_filament" : "destroyed";
         try {
             if (modelViewer != null) {
                 Engine engine = modelViewer.getEngine();
@@ -575,17 +618,21 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void updateHud() {
         if (hudView != null) {
             hudView.setText("Filament Preview | FPS " + oneDecimal(rollingFps) + " | " + oneDecimal(rollingFrameMs)
-                + " ms | " + qualityProfile.label + " | " + lightingPreset.label);
+                + " ms | CPU " + oneDecimal(rollingRenderCpuMs) + " ms | frame " + liveFrameCounter
+                + " | " + qualityProfile.label + " | " + lightingPreset.label);
         }
         if (statusView != null) {
             statusView.setText("Model: " + (modelName == null || modelName.isEmpty() ? "none" : modelName)
                 + "\nLoad: " + loadStatus
                 + "\nCamera: " + cameraStatus
                 + "\nLight preset: " + lightingPreset.label + " / " + lightingStatus
-                + "\nIBL: " + iblStatus + " / " + environmentMode
-                + "\nIndirect: " + noDecimal(indirectLightIntensity) + "  Exposure: " + oneDecimal(exposure)
+                + "\nExposure/sun/indirect/fill: " + oneDecimal(exposure) + " / " + noDecimal(sunLightIntensity) + " / " + noDecimal(indirectLightIntensity) + " / " + noDecimal(fillLightIntensity)
+                + "\nIBL: " + iblStatus + " / " + environmentMode + " / realIblReady=" + realIblReady + " / future=" + futureIblAssetPath
                 + "\nQuality: " + qualityFeatureStatus
+                + "\nactualAA=" + actualAA + " sampleCount=" + actualSampleCount + " dynamicResolution=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
+                + "\naoEnabled=" + aoEnabled + " bloomEnabled=" + bloomEnabled + " shadowsEnabled=" + shadowsEnabled + " refractionEnabled=" + refractionEnabled
                 + "\nLifecycle: " + lifecycleStatus
+                + "\nlegacyVulkanReturnStatus: " + legacyVulkanReturnStatus
                 + "\nlastLifecycleError: " + lastLifecycleError);
         }
     }
@@ -621,6 +668,10 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private static String noDecimal(float value) {
         return String.format(Locale.US, "%.0f", value);
+    }
+
+    private static String twoDecimal(float value) {
+        return String.format(Locale.US, "%.2f", value);
     }
 
     private static String shorten(String value, int max) {

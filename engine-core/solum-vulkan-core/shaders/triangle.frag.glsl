@@ -294,8 +294,10 @@ float contactGroundingMask(vec3 localPos, vec3 normalDir) {
 void main() {
     vec4 texel = pc.baseColorTextureReady != 0 ? texture(baseColorTexture, inTexcoord0) : vec4(1.0);
     vec4 mr = pc.metallicRoughnessTextureReady != 0 ? texture(metallicRoughnessTexture, inTexcoord0) : vec4(1.0);
-    float calibration = clamp(pc.calibrationStrength, 0.0, 1.0);
     int hint = pc.materialTypeHint;
+    bool plainOpaquePbr = pc.materialRoute == 0 && pc.materialPresetHint == 0 && hint == 4;
+    float calibration = clamp(pc.calibrationStrength, 0.0, 1.0);
+    if (plainOpaquePbr) calibration *= 0.18;
     float roughnessRaw = clamp(pc.roughnessFactor * mr.g, 0.04, 1.0);
     float metallic = clamp(pc.metallicFactor * mr.b, 0.0, 1.0);
     bool routeMetal = pc.materialRoute == 3;
@@ -312,10 +314,10 @@ void main() {
     float glassReflectionInput = glassParams.w;
     float roughness = remapRoughness(roughnessRaw, metallic, hint, calibration);
     if (glassActive) roughness = clamp(mix(roughness, glassRoughInput, 0.84), 0.04, 1.0);
-    float glossSlider = clamp(pc.glossSliderValue, 0.0, 1.0);
-    float paintSlider = clamp(pc.paintGlossSliderValue, 0.0, 1.0);
+    float glossSlider = plainOpaquePbr ? 0.0 : clamp(pc.glossSliderValue, 0.0, 1.0);
+    float paintSlider = plainOpaquePbr ? 0.0 : clamp(pc.paintGlossSliderValue, 0.0, 1.0);
     float paintTarget = paintGlossTargetWeight(hint);
-    float clearcoatWeight = clearcoatMaterialWeight(hint);
+    float clearcoatWeight = plainOpaquePbr ? 0.0 : clearcoatMaterialWeight(hint);
     float clearcoatRough = clamp(pc.clearcoatRoughness, 0.04, 1.0);
     roughness = mix(roughness, clamp(0.76 - paintTarget * 0.64, 0.16, 0.76), 0.62 * paintTarget);
     roughness = mix(roughness, clamp(0.42 - clearcoatWeight * 0.12, 0.18, 0.58), 0.20 * clamp(clearcoatWeight, 0.0, 1.0));

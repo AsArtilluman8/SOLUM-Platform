@@ -142,6 +142,26 @@ struct RendererCore {
         return RuntimeMaterialClass::Opaque;
     }
 
+    bool isGlassRoute(const MaterialSlotState& slot) const {
+        return slot.materialRoute == MaterialRoute::GlassBlend || slot.materialRoute == MaterialRoute::GlassSemanticOpaque;
+    }
+
+    bool isSelectedSlot(int materialSlot) const {
+        return materialSlot >= 0 && materialSlot == selectedMaterialSlot;
+    }
+
+    bool selectedOverrideEnabledFor(const MaterialSlotState& slot, int materialSlot) const {
+        return isSelectedSlot(materialSlot) && !isGlassRoute(slot) && slot.materialRoute != MaterialRoute::FoliageCutout;
+    }
+
+    bool clearcoatAllowedFor(const MaterialSlotState& slot, int materialSlot) const {
+        if (slot.hasClearcoat && slot.clearcoatFactor > 0.001f) return true;
+        if (!isSelectedSlot(materialSlot)) return false;
+        if (slot.materialRoute != MaterialRoute::OpaquePbr && slot.materialRoute != MaterialRoute::Metal) return false;
+        if (slot.materialTypeHint == 0 || slot.materialTypeHint == 3 || slot.materialTypeHint == 5 || slot.materialTypeHint == 6) return false;
+        return activeMaterialPreset == MaterialPresetCarPaint || selectedSlotCoatOverride > 0.001f;
+    }
+
     const char* alphaModeName(int alphaMode) const {
         if (alphaMode == 1) return "MASK";
         if (alphaMode == 2) return "BLEND";
@@ -1712,9 +1732,23 @@ struct RendererCore {
                     pc.material.emissiveFactor[1] = slot.emissiveFactor[1];
                     pc.material.emissiveFactor[2] = slot.emissiveFactor[2];
                     pc.material.materialPresetHint = slot.materialPresetHint;
+                    const bool selectedOverride = selectedOverrideEnabledFor(slot, range.materialSlot);
+                    const bool clearcoatAllowed = clearcoatAllowedFor(slot, range.materialSlot);
+                    pc.material.glassEnabled = 0;
+                    pc.material.glassOpacity = material.glassOpacity;
+                    pc.material.glassEdge = material.glassEdge;
+                    pc.material.glassRoughness = material.glassRoughness;
+                    pc.material.clearcoatIntensity = 0.0f;
+                    pc.material.clearcoatRoughness = material.clearcoatRoughness;
+                    pc.material.glossSliderValue = 0.0f;
+                    pc.material.paintGlossSliderValue = 0.0f;
+                    pc.material.emissiveIntensity = 0.0f;
                     if (slot.hasClearcoat && slot.clearcoatFactor > 0.001f) {
-                        pc.material.clearcoatIntensity = std::max(pc.material.clearcoatIntensity, slot.clearcoatFactor);
+                        pc.material.clearcoatIntensity = slot.clearcoatFactor;
                         pc.material.clearcoatRoughness = clampFloat(slot.clearcoatRoughnessFactor, 0.04f, 1.0f);
+                    } else if (clearcoatAllowed) {
+                        pc.material.clearcoatIntensity = material.clearcoatIntensity;
+                        pc.material.clearcoatRoughness = material.clearcoatRoughness;
                     }
                     if (slot.hasTransmission && slot.transmissionFactor > 0.001f) {
                         pc.material.glassOpacity = clampFloat(0.30f + slot.transmissionFactor * 0.54f, 0.18f, 0.88f);
@@ -1730,7 +1764,7 @@ struct RendererCore {
                         pc.material.roughnessFactor = std::max(pc.material.roughnessFactor, 0.72f + slot.sheenRoughnessFactor * 0.18f);
                     }
                     pc.material.alphaCutoff = clampFloat(slot.alphaCutoff, 0.0f, 1.0f);
-                    if (range.materialSlot == selectedMaterialSlot || range.materialSlot == activeTransparentGlassSlot) {
+                    if (selectedOverride) {
                         pc.material.metallicFactor = selectedSlotMetallicOverride;
                         pc.material.roughnessFactor = selectedSlotRoughnessOverride;
                         pc.material.normalScale = selectedSlotNormalScaleOverride;
@@ -1740,12 +1774,6 @@ struct RendererCore {
                         pc.material.alphaCutoff = material.alphaCutoff;
                         pc.material.emissiveIntensity = selectedSlotEmissiveIntensity;
                         pc.material.materialPresetHint = activeMaterialPreset;
-                        pc.material.glassEnabled = glassPass ? material.glassEnabled : 0;
-                    } else {
-                        pc.material.glossSliderValue = 0.0f;
-                        pc.material.paintGlossSliderValue = 0.0f;
-                        pc.material.emissiveIntensity = 0.0f;
-                        pc.material.glassEnabled = glassPass ? material.glassEnabled : 0;
                     }
                     if (!glassPass && slot.runtimeClass != RuntimeMaterialClass::TransparentGlass && pc.material.materialPresetHint == MaterialPresetGlassMetadata) pc.material.materialPresetHint = slot.materialPresetHint;
                     if (glassPass) {

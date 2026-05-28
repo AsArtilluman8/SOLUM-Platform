@@ -14,3 +14,9 @@ android {
         versionName '0.4.0'
     }
 }
+
+dependencies {
+    implementation 'com.google.android.filament:filament-android:1.71.4'
+    implementation 'com.google.android.filament:gltfio-android:1.71.4'
+    implementation 'com.google.android.filament:filament-utils-android:1.71.4'
+}

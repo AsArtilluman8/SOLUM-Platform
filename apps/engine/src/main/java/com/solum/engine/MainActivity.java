@@ -109,6 +109,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private Button debugGlassDetailTestButton;
     private Button chooseFolderButton;
     private Button importGlbButton;
+    private Button filamentPreviewButton;
     private Button scanModelsButton;
     private Button inspectorToggleButton;
     private Button assetsTabButton;
@@ -567,8 +568,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         assetsPanel.setOrientation(LinearLayout.VERTICAL);
         TextView assetsWorkflowHint = compactInfoText("Assets: active model, import, scan, reload, export");
         assetsPanel.addView(assetsWorkflowHint);
-        importGlbButton = compactButton("Import GLB");
+        importGlbButton = compactButton("Import GLB/GLTF");
         importGlbButton.setOnClickListener(v -> chooseGlbForImport());
+        filamentPreviewButton = compactButton("Open in Filament Preview");
+        filamentPreviewButton.setOnClickListener(v -> openFilamentPreview());
         scanModelsButton = compactButton("Scan Models");
         scanModelsButton.setOnClickListener(v -> scanModelsFromButton());
         reloadActiveModelButton = compactButton("Reload Active Model");
@@ -576,6 +579,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         quickExportButton = compactButton("Export");
         quickExportButton.setOnClickListener(v -> exportEngineDiagnosticsFromButton());
         assetsPanel.addView(importGlbButton);
+        assetsPanel.addView(filamentPreviewButton);
         assetsPanel.addView(scanModelsButton);
         assetsPanel.addView(reloadActiveModelButton);
         assetsPanel.addView(quickExportButton);
@@ -2841,11 +2845,27 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         intent.setType("*/*");
         intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {
             "model/gltf-binary",
+            "model/gltf+json",
+            "model/gltf-json",
+            "application/json",
             "application/octet-stream",
             "*/*"
         });
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(intent, REQUEST_IMPORT_GLB);
+    }
+
+    private void openFilamentPreview() {
+        Intent intent = new Intent(this, FilamentGlbPreviewActivity.class);
+        String path = modelState.localExtractionPath();
+        String name = modelState.activeModelName();
+        if (path != null && !path.isEmpty()) {
+            intent.putExtra(FilamentGlbPreviewActivity.EXTRA_MODEL_PATH, path);
+        }
+        if (name != null && !name.isEmpty()) {
+            intent.putExtra(FilamentGlbPreviewActivity.EXTRA_MODEL_NAME, name);
+        }
+        startActivity(intent);
     }
 
     private void importGlbFromUri(Uri uri) {
@@ -2867,14 +2887,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 modelState.lastImportedModel = copy.path;
                 modelState.activeModelPersistenceStatus = "metadata_pending_upload";
                 modelState.reason = copy.reason;
-                modelState.parse = GlbParser.parse(copy.localFile);
-                if (!modelState.parse.glbValid) {
+                boolean gltfPreviewOnly = copy.localFile.getName().toLowerCase(Locale.US).endsWith(".gltf");
+                modelState.parse = gltfPreviewOnly
+                    ? GlbParseResult.failed("gltf_json_preview_only_filament_backend")
+                    : GlbParser.parse(copy.localFile);
+                if (!gltfPreviewOnly && !modelState.parse.glbValid) {
                     modelState.importStatus = "failed";
                     modelState.importRoute = copy.route;
                     modelState.reason = modelState.parse.reason;
                 }
                 scanModels("after_import");
-                importGlbButton.setText(modelState.parse.glbValid ? "Import OK" : "Import Failed");
+                importGlbButton.setText("ok".equals(modelState.importStatus) ? "Import OK" : "Import Failed");
                 attemptActiveModelGpuUpload("model_import");
                 persistActiveModelMetadata();
             } catch (Throwable t) {
@@ -2980,7 +3003,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         File[] files = dir.listFiles();
         if (files == null) return;
         for (File f : files) {
-            if (f.isFile() && f.getName().toLowerCase(Locale.US).endsWith(".glb")) out.add(f);
+            if (!f.isFile()) continue;
+            String lower = f.getName().toLowerCase(Locale.US);
+            if (lower.endsWith(".glb") || lower.endsWith(".gltf")) out.add(f);
         }
     }
 
@@ -2988,7 +3013,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (importGlbButton != null && importGlbButton.isEnabled()) {
             if ("ok".equals(modelState.importStatus)) importGlbButton.setText("Import OK");
             else if ("failed".equals(modelState.importStatus)) importGlbButton.setText("Import Failed");
-            else importGlbButton.setText("Import GLB");
+            else importGlbButton.setText("Import GLB/GLTF");
         }
         updateStatus();
         updateDiagnosticsStatusPanel();
@@ -2996,7 +3021,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private ModelCopyResult copyImportedModel(Uri uri, String sourceName) throws Exception {
         String safeName = safeFileName(sourceName);
-        if (!safeName.toLowerCase(Locale.US).endsWith(".glb")) safeName += ".glb";
+        String safeLower = safeName.toLowerCase(Locale.US);
+        if (!safeLower.endsWith(".glb") && !safeLower.endsWith(".gltf")) safeName += ".glb";
+        String mimeType = safeName.toLowerCase(Locale.US).endsWith(".gltf") ? "model/gltf+json" : "model/gltf-binary";
         ContentResolver resolver = getContentResolver();
         Uri treeUri = getConfiguredTreeUri();
         if (treeUri != null) {
@@ -3005,7 +3032,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 Uri assets = ensureChildDirectory(resolver, rootDocumentUri, "assets");
                 Uri models = ensureChildDirectory(resolver, assets, "models");
                 Uri imported = ensureChildDirectory(resolver, models, "imported");
-                Uri outUri = ensureChildFileWithMime(resolver, imported, safeName, "model/gltf-binary");
+                Uri outUri = ensureChildFileWithMime(resolver, imported, safeName, mimeType);
                 try (InputStream in = resolver.openInputStream(uri); OutputStream out = openTruncatingOutputStream(resolver, outUri)) {
                     if (in == null) throw new IllegalStateException("open_input_stream_failed");
                     copyStream(in, out);

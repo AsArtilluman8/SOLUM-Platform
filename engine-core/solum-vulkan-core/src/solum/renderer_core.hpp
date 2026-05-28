@@ -1712,6 +1712,23 @@ struct RendererCore {
                     pc.material.emissiveFactor[1] = slot.emissiveFactor[1];
                     pc.material.emissiveFactor[2] = slot.emissiveFactor[2];
                     pc.material.materialPresetHint = slot.materialPresetHint;
+                    if (slot.hasClearcoat && slot.clearcoatFactor > 0.001f) {
+                        pc.material.clearcoatIntensity = std::max(pc.material.clearcoatIntensity, slot.clearcoatFactor);
+                        pc.material.clearcoatRoughness = clampFloat(slot.clearcoatRoughnessFactor, 0.04f, 1.0f);
+                    }
+                    if (slot.hasTransmission && slot.transmissionFactor > 0.001f) {
+                        pc.material.glassOpacity = clampFloat(0.30f + slot.transmissionFactor * 0.54f, 0.18f, 0.88f);
+                        pc.material.glassRoughness = clampFloat(slot.roughnessFactor, 0.04f, 0.72f);
+                    }
+                    if (slot.hasVolume) {
+                        pc.material.glassOpacity = clampFloat(pc.material.glassOpacity + slot.thicknessFactor * 0.08f, 0.18f, 0.92f);
+                        pc.material.baseColorFactor[0] *= clampFloat(slot.attenuationColor[0] * 0.92f + 0.08f, 0.12f, 1.0f);
+                        pc.material.baseColorFactor[1] *= clampFloat(slot.attenuationColor[1] * 0.92f + 0.08f, 0.12f, 1.0f);
+                        pc.material.baseColorFactor[2] *= clampFloat(slot.attenuationColor[2] * 0.92f + 0.08f, 0.12f, 1.0f);
+                    }
+                    if (slot.hasSheen) {
+                        pc.material.roughnessFactor = std::max(pc.material.roughnessFactor, 0.72f + slot.sheenRoughnessFactor * 0.18f);
+                    }
                     pc.material.alphaCutoff = clampFloat(slot.alphaCutoff, 0.0f, 1.0f);
                     if (range.materialSlot == selectedMaterialSlot || range.materialSlot == activeTransparentGlassSlot) {
                         pc.material.metallicFactor = selectedSlotMetallicOverride;

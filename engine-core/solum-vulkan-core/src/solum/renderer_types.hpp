@@ -324,6 +324,18 @@ struct MaterialSlotState {
     int materialPresetHint = 0;
     MaterialRoute materialRoute = MaterialRoute::OpaquePbr;
     RuntimeMaterialClass runtimeClass = RuntimeMaterialClass::Opaque;
+    bool hasClearcoat = false;
+    float clearcoatFactor = 0.0f;
+    float clearcoatRoughnessFactor = 1.0f;
+    bool hasTransmission = false;
+    float transmissionFactor = 0.0f;
+    bool hasVolume = false;
+    float thicknessFactor = 0.0f;
+    float attenuationColor[3] = { 1.0f, 1.0f, 1.0f };
+    bool hasSheen = false;
+    float sheenStrength = 0.0f;
+    float sheenRoughnessFactor = 0.0f;
+    bool hasTextureTransform = false;
 };
 
 struct ModelRenderState {

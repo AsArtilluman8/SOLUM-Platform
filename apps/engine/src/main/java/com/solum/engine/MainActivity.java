@@ -991,6 +991,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "\nAlbedo clamp: " + jsonStringField(getRenderLabStateForExport(), "albedoClampStatus", modelState.albedoClampStatus)
             + "\nLuminance guard: " + jsonStringField(getRenderLabStateForExport(), "luminanceGuardStatus", modelState.luminanceGuardStatus)
             + "\nMaterial hints: " + jsonStringField(getRenderLabStateForExport(), "materialTypeHintStatus", modelState.materialTypeHintStatus)
+            + "\nglTF Extensions: clearcoat=" + countOccurrences(modelState.materialSlotDiagnostics, "\"hasClearcoat\":true")
+                + " transmission=" + countOccurrences(modelState.materialSlotDiagnostics, "\"hasTransmission\":true")
+                + " volume=" + countOccurrences(modelState.materialSlotDiagnostics, "\"hasVolume\":true")
+                + " sheen=" + countOccurrences(modelState.materialSlotDiagnostics, "\"hasSheen\":true")
+                + " texXform=" + countOccurrences(modelState.materialSlotDiagnostics, "\"hasTextureTransform\":true")
+                + " emissiveTex=" + countOccurrences(modelState.materialSlotDiagnostics, "\"hasEmissiveTexture\":true")
+                + " emissiveDominant=" + countOccurrences(modelState.materialSlotDiagnostics, "\"emissiveDominant\":true")
+            + "\nImporter: nodeTransformsApplied=" + modelState.nodeTransformsApplied
+                + " mode=" + modelState.nodeTransformMode
+                + " transformed=" + modelState.transformedPrimitiveCount
+                + " nonIdentityNodes=" + modelState.nonIdentityNodeTransformCount
+                + " parented=" + modelState.parentedNodeTransformCount
             + "\nBRDF status: " + jsonStringField(getRenderLabStateForExport(), "brdfStatus", modelState.brdfStatus)
             + "\nSpecular status: " + jsonStringField(getRenderLabStateForExport(), "specularStatus", modelState.specularStatus)
             + "\nActive debug view: " + materialDebugViewName(activeDebugViewIndex)
@@ -2661,6 +2673,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 modelState.pbrTextureSlotCount = mesh.pbrTextureSlotCount;
                 modelState.materialSlotDiagnostics = mesh.materialSlotDiagnostics;
                 modelState.materialDrawRangeDiagnostics = mesh.materialDrawRangeDiagnostics;
+                modelState.nodeTransformsApplied = mesh.nodeTransformsApplied;
+                modelState.nodeTransformMode = mesh.nodeTransformMode;
+                modelState.transformedPrimitiveCount = mesh.transformedPrimitiveCount;
+                modelState.nonIdentityNodeTransformCount = mesh.nonIdentityNodeTransformCount;
+                modelState.parentedNodeTransformCount = mesh.parentedNodeTransformCount;
+                modelState.nodeTransformFallbackReason = mesh.nodeTransformFallbackReason;
                 modelState.persistedModelBounds = "[" + jsonFloat(mesh.boundsMin[0]) + "," + jsonFloat(mesh.boundsMin[1]) + "," + jsonFloat(mesh.boundsMin[2]) + "]-[" + jsonFloat(mesh.boundsMax[0]) + "," + jsonFloat(mesh.boundsMax[1]) + "," + jsonFloat(mesh.boundsMax[2]) + "]";
                 modelState.persistedModelScale = mesh.modelScale;
                 selectedMaterialSlotCount = mesh.materialSlotCount;
@@ -5455,6 +5473,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         int skippedPbrTextureCount = 0;
         int pbrTextureFallbackCount = 0;
         String materialSlotDiagnostics = "[]";
+        boolean nodeTransformsApplied = false;
+        String nodeTransformMode = "identity";
+        int transformedPrimitiveCount = 0;
+        int nonIdentityNodeTransformCount = 0;
+        int parentedNodeTransformCount = 0;
+        String nodeTransformFallbackReason = "not_loaded";
         String materialCalibrationStatus = "ok";
         String materialCalibrationMode = "shader_uniform_upload_lightweight";
         String albedoEnergyStatus = "ok_normalized";
@@ -6199,6 +6223,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"skippedPbrTextureCount\": " + skippedPbrTextureCount + ",\n"
                 + "  \"pbrTextureFallbackCount\": " + pbrTextureFallbackCount + ",\n"
                 + "  \"materialSlotDiagnostics\": " + materialSlotDiagnostics + ",\n"
+                + "  \"nodeTransformsApplied\": " + nodeTransformsApplied + ",\n"
+                + "  \"nodeTransformMode\": \"" + esc(nodeTransformMode) + "\",\n"
+                + "  \"transformedPrimitiveCount\": " + transformedPrimitiveCount + ",\n"
+                + "  \"nonIdentityNodeTransformCount\": " + nonIdentityNodeTransformCount + ",\n"
+                + "  \"parentedNodeTransformCount\": " + parentedNodeTransformCount + ",\n"
+                + "  \"nodeTransformFallbackReason\": \"" + esc(nodeTransformFallbackReason) + "\",\n"
                 + "  \"materialCalibrationStatus\": \"" + esc(materialCalibrationStatus) + "\",\n"
                 + "  \"materialCalibrationMode\": \"" + esc(materialCalibrationMode) + "\",\n"
                 + "  \"albedoEnergyStatus\": \"" + esc(albedoEnergyStatus) + "\",\n"
@@ -6728,6 +6758,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     }
                 }
             }
+            if (nodes != null) {
+                for (int i = 0; i < nodes.length(); i++) {
+                    JSONObject node = nodes.optJSONObject(i);
+                    if (node == null) continue;
+                    if (node.optJSONArray("matrix") != null) r.matrixNodeCount++;
+                    if (node.optJSONArray("translation") != null || node.optJSONArray("rotation") != null || node.optJSONArray("scale") != null) r.trsNodeCount++;
+                    JSONArray children = node.optJSONArray("children");
+                    if (children != null && children.length() > 0) r.parentNodeCount++;
+                    if (node.has("mesh") && !isIdentityMatrix(localNodeMatrix(node))) r.nonIdentityNodeTransformCount++;
+                }
+            }
             if (r.attributesFound.isEmpty()) r.attributesFound.add("unknown/not_parsed");
         }
 
@@ -6846,51 +6887,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             List<String> skipped = new ArrayList<>();
             float minX = Float.POSITIVE_INFINITY, minY = Float.POSITIVE_INFINITY, minZ = Float.POSITIVE_INFINITY;
             float maxX = Float.NEGATIVE_INFINITY, maxY = Float.NEGATIVE_INFINITY, maxZ = Float.NEGATIVE_INFINITY;
-            int primitiveTotal = 0;
-            for (int meshIndex = 0; meshIndex < meshes.length(); meshIndex++) {
-                JSONObject mesh = meshes.optJSONObject(meshIndex);
-                JSONArray primitives = mesh == null ? null : mesh.optJSONArray("primitives");
-                if (primitives == null) continue;
-                for (int primitiveIndex = 0; primitiveIndex < primitives.length(); primitiveIndex++) {
-                    primitiveTotal++;
-                    JSONObject primitive = primitives.optJSONObject(primitiveIndex);
-                    try {
-                        if (primitive == null) throw new IllegalStateException("primitive_not_object");
-                        int mode = primitive.optInt("mode", 4);
-                        if (mode != 4) throw new IllegalStateException("unsupported_primitive_mode_" + mode + "_expected_TRIANGLES");
-                        JSONObject attrs = primitive.optJSONObject("attributes");
-                        if (attrs == null || !attrs.has("POSITION")) throw new IllegalStateException("POSITION_attribute_missing");
-                        int positionAccessor = attrs.optInt("POSITION", -1);
-                        int normalAccessor = attrs.optInt("NORMAL", -1);
-                        int texcoordAccessor = attrs.optInt("TEXCOORD_0", -1);
-                        int colorAccessor = attrs.optInt("COLOR_0", -1);
-                        int tangentAccessor = attrs.optInt("TANGENT", -1);
-                        AccessorReader positions = AccessorReader.create(accessors, bufferViews, parsed.binChunk, positionAccessor, 5126, "VEC3", "POSITION");
-                        AccessorReader normals = normalAccessor >= 0 ? AccessorReader.create(accessors, bufferViews, parsed.binChunk, normalAccessor, 5126, "VEC3", "NORMAL") : null;
-                        AccessorReader texcoords = texcoordAccessor >= 0 ? AccessorReader.create(accessors, bufferViews, parsed.binChunk, texcoordAccessor, 5126, "VEC2", "TEXCOORD_0") : null;
-                        AccessorReader colors = colorAccessor >= 0 ? AccessorReader.createColor(accessors, bufferViews, parsed.binChunk, colorAccessor) : null;
-                        AccessorReader tangents = tangentAccessor >= 0 ? AccessorReader.create(accessors, bufferViews, parsed.binChunk, tangentAccessor, 5126, "VEC4", "TANGENT") : null;
-                        PrimitiveSource src = new PrimitiveSource();
-                        src.primitive = primitive;
-                        src.positions = positions;
-                        src.normals = normals;
-                        src.texcoords = texcoords;
-                        src.colors = colors;
-                        src.tangents = tangents;
-                        src.vertexCount = positions.count;
-                        if (primitive.has("indices")) src.indices = IndexReader.create(accessors, bufferViews, parsed.binChunk, primitive.optInt("indices", -1));
-                        src.materialIndex = primitive.optInt("material", -1);
-                        for (int i = 0; i < src.vertexCount; i++) {
-                            float x = positions.floatAt(i, 0);
-                            float y = positions.floatAt(i, 1);
-                            float z = positions.floatAt(i, 2);
-                            minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
-                            maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
-                        }
-                        sources.add(src);
-                    } catch (Throwable t) {
-                        skipped.add("mesh[" + meshIndex + "].primitive[" + primitiveIndex + "]: " + t.getMessage());
-                    }
+            TransformImportStats transformStats = collectPrimitiveSources(root, meshes, accessors, bufferViews, parsed.binChunk, sources, skipped);
+            int primitiveTotal = transformStats.primitiveTotal;
+            for (PrimitiveSource src : sources) {
+                for (int i = 0; i < src.vertexCount; i++) {
+                    float[] p = transformPoint(src.worldMatrix, src.positions.floatAt(i, 0), src.positions.floatAt(i, 1), src.positions.floatAt(i, 2));
+                    minX = Math.min(minX, p[0]); minY = Math.min(minY, p[1]); minZ = Math.min(minZ, p[2]);
+                    maxX = Math.max(maxX, p[0]); maxY = Math.max(maxY, p[1]); maxZ = Math.max(maxZ, p[2]);
                 }
             }
             if (sources.isEmpty()) throw new IllegalStateException("all primitives unsupported: " + joinReasons(skipped));
@@ -6974,20 +6977,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     }
                 }
                 for (int i = 0; i < src.vertexCount; i++) {
-                    vertexFloats.add((src.positions.floatAt(i, 0) - cx) * scale);
-                    vertexFloats.add((src.positions.floatAt(i, 1) - cy) * scale);
-                    vertexFloats.add((src.positions.floatAt(i, 2) - cz) * scale);
-                    vertexFloats.add(src.normals != null ? src.normals.floatAt(i, 0) : 0.0f);
-                    vertexFloats.add(src.normals != null ? src.normals.floatAt(i, 1) : 1.0f);
-                    vertexFloats.add(src.normals != null ? src.normals.floatAt(i, 2) : 0.0f);
+                    float[] p = transformPoint(src.worldMatrix, src.positions.floatAt(i, 0), src.positions.floatAt(i, 1), src.positions.floatAt(i, 2));
+                    float[] n = transformNormal(src.normalMatrix, src.normals != null ? src.normals.floatAt(i, 0) : 0.0f, src.normals != null ? src.normals.floatAt(i, 1) : 1.0f, src.normals != null ? src.normals.floatAt(i, 2) : 0.0f);
+                    float[] t = tangentValues != null ? transformNormal(src.normalMatrix, tangentValues[i * 4], tangentValues[i * 4 + 1], tangentValues[i * 4 + 2]) : null;
+                    vertexFloats.add((p[0] - cx) * scale);
+                    vertexFloats.add((p[1] - cy) * scale);
+                    vertexFloats.add((p[2] - cz) * scale);
+                    vertexFloats.add(n[0]);
+                    vertexFloats.add(n[1]);
+                    vertexFloats.add(n[2]);
                     vertexFloats.add(src.texcoords != null ? src.texcoords.floatAt(i, 0) : 0.0f);
                     vertexFloats.add(src.texcoords != null ? src.texcoords.floatAt(i, 1) : 0.0f);
                     vertexFloats.add(src.colors != null ? src.colors.floatAt(i, 0) : 1.0f);
                     vertexFloats.add(src.colors != null ? src.colors.floatAt(i, 1) : 1.0f);
                     vertexFloats.add(src.colors != null ? src.colors.floatAt(i, 2) : 1.0f);
-                    vertexFloats.add(tangentValues != null ? tangentValues[i * 4] : 1.0f);
-                    vertexFloats.add(tangentValues != null ? tangentValues[i * 4 + 1] : 0.0f);
-                    vertexFloats.add(tangentValues != null ? tangentValues[i * 4 + 2] : 0.0f);
+                    vertexFloats.add(t != null ? t[0] : 1.0f);
+                    vertexFloats.add(t != null ? t[1] : 0.0f);
+                    vertexFloats.add(t != null ? t[2] : 0.0f);
                     vertexFloats.add(tangentValues != null ? tangentValues[i * 4 + 3] : 1.0f);
                 }
                 if (src.indices != null) {
@@ -7009,6 +7015,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     .append(",\"firstVertex\":").append(firstVertex)
                     .append(",\"vertexCount\":").append(src.vertexCount)
                     .append(",\"textureSlot\":").append(textureSlot)
+                    .append(",\"nodeIndex\":").append(src.nodeIndex)
+                    .append(",\"meshIndex\":").append(src.meshIndex)
+                    .append(",\"nodeTransformMode\":\"").append(esc(src.transformMode)).append("\"")
+                    .append(",\"nodeTransformNonIdentity\":").append(src.nonIdentityTransform)
                     .append("}");
                 firstVertex += src.vertexCount;
             }
@@ -7065,8 +7075,225 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             out.occlusionMapStatus = aggregateStatus(materials, TEX_OCCLUSION);
             out.materialSlotDiagnostics = materialSlotDiagnostics(materials);
             out.materialDrawRangeDiagnostics = rangeDiagnostics.toString();
-            out.reason = skipped.isEmpty() ? "all supported primitives uploaded" : joinReasons(skipped);
+            out.nodeTransformsApplied = transformStats.nodeTransformsApplied;
+            out.nodeTransformMode = transformStats.modeSummary();
+            out.transformedPrimitiveCount = transformStats.transformedPrimitiveCount;
+            out.nonIdentityNodeTransformCount = transformStats.nonIdentityNodeTransformCount;
+            out.parentedNodeTransformCount = transformStats.parentedNodeTransformCount;
+            out.nodeTransformFallbackReason = transformStats.fallbackReason;
+            String transformReason = "nodeTransformsApplied=" + out.nodeTransformsApplied + ", transformMode=" + out.nodeTransformMode
+                + ", transformedPrimitiveCount=" + out.transformedPrimitiveCount
+                + ", nonIdentityNodeTransformCount=" + out.nonIdentityNodeTransformCount
+                + ", parentedNodeTransformCount=" + out.parentedNodeTransformCount
+                + ", fallback=" + out.nodeTransformFallbackReason;
+            out.reason = (skipped.isEmpty() ? "all supported primitives uploaded" : joinReasons(skipped)) + "; " + transformReason;
             return out;
+        }
+
+        private static TransformImportStats collectPrimitiveSources(JSONObject root, JSONArray meshes, JSONArray accessors, JSONArray bufferViews, byte[] bin, List<PrimitiveSource> sources, List<String> skipped) {
+            TransformImportStats stats = new TransformImportStats();
+            JSONArray nodes = root.optJSONArray("nodes");
+            boolean[] visited = nodes == null ? new boolean[0] : new boolean[nodes.length()];
+            JSONArray sceneNodes = defaultSceneNodes(root);
+            if (nodes != null && sceneNodes != null && sceneNodes.length() > 0) {
+                for (int i = 0; i < sceneNodes.length(); i++) {
+                    int nodeIndex = sceneNodes.optInt(i, -1);
+                    collectNodePrimitiveSources(nodes, meshes, accessors, bufferViews, bin, nodeIndex, identityMatrix(), false, visited, sources, skipped, stats);
+                }
+            }
+            if (nodes != null) {
+                for (int i = 0; i < nodes.length(); i++) {
+                    if (!visited[i]) collectNodePrimitiveSources(nodes, meshes, accessors, bufferViews, bin, i, identityMatrix(), false, visited, sources, skipped, stats);
+                }
+            }
+            if (sources.isEmpty()) {
+                stats.fallbackReason = "no_mesh_nodes_found_flat_mesh_fallback";
+                for (int meshIndex = 0; meshIndex < meshes.length(); meshIndex++) {
+                    collectMeshPrimitiveSources(meshes, accessors, bufferViews, bin, meshIndex, -1, identityMatrix(), false, "identity", sources, skipped, stats);
+                }
+            }
+            stats.nodeTransformsApplied = !sources.isEmpty();
+            return stats;
+        }
+
+        private static JSONArray defaultSceneNodes(JSONObject root) {
+            JSONArray scenes = root.optJSONArray("scenes");
+            int sceneIndex = root.optInt("scene", 0);
+            JSONObject scene = scenes != null && sceneIndex >= 0 && sceneIndex < scenes.length() ? scenes.optJSONObject(sceneIndex) : null;
+            if (scene == null && scenes != null && scenes.length() > 0) scene = scenes.optJSONObject(0);
+            return scene == null ? null : scene.optJSONArray("nodes");
+        }
+
+        private static void collectNodePrimitiveSources(JSONArray nodes, JSONArray meshes, JSONArray accessors, JSONArray bufferViews, byte[] bin, int nodeIndex, float[] parentWorld, boolean parented, boolean[] visited, List<PrimitiveSource> sources, List<String> skipped, TransformImportStats stats) {
+            if (nodeIndex < 0 || nodeIndex >= nodes.length()) return;
+            JSONObject node = nodes.optJSONObject(nodeIndex);
+            if (node == null) return;
+            if (visited != null && nodeIndex < visited.length) visited[nodeIndex] = true;
+            float[] local = localNodeMatrix(node);
+            float[] world = multiplyMatrix(parentWorld, local);
+            boolean nonIdentity = !isIdentityMatrix(world);
+            String mode = node.optJSONArray("matrix") != null ? "matrix" : (node.optJSONArray("translation") != null || node.optJSONArray("rotation") != null || node.optJSONArray("scale") != null ? "TRS" : "identity");
+            if (nonIdentity) stats.nonIdentityNodeTransformCount++;
+            if (parented) stats.parentedNodeTransformCount++;
+            int meshIndex = node.optInt("mesh", -1);
+            if (meshIndex >= 0) collectMeshPrimitiveSources(meshes, accessors, bufferViews, bin, meshIndex, nodeIndex, world, parented, mode, sources, skipped, stats);
+            JSONArray children = node.optJSONArray("children");
+            if (children != null) {
+                for (int i = 0; i < children.length(); i++) {
+                    collectNodePrimitiveSources(nodes, meshes, accessors, bufferViews, bin, children.optInt(i, -1), world, true, visited, sources, skipped, stats);
+                }
+            }
+        }
+
+        private static void collectMeshPrimitiveSources(JSONArray meshes, JSONArray accessors, JSONArray bufferViews, byte[] bin, int meshIndex, int nodeIndex, float[] world, boolean parented, String transformMode, List<PrimitiveSource> sources, List<String> skipped, TransformImportStats stats) {
+            JSONObject mesh = meshes != null && meshIndex >= 0 && meshIndex < meshes.length() ? meshes.optJSONObject(meshIndex) : null;
+            JSONArray primitives = mesh == null ? null : mesh.optJSONArray("primitives");
+            if (primitives == null) return;
+            for (int primitiveIndex = 0; primitiveIndex < primitives.length(); primitiveIndex++) {
+                stats.primitiveTotal++;
+                JSONObject primitive = primitives.optJSONObject(primitiveIndex);
+                try {
+                    if (primitive == null) throw new IllegalStateException("primitive_not_object");
+                    int mode = primitive.optInt("mode", 4);
+                    if (mode != 4) throw new IllegalStateException("unsupported_primitive_mode_" + mode + "_expected_TRIANGLES");
+                    JSONObject attrs = primitive.optJSONObject("attributes");
+                    if (attrs == null || !attrs.has("POSITION")) throw new IllegalStateException("POSITION_attribute_missing");
+                    int positionAccessor = attrs.optInt("POSITION", -1);
+                    int normalAccessor = attrs.optInt("NORMAL", -1);
+                    int texcoordAccessor = attrs.optInt("TEXCOORD_0", -1);
+                    int colorAccessor = attrs.optInt("COLOR_0", -1);
+                    int tangentAccessor = attrs.optInt("TANGENT", -1);
+                    PrimitiveSource src = new PrimitiveSource();
+                    src.primitive = primitive;
+                    src.positions = AccessorReader.create(accessors, bufferViews, bin, positionAccessor, 5126, "VEC3", "POSITION");
+                    src.normals = normalAccessor >= 0 ? AccessorReader.create(accessors, bufferViews, bin, normalAccessor, 5126, "VEC3", "NORMAL") : null;
+                    src.texcoords = texcoordAccessor >= 0 ? AccessorReader.create(accessors, bufferViews, bin, texcoordAccessor, 5126, "VEC2", "TEXCOORD_0") : null;
+                    src.colors = colorAccessor >= 0 ? AccessorReader.createColor(accessors, bufferViews, bin, colorAccessor) : null;
+                    src.tangents = tangentAccessor >= 0 ? AccessorReader.create(accessors, bufferViews, bin, tangentAccessor, 5126, "VEC4", "TANGENT") : null;
+                    src.vertexCount = src.positions.count;
+                    if (primitive.has("indices")) src.indices = IndexReader.create(accessors, bufferViews, bin, primitive.optInt("indices", -1));
+                    src.materialIndex = primitive.optInt("material", -1);
+                    src.meshIndex = meshIndex;
+                    src.nodeIndex = nodeIndex;
+                    src.worldMatrix = world;
+                    src.normalMatrix = normalMatrix(world);
+                    src.nonIdentityTransform = !isIdentityMatrix(world);
+                    src.parentedTransform = parented;
+                    src.transformMode = parented ? "parented" : transformMode;
+                    if (src.nonIdentityTransform) stats.transformedPrimitiveCount++;
+                    sources.add(src);
+                } catch (Throwable t) {
+                    skipped.add("node[" + nodeIndex + "].mesh[" + meshIndex + "].primitive[" + primitiveIndex + "]: " + t.getMessage());
+                }
+            }
+        }
+
+        private static float[] identityMatrix() {
+            return new float[] {1f,0f,0f,0f, 0f,1f,0f,0f, 0f,0f,1f,0f, 0f,0f,0f,1f};
+        }
+
+        private static float[] localNodeMatrix(JSONObject node) {
+            JSONArray matrix = node.optJSONArray("matrix");
+            if (matrix != null && matrix.length() >= 16) {
+                float[] m = new float[16];
+                for (int i = 0; i < 16; i++) m[i] = (float)matrix.optDouble(i, i % 5 == 0 ? 1.0 : 0.0);
+                return m;
+            }
+            float[] t = readVec3(node.optJSONArray("translation"), 0f, 0f, 0f);
+            float[] s = readVec3(node.optJSONArray("scale"), 1f, 1f, 1f);
+            float[] q = readQuat(node.optJSONArray("rotation"));
+            return trsMatrix(t, q, s);
+        }
+
+        private static float[] readVec3(JSONArray array, float x, float y, float z) {
+            return new float[] {
+                array != null && array.length() > 0 ? (float)array.optDouble(0, x) : x,
+                array != null && array.length() > 1 ? (float)array.optDouble(1, y) : y,
+                array != null && array.length() > 2 ? (float)array.optDouble(2, z) : z
+            };
+        }
+
+        private static float[] readQuat(JSONArray array) {
+            return new float[] {
+                array != null && array.length() > 0 ? (float)array.optDouble(0, 0.0) : 0f,
+                array != null && array.length() > 1 ? (float)array.optDouble(1, 0.0) : 0f,
+                array != null && array.length() > 2 ? (float)array.optDouble(2, 0.0) : 0f,
+                array != null && array.length() > 3 ? (float)array.optDouble(3, 1.0) : 1f
+            };
+        }
+
+        private static float[] trsMatrix(float[] t, float[] q, float[] s) {
+            float x = q[0], y = q[1], z = q[2], w = q[3];
+            float inv = invLength4(x, y, z, w);
+            x *= inv; y *= inv; z *= inv; w *= inv;
+            float xx = x * x, yy = y * y, zz = z * z;
+            float xy = x * y, xz = x * z, yz = y * z;
+            float wx = w * x, wy = w * y, wz = w * z;
+            return new float[] {
+                (1f - 2f * (yy + zz)) * s[0], (2f * (xy + wz)) * s[0], (2f * (xz - wy)) * s[0], 0f,
+                (2f * (xy - wz)) * s[1], (1f - 2f * (xx + zz)) * s[1], (2f * (yz + wx)) * s[1], 0f,
+                (2f * (xz + wy)) * s[2], (2f * (yz - wx)) * s[2], (1f - 2f * (xx + yy)) * s[2], 0f,
+                t[0], t[1], t[2], 1f
+            };
+        }
+
+        private static float invLength4(float x, float y, float z, float w) {
+            float len2 = x * x + y * y + z * z + w * w;
+            return len2 > 1.0e-12f ? (float)(1.0 / Math.sqrt(len2)) : 1.0f;
+        }
+
+        private static float[] multiplyMatrix(float[] a, float[] b) {
+            float[] out = new float[16];
+            for (int c = 0; c < 4; c++) {
+                for (int r = 0; r < 4; r++) {
+                    out[c * 4 + r] = a[0 * 4 + r] * b[c * 4 + 0] + a[1 * 4 + r] * b[c * 4 + 1] + a[2 * 4 + r] * b[c * 4 + 2] + a[3 * 4 + r] * b[c * 4 + 3];
+                }
+            }
+            return out;
+        }
+
+        private static boolean isIdentityMatrix(float[] m) {
+            if (m == null || m.length < 16) return true;
+            for (int i = 0; i < 16; i++) {
+                float expected = i % 5 == 0 ? 1f : 0f;
+                if (Math.abs(m[i] - expected) > 1.0e-5f) return false;
+            }
+            return true;
+        }
+
+        private static float[] transformPoint(float[] m, float x, float y, float z) {
+            return new float[] {
+                m[0] * x + m[4] * y + m[8] * z + m[12],
+                m[1] * x + m[5] * y + m[9] * z + m[13],
+                m[2] * x + m[6] * y + m[10] * z + m[14]
+            };
+        }
+
+        private static float[] transformNormal(float[] m, float x, float y, float z) {
+            float nx = m[0] * x + m[3] * y + m[6] * z;
+            float ny = m[1] * x + m[4] * y + m[7] * z;
+            float nz = m[2] * x + m[5] * y + m[8] * z;
+            float inv = invLength3(nx, ny, nz);
+            if (inv == 0.0f) return new float[] {0f, 1f, 0f};
+            return new float[] {nx * inv, ny * inv, nz * inv};
+        }
+
+        private static float[] normalMatrix(float[] m) {
+            float a00 = m[0], a01 = m[4], a02 = m[8];
+            float a10 = m[1], a11 = m[5], a12 = m[9];
+            float a20 = m[2], a21 = m[6], a22 = m[10];
+            float c00 = a11 * a22 - a12 * a21;
+            float c01 = a12 * a20 - a10 * a22;
+            float c02 = a10 * a21 - a11 * a20;
+            float det = a00 * c00 + a01 * c01 + a02 * c02;
+            if (Math.abs(det) < 1.0e-8f) return identityMatrix();
+            float invDet = 1.0f / det;
+            return new float[] {
+                c00 * invDet, (a02 * a21 - a01 * a22) * invDet, (a01 * a12 - a02 * a11) * invDet, 0f,
+                c01 * invDet, (a00 * a22 - a02 * a20) * invDet, (a02 * a10 - a00 * a12) * invDet, 0f,
+                c02 * invDet, (a01 * a20 - a00 * a21) * invDet, (a00 * a11 - a01 * a10) * invDet, 0f,
+                0f, 0f, 0f, 1f
+            };
         }
 
         private static List<MaterialInfo> readMaterials(JSONObject root, byte[] bin, int textureSlotLimit) {
@@ -7087,17 +7314,37 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 info.alphaCutoff = material == null ? 0.5f : (float)material.optDouble("alphaCutoff", 0.5);
                 info.doubleSided = material != null && material.optBoolean("doubleSided", false);
                 JSONObject extensions = material == null ? null : material.optJSONObject("extensions");
+                JSONObject clearcoat = extensions == null ? null : extensions.optJSONObject("KHR_materials_clearcoat");
+                info.hasClearcoatExtension = clearcoat != null;
+                info.clearcoatFactor = clearcoat == null ? 0.0f : (float)clearcoat.optDouble("clearcoatFactor", 0.0);
+                info.clearcoatRoughnessFactor = clearcoat == null ? 0.0f : (float)clearcoat.optDouble("clearcoatRoughnessFactor", 0.0);
+                info.hasClearcoatTexture = clearcoat != null && clearcoat.optJSONObject("clearcoatTexture") != null;
+                info.hasTextureTransform = hasTextureTransform(material == null ? null : material.optJSONObject("emissiveTexture"));
+                info.hasTextureTransform = info.hasTextureTransform || hasTextureTransform(clearcoat == null ? null : clearcoat.optJSONObject("clearcoatTexture"));
+                info.hasTextureTransform = info.hasTextureTransform || hasTextureTransform(clearcoat == null ? null : clearcoat.optJSONObject("clearcoatRoughnessTexture"));
                 info.hasTransmissionExtension = extensions != null && extensions.optJSONObject("KHR_materials_transmission") != null;
                 info.hasVolumeExtension = extensions != null && extensions.optJSONObject("KHR_materials_volume") != null;
+                JSONObject sheen = extensions == null ? null : extensions.optJSONObject("KHR_materials_sheen");
+                info.hasSheenExtension = sheen != null;
+                JSONArray sheenColor = sheen == null ? null : sheen.optJSONArray("sheenColorFactor");
+                if (sheenColor != null && sheenColor.length() >= 3) for (int sc = 0; sc < 3; sc++) info.sheenColorFactor[sc] = (float)sheenColor.optDouble(sc, sc == 0 ? 0.0 : 0.0);
+                info.sheenRoughnessFactor = sheen == null ? 0.0f : (float)sheen.optDouble("sheenRoughnessFactor", 0.0);
+                info.hasTextureTransform = info.hasTextureTransform || hasTextureTransform(sheen == null ? null : sheen.optJSONObject("sheenColorTexture"));
+                info.hasTextureTransform = info.hasTextureTransform || hasTextureTransform(sheen == null ? null : sheen.optJSONObject("sheenRoughnessTexture"));
                 JSONObject transmission = info.hasTransmissionExtension ? extensions.optJSONObject("KHR_materials_transmission") : null;
                 info.transmissionFactor = transmission == null ? 0.0f : (float)transmission.optDouble("transmissionFactor", 0.0);
+                info.hasTransmissionTexture = transmission != null && transmission.optJSONObject("transmissionTexture") != null;
+                info.hasTextureTransform = info.hasTextureTransform || hasTextureTransform(transmission == null ? null : transmission.optJSONObject("transmissionTexture"));
                 JSONObject volume = info.hasVolumeExtension ? extensions.optJSONObject("KHR_materials_volume") : null;
                 info.volumeThicknessFactor = volume == null ? 0.0f : (float)volume.optDouble("thicknessFactor", 0.0);
-                JSONObject clearcoat = extensions == null ? null : extensions.optJSONObject("KHR_materials_clearcoat");
-                info.clearcoatFactor = clearcoat == null ? 0.0f : (float)clearcoat.optDouble("clearcoatFactor", 0.0);
+                info.volumeAttenuationDistance = volume == null ? 0.0f : (float)volume.optDouble("attenuationDistance", 0.0);
+                JSONArray attenuation = volume == null ? null : volume.optJSONArray("attenuationColor");
+                if (attenuation != null && attenuation.length() >= 3) for (int a = 0; a < 3; a++) info.volumeAttenuationColor[a] = (float)attenuation.optDouble(a, 1.0);
+                info.hasTextureTransform = info.hasTextureTransform || hasTextureTransform(volume == null ? null : volume.optJSONObject("thicknessTexture"));
                 JSONArray emissive = material == null ? null : material.optJSONArray("emissiveFactor");
                 if (emissive != null && emissive.length() >= 3) for (int e = 0; e < 3; e++) info.emissiveFactor[e] = (float)emissive.optDouble(e, 0.0);
-                info.emissiveTextureStatus = material != null && material.optJSONObject("emissiveTexture") != null ? "metadata_only" : "missing";
+                info.hasEmissiveTexture = material != null && material.optJSONObject("emissiveTexture") != null;
+                info.emissiveTextureStatus = info.hasEmissiveTexture ? "metadata_only" : "missing";
                 if (i < textureSlotLimit) {
                     BaseColorTexture texture = readBaseColorTexture(root, i, bin);
                     if ("ok".equals(texture.status)) {
@@ -7110,6 +7357,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     info.metallicRoughnessTexture = readMaterialTexture(root, i, bin, TEX_METALLIC_ROUGHNESS, "metallicRoughnessTexture");
                     info.normalTexture = readMaterialTexture(root, i, bin, TEX_NORMAL, "normalTexture");
                     info.occlusionTexture = readMaterialTexture(root, i, bin, TEX_OCCLUSION, "occlusionTexture");
+                    JSONObject pbrTextureScan = pbr;
+                    info.hasTextureTransform = info.hasTextureTransform || hasTextureTransform(pbrTextureScan == null ? null : pbrTextureScan.optJSONObject("baseColorTexture"));
+                    info.hasTextureTransform = info.hasTextureTransform || hasTextureTransform(pbrTextureScan == null ? null : pbrTextureScan.optJSONObject("metallicRoughnessTexture"));
+                    info.hasTextureTransform = info.hasTextureTransform || hasTextureTransform(material == null ? null : material.optJSONObject("normalTexture"));
+                    info.hasTextureTransform = info.hasTextureTransform || hasTextureTransform(material == null ? null : material.optJSONObject("occlusionTexture"));
                     if (info.normalTexture != null) info.normalScale = info.normalTexture.normalScale;
                     if (info.occlusionTexture != null) info.occlusionStrength = info.occlusionTexture.occlusionStrength;
                 }
@@ -7124,10 +7376,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 info.calibratedRoughness = calibratedRoughness(info);
                 info.calibratedMetallic = clampUnitRange(info.metallicFactor, 0.0f, 1.0f);
                 info.aoInfluence = "ok".equals(info.occlusionMapStatus) ? clampUnitRange(info.occlusionStrength * 1.25f, 0.0f, 1.0f) : 0.0f;
+                info.emissiveDominant = isEmissiveDominant(info);
                 info.emissiveGuardApplied = luminance(info.emissiveFactor) > 1.35f;
                 out.add(info);
             }
             return out;
+        }
+
+        private static boolean hasTextureTransform(JSONObject textureInfo) {
+            JSONObject extensions = textureInfo == null ? null : textureInfo.optJSONObject("extensions");
+            return extensions != null && extensions.optJSONObject("KHR_texture_transform") != null;
         }
 
         private static boolean nameHasAny(String name, String... tokens) {
@@ -7152,16 +7410,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 || info.volumeThicknessFactor > 0.001f);
         }
 
+        private static boolean isEmissiveDominant(MaterialInfo info) {
+            String name = info.materialName == null ? "" : info.materialName.toLowerCase(Locale.US);
+            float lum = luminance(info.emissiveFactor);
+            return lum > 0.35f || (lum > 0.08f && nameHasAny(name, "emissive", "emission", "light", "neon", "screen", "display", "flame", "fire", "lamp", "led"));
+        }
+
         private static MaterialRoute classifyMaterialRoute(MaterialInfo info) {
             String name = info.materialName == null ? "" : info.materialName.toLowerCase(Locale.US);
             boolean alphaHint = info.alphaMode == 1 || info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f;
-            if (luminance(info.emissiveFactor) > 0.001f || "metadata_only".equals(info.emissiveTextureStatus)) return MaterialRoute.Emission;
-            if (isFoliageCutoutName(name) || info.alphaMode == 1) return MaterialRoute.FoliageCutout;
+            if (isFoliageCutoutName(name) || (info.alphaMode == 1 && !info.hasTransmissionExtension && !info.hasVolumeExtension && !nameHasAny(name, "glass", "window", "lens", "windshield", "transparent"))) return MaterialRoute.FoliageCutout;
+            if (info.hasTransmissionExtension && info.transmissionFactor > 0.001f && !isFabricHairName(name)) return info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f || info.alphaMode == 1 ? MaterialRoute.GlassBlend : MaterialRoute.GlassSemanticOpaque;
+            if (info.hasVolumeExtension && !isFabricHairName(name) && !isFoliageCutoutName(name)) return info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f ? MaterialRoute.GlassBlend : MaterialRoute.GlassSemanticOpaque;
             if (isFabricHairName(name)) return MaterialRoute.FabricHair;
+            if (info.hasSheenExtension) return MaterialRoute.FabricHair;
+            if (info.emissiveDominant) return MaterialRoute.Emission;
             if (isSemanticGlass(info)) return info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f ? MaterialRoute.GlassBlend : MaterialRoute.GlassSemanticOpaque;
             if (nameHasAny(name, "mirror")) return MaterialRoute.Mirror;
             if (nameHasAny(name, "chrome")) return MaterialRoute.Chrome;
             if (info.metallicFactor >= 0.65f || nameHasAny(name, "metal", "steel")) return MaterialRoute.Metal;
+            if (info.hasClearcoatExtension && info.clearcoatFactor > 0.001f) return MaterialRoute.OpaquePbr;
             if (nameHasAny(name, "decal", "sticker", "label") || (alphaHint && info.roughnessFactor < 0.36f && info.metallicFactor < 0.2f)) return MaterialRoute.Decal;
             return MaterialRoute.OpaquePbr;
         }
@@ -7172,8 +7440,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 case GlassBlend: return "semantic_glass_blend_alpha";
                 case GlassSemanticOpaque: return "semantic_opaque_glass_preview";
                 case FoliageCutout: return info.alphaMode == 1 ? "mask_alpha_cutout_route" : "foliage_cutout_name_guard";
-                case FabricHair: return "fabric_hair_name_guard";
-                case Emission: return "emissive_factor_or_texture";
+                case FabricHair: return info.hasSheenExtension ? "gltf_sheen_extension_fabric_route" : "fabric_hair_name_guard";
+                case Emission: return "emissive_dominant_factor_or_name";
                 case Decal: return "decal_name_or_alpha_label";
                 case Chrome: return "chrome_placeholder";
                 case Mirror: return "mirror_placeholder";
@@ -7187,8 +7455,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             String name = info.materialName == null ? "" : info.materialName.toLowerCase(Locale.US);
             boolean hasBase = info.texture != null && "ok".equals(info.texture.status);
             boolean hasMr = info.metallicRoughnessTexture != null && "ok".equals(info.metallicRoughnessTexture.status);
-            boolean alphaHint = info.alphaMode == 1 || info.alphaMode == 2 || info.baseColorFactor[3] < 0.98f;
-            if (luminance(info.emissiveFactor) > 0.001f || "metadata_only".equals(info.emissiveTextureStatus)) return 8;
+            if (info.emissiveDominant) return 8;
             if (info.materialRoute == MaterialRoute.GlassBlend || info.materialRoute == MaterialRoute.GlassSemanticOpaque) return 6;
             if (info.materialRoute == MaterialRoute.Decal) return 7;
             if (info.materialRoute == MaterialRoute.FoliageCutout) return 5;
@@ -7223,6 +7490,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 if (info.hasVolumeExtension || info.volumeThicknessFactor > 0.001f) return "gltf_volume";
                 return "glass_hint";
             }
+            if (info.hasClearcoatExtension) return "gltf_clearcoat_layer";
+            if (info.hasSheenExtension) return "gltf_sheen_layer";
             if (info.materialTypeHint == 5) return "cutout_or_thin_exclusion";
             if (info.materialTypeHint == 0) return "fabric_or_matte_exclusion";
             return "material_properties";
@@ -7543,15 +7812,35 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     .append(",\"normalScale\":").append(jsonFloat(m.normalScale))
                     .append(",\"occlusionStrength\":").append(jsonFloat(m.occlusionStrength))
                     .append(",\"emissiveFactor\":[").append(jsonFloat(m.emissiveFactor[0])).append(",").append(jsonFloat(m.emissiveFactor[1])).append(",").append(jsonFloat(m.emissiveFactor[2])).append("]")
+                    .append(",\"hasEmissiveTexture\":").append(m.hasEmissiveTexture)
+                    .append(",\"emissiveDominant\":").append(m.emissiveDominant)
                     .append(",\"emissiveTextureStatus\":\"").append(esc(m.emissiveTextureStatus)).append("\"")
-                    .append(",\"emissiveAppliedStatus\":\"").append(esc(luminance(m.emissiveFactor) > 0.001f ? "factor_available" : "none")).append("\"")
-                    .append(",\"emissiveIntensityApplied\":").append(jsonFloat(luminance(m.emissiveFactor) > 0.001f ? 1.0f : 0.0f))
+                    .append(",\"emissiveAppliedStatus\":\"").append(esc(luminance(m.emissiveFactor) > 0.001f || m.hasEmissiveTexture ? "additive_component_available" : "none")).append("\"")
+                    .append(",\"emissiveIntensityApplied\":").append(jsonFloat(m.emissiveDominant ? 1.0f : (luminance(m.emissiveFactor) > 0.001f ? 0.35f : 0.0f)))
                     .append(",\"materialPresetHint\":\"").append(esc(materialPresetHintName(m))).append("\"")
                     .append(",\"selectedPresetAppliedStatus\":\"available_selected_slot_uniform_only\"")
+                    .append(",\"hasClearcoat\":").append(m.hasClearcoatExtension)
+                    .append(",\"clearcoatFactor\":").append(jsonFloat(m.clearcoatFactor))
+                    .append(",\"hasClearcoatTexture\":").append(m.hasClearcoatTexture)
                     .append(",\"clearcoatAppliedStatus\":\"").append(esc(clearcoatAppliedStatus(m))).append("\"")
                     .append(",\"clearcoatWeight\":").append(jsonFloat(clearcoatWeight(m)))
                     .append(",\"clearcoatRoughnessApplied\":").append(jsonFloat(clearcoatRoughnessApplied(m)))
                     .append(",\"clearcoatGuardApplied\":\"").append(esc(clearcoatGuardApplied(m))).append("\"")
+                    .append(",\"hasTransmission\":").append(m.hasTransmissionExtension)
+                    .append(",\"transmissionFactor\":").append(jsonFloat(m.transmissionFactor))
+                    .append(",\"hasVolume\":").append(m.hasVolumeExtension)
+                    .append(",\"thicknessFactor\":").append(jsonFloat(m.volumeThicknessFactor))
+                    .append(",\"attenuationColor\":[").append(jsonFloat(m.volumeAttenuationColor[0])).append(",").append(jsonFloat(m.volumeAttenuationColor[1])).append(",").append(jsonFloat(m.volumeAttenuationColor[2])).append("]")
+                    .append(",\"attenuationDistance\":").append(jsonFloat(m.volumeAttenuationDistance))
+                    .append(",\"hasSheen\":").append(m.hasSheenExtension)
+                    .append(",\"sheenColorFactor\":[").append(jsonFloat(m.sheenColorFactor[0])).append(",").append(jsonFloat(m.sheenColorFactor[1])).append(",").append(jsonFloat(m.sheenColorFactor[2])).append("]")
+                    .append(",\"sheenRoughnessFactor\":").append(jsonFloat(m.sheenRoughnessFactor))
+                    .append(",\"hasTextureTransform\":").append(m.hasTextureTransform)
+                    .append(",\"textureTransformStatus\":\"").append(esc(m.hasTextureTransform ? "detected_not_applied_shared_uv_slot" : "missing")).append("\"")
+                    .append(",\"hasNormalTexture\":").append(m.normalTexture != null && "ok".equals(m.normalTexture.status))
+                    .append(",\"hasMetallicRoughnessTexture\":").append(m.metallicRoughnessTexture != null && "ok".equals(m.metallicRoughnessTexture.status))
+                    .append(",\"hasOcclusionTexture\":").append(m.occlusionTexture != null && "ok".equals(m.occlusionTexture.status))
+                    .append(",\"hasAlphaMask\":").append(m.alphaMode == 1)
                     .append(",\"alphaMode\":\"").append(esc(m.alphaModeText)).append("\"")
                     .append(",\"alphaCutoff\":").append(jsonFloat(m.alphaCutoff))
                     .append(",\"alphaTextureStatus\":\"").append(esc(m.texture == null ? "missing" : m.texture.status)).append("\"")
@@ -7584,31 +7873,47 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
 
         private static float[] materialData(List<MaterialInfo> materials) {
-            float[] out = new float[Math.max(1, materials.size()) * 21];
+            final int stride = 35;
+            float[] out = new float[Math.max(1, materials.size()) * stride];
             if (materials.isEmpty()) materials.add(new MaterialInfo());
             for (int i = 0; i < materials.size(); i++) {
                 MaterialInfo m = materials.get(i);
-                out[i * 21] = m.baseColorFactor[0];
-                out[i * 21 + 1] = m.baseColorFactor[1];
-                out[i * 21 + 2] = m.baseColorFactor[2];
-                out[i * 21 + 3] = m.baseColorFactor[3];
-                out[i * 21 + 4] = m.alphaMode;
-                out[i * 21 + 5] = m.alphaCutoff;
-                out[i * 21 + 6] = m.doubleSided ? 1f : 0f;
-                out[i * 21 + 7] = m.textureSlot;
-                out[i * 21 + 8] = m.metallicFactor;
-                out[i * 21 + 9] = m.roughnessFactor;
-                out[i * 21 + 10] = m.metallicRoughnessTexture != null && "ok".equals(m.metallicRoughnessTexture.status) ? i : -1f;
-                out[i * 21 + 11] = m.normalTexture != null && "ok".equals(m.normalTexture.status) ? i : -1f;
-                out[i * 21 + 12] = m.occlusionTexture != null && "ok".equals(m.occlusionTexture.status) ? i : -1f;
-                out[i * 21 + 13] = m.normalScale;
-                out[i * 21 + 14] = m.occlusionStrength;
-                out[i * 21 + 15] = m.materialTypeHint;
-                out[i * 21 + 16] = clampUnitRange(m.emissiveFactor[0], 0.0f, 1.0f);
-                out[i * 21 + 17] = clampUnitRange(m.emissiveFactor[1], 0.0f, 1.0f);
-                out[i * 21 + 18] = clampUnitRange(m.emissiveFactor[2], 0.0f, 1.0f);
-                out[i * 21 + 19] = "metadata_only".equals(m.emissiveTextureStatus) ? i : -1f;
-                out[i * 21 + 20] = m.materialRoute.ordinal();
+                int o = i * stride;
+                out[o] = m.baseColorFactor[0];
+                out[o + 1] = m.baseColorFactor[1];
+                out[o + 2] = m.baseColorFactor[2];
+                out[o + 3] = m.baseColorFactor[3];
+                out[o + 4] = m.alphaMode;
+                out[o + 5] = m.alphaCutoff;
+                out[o + 6] = m.doubleSided ? 1f : 0f;
+                out[o + 7] = m.textureSlot;
+                out[o + 8] = m.metallicFactor;
+                out[o + 9] = m.roughnessFactor;
+                out[o + 10] = m.metallicRoughnessTexture != null && "ok".equals(m.metallicRoughnessTexture.status) ? i : -1f;
+                out[o + 11] = m.normalTexture != null && "ok".equals(m.normalTexture.status) ? i : -1f;
+                out[o + 12] = m.occlusionTexture != null && "ok".equals(m.occlusionTexture.status) ? i : -1f;
+                out[o + 13] = m.normalScale;
+                out[o + 14] = m.occlusionStrength;
+                out[o + 15] = m.materialTypeHint;
+                out[o + 16] = clampUnitRange(m.emissiveFactor[0], 0.0f, 1.0f);
+                out[o + 17] = clampUnitRange(m.emissiveFactor[1], 0.0f, 1.0f);
+                out[o + 18] = clampUnitRange(m.emissiveFactor[2], 0.0f, 1.0f);
+                out[o + 19] = m.hasEmissiveTexture ? i : -1f;
+                out[o + 20] = m.materialRoute.ordinal();
+                out[o + 21] = m.hasClearcoatExtension ? 1f : 0f;
+                out[o + 22] = clampUnitRange(m.clearcoatFactor, 0.0f, 1.0f);
+                out[o + 23] = clampUnitRange(m.clearcoatRoughnessFactor, 0.04f, 1.0f);
+                out[o + 24] = m.hasTransmissionExtension ? 1f : 0f;
+                out[o + 25] = clampUnitRange(m.transmissionFactor, 0.0f, 1.0f);
+                out[o + 26] = m.hasVolumeExtension ? 1f : 0f;
+                out[o + 27] = Math.max(0.0f, m.volumeThicknessFactor);
+                out[o + 28] = clampUnitRange(m.volumeAttenuationColor[0], 0.0f, 1.0f);
+                out[o + 29] = clampUnitRange(m.volumeAttenuationColor[1], 0.0f, 1.0f);
+                out[o + 30] = clampUnitRange(m.volumeAttenuationColor[2], 0.0f, 1.0f);
+                out[o + 31] = m.hasSheenExtension ? 1f : 0f;
+                out[o + 32] = clampUnitRange(luminance(m.sheenColorFactor), 0.0f, 1.0f);
+                out[o + 33] = clampUnitRange(m.sheenRoughnessFactor, 0.0f, 1.0f);
+                out[o + 34] = m.hasTextureTransform ? 1f : 0f;
             }
             return out;
         }
@@ -7624,6 +7929,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
 
         private static String clearcoatAppliedStatus(MaterialInfo info) {
+            if (info.hasClearcoatExtension && info.clearcoatFactor > 0.001f) return "applied_gltf_clearcoat_layer";
             if (info.materialTypeHint == 0) return "skipped_fabric_matte";
             if (info.materialTypeHint == 6) return "skipped_glass_metadata_only";
             if (info.materialTypeHint == 3) return "skipped_rubber_matte";
@@ -7633,6 +7939,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
 
         private static float clearcoatWeight(MaterialInfo info) {
+            if (info.hasClearcoatExtension) return clampUnitRange(info.clearcoatFactor, 0.0f, 1.0f);
             if (info.materialTypeHint == 1) return 1.0f;
             if (info.materialTypeHint == 2) return 0.28f;
             if (info.materialTypeHint == 4) return 0.18f;
@@ -7640,6 +7947,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
 
         private static float clearcoatRoughnessApplied(MaterialInfo info) {
+            if (info.hasClearcoatExtension) return clampUnitRange(info.clearcoatRoughnessFactor, 0.04f, 1.0f);
             if (info.materialTypeHint == 1) return 0.28f;
             if (info.materialTypeHint == 2) return 0.38f;
             return 1.0f;
@@ -7884,6 +8192,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         int pbrTextureFallbackCount = 0;
         String materialSlotDiagnostics = "[]";
         String materialDrawRangeDiagnostics = "[]";
+        boolean nodeTransformsApplied = false;
+        String nodeTransformMode = "identity";
+        int transformedPrimitiveCount = 0;
+        int nonIdentityNodeTransformCount = 0;
+        int parentedNodeTransformCount = 0;
+        String nodeTransformFallbackReason = "not_loaded";
         float modelScale;
         int vertexCount;
         int indexCount;
@@ -7922,6 +8236,28 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         IndexReader indices;
         int vertexCount = 0;
         int materialIndex = -1;
+        int meshIndex = -1;
+        int nodeIndex = -1;
+        float[] worldMatrix = new float[] {1f,0f,0f,0f, 0f,1f,0f,0f, 0f,0f,1f,0f, 0f,0f,0f,1f};
+        float[] normalMatrix = new float[] {1f,0f,0f,0f, 0f,1f,0f,0f, 0f,0f,1f,0f, 0f,0f,0f,1f};
+        boolean nonIdentityTransform = false;
+        boolean parentedTransform = false;
+        String transformMode = "identity";
+    }
+
+    private static final class TransformImportStats {
+        boolean nodeTransformsApplied = false;
+        int primitiveTotal = 0;
+        int transformedPrimitiveCount = 0;
+        int nonIdentityNodeTransformCount = 0;
+        int parentedNodeTransformCount = 0;
+        String fallbackReason = "none";
+
+        String modeSummary() {
+            if (parentedNodeTransformCount > 0) return "parented";
+            if (transformedPrimitiveCount <= 0 && nonIdentityNodeTransformCount <= 0) return "identity";
+            return "TRS/matrix";
+        }
     }
 
     private static final class TangentBuildResult {
@@ -7976,10 +8312,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         int tangentFallbackCount = 0;
         int tangentDegenerateTriangleCount = 0;
         boolean hasTransmissionExtension = false;
+        boolean hasTransmissionTexture = false;
         boolean hasVolumeExtension = false;
+        boolean hasClearcoatExtension = false;
+        boolean hasClearcoatTexture = false;
+        boolean hasSheenExtension = false;
+        boolean hasTextureTransform = false;
+        boolean hasEmissiveTexture = false;
+        boolean emissiveDominant = false;
         float transmissionFactor = 0.0f;
         float volumeThicknessFactor = 0.0f;
+        float volumeAttenuationDistance = 0.0f;
+        float[] volumeAttenuationColor = new float[] {1f, 1f, 1f};
         float clearcoatFactor = 0.0f;
+        float clearcoatRoughnessFactor = 0.0f;
+        float[] sheenColorFactor = new float[] {0f, 0f, 0f};
+        float sheenRoughnessFactor = 0.0f;
     }
 
     private static final class BaseColorTexture {
@@ -8027,6 +8375,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         int meshCount = 0;
         int primitiveCount = 0;
         int nodeCount = 0;
+        int matrixNodeCount = 0;
+        int trsNodeCount = 0;
+        int parentNodeCount = 0;
+        int nonIdentityNodeTransformCount = 0;
         int sceneCount = 0;
         int materialCount = 0;
         int textureCount = 0;
@@ -8086,6 +8438,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"meshCount\": " + meshCount + ",\n"
                 + "  \"primitiveCount\": " + primitiveCount + ",\n"
                 + "  \"nodeCount\": " + nodeCount + ",\n"
+                + "  \"matrixNodeCount\": " + matrixNodeCount + ",\n"
+                + "  \"trsNodeCount\": " + trsNodeCount + ",\n"
+                + "  \"parentNodeCount\": " + parentNodeCount + ",\n"
+                + "  \"nonIdentityNodeTransformCount\": " + nonIdentityNodeTransformCount + ",\n"
                 + "  \"sceneCount\": " + sceneCount + ",\n"
                 + "  \"materialCount\": " + materialCount + ",\n"
                 + "  \"textureCount\": " + textureCount + ",\n"

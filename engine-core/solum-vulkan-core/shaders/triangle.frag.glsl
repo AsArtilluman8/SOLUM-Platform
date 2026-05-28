@@ -430,6 +430,12 @@ void main() {
     vec3 specularLight = (directSpecular + analyticSpecular + iblSpecular) * pc.specularBoost;
     specularLight *= mix(0.55, 1.35, glossSlider);
     if (hint == 0) specularLight *= 0.55;
+    vec3 sheenLight = vec3(0.0);
+    if (hint == 0) {
+        float fabricEdge = pow(clamp(1.0 - max(dot(n, v), 0.0), 0.0, 1.0), 2.2);
+        sheenLight = baseColor * fabricEdge * (0.08 + 0.18 * (1.0 - metallic)) * (0.45 + pc.ambientIntensity * 0.35);
+        specularLight += sheenLight;
+    }
     float ndotv = max(dot(n, v), 0.0);
     float glassFresnelBase = pow(clamp(1.0 - ndotv, 0.0, 1.0), 3.2);
     float glassEdgeScale = glassBlendPolish ? mix(1.18, 1.48, 1.0 - glassRoughInput) * (glassSolid ? 0.92 : 1.12) : 1.0;

@@ -919,7 +919,50 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_solum_engine_MainActivity_nativeU
         drawRanges[i].textureSlot = ranges[i * 6u + 5u];
     }
     std::vector<solum::MaterialSlotState> slots;
-    if (materials && materialFloatCount >= 21 && (materialFloatCount % 21) == 0) {
+    if (materials && materialFloatCount >= 35 && (materialFloatCount % 35) == 0) {
+        slots.resize((size_t)materialFloatCount / 35u);
+        for (size_t i = 0; i < slots.size(); ++i) {
+            size_t o = i * 35u;
+            slots[i].baseColorFactor[0] = materials[o];
+            slots[i].baseColorFactor[1] = materials[o + 1u];
+            slots[i].baseColorFactor[2] = materials[o + 2u];
+            slots[i].baseColorFactor[3] = materials[o + 3u];
+            slots[i].alphaMode = (int)materials[o + 4u];
+            slots[i].alphaCutoff = materials[o + 5u];
+            slots[i].doubleSided = materials[o + 6u] != 0.0f;
+            slots[i].baseColorTextureSlot = (int)materials[o + 7u];
+            slots[i].metallicFactor = materials[o + 8u];
+            slots[i].roughnessFactor = materials[o + 9u];
+            slots[i].metallicRoughnessTextureSlot = (int)materials[o + 10u];
+            slots[i].normalTextureSlot = (int)materials[o + 11u];
+            slots[i].occlusionTextureSlot = (int)materials[o + 12u];
+            slots[i].normalScale = materials[o + 13u];
+            slots[i].occlusionStrength = materials[o + 14u];
+            slots[i].materialTypeHint = (int)materials[o + 15u];
+            slots[i].emissiveFactor[0] = materials[o + 16u];
+            slots[i].emissiveFactor[1] = materials[o + 17u];
+            slots[i].emissiveFactor[2] = materials[o + 18u];
+            slots[i].emissiveTextureSlot = (int)materials[o + 19u];
+            int route = (int)materials[o + 20u];
+            slots[i].materialRoute = route >= 0 && route <= 10 ? static_cast<solum::MaterialRoute>(route) : solum::MaterialRoute::Unknown;
+            slots[i].hasClearcoat = materials[o + 21u] != 0.0f;
+            slots[i].clearcoatFactor = materials[o + 22u];
+            slots[i].clearcoatRoughnessFactor = materials[o + 23u];
+            slots[i].hasTransmission = materials[o + 24u] != 0.0f;
+            slots[i].transmissionFactor = materials[o + 25u];
+            slots[i].hasVolume = materials[o + 26u] != 0.0f;
+            slots[i].thicknessFactor = materials[o + 27u];
+            slots[i].attenuationColor[0] = materials[o + 28u];
+            slots[i].attenuationColor[1] = materials[o + 29u];
+            slots[i].attenuationColor[2] = materials[o + 30u];
+            slots[i].hasSheen = materials[o + 31u] != 0.0f;
+            slots[i].sheenStrength = materials[o + 32u];
+            slots[i].sheenRoughnessFactor = materials[o + 33u];
+            slots[i].hasTextureTransform = materials[o + 34u] != 0.0f;
+            slots[i].materialPresetHint = slots[i].materialTypeHint == 1 ? 1 : (slots[i].materialTypeHint == 2 ? 2 : (slots[i].materialTypeHint == 0 ? 3 : (slots[i].materialTypeHint == 3 ? 4 : (slots[i].materialTypeHint == 6 ? 6 : 0))));
+            slots[i].runtimeClass = solum::RuntimeMaterialClass::Opaque;
+        }
+    } else if (materials && materialFloatCount >= 21 && (materialFloatCount % 21) == 0) {
         slots.resize((size_t)materialFloatCount / 21u);
         for (size_t i = 0; i < slots.size(); ++i) {
             slots[i].baseColorFactor[0] = materials[i * 21u];

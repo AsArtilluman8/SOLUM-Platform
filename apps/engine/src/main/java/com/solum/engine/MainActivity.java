@@ -236,6 +236,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private int glassRenderModeIndex = 2;
     private int glassTypeIndex = 0;
     private int manualGlassSlotOverride = -1;
+    private boolean authorMaterialMode = true;
+    private boolean materialOverrideEnabled = false;
+    private boolean glassOverrideEnabled = false;
+    private int overrideTargetSlot = -1;
     private int brightnessPresetIndex = 3;
     private int activeDebugViewIndex = 0;
     private int toneMappingModeIndex = 1;
@@ -299,7 +303,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native String nativeGetStatus(long handle);
     private static native String nativeGetRenderLabState(long handle);
     private static native void nativeSetCamera(long handle, float yawDeg, float pitchDeg, float distance, float motionSpeed, float qualityBlend, float reflectionScale, float clearcoatScale, float movingFps, float stillFps);
-    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, float reflectionContrast, float reflectionSaturation, float motionReflectionScale, float motionClearcoatScale, int selectedMaterialSlot, float selectedSlotMetallicOverride, float selectedSlotRoughnessOverride, float selectedSlotNormalScaleOverride, float selectedSlotAoOverride, float selectedSlotGlossOverride, float selectedSlotCoatOverride, float alphaCutoffValue, float emissiveIntensity, int materialPreset, int glassEnabled, float glassOpacity, float glassEdge, float glassRoughness, int glassTintPreset, int glassRenderMode, int glassType, int manualGlassSlotOverride);
+    private static native void nativeSetLightingControls(long handle, int lightPreset, float sunIntensity, float ambientIntensity, int activeDebugView, int toneMappingMode, float exposureValue, float ambientFloor, int brightnessPreset, float specularBoost, float reflectionIntensity, float contactShadowIntensity, int calibrationPreset, float calibrationStrength, float glossSliderValue, float paintGlossSliderValue, float clearcoatIntensity, float clearcoatRoughness, float environmentIntensity, int environmentPreset, float horizonStrength, float reflectionContrast, float reflectionSaturation, float motionReflectionScale, float motionClearcoatScale, int selectedMaterialSlot, float selectedSlotMetallicOverride, float selectedSlotRoughnessOverride, float selectedSlotNormalScaleOverride, float selectedSlotAoOverride, float selectedSlotGlossOverride, float selectedSlotCoatOverride, float alphaCutoffValue, float emissiveIntensity, int materialPreset, int glassEnabled, float glassOpacity, float glassEdge, float glassRoughness, int glassTintPreset, int glassRenderMode, int glassType, int manualGlassSlotOverride, int authorMaterialMode, int materialOverrideEnabled, int glassOverrideEnabled, int overrideTargetSlot);
     private static native boolean nativeUploadModelFirstPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, float[] baseColorFactor);
     private static native boolean nativeUploadModelMultiPrimitive(long handle, String modelName, String modelPath, float[] vertexData, int[] indexData, int[] rangeData, float[] materialData, float[] boundsMin, float[] boundsMax, float[] boundsCenter, float modelScale, int primitiveTotal, int primitiveSkipped, int unsupportedPrimitiveCount, String reason);
     private static native boolean nativeUploadBaseColorTexture(long handle, int[] rgbaPixels, int width, int height, String textureName, String textureSource, String mimeType);
@@ -1075,6 +1079,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void applyActiveMaterialPreset() {
+        materialOverrideEnabled = selectedMaterialSlotCount > 0;
+        overrideTargetSlot = materialOverrideEnabled ? selectedMaterialSlot : -1;
         if (activeMaterialPresetIndex == 1) {
             selectedSlotMetallicOverride = 0.12f; selectedSlotRoughnessOverride = 0.24f; selectedSlotNormalScaleOverride = 1.0f; selectedSlotAoOverride = 1.0f; glossSliderValue = 0.86f; paintGlossSliderValue = 0.92f; clearcoatIntensity = 1.35f; clearcoatRoughness = 0.22f; emissiveIntensity = 0.0f;
         } else if (activeMaterialPresetIndex == 2) {
@@ -1093,6 +1099,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         } else {
             selectedSlotMetallicOverride = 0.0f; selectedSlotRoughnessOverride = 0.62f; selectedSlotNormalScaleOverride = 1.0f; selectedSlotAoOverride = 1.0f; glossSliderValue = 0.62f; paintGlossSliderValue = 0.55f; clearcoatIntensity = 0.55f; clearcoatRoughness = 0.34f; emissiveIntensity = 0.0f;
         }
+        glassOverrideEnabled = selectedMaterialIsGlassCandidate() && activeMaterialPresetIndex == 6;
         materialPresetPendingApply = false;
         modelState.materialPresetAppliedStatus = "ok_selected_slot_uniform_only";
         modelState.selectedSlotResetStatus = "ok_preset_applied";
@@ -1102,6 +1109,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private void toggleGlassEnabled() {
         glassEnabled = !glassEnabled;
+        glassOverrideEnabled = selectedMaterialIsGlassCandidate();
+        overrideTargetSlot = glassOverrideEnabled ? selectedMaterialSlot : overrideTargetSlot;
         if (glassEnabled) activeMaterialPresetIndex = 6;
         else if (activeMaterialPresetIndex == 6) activeMaterialPresetIndex = 0;
         materialPresetPendingApply = false;
@@ -1111,6 +1120,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleGlassRenderMode() {
+        glassOverrideEnabled = selectedMaterialIsGlassCandidate();
+        overrideTargetSlot = glassOverrideEnabled ? selectedMaterialSlot : overrideTargetSlot;
         glassRenderModeIndex = (glassRenderModeIndex + 1) % 3;
         applyLightingControls();
         updateStatus();
@@ -1123,6 +1134,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleGlassType() {
+        glassOverrideEnabled = selectedMaterialIsGlassCandidate();
+        overrideTargetSlot = glassOverrideEnabled ? selectedMaterialSlot : overrideTargetSlot;
         glassTypeIndex = glassTypeIndex == 0 ? 1 : 0;
         glassEnabled = true;
         activeMaterialPresetIndex = 6;
@@ -1135,6 +1148,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void cycleGlassTintPreset() {
+        glassOverrideEnabled = selectedMaterialIsGlassCandidate();
+        overrideTargetSlot = glassOverrideEnabled ? selectedMaterialSlot : overrideTargetSlot;
         glassTintPresetIndex = (glassTintPresetIndex + 1) % 8;
         glassEnabled = true;
         activeMaterialPresetIndex = 6;
@@ -1160,6 +1175,56 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         else if (preset == 6) { glassOpacity = 0.74f; glassEdge = 1.12f; glassRoughness = 0.54f; reflectionIntensity = Math.max(reflectionIntensity, 0.96f); }
         else if (preset == 7) { glassOpacity = 0.42f; glassEdge = 1.95f; glassRoughness = 0.08f; reflectionIntensity = Math.max(reflectionIntensity, 1.38f); }
         else { glassOpacity = 0.42f; glassEdge = 1.66f; glassRoughness = 0.08f; reflectionIntensity = Math.max(reflectionIntensity, 1.24f); glassTypeIndex = 0; }
+    }
+
+    private boolean selectedMaterialIsGlassCandidate() {
+        return materialSlotIsGlassCandidate(selectedMaterialJson());
+    }
+
+    private boolean materialSlotIsGlassCandidate(JSONObject slot) {
+        if (slot == null) return false;
+        String route = slot.optString("materialRoute", "");
+        String alpha = slot.optString("alphaMode", "OPAQUE");
+        boolean hasTransmission = slot.optBoolean("hasTransmission", false) || slot.optDouble("transmissionFactor", 0.0) > 0.001;
+        boolean hasVolume = slot.optBoolean("hasVolume", false);
+        if ("GlassBlend".equals(route) || "GlassSemanticOpaque".equals(route)) return true;
+        if (hasTransmission || hasVolume) return true;
+        return "BLEND".equals(alpha) && "glass_like".equals(slot.optString("materialTypeHint", ""));
+    }
+
+    private boolean activeModelIsImportedAuthorModel() {
+        String path = modelState.activeModelPath == null ? "" : modelState.activeModelPath;
+        return !path.isEmpty() && !path.startsWith("procedural://");
+    }
+
+    private void resetAuthorMaterialRuntimeState(String reason) {
+        authorMaterialMode = true;
+        materialOverrideEnabled = false;
+        glassOverrideEnabled = false;
+        overrideTargetSlot = -1;
+        manualGlassSlotOverride = -1;
+        materialPresetPendingApply = false;
+        activeMaterialPresetIndex = 0;
+        selectedSlotMetallicOverride = 0.0f;
+        selectedSlotRoughnessOverride = 1.0f;
+        selectedSlotNormalScaleOverride = 1.0f;
+        selectedSlotAoOverride = 1.0f;
+        glossSliderValue = 0.0f;
+        paintGlossSliderValue = 0.0f;
+        clearcoatIntensity = 0.0f;
+        emissiveIntensity = 0.0f;
+        glassEnabled = true;
+        glassRenderModeIndex = 2;
+        glassTypeIndex = 0;
+        glassTintPresetIndex = 0;
+        glassOpacity = 0.18f;
+        glassEdge = 1.20f;
+        glassRoughness = 0.18f;
+        modelState.materialPresetAppliedStatus = "reset_author_material_mode";
+        modelState.selectedSlotOverrideApplied = "false_author_material_mode";
+        modelState.selectedOverrideReason = reason;
+        modelState.affectedMaterialSlot = -1;
+        modelState.affectedDrawRangeCount = 0;
     }
 
     private void toggleShowGlassGeometry() {
@@ -1320,6 +1385,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private void assignSelectedAsGlass() {
         manualGlassSlotOverride = selectedMaterialSlot;
         glassEnabled = true;
+        glassOverrideEnabled = true;
+        overrideTargetSlot = selectedMaterialSlot;
         modelState.transparentGlassManualOverrideStatus = "active_selected_slot_assigned_as_glass";
         applyLightingControls();
         updateStatus();
@@ -1327,6 +1394,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private void clearManualRoleOverride() {
         manualGlassSlotOverride = -1;
+        glassOverrideEnabled = false;
+        if (!materialOverrideEnabled) overrideTargetSlot = -1;
         modelState.transparentGlassManualOverrideStatus = "inactive";
         applyLightingControls();
         updateStatus();
@@ -1620,6 +1689,24 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.glossAffectsReflectionWeight = "yes_shader_environment_weight";
         JSONObject selectedSlot = selectedMaterialJson();
         applyGlassDiagnostics(selectedSlot);
+        boolean importedAuthor = activeModelIsImportedAuthorModel() && authorMaterialMode;
+        boolean explicitMaterialUi = !importedAuthor || materialOverrideEnabled;
+        boolean explicitGlassUi = !importedAuthor || glassOverrideEnabled;
+        int nativeOverrideTargetSlot = explicitMaterialUi || explicitGlassUi ? overrideTargetSlot : -1;
+        int nativeManualGlassSlot = explicitGlassUi ? manualGlassSlotOverride : -1;
+        int nativeMaterialPreset = explicitMaterialUi ? activeMaterialPresetIndex : 0;
+        int nativeGlassEnabled = importedAuthor ? 1 : (glassEnabled ? 1 : 0);
+        float nativeCalibration = importedAuthor ? 0.0f : calibrationSliderValue;
+        float nativeSpecularBoost = importedAuthor ? 1.0f : specularBoost;
+        float nativeGloss = explicitMaterialUi ? glossSliderValue : 0.0f;
+        float nativeCoat = explicitMaterialUi ? paintGlossSliderValue : 0.0f;
+        float nativeClearcoat = explicitMaterialUi ? clearcoatIntensity : 0.0f;
+        float nativeEmissive = explicitMaterialUi ? emissiveIntensity : 0.0f;
+        float nativeGlassOpacity = explicitGlassUi ? glassOpacity : 0.18f;
+        float nativeGlassEdge = explicitGlassUi ? glassEdge : 1.20f;
+        float nativeGlassRoughness = explicitGlassUi ? glassRoughness : 0.18f;
+        int nativeGlassTint = explicitGlassUi ? glassTintPresetIndex : 0;
+        int nativeGlassType = explicitGlassUi ? glassTypeIndex : 0;
         modelState.materialSlotEditorStatus = "ok";
         modelState.selectedMaterialSlot = selectedMaterialSlot;
         modelState.selectedMaterialSlotCount = selectedMaterialSlotCount;
@@ -1627,19 +1714,32 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         modelState.selectedMaterialName = selectedSlot == null ? "unknown" : selectedSlot.optString("materialName", "slot_" + selectedMaterialSlot);
         modelState.selectedMaterialSummaryStatus = selectedSlot == null ? "empty" : "ok_metallic_roughness_normal_ao_texture_summary";
         modelState.materialSlotSelectionUiStatus = "ok_prev_next_label_summary";
-        modelState.perMaterialOverrideStatus = "foundation_selected_slot_uniform";
-        modelState.perMaterialOverrideMode = "cpu_selected_slot_push_constants";
+        modelState.perMaterialOverrideStatus = explicitMaterialUi ? "explicit_selected_slot_uniform" : "blocked_author_material_mode";
+        modelState.perMaterialOverrideMode = "author_material_default_with_explicit_selected_slot_override";
         modelState.selectedSlotMetallicOverride = selectedSlotMetallicOverride;
         modelState.selectedSlotRoughnessOverride = selectedSlotRoughnessOverride;
         modelState.selectedSlotNormalScaleOverride = selectedSlotNormalScaleOverride;
         modelState.selectedSlotAoOverride = selectedSlotAoOverride;
         modelState.selectedSlotGlossOverride = glossSliderValue;
         modelState.selectedSlotCoatOverride = paintGlossSliderValue;
-        modelState.selectedSlotOverrideApplied = selectedSlot == null ? "false_no_material_slot" : "true_selected_slot_only";
-        modelState.selectedOverrideReason = selectedSlot == null ? "no_selected_material_slot" : "explicit_selected_slot_controls";
-        modelState.affectedMaterialSlot = selectedSlot == null ? -1 : selectedMaterialSlot;
-        modelState.affectedDrawRangeCount = selectedSlot == null ? 0 : drawRangeCountForMaterial(selectedMaterialSlot);
-        modelState.materialDrawRangeDiagnostics = annotateDrawRangeDiagnostics(modelState.materialDrawRangeDiagnostics, selectedMaterialSlot);
+        modelState.authorMaterialMode = importedAuthor;
+        modelState.materialOverrideEnabled = materialOverrideEnabled;
+        modelState.glassOverrideEnabled = glassOverrideEnabled;
+        modelState.selectedOverrideApplied = explicitMaterialUi && nativeOverrideTargetSlot >= 0;
+        modelState.manualGlassSlotOverride = nativeManualGlassSlot;
+        modelState.sliderIgnoredByAuthorMode = importedAuthor && !materialOverrideEnabled && !glassOverrideEnabled;
+        modelState.materialUiApplied = explicitMaterialUi && nativeOverrideTargetSlot >= 0;
+        modelState.materialUiBlockedReason = modelState.materialUiApplied ? "none" : (importedAuthor ? "author_material_mode" : "no_selected_override_target");
+        modelState.overrideTargetSlot = nativeOverrideTargetSlot >= 0 ? String.valueOf(nativeOverrideTargetSlot) : "N/A";
+        modelState.overrideApplied = modelState.materialUiApplied;
+        modelState.overrideReason = modelState.overrideApplied ? "explicit_apply_selected_slot" : modelState.materialUiBlockedReason;
+        modelState.selectedSlotOverrideApplied = modelState.overrideApplied ? "true_selected_slot_only" : "false_author_material_mode";
+        modelState.selectedOverrideReason = modelState.overrideReason;
+        modelState.affectedMaterialSlot = modelState.overrideApplied ? nativeOverrideTargetSlot : -1;
+        modelState.affectedDrawRangeCount = modelState.overrideApplied ? drawRangeCountForMaterial(nativeOverrideTargetSlot) : 0;
+        modelState.overrideAffectedDrawRangeCount = modelState.affectedDrawRangeCount;
+        modelState.authorMaterialStillAvailable = true;
+        modelState.materialDrawRangeDiagnostics = annotateDrawRangeDiagnostics(modelState.materialDrawRangeDiagnostics, nativeOverrideTargetSlot);
         if (!"seeded_from_slot".equals(modelState.selectedSlotResetStatus)
             && !"ok_reset_selected_slot_from_source_material".equals(modelState.selectedSlotResetStatus)) {
             modelState.selectedSlotResetStatus = "available_safe_reseed_from_slot";
@@ -1756,7 +1856,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (materialViewButton != null) materialViewButton.setText("Debug: " + modelState.activeDebugView);
         try {
             if (nativeLoaded && nativeHandle != 0L) {
-                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, specularBoost, reflectionIntensity, contactShadowIntensity, calibrationPresetIndex, calibrationSliderValue, glossSliderValue, paintGlossSliderValue, clearcoatIntensity, clearcoatRoughness, environmentIntensity, environmentPresetIndex, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, glossSliderValue, paintGlossSliderValue, alphaCutoffValue, emissiveIntensity, activeMaterialPresetIndex, glassEnabled ? 1 : 0, glassOpacity, glassEdge, glassRoughness, glassTintPresetIndex, glassRenderModeIndex, glassTypeIndex, manualGlassSlotOverride);
+                nativeSetLightingControls(nativeHandle, lightPresetIndex, sunIntensity, ambientIntensity, activeDebugViewIndex, toneMappingModeIndex, exposureValue, ambientFloor, brightnessPresetIndex, nativeSpecularBoost, reflectionIntensity, contactShadowIntensity, calibrationPresetIndex, nativeCalibration, nativeGloss, nativeCoat, nativeClearcoat, clearcoatRoughness, environmentIntensity, environmentPresetIndex, horizonStrength, reflectionContrast, reflectionSaturation, motionReflectionScale, motionClearcoatScale, selectedMaterialSlot, selectedSlotMetallicOverride, selectedSlotRoughnessOverride, selectedSlotNormalScaleOverride, selectedSlotAoOverride, nativeGloss, nativeCoat, alphaCutoffValue, nativeEmissive, nativeMaterialPreset, nativeGlassEnabled, nativeGlassOpacity, nativeGlassEdge, nativeGlassRoughness, nativeGlassTint, glassRenderModeIndex, nativeGlassType, nativeManualGlassSlot, importedAuthor ? 1 : 0, materialOverrideEnabled ? 1 : 0, glassOverrideEnabled ? 1 : 0, nativeOverrideTargetSlot);
             }
         } catch (Throwable t) {
             modelState.debugViewStatus = "native_control_failed";
@@ -2685,6 +2785,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 modelState.nodeTransformFallbackReason = mesh.nodeTransformFallbackReason;
                 modelState.persistedModelBounds = "[" + jsonFloat(mesh.boundsMin[0]) + "," + jsonFloat(mesh.boundsMin[1]) + "," + jsonFloat(mesh.boundsMin[2]) + "]-[" + jsonFloat(mesh.boundsMax[0]) + "," + jsonFloat(mesh.boundsMax[1]) + "," + jsonFloat(mesh.boundsMax[2]) + "]";
                 modelState.persistedModelScale = mesh.modelScale;
+                if (!trigger.startsWith("material_lab_restore")) {
+                    resetAuthorMaterialRuntimeState("model_import_reload_author_material_reset");
+                }
                 selectedMaterialSlotCount = mesh.materialSlotCount;
                 selectedMaterialSlot = selectedMaterialSlotCount > 0 ? Math.min(selectedMaterialSlot, selectedMaterialSlotCount - 1) : 0;
                 seedSelectedSlotOverridesFromDiagnostics();
@@ -3301,8 +3404,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             float previousEmissive = emissiveIntensity;
             int previousActivePreset = activeMaterialPresetIndex;
             int previousDebugView = activeDebugViewIndex;
+            boolean previousAuthorMode = authorMaterialMode;
+            boolean previousMaterialOverride = materialOverrideEnabled;
+            boolean previousGlassOverride = glassOverrideEnabled;
+            int previousOverrideTargetSlot = overrideTargetSlot;
             try {
                 MaterialLabMesh mesh = buildMaterialLabMesh();
+                authorMaterialMode = false;
+                materialOverrideEnabled = true;
+                glassOverrideEnabled = true;
+                overrideTargetSlot = -1;
                 modelState.materialLabActive = true;
                 modelState.materialLabAffectsImportedModel = false;
                 modelState.importedModelProtectedFromLabState = true;
@@ -3422,6 +3533,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 emissiveIntensity = previousEmissive;
                 activeMaterialPresetIndex = previousActivePreset;
                 activeDebugViewIndex = previousDebugView;
+                authorMaterialMode = previousAuthorMode;
+                materialOverrideEnabled = previousMaterialOverride;
+                glassOverrideEnabled = previousGlassOverride;
+                overrideTargetSlot = previousOverrideTargetSlot;
                 modelState.materialLabActive = false;
                 modelState.materialLabAffectsImportedModel = false;
                 modelState.importedModelProtectedFromLabState = true;
@@ -3460,6 +3575,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 emissiveIntensity = previousEmissive;
                 activeMaterialPresetIndex = previousActivePreset;
                 activeDebugViewIndex = previousDebugView;
+                authorMaterialMode = previousAuthorMode;
+                materialOverrideEnabled = previousMaterialOverride;
+                glassOverrideEnabled = previousGlassOverride;
+                overrideTargetSlot = previousOverrideTargetSlot;
                 modelState.materialLabActive = false;
                 modelState.materialLabAffectsImportedModel = false;
                 modelState.importedModelProtectedFromLabState = true;
@@ -3954,7 +4073,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (slot == null) return "N/A";
         String alphaMode = slot.optString("alphaMode", "UNKNOWN");
         boolean semantic = "glass_like".equals(slot.optString("materialTypeHint", ""));
-        boolean manual = manualGlassSlotOverride == slot.optInt("slot", -1);
+        boolean manual = glassOverrideEnabled && manualGlassSlotOverride == slot.optInt("slot", -1);
         boolean glassBlendRoute = "GlassBlend".equals(slot.optString("materialRoute", ""));
         float sourceAlpha = parseFloatOr(slot.optString("baseColorAlpha", "1.0"), 1.0f);
         if ((semantic || manual) && "OPAQUE".equals(alphaMode) && sourceAlpha >= 0.98f) return "semantic_opaque_direct_glass";
@@ -3999,7 +4118,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (slot == null) return false;
         String alphaMode = slot.optString("alphaMode", "UNKNOWN");
         boolean semantic = "glass_like".equals(slot.optString("materialTypeHint", ""));
-        boolean manual = manualGlassSlotOverride == slotIndex;
+        boolean manual = glassOverrideEnabled && manualGlassSlotOverride == slotIndex;
         float sourceAlpha = parseFloatOr(slot.optString("baseColorAlpha", "1.0"), 1.0f);
         return (semantic || manual) && "OPAQUE".equals(alphaMode) && sourceAlpha >= 0.98f;
     }
@@ -4065,20 +4184,57 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private String annotateDrawRangeDiagnostics(String raw, int selectedSlot) {
         try {
             JSONArray ranges = new JSONArray(raw == null ? "[]" : raw);
+            int authorRendered = 0;
+            int overrideRendered = 0;
+            int glassUiApplied = 0;
+            int nonGlassBlocked = 0;
+            int cutoutCount = 0;
+            int transmissionCount = 0;
+            int opaqueProtected = 0;
+            int suspiciousGlass = 0;
             for (int i = 0; i < ranges.length(); i++) {
                 JSONObject r = ranges.optJSONObject(i);
                 if (r == null) continue;
                 int slot = r.optInt("materialSlot", -1);
                 String route = r.optString("materialRoute", "Unknown");
-                boolean glass = "GlassBlend".equals(route) || "GlassSemanticOpaque".equals(route);
+                String alpha = r.optString("alphaMode", "OPAQUE");
+                boolean hasTransmission = r.optBoolean("hasTransmission", false) || r.optDouble("transmissionFactor", 0.0) > 0.001;
+                boolean hasVolume = r.optBoolean("hasVolume", false);
+                boolean glass = "GlassBlend".equals(route) || "GlassSemanticOpaque".equals(route) || hasTransmission || hasVolume;
+                boolean maskedTransmission = "MASK".equals(alpha) && hasTransmission;
                 boolean cutout = "FoliageCutout".equals(route) || r.optBoolean("cutoutRoute", false);
-                r.put("selectedOverrideApplied", slot == selectedSlot && !glass && !cutout);
-                r.put("selectedOverrideReason", slot == selectedSlot && !glass && !cutout ? "explicit_selected_slot_controls" : "not_selected_or_protected_route");
+                if (maskedTransmission) cutout = false;
+                boolean override = materialOverrideEnabled && slot == selectedSlot && !glass && !cutout;
+                boolean glassUi = glassOverrideEnabled && slot == selectedSlot && glass;
+                String finalRoute = glass ? (maskedTransmission ? "MaskedTransmissionGlass" : route) : route;
+                r.put("authorRoute", route);
+                r.put("finalRoute", finalRoute);
+                r.put("glassCandidate", glass);
+                r.put("glassUiApplied", glassUi);
+                r.put("overrideApplied", override);
+                r.put("selectedOverrideApplied", override);
+                r.put("selectedOverrideReason", override ? "explicit_selected_slot_controls" : (authorMaterialMode ? "author_material_mode_or_protected_route" : "not_selected_or_protected_route"));
                 r.put("queue", glass ? "glass" : (cutout ? "cutout" : "opaque"));
                 r.put("runtimeClass", glass ? "TRANSPARENT_GLASS" : (cutout ? "CUTOUT" : "OPAQUE"));
                 r.put("glassApplied", glass);
-                r.put("glassBlockedReason", glass ? "none" : "non_glass_route");
+                r.put("glassBlockedReason", glass ? (glassUi ? "none_ui_override_selected_glass" : "author_glass_no_ui_override") : "non_glass_route");
+                r.put("blockedReason", override || glassUi ? "none" : (authorMaterialMode ? "author_material_mode" : "protected_route"));
+                if (!override) authorRendered++; else overrideRendered++;
+                if (glassUi) glassUiApplied++;
+                if (!glass) nonGlassBlocked++;
+                if (cutout) cutoutCount++;
+                if (hasTransmission) transmissionCount++;
+                if ("OpaquePbr".equals(route) && !r.optBoolean("hasClearcoat", false) && !hasTransmission && !r.optBoolean("hasSheen", false) && !r.optBoolean("emissiveDominant", false)) opaqueProtected++;
+                if (glass && ("Metal".equals(route) || "Chrome".equals(route) || "FabricHair".equals(route) || "Emission".equals(route) || "Decal".equals(route) || "OpaquePbr".equals(route))) suspiciousGlass++;
             }
+            modelState.authorRenderedRangeCount = authorRendered;
+            modelState.overrideRenderedRangeCount = overrideRendered;
+            modelState.glassUiAppliedRangeCount = glassUiApplied;
+            modelState.nonGlassBlockedFromGlassCount = nonGlassBlocked;
+            modelState.cutoutRangeCount = cutoutCount;
+            modelState.transmissionRangeCount = transmissionCount;
+            modelState.opaquePbrProtectedCount = opaqueProtected;
+            modelState.suspiciousGlassRouteCount = suspiciousGlass;
             return ranges.toString();
         } catch (Throwable ignored) {
             return raw == null ? "[]" : raw;
@@ -4374,6 +4530,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + "  \"selectedMaterialRoute\": \"" + escape(jsonStringField(renderLab, "selectedMaterialRoute", "Unknown")) + "\",\n"
             + "  \"selectedMaterialRouteReason\": \"" + escape(jsonStringField(renderLab, "selectedMaterialRouteReason", "none")) + "\",\n"
             + "  \"selectedDrawQueue\": \"" + escape(jsonStringField(renderLab, "selectedDrawQueue", "none")) + "\",\n"
+            + "  \"authorMaterialMode\": " + modelState.authorMaterialMode + ",\n"
+            + "  \"materialOverrideEnabled\": " + modelState.materialOverrideEnabled + ",\n"
+            + "  \"glassOverrideEnabled\": " + modelState.glassOverrideEnabled + ",\n"
+            + "  \"selectedOverrideApplied\": " + modelState.selectedOverrideApplied + ",\n"
+            + "  \"manualGlassSlotOverride\": " + modelState.manualGlassSlotOverride + ",\n"
+            + "  \"sliderIgnoredByAuthorMode\": " + modelState.sliderIgnoredByAuthorMode + ",\n"
+            + "  \"overrideTargetSlot\": \"" + escape(modelState.overrideTargetSlot) + "\",\n"
+            + "  \"authorRenderedRangeCount\": " + modelState.authorRenderedRangeCount + ",\n"
+            + "  \"overrideRenderedRangeCount\": " + modelState.overrideRenderedRangeCount + ",\n"
+            + "  \"glassUiAppliedRangeCount\": " + modelState.glassUiAppliedRangeCount + ",\n"
+            + "  \"nonGlassBlockedFromGlassCount\": " + modelState.nonGlassBlockedFromGlassCount + ",\n"
+            + "  \"cutoutRangeCount\": " + modelState.cutoutRangeCount + ",\n"
+            + "  \"transmissionRangeCount\": " + modelState.transmissionRangeCount + ",\n"
+            + "  \"opaquePbrProtectedCount\": " + modelState.opaquePbrProtectedCount + ",\n"
             + "  \"materialDrawRangeDiagnostics\": " + modelState.materialDrawRangeDiagnostics + ",\n"
             + "  \"materialLabActive\": " + jsonBooleanField(renderLab, "materialLabActive", String.valueOf(modelState.materialLabActive)) + ",\n"
             + "  \"materialLabAffectsImportedModel\": " + jsonBooleanField(renderLab, "materialLabAffectsImportedModel", String.valueOf(modelState.materialLabAffectsImportedModel)) + ",\n"
@@ -4788,6 +4958,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             + indent + "\"selectedOverrideReason\": \"" + escape(jsonStringField(renderLab, "selectedOverrideReason", modelState.selectedOverrideReason)) + "\",\n"
             + indent + "\"affectedMaterialSlot\": " + jsonNumberField(renderLab, "affectedMaterialSlot", String.valueOf(modelState.affectedMaterialSlot)) + ",\n"
             + indent + "\"affectedDrawRangeCount\": " + jsonNumberField(renderLab, "affectedDrawRangeCount", String.valueOf(modelState.affectedDrawRangeCount)) + ",\n"
+            + indent + "\"authorMaterialMode\": " + modelState.authorMaterialMode + ",\n"
+            + indent + "\"materialOverrideEnabled\": " + modelState.materialOverrideEnabled + ",\n"
+            + indent + "\"glassOverrideEnabled\": " + modelState.glassOverrideEnabled + ",\n"
+            + indent + "\"selectedOverrideApplied\": " + modelState.selectedOverrideApplied + ",\n"
+            + indent + "\"manualGlassSlotOverride\": " + modelState.manualGlassSlotOverride + ",\n"
+            + indent + "\"sliderIgnoredByAuthorMode\": " + modelState.sliderIgnoredByAuthorMode + ",\n"
+            + indent + "\"materialUiApplied\": " + modelState.materialUiApplied + ",\n"
+            + indent + "\"materialUiBlockedReason\": \"" + escape(modelState.materialUiBlockedReason) + "\",\n"
+            + indent + "\"overrideTargetSlot\": \"" + escape(modelState.overrideTargetSlot) + "\",\n"
+            + indent + "\"overrideApplied\": " + modelState.overrideApplied + ",\n"
+            + indent + "\"overrideAffectedDrawRangeCount\": " + modelState.overrideAffectedDrawRangeCount + ",\n"
+            + indent + "\"overrideReason\": \"" + escape(modelState.overrideReason) + "\",\n"
+            + indent + "\"authorMaterialStillAvailable\": " + modelState.authorMaterialStillAvailable + ",\n"
             + indent + "\"selectedSlotResetStatus\": \"" + escape(jsonStringField(renderLab, "selectedSlotResetStatus", modelState.selectedSlotResetStatus)) + "\",\n"
             + indent + "\"perMaterialUniformUpdateStatus\": \"" + escape(jsonStringField(renderLab, "perMaterialUniformUpdateStatus", modelState.perMaterialUniformUpdateStatus)) + "\",\n"
             + indent + "\"materialSlotControlsUiStatus\": \"" + escape(jsonStringField(renderLab, "materialSlotControlsUiStatus", modelState.materialSlotControlsUiStatus)) + "\",\n"
@@ -5735,6 +5918,27 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String selectedOverrideReason = "none";
         int affectedMaterialSlot = -1;
         int affectedDrawRangeCount = 0;
+        boolean authorMaterialMode = true;
+        boolean materialOverrideEnabled = false;
+        boolean glassOverrideEnabled = false;
+        boolean selectedOverrideApplied = false;
+        int manualGlassSlotOverride = -1;
+        boolean sliderIgnoredByAuthorMode = true;
+        boolean materialUiApplied = false;
+        String materialUiBlockedReason = "author_material_mode";
+        String overrideTargetSlot = "N/A";
+        boolean overrideApplied = false;
+        int overrideAffectedDrawRangeCount = 0;
+        String overrideReason = "none";
+        boolean authorMaterialStillAvailable = true;
+        int authorRenderedRangeCount = 0;
+        int overrideRenderedRangeCount = 0;
+        int glassUiAppliedRangeCount = 0;
+        int nonGlassBlockedFromGlassCount = 0;
+        int cutoutRangeCount = 0;
+        int transmissionRangeCount = 0;
+        int opaquePbrProtectedCount = 0;
+        int suspiciousGlassRouteCount = 0;
         String selectedSlotResetStatus = "not_run";
         String perMaterialUniformUpdateStatus = "ok_uniform_only";
         String materialSlotControlsUiStatus = "ok_compact";
@@ -6476,6 +6680,27 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 + "  \"selectedOverrideReason\": \"" + esc(selectedOverrideReason) + "\",\n"
                 + "  \"affectedMaterialSlot\": " + affectedMaterialSlot + ",\n"
                 + "  \"affectedDrawRangeCount\": " + affectedDrawRangeCount + ",\n"
+                + "  \"authorMaterialMode\": " + authorMaterialMode + ",\n"
+                + "  \"materialOverrideEnabled\": " + materialOverrideEnabled + ",\n"
+                + "  \"glassOverrideEnabled\": " + glassOverrideEnabled + ",\n"
+                + "  \"selectedOverrideApplied\": " + selectedOverrideApplied + ",\n"
+                + "  \"manualGlassSlotOverride\": " + manualGlassSlotOverride + ",\n"
+                + "  \"sliderIgnoredByAuthorMode\": " + sliderIgnoredByAuthorMode + ",\n"
+                + "  \"materialUiApplied\": " + materialUiApplied + ",\n"
+                + "  \"materialUiBlockedReason\": \"" + esc(materialUiBlockedReason) + "\",\n"
+                + "  \"overrideTargetSlot\": \"" + esc(overrideTargetSlot) + "\",\n"
+                + "  \"overrideApplied\": " + overrideApplied + ",\n"
+                + "  \"overrideAffectedDrawRangeCount\": " + overrideAffectedDrawRangeCount + ",\n"
+                + "  \"overrideReason\": \"" + esc(overrideReason) + "\",\n"
+                + "  \"authorMaterialStillAvailable\": " + authorMaterialStillAvailable + ",\n"
+                + "  \"authorRenderedRangeCount\": " + authorRenderedRangeCount + ",\n"
+                + "  \"overrideRenderedRangeCount\": " + overrideRenderedRangeCount + ",\n"
+                + "  \"glassUiAppliedRangeCount\": " + glassUiAppliedRangeCount + ",\n"
+                + "  \"nonGlassBlockedFromGlassCount\": " + nonGlassBlockedFromGlassCount + ",\n"
+                + "  \"cutoutRangeCount\": " + cutoutRangeCount + ",\n"
+                + "  \"transmissionRangeCount\": " + transmissionRangeCount + ",\n"
+                + "  \"opaquePbrProtectedCount\": " + opaquePbrProtectedCount + ",\n"
+                + "  \"suspiciousGlassRouteCount\": " + suspiciousGlassRouteCount + ",\n"
                 + "  \"selectedSlotResetStatus\": \"" + esc(selectedSlotResetStatus) + "\",\n"
                 + "  \"perMaterialUniformUpdateStatus\": \"" + esc(perMaterialUniformUpdateStatus) + "\",\n"
                 + "  \"materialSlotControlsUiStatus\": \"" + esc(materialSlotControlsUiStatus) + "\",\n"
@@ -7156,16 +7381,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     }
                 }
                 MaterialInfo rangeMaterial = materialSlot >= 0 && materialSlot < materials.size() ? materials.get(materialSlot) : null;
-                boolean rangeGlass = rangeMaterial != null && (rangeMaterial.materialRoute == MaterialRoute.GlassBlend || rangeMaterial.materialRoute == MaterialRoute.GlassSemanticOpaque);
-                boolean rangeCutout = rangeMaterial != null && (rangeMaterial.materialRoute == MaterialRoute.FoliageCutout || rangeMaterial.alphaMode == 1);
+                boolean rangeTransmission = rangeMaterial != null && rangeMaterial.hasTransmissionExtension && rangeMaterial.transmissionFactor > 0.001f;
+                boolean rangeMaskedTransmissionGlass = rangeMaterial != null && rangeMaterial.alphaMode == 1 && rangeTransmission;
+                boolean rangeGlass = rangeMaterial != null && (rangeMaterial.materialRoute == MaterialRoute.GlassBlend || rangeMaterial.materialRoute == MaterialRoute.GlassSemanticOpaque || rangeTransmission || rangeMaterial.hasVolumeExtension);
+                boolean rangeCutout = rangeMaterial != null && !rangeMaskedTransmissionGlass && (rangeMaterial.materialRoute == MaterialRoute.FoliageCutout || rangeMaterial.alphaMode == 1);
                 String rangeQueue = rangeGlass ? "glass" : (rangeCutout ? "cutout" : "opaque");
                 String rangeRuntimeClass = rangeGlass ? "TRANSPARENT_GLASS" : (rangeCutout ? "CUTOUT" : "OPAQUE");
                 boolean rangeClearcoat = rangeMaterial != null && rangeMaterial.hasClearcoatExtension && rangeMaterial.clearcoatFactor > 0.001f;
-                boolean rangeTransmission = rangeMaterial != null && rangeMaterial.hasTransmissionExtension && rangeMaterial.transmissionFactor > 0.001f;
                 boolean rangeSheen = rangeMaterial != null && rangeMaterial.hasSheenExtension;
                 boolean rangeEmissiveDominant = rangeMaterial != null && rangeMaterial.emissiveDominant;
                 boolean rangeMask = rangeMaterial != null && rangeMaterial.alphaMode == 1;
-                boolean rangeMaskedTransmissionGlass = rangeMask && rangeTransmission;
                 for (int i = 0; i < src.vertexCount; i++) {
                     float[] p = transformPoint(src.worldMatrix, src.positions.floatAt(i, 0), src.positions.floatAt(i, 1), src.positions.floatAt(i, 2));
                     float[] n = transformNormal(src.normalMatrix, src.normals != null ? src.normals.floatAt(i, 0) : 0.0f, src.normals != null ? src.normals.floatAt(i, 1) : 1.0f, src.normals != null ? src.normals.floatAt(i, 2) : 0.0f);
@@ -7203,13 +7428,24 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     .append(",\"materialSlot\":").append(materialSlot)
                     .append(",\"materialName\":\"").append(esc(rangeMaterial == null ? "slot_" + materialSlot : (rangeMaterial.materialName == null || rangeMaterial.materialName.isEmpty() ? "slot_" + materialSlot : rangeMaterial.materialName))).append("\"")
                     .append(",\"materialRoute\":\"").append(esc(rangeMaterial == null ? "Unknown" : rangeMaterial.materialRoute.name())).append("\"")
+                    .append(",\"authorRoute\":\"").append(esc(rangeMaterial == null ? "Unknown" : rangeMaterial.materialRoute.name())).append("\"")
+                    .append(",\"finalRoute\":\"").append(esc(rangeMaskedTransmissionGlass ? "MaskedTransmissionGlass" : (rangeMaterial == null ? "Unknown" : rangeMaterial.materialRoute.name()))).append("\"")
                     .append(",\"runtimeClass\":\"").append(esc(rangeRuntimeClass)).append("\"")
                     .append(",\"queue\":\"").append(esc(rangeQueue)).append("\"")
                     .append(",\"pipelinePath\":\"").append(esc(rangeGlass ? "glassPipeline" : "trianglePipeline")).append("\"")
+                    .append(",\"glassCandidate\":").append(rangeGlass)
+                    .append(",\"glassUiApplied\":false")
+                    .append(",\"overrideApplied\":false")
                     .append(",\"selectedOverrideApplied\":false")
                     .append(",\"selectedOverrideReason\":\"not_selected_at_import\"")
                     .append(",\"glassApplied\":").append(rangeGlass)
-                    .append(",\"glassBlockedReason\":\"").append(esc(rangeGlass ? "none" : "non_glass_route")).append("\"")
+                    .append(",\"glassBlockedReason\":\"").append(esc(rangeGlass ? "author_glass_no_ui_override" : "non_glass_route")).append("\"")
+                    .append(",\"blockedReason\":\"author_material_mode\"")
+                    .append(",\"hasTransmission\":").append(rangeMaterial != null && rangeMaterial.hasTransmissionExtension)
+                    .append(",\"transmissionFactor\":").append(jsonFloat(rangeMaterial == null ? 0.0f : rangeMaterial.transmissionFactor))
+                    .append(",\"hasVolume\":").append(rangeMaterial != null && rangeMaterial.hasVolumeExtension)
+                    .append(",\"hasClearcoat\":").append(rangeMaterial != null && rangeMaterial.hasClearcoatExtension)
+                    .append(",\"hasSheen\":").append(rangeMaterial != null && rangeMaterial.hasSheenExtension)
                     .append(",\"clearcoatApplied\":").append(rangeClearcoat)
                     .append(",\"clearcoatBlockedReason\":\"").append(esc(rangeClearcoat ? "none" : "no_clearcoat_extension_or_zero_factor")).append("\"")
                     .append(",\"sheenApplied\":").append(rangeSheen)
@@ -8002,16 +8238,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     .append(",\"baseColorAlpha\":\"").append(jsonFloat(m.baseColorFactor[3])).append("\"")
                     .append(",\"baseColorFactor\":[").append(jsonFloat(m.baseColorFactor[0])).append(",").append(jsonFloat(m.baseColorFactor[1])).append(",").append(jsonFloat(m.baseColorFactor[2])).append(",").append(jsonFloat(m.baseColorFactor[3])).append("]")
                     .append(",\"semanticOpaqueGlassFallbackActive\":").append(m.materialRoute == MaterialRoute.GlassSemanticOpaque)
-                    .append(",\"glassVisibleFallbackReason\":\"").append(esc(m.materialRoute == MaterialRoute.GlassSemanticOpaque ? "semantic_opaque_direct_glass_preview" : "none")).append("\"")                    .append(",\"calibrationApplied\":true")
+                    .append(",\"glassVisibleFallbackReason\":\"").append(esc(m.materialRoute == MaterialRoute.GlassSemanticOpaque ? "semantic_opaque_direct_glass_preview" : "none")).append("\"")
+                    .append(",\"calibrationApplied\":false")
                     .append(",\"albedoLuminance\":").append(jsonFloat(m.albedoLuminance))
                     .append(",\"calibratedRoughness\":").append(jsonFloat(m.calibratedRoughness))
                     .append(",\"calibratedMetallic\":").append(jsonFloat(m.calibratedMetallic))
                     .append(",\"aoInfluence\":").append(jsonFloat(m.aoInfluence))
                     .append(",\"opaquePbrProtected\":").append(m.materialRoute == MaterialRoute.OpaquePbr && !m.hasClearcoatExtension && !m.hasTransmissionExtension && !m.hasSheenExtension && !m.emissiveDominant)
-                    .append(",\"globalCalibrationApplied\":").append(m.materialRoute != MaterialRoute.OpaquePbr || m.materialTypeHint != 4)
-                    .append(",\"glossApplied\":").append(m.materialTypeHint == 1 || m.materialTypeHint == 2)
+                    .append(",\"globalCalibrationApplied\":false")
+                    .append(",\"glossApplied\":false")
+                    .append(",\"globalGlossApplied\":false")
+                    .append(",\"globalCoatApplied\":false")
+                    .append(",\"materialLabApplied\":false")
+                    .append(",\"calibrationAppliedAsMaterialOverride\":false")
                     .append(",\"reflectionBoostApplied\":").append(m.materialRoute == MaterialRoute.Metal || m.materialRoute == MaterialRoute.Chrome || m.materialRoute == MaterialRoute.GlassBlend || m.materialRoute == MaterialRoute.GlassSemanticOpaque)
-                    .append(",\"materialShaderFormulaMode\":\"").append(esc(m.materialRoute == MaterialRoute.OpaquePbr ? "stable_base_pbr" : m.materialRoute.name())).append("\"")
+                    .append(",\"materialShaderFormulaMode\":\"").append(esc(m.materialRoute == MaterialRoute.OpaquePbr ? "author_pbr_safe" : m.materialRoute.name())).append("\"")
+                    .append(",\"finalShaderMode\":\"").append(esc(m.materialRoute == MaterialRoute.OpaquePbr ? "author_pbr_safe" : m.materialRoute.name())).append("\"")
                     .append(",\"emissiveGuardApplied\":").append(m.emissiveGuardApplied)
                     .append(",\"metallicFactor\":").append(jsonFloat(m.metallicFactor))
                     .append(",\"roughnessFactor\":").append(jsonFloat(m.roughnessFactor))
@@ -8054,13 +8296,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     .append(",\"attenuationColor\":[").append(jsonFloat(m.volumeAttenuationColor[0])).append(",").append(jsonFloat(m.volumeAttenuationColor[1])).append(",").append(jsonFloat(m.volumeAttenuationColor[2])).append("]")
                     .append(",\"attenuationDistance\":").append(jsonFloat(m.volumeAttenuationDistance))
                     .append(",\"transmissionRoute\":").append(m.materialRoute == MaterialRoute.GlassBlend || m.materialRoute == MaterialRoute.GlassSemanticOpaque)
-                    .append(",\"transmissionFallbackMode\":\"").append(esc(m.hasTransmissionExtension ? "conservative_glass_no_refraction" : "none")).append("\"")
+                    .append(",\"transmissionFallbackMode\":\"").append(esc(m.hasTransmissionExtension ? "conservative_no_refraction" : "none")).append("\"")
+                    .append(",\"bodyAlpha\":").append(jsonFloat(m.hasTransmissionExtension ? Math.max(0.08f, Math.min(0.38f, 0.08f + m.transmissionFactor * 0.28f)) : 1.0f))
+                    .append(",\"edgeAlphaOrStrength\":").append(jsonFloat(m.hasTransmissionExtension ? 1.20f : 0.0f))
                     .append(",\"volumeApplied\":").append(m.hasVolumeExtension && m.volumeThicknessFactor > 0.0f)
+                    .append(",\"volumeBlockedReason\":\"").append(esc(m.hasVolumeExtension ? "weak_author_fallback_no_refraction" : "no_volume_extension")).append("\"")
                     .append(",\"hasSheen\":").append(m.hasSheenExtension)
                     .append(",\"sheenColorFactor\":[").append(jsonFloat(m.sheenColorFactor[0])).append(",").append(jsonFloat(m.sheenColorFactor[1])).append(",").append(jsonFloat(m.sheenColorFactor[2])).append("]")
                     .append(",\"sheenRoughnessFactor\":").append(jsonFloat(m.sheenRoughnessFactor))
                     .append(",\"sheenApplied\":").append(m.hasSheenExtension)
                     .append(",\"fabricVisibilityGuard\":").append(m.hasSheenExtension || m.materialTypeHint == 0)
+                    .append(",\"fabricBlockedFromGlass\":").append(m.hasSheenExtension || m.materialRoute == MaterialRoute.FabricHair)
                     .append(",\"hasTextureTransform\":").append(m.hasTextureTransform)
                     .append(",\"textureTransformStatus\":\"").append(esc(m.hasTextureTransform ? "detected_not_applied_shared_uv_slot" : "missing")).append("\"")
                     .append(",\"hasNormalTexture\":").append(m.normalTexture != null && "ok".equals(m.normalTexture.status))

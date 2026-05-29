@@ -173,6 +173,8 @@ fi
 detect_android_sdk
 if [ -n "$RESOLVED_ANDROID_SDK" ]; then
   log "resolved_android_sdk=$RESOLVED_ANDROID_SDK"
+  export ANDROID_HOME="$RESOLVED_ANDROID_SDK"
+  export ANDROID_SDK_ROOT="$RESOLVED_ANDROID_SDK"
 else
   log "resolved_android_sdk=not found"
 fi

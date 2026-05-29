@@ -1,9 +1,13 @@
 package com.solum.engine;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Bundle;
+import android.provider.OpenableColumns;
 import android.text.InputType;
 import android.view.Choreographer;
 import android.view.Gravity;
@@ -27,19 +31,28 @@ import com.google.android.filament.IndirectLight;
 import com.google.android.filament.LightManager;
 import com.google.android.filament.Renderer;
 import com.google.android.filament.Skybox;
+import com.google.android.filament.Texture;
 import com.google.android.filament.View.AmbientOcclusion;
 import com.google.android.filament.View.AntiAliasing;
 import com.google.android.filament.View.QualityLevel;
 import com.google.android.filament.android.UiHelper;
 import com.google.android.filament.utils.Float3;
+import com.google.android.filament.utils.HDRLoader;
+import com.google.android.filament.utils.IBLPrefilterContext;
+import com.google.android.filament.utils.KTX1Loader;
 import com.google.android.filament.utils.Manipulator;
 import com.google.android.filament.utils.ModelViewer;
 import com.google.android.filament.utils.Utils;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 import kotlin.jvm.functions.Function1;
@@ -51,6 +64,11 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String PREFS_NAME = "solum_engine_diagnostics";
     private static final String PREF_ACTIVE_MODEL_LOCAL_PATH = "active_model_local_path";
     private static final String PREF_ACTIVE_MODEL_PATH = "active_model_path";
+    private static final String PREF_ACTIVE_MODEL_NAME = "active_model_name";
+    private static final String PREF_ACTIVE_IBL_PATH = "active_ibl_path";
+    private static final String PREF_ACTIVE_IBL_NAME = "active_ibl_name";
+    private static final int REQUEST_IMPORT_MODEL = 4101;
+    private static final int REQUEST_IMPORT_IBL = 4102;
     private static final long HUD_UPDATE_NS = 250_000_000L;
 
     private SurfaceView surfaceView;
@@ -58,11 +76,13 @@ public class FilamentGlbPreviewActivity extends Activity {
     private IndirectLight indirectLight;
     private Skybox skybox;
     private ColorGrading colorGrading;
+    private final List<Texture> iblOwnedTextures = new ArrayList<>();
     private int fillLightEntity = 0;
     private TextView hudView;
     private TextView statusView;
     private Button qualityButton;
     private Button lightingButton;
+    private Button iblButton;
     private Button advancedValuesButton;
     private Button aoButton;
     private Button bloomButton;
@@ -105,9 +125,24 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String lastLifecycleError = "none";
     private String qualityFeatureStatus = "medium_mobile_safe_quality_only";
     private String environmentMode = "procedural_neutral_fallback";
+    private String iblMode = "procedural_fallback";
+    private String iblFile = "none";
+    private String iblLoadStatus = "fallback_procedural";
+    private String fallbackReason = "no_real_ibl_loaded";
     private String iblStatus = "fallback_no_hdr_asset";
     private String realIblReady = "false";
+    private String skyboxReady = "true_procedural";
+    private String indirectLightReady = "true_procedural";
     private String futureIblAssetPath = "none";
+    private String modelSourcePath = "none";
+    private String modelCopiedPath = "none";
+    private String gltfioLoaded = "false";
+    private String importCopyStatus = "not_run";
+    private String permissionStatus = "not_checked";
+    private String scanDownloadStatus = "not_run";
+    private int scanCopiedCount = 0;
+    private int scanSkippedCount = 0;
+    private int scanFailedCount = 0;
     private String cameraStatus = "orbit_drag_pinch_zoom_unit_cube";
     private String lightingStatus = "not_applied";
     private String lastInputError = "none";
@@ -120,12 +155,12 @@ public class FilamentGlbPreviewActivity extends Activity {
     private boolean aoEnabled = false;
     private boolean bloomEnabled = false;
     private boolean shadowsEnabled = false;
-    private boolean refractionEnabled = true;
+    private boolean refractionEnabled = false;
     private boolean advancedValuesEnabled = false;
     private float sunLightIntensity = 6.0f;
     private float ambientFallbackIntensity = 3_000.0f;
     private float fillLightIntensity = 0.0f;
-    private float exposure = 0.55f;
+    private float exposure = 0.60f;
     private float backgroundBrightness = 0.16f;
 
     private enum FilamentQualityProfile {
@@ -147,8 +182,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private enum LightingPreset {
-        SAFE_STUDIO("Safe Studio", new float[] {-0.35f, -0.75f, -0.55f}, 6.0f, 3_000.0f, 0.0f, 0.55f, 0.16f, new float[] {0.70f, -0.35f, -0.62f}),
-        BALANCED("Balanced", new float[] {-0.28f, -0.78f, -0.55f}, 9.0f, 4_500.0f, 0.0f, 0.62f, 0.18f, new float[] {0.66f, -0.38f, -0.65f}),
+        SAFE_STUDIO("Safe Studio", new float[] {-0.35f, -0.75f, -0.55f}, 6.0f, 3_000.0f, 0.0f, 0.60f, 0.16f, new float[] {0.70f, -0.35f, -0.62f}),
+        BALANCED("Balanced", new float[] {-0.28f, -0.78f, -0.55f}, 9.0f, 4_500.0f, 0.0f, 0.70f, 0.18f, new float[] {0.66f, -0.38f, -0.65f}),
         BRIGHT_INSPECT("Bright Inspect", new float[] {-0.20f, -0.82f, -0.48f}, 14.0f, 6_000.0f, 0.0f, 0.68f, 0.22f, new float[] {0.62f, -0.42f, -0.66f}),
         CINEMATIC("Cinematic", new float[] {-0.62f, -0.62f, -0.48f}, 3.5f, 2_200.0f, 0.0f, 0.45f, 0.10f, new float[] {0.48f, -0.32f, -0.82f}),
         NEUTRAL("Neutral", new float[] {-0.35f, -0.82f, -0.45f}, 5.0f, 2_500.0f, 0.0f, 0.50f, 0.14f, new float[] {0.65f, -0.30f, -0.70f});
@@ -220,6 +255,18 @@ public class FilamentGlbPreviewActivity extends Activity {
             applyLightingPreset();
             updateHud();
         });
+        iblButton = button("IBL: Procedural fallback");
+        iblButton.setOnClickListener(v -> cycleIblPreset());
+        Button importModelButton = button("Import Model");
+        importModelButton.setOnClickListener(v -> chooseModelForImport());
+        Button importIblButton = button("Import IBL");
+        importIblButton.setOnClickListener(v -> chooseIblForImport());
+        Button scanDownloadButton = button("Scan Download");
+        scanDownloadButton.setOnClickListener(v -> {
+            scanDownloadForAssets("manual_button");
+            updateIblButton();
+            updateHud();
+        });
         Button reloadButton = button("Reload");
         reloadButton.setOnClickListener(v -> loadModel());
         Button closeButton = button("Close Preview");
@@ -257,9 +304,13 @@ public class FilamentGlbPreviewActivity extends Activity {
             applyQualityProfile();
             updateHud();
         });
-        statusView = overlayText(10.0f, 16);
+        statusView = overlayText(10.0f, 28);
+        controls.addView(importModelButton);
+        controls.addView(importIblButton);
+        controls.addView(scanDownloadButton);
         controls.addView(qualityButton);
         controls.addView(lightingButton);
+        controls.addView(iblButton);
         controls.addView(resetButton);
         sunSlider = addLightingSlider(controls, "Sun", 0.0f, 20.0f, 0.5f, sunLightIntensity, v -> {
             sunLightIntensity = v;
@@ -273,7 +324,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             fillLightIntensity = v;
             applyLightingValues();
         });
-        exposureSlider = addLightingSlider(controls, "Exp", 0.20f, 1.00f, 0.01f, exposure, v -> {
+        exposureSlider = addLightingSlider(controls, "Exp", 0.30f, 2.00f, 0.01f, exposure, v -> {
             exposure = v;
             applyLightingValues();
         });
@@ -289,7 +340,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         advancedSunField = addAdvancedField(advancedValuesPanel, "Sun", 0.0f, 300.0f, v -> sunLightIntensity = v);
         advancedAmbientField = addAdvancedField(advancedValuesPanel, "Ambient", 0.0f, 15_000.0f, v -> ambientFallbackIntensity = v);
         advancedFillField = addAdvancedField(advancedValuesPanel, "Fill", 0.0f, 300.0f, v -> fillLightIntensity = v);
-        advancedExposureField = addAdvancedField(advancedValuesPanel, "Exposure", 0.10f, 1.50f, v -> exposure = v);
+        advancedExposureField = addAdvancedField(advancedValuesPanel, "Exposure", 0.30f, 2.00f, v -> exposure = v);
         advancedBackgroundField = addAdvancedField(advancedValuesPanel, "Background", 0.02f, 0.80f, v -> backgroundBrightness = v);
         controls.addView(advancedValuesPanel);
         controls.addView(aoButton);
@@ -308,7 +359,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         controlParams.setMargins(dp(12), dp(12), dp(12), dp(28));
         root.addView(controlScroll, controlParams);
         setContentView(root);
+        scanDownloadForAssets("startup");
         createViewer();
+        restorePersistedIbl();
         loadModel();
         updateHud();
     }
@@ -328,6 +381,28 @@ public class FilamentGlbPreviewActivity extends Activity {
     @Override
     public void onBackPressed() {
         closePreview();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_IMPORT_MODEL) {
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+                importCopyStatus = "model_picker_cancelled";
+                updateHud();
+                return;
+            }
+            importModelFromUri(data.getData());
+            return;
+        }
+        if (requestCode == REQUEST_IMPORT_IBL) {
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+                importCopyStatus = "ibl_picker_cancelled";
+                updateHud();
+                return;
+            }
+            importIblFromUri(data.getData());
+        }
     }
 
     @Override
@@ -439,6 +514,123 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
     }
 
+    private void chooseModelForImport() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {
+            "model/gltf-binary",
+            "model/gltf+json",
+            "model/gltf-json",
+            "application/octet-stream",
+            "*/*"
+        });
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(intent, REQUEST_IMPORT_MODEL);
+    }
+
+    private void chooseIblForImport() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {
+            "image/vnd.radiance",
+            "image/x-hdr",
+            "image/ktx",
+            "application/octet-stream",
+            "*/*"
+        });
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(intent, REQUEST_IMPORT_IBL);
+    }
+
+    private void importModelFromUri(Uri uri) {
+        try {
+            persistReadPermission(uri);
+            String sourceName = displayNameForUri(uri, "imported.glb");
+            if (!isModelName(sourceName)) throw new IllegalArgumentException("unsupported_model_extension_glb_gltf_required");
+            File out = copyUriToAssetFile(uri, sourceName, modelsDir());
+            modelSourcePath = uri.toString();
+            modelCopiedPath = out.getAbsolutePath();
+            importCopyStatus = "model_import_copied";
+            modelPath = out.getAbsolutePath();
+            modelName = out.getName();
+            persistActiveModel(out);
+            loadModel();
+        } catch (Throwable t) {
+            importCopyStatus = "model_import_failed: " + shortMessage(t);
+            loadStatus = importCopyStatus;
+            updateHud();
+        }
+    }
+
+    private void importIblFromUri(Uri uri) {
+        try {
+            persistReadPermission(uri);
+            String sourceName = displayNameForUri(uri, "imported.hdr");
+            if (!isIblName(sourceName)) throw new IllegalArgumentException("unsupported_ibl_extension_hdr_ktx_ktx1_exr_required");
+            File out = copyUriToAssetFile(uri, sourceName, iblDir());
+            importCopyStatus = "ibl_import_copied";
+            loadIblFile(out, "picker_import");
+        } catch (Throwable t) {
+            String failedStatus = "ibl_import_failed: " + shortMessage(t);
+            importCopyStatus = failedStatus;
+            createEnvironmentFallback();
+            iblLoadStatus = failedStatus;
+            fallbackReason = "ibl_import_failed";
+            updateHud();
+        }
+    }
+
+    private void scanDownloadForAssets(String trigger) {
+        scanCopiedCount = 0;
+        scanSkippedCount = 0;
+        scanFailedCount = 0;
+        File download = new File("/storage/emulated/0/Download");
+        if (!download.isDirectory()) {
+            permissionStatus = "download_unavailable_or_permission_missing";
+            scanDownloadStatus = trigger + ": failed_download_unavailable";
+            return;
+        }
+        permissionStatus = download.canRead() ? "download_readable" : "download_permission_missing_picker_available";
+        List<File> candidates = new ArrayList<>();
+        collectDownloadCandidates(download, candidates, false);
+        File solumIbl = new File(download, "solum_ibl_out");
+        collectDownloadCandidates(solumIbl, candidates, true);
+        for (File src : candidates) {
+            try {
+                File targetDir = isModelName(src.getName()) ? modelsDir() : iblDir();
+                File target = new File(targetDir, safeFileName(src.getName()));
+                if (target.isFile() && target.length() == src.length()) {
+                    scanSkippedCount++;
+                    continue;
+                }
+                copyFileToFile(src, uniqueFile(targetDir, target.getName()));
+                scanCopiedCount++;
+            } catch (Throwable ignored) {
+                scanFailedCount++;
+            }
+        }
+        scanDownloadStatus = trigger + ": copied=" + scanCopiedCount + " skipped=" + scanSkippedCount + " failed=" + scanFailedCount;
+        File preferred = findPreferredIbl();
+        if (preferred != null && "procedural_fallback".equals(iblMode)) {
+            futureIblAssetPath = preferred.getAbsolutePath();
+        }
+    }
+
+    private void collectDownloadCandidates(File dir, List<File> out, boolean recursive) {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (file.isDirectory() && recursive) {
+                collectDownloadCandidates(file, out, true);
+                continue;
+            }
+            if (!file.isFile()) continue;
+            if (isModelName(file.getName()) || isIblName(file.getName())) out.add(file);
+        }
+    }
+
     private void loadModel() {
         if (modelViewer == null) {
             loadStatus = "viewer_not_ready";
@@ -449,15 +641,19 @@ public class FilamentGlbPreviewActivity extends Activity {
             modelViewer.destroyModel();
             if (modelPath == null || modelPath.isEmpty()) {
                 loadStatus = "no_active_glb_or_gltf";
+                gltfioLoaded = "false";
                 updateHud();
                 return;
             }
             File file = new File(modelPath);
             if (!file.isFile()) {
                 loadStatus = "file_missing: " + modelPath;
+                gltfioLoaded = "false";
                 updateHud();
                 return;
             }
+            modelSourcePath = modelSourcePath.equals("none") ? file.getAbsolutePath() : modelSourcePath;
+            modelCopiedPath = file.getAbsolutePath();
             ByteBuffer data = readFile(file);
             String lower = file.getName().toLowerCase(Locale.US);
             if (lower.endsWith(".glb")) {
@@ -467,14 +663,17 @@ public class FilamentGlbPreviewActivity extends Activity {
                 modelViewer.loadModelGltf(data, (Function1<String, Buffer>) uri -> readSiblingResource(baseDir, uri));
             } else {
                 loadStatus = "unsupported_extension_expected_glb_or_gltf";
+                gltfioLoaded = "false";
                 updateHud();
                 return;
             }
             modelViewer.transformToUnitCube(new Float3(0.0f, 0.0f, 0.0f));
             cameraStatus = "orbit_drag_pinch_zoom_unit_cube_autofit";
             loadStatus = "ok_loaded_with_gltfio";
+            gltfioLoaded = "true";
         } catch (Throwable t) {
             loadStatus = "load_error: " + shortMessage(t);
+            gltfioLoaded = "false";
         }
         updateHud();
     }
@@ -493,6 +692,13 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void createEnvironmentFallback() {
         if (modelViewer == null) return;
         Engine engine = modelViewer.getEngine();
+        if (fillLightEntity != 0) {
+            if (modelViewer.getScene() != null) modelViewer.getScene().removeEntity(fillLightEntity);
+            engine.getLightManager().destroy(fillLightEntity);
+            EntityManager.get().destroy(fillLightEntity);
+            fillLightEntity = 0;
+        }
+        destroyEnvironmentResources(engine);
         indirectLight = new IndirectLight.Builder()
             .intensity(ambientFallbackIntensity)
             .build(engine);
@@ -501,6 +707,15 @@ public class FilamentGlbPreviewActivity extends Activity {
             .build(engine);
         modelViewer.getScene().setIndirectLight(indirectLight);
         modelViewer.getScene().setSkybox(skybox);
+        iblMode = "procedural_fallback";
+        iblFile = "none";
+        iblLoadStatus = "fallback_procedural";
+        environmentMode = "procedural_neutral_fallback";
+        iblStatus = "fallback_procedural_indirect_light";
+        realIblReady = "false";
+        skyboxReady = "true_procedural";
+        indirectLightReady = "true_procedural";
+        fallbackReason = "no_real_ibl_loaded";
         fillLightEntity = EntityManager.get().create();
         new LightManager.Builder(LightManager.Type.DIRECTIONAL)
             .castShadows(false)
@@ -509,6 +724,170 @@ public class FilamentGlbPreviewActivity extends Activity {
             .intensity(fillLightIntensity)
             .build(engine, fillLightEntity);
         modelViewer.getScene().addEntity(fillLightEntity);
+    }
+
+    private void loadIblFile(File file, String reason) {
+        if (modelViewer == null) {
+            iblLoadStatus = "viewer_not_ready";
+            futureIblAssetPath = file == null ? "none" : file.getAbsolutePath();
+            return;
+        }
+        if (file == null || !file.isFile()) {
+            iblLoadStatus = "ibl_file_missing";
+            fallbackReason = "ibl_file_missing";
+            createEnvironmentFallback();
+            return;
+        }
+        String lower = file.getName().toLowerCase(Locale.US);
+        if (lower.endsWith(".exr")) {
+            iblMode = "unsupported_exr";
+            iblFile = file.getName();
+            iblLoadStatus = "exr_imported_but_runtime_loader_not_supported";
+            realIblReady = "false";
+            skyboxReady = skybox == null ? "false" : skyboxReady;
+            indirectLightReady = indirectLight == null ? "false" : indirectLightReady;
+            fallbackReason = "exr_not_supported_by_filament_utils_runtime_loader";
+            futureIblAssetPath = file.getAbsolutePath();
+            persistActiveIbl(file);
+            updateIblButton();
+            updateHud();
+            return;
+        }
+        try {
+            if (lower.endsWith(".ktx") || lower.endsWith(".ktx1")) {
+                loadKtxIbl(file, reason);
+            } else if (lower.endsWith(".hdr")) {
+                loadHdrIbl(file, reason);
+            } else {
+                iblLoadStatus = "unsupported_ibl_extension";
+                fallbackReason = "unsupported_ibl_extension";
+            }
+            persistActiveIbl(file);
+        } catch (Throwable t) {
+            String failedStatus = "ibl_load_failed: " + shortMessage(t);
+            realIblReady = "false";
+            skyboxReady = "false";
+            indirectLightReady = "false";
+            createEnvironmentFallback();
+            iblLoadStatus = failedStatus;
+            fallbackReason = "ibl_loader_exception";
+        }
+        updateIblButton();
+        updateHud();
+    }
+
+    private void loadKtxIbl(File file, String reason) throws Exception {
+        Engine engine = modelViewer.getEngine();
+        ByteBuffer data = readFile(file);
+        KTX1Loader.Options options = new KTX1Loader.Options();
+        options.setSrgb(false);
+        KTX1Loader.IndirectLightBundle indirectBundle = KTX1Loader.INSTANCE.createIndirectLight(engine, data, options);
+        data.rewind();
+        KTX1Loader.SkyboxBundle skyboxBundle = KTX1Loader.INSTANCE.createSkybox(engine, data, options);
+        if (indirectBundle == null || indirectBundle.getIndirectLight() == null) {
+            throw new IllegalStateException("ktx_indirect_light_missing_spherical_harmonics");
+        }
+        if (skyboxBundle == null || skyboxBundle.getSkybox() == null) {
+            throw new IllegalStateException("ktx_skybox_missing");
+        }
+        destroyEnvironmentResources(engine);
+        indirectLight = indirectBundle.getIndirectLight();
+        indirectLight.setIntensity(ambientFallbackIntensity);
+        skybox = skyboxBundle.getSkybox();
+        modelViewer.getScene().setIndirectLight(indirectLight);
+        modelViewer.getScene().setSkybox(skybox);
+        if (indirectBundle.getCubemap() != null) iblOwnedTextures.add(indirectBundle.getCubemap());
+        if (skyboxBundle.getCubemap() != null) iblOwnedTextures.add(skyboxBundle.getCubemap());
+        iblMode = "ktx1_real_ibl";
+        iblFile = file.getName();
+        iblLoadStatus = "ok_ktx1loader_" + reason;
+        environmentMode = "real_ibl_ktx1";
+        iblStatus = "ok_real_ibl_ktx1loader";
+        realIblReady = "true";
+        skyboxReady = "true";
+        indirectLightReady = "true";
+        fallbackReason = "none";
+        futureIblAssetPath = file.getAbsolutePath();
+    }
+
+    private void loadHdrIbl(File file, String reason) throws Exception {
+        Engine engine = modelViewer.getEngine();
+        HDRLoader.Options options = new HDRLoader.Options();
+        Texture hdrTexture = HDRLoader.INSTANCE.createTexture(engine, readFile(file), options);
+        if (hdrTexture == null) throw new IllegalStateException("hdr_loader_returned_null_texture");
+        IBLPrefilterContext context = null;
+        IBLPrefilterContext.EquirectangularToCubemap equirect = null;
+        IBLPrefilterContext.SpecularFilter specular = null;
+        try {
+            context = new IBLPrefilterContext(engine);
+            equirect = new IBLPrefilterContext.EquirectangularToCubemap(context);
+            Texture cubemap = equirect.run(hdrTexture);
+            if (cubemap == null) throw new IllegalStateException("hdr_equirectangular_to_cubemap_failed");
+            specular = new IBLPrefilterContext.SpecularFilter(context);
+            Texture reflections = specular.run(cubemap);
+            if (reflections == null) throw new IllegalStateException("hdr_specular_prefilter_failed");
+            IndirectLight newIndirectLight = new IndirectLight.Builder()
+                .reflections(reflections)
+                .intensity(ambientFallbackIntensity)
+                .build(engine);
+            Skybox newSkybox = new Skybox.Builder()
+                .environment(cubemap)
+                .intensity(Math.max(1000.0f, ambientFallbackIntensity))
+                .build(engine);
+            destroyEnvironmentResources(engine);
+            indirectLight = newIndirectLight;
+            skybox = newSkybox;
+            modelViewer.getScene().setIndirectLight(indirectLight);
+            modelViewer.getScene().setSkybox(skybox);
+            iblOwnedTextures.add(hdrTexture);
+            iblOwnedTextures.add(cubemap);
+            iblOwnedTextures.add(reflections);
+            iblMode = "hdr_runtime_prefilter_real_ibl";
+            iblFile = file.getName();
+            iblLoadStatus = "ok_hdrloader_runtime_prefilter_" + reason;
+            environmentMode = "real_ibl_hdr_runtime_prefilter";
+            iblStatus = "ok_real_ibl_hdrloader_prefilter";
+            realIblReady = "true";
+            skyboxReady = "true";
+            indirectLightReady = "true_reflections_only";
+            fallbackReason = "none";
+            futureIblAssetPath = file.getAbsolutePath();
+        } catch (Throwable t) {
+            if (!iblOwnedTextures.contains(hdrTexture)) engine.destroyTexture(hdrTexture);
+            iblMode = "hdr_imported";
+            iblFile = file.getName();
+            iblLoadStatus = "hdr_imported_but_runtime_prefilter_not_available: " + shortMessage(t);
+            realIblReady = "false";
+            skyboxReady = skybox == null ? "false" : skyboxReady;
+            indirectLightReady = indirectLight == null ? "false" : indirectLightReady;
+            fallbackReason = "hdr_runtime_prefilter_failed";
+            futureIblAssetPath = file.getAbsolutePath();
+        } finally {
+            if (specular != null) specular.destroy();
+            if (equirect != null) equirect.destroy();
+            if (context != null) context.destroy();
+        }
+    }
+
+    private void destroyEnvironmentResources(Engine engine) {
+        if (modelViewer != null && modelViewer.getScene() != null) {
+            modelViewer.getScene().setIndirectLight(null);
+            modelViewer.getScene().setSkybox(null);
+        }
+        if (indirectLight != null) {
+            engine.destroyIndirectLight(indirectLight);
+            indirectLight = null;
+        }
+        if (skybox != null) {
+            engine.destroySkybox(skybox);
+            skybox = null;
+        }
+        for (Texture texture : iblOwnedTextures) {
+            if (texture != null) {
+                try { engine.destroyTexture(texture); } catch (Throwable ignored) { }
+            }
+        }
+        iblOwnedTextures.clear();
     }
 
     private void applyLightingPreset() {
@@ -532,7 +911,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         aoEnabled = false;
         bloomEnabled = false;
         shadowsEnabled = false;
-        refractionEnabled = true;
+        refractionEnabled = false;
         lastInputError = "none";
         applyLightingPreset();
         applyQualityProfile();
@@ -545,10 +924,10 @@ public class FilamentGlbPreviewActivity extends Activity {
             sunLightIntensity = clamp(sunLightIntensity, 0.0f, 300.0f);
             ambientFallbackIntensity = clamp(ambientFallbackIntensity, 0.0f, 15_000.0f);
             fillLightIntensity = clamp(fillLightIntensity, 0.0f, 300.0f);
-            exposure = clamp(exposure, 0.10f, 1.50f);
+            exposure = clamp(exposure, 0.30f, 2.00f);
             backgroundBrightness = clamp(backgroundBrightness, 0.02f, 0.80f);
             if (indirectLight != null) indirectLight.setIntensity(ambientFallbackIntensity);
-            if (skybox != null) skybox.setColor(backgroundColor());
+            if (skybox != null && !realIblReady.equals("true")) skybox.setColor(backgroundColor());
 
             Engine engine = modelViewer.getEngine();
             LightManager lights = engine.getLightManager();
@@ -575,6 +954,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             clear.clearColor = backgroundColor();
             modelViewer.getRenderer().setClearOptions(clear);
             lightingStatus = advancedValuesEnabled ? "live_values_applied_advanced_ranges" : "live_values_applied_safe_slider_ranges";
+            if (realIblReady.equals("true")) iblStatus = "ok_real_ibl_intensity_controlled_by_ambient_slider";
         } catch (Throwable t) {
             lastLifecycleError = shortMessage(t);
             lightingStatus = "apply_failed";
@@ -698,8 +1078,6 @@ public class FilamentGlbPreviewActivity extends Activity {
                 Engine engine = modelViewer.getEngine();
                 if (modelViewer.getScene() != null) {
                     if (fillLightEntity != 0) modelViewer.getScene().removeEntity(fillLightEntity);
-                    modelViewer.getScene().setIndirectLight(null);
-                    modelViewer.getScene().setSkybox(null);
                 }
                 if (colorGrading != null) {
                     modelViewer.getView().setColorGrading(null);
@@ -711,14 +1089,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                     EntityManager.get().destroy(fillLightEntity);
                     fillLightEntity = 0;
                 }
-                if (indirectLight != null) {
-                    engine.destroyIndirectLight(indirectLight);
-                    indirectLight = null;
-                }
-                if (skybox != null) {
-                    engine.destroySkybox(skybox);
-                    skybox = null;
-                }
+                destroyEnvironmentResources(engine);
                 modelViewer.destroyModel();
                 modelViewer.destroy();
                 modelViewer = null;
@@ -740,6 +1111,186 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (local != null && !local.isEmpty()) return local;
         String path = prefs.getString(PREF_ACTIVE_MODEL_PATH, "");
         return path == null ? "" : path;
+    }
+
+    private void restorePersistedIbl() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String path = prefs.getString(PREF_ACTIVE_IBL_PATH, "");
+        File preferred = path == null || path.isEmpty() ? findPreferredIbl() : new File(path);
+        if (preferred != null && preferred.isFile()) loadIblFile(preferred, "startup_restore");
+        else updateIblButton();
+    }
+
+    private void cycleIblPreset() {
+        List<File> presets = new ArrayList<>();
+        presets.add(null);
+        File neutral = findFirstExistingIbl("studio_small_03");
+        if (neutral != null) presets.add(neutral);
+        File forest = findFirstExistingIbl("phalzer_forest_01");
+        if (forest != null && !sameFile(neutral, forest)) presets.add(forest);
+        for (File file : listIblFiles()) {
+            boolean known = false;
+            for (File preset : presets) if (sameFile(file, preset)) known = true;
+            if (!known) presets.add(file);
+        }
+        int current = 0;
+        for (int i = 0; i < presets.size(); i++) {
+            File file = presets.get(i);
+            if (file == null && "procedural_fallback".equals(iblMode)) current = i;
+            else if (file != null && file.getName().equals(iblFile)) current = i;
+        }
+        File next = presets.get((current + 1) % presets.size());
+        if (next == null) {
+            createEnvironmentFallback();
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().remove(PREF_ACTIVE_IBL_PATH).remove(PREF_ACTIVE_IBL_NAME).apply();
+            updateIblButton();
+            updateHud();
+        } else {
+            loadIblFile(next, "preset_cycle");
+        }
+    }
+
+    private File findPreferredIbl() {
+        File neutral = findFirstExistingIbl("studio_small_03");
+        if (neutral != null) return neutral;
+        File forest = findFirstExistingIbl("phalzer_forest_01");
+        if (forest != null) return forest;
+        List<File> all = listIblFiles();
+        return all.isEmpty() ? null : all.get(0);
+    }
+
+    private File findFirstExistingIbl(String prefix) {
+        for (File file : listIblFiles()) {
+            String lower = file.getName().toLowerCase(Locale.US);
+            if (lower.startsWith(prefix) && !lower.endsWith(".exr")) return file;
+        }
+        return null;
+    }
+
+    private List<File> listIblFiles() {
+        List<File> files = new ArrayList<>();
+        collectAssetFiles(iblDir(), files, false, true);
+        return files;
+    }
+
+    private void collectAssetFiles(File dir, List<File> out, boolean models, boolean ibl) {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (!file.isFile()) continue;
+            if ((models && isModelName(file.getName())) || (ibl && isIblName(file.getName()))) out.add(file);
+        }
+    }
+
+    private File copyUriToAssetFile(Uri uri, String sourceName, File dir) throws Exception {
+        File out = uniqueFile(dir, safeFileName(sourceName));
+        File parent = out.getParentFile();
+        if (parent != null) parent.mkdirs();
+        try (InputStream in = getContentResolver().openInputStream(uri); OutputStream output = new FileOutputStream(out, false)) {
+            if (in == null) throw new IllegalStateException("open_input_stream_failed");
+            copyStream(in, output);
+        }
+        return out;
+    }
+
+    private void copyFileToFile(File src, File out) throws Exception {
+        File parent = out.getParentFile();
+        if (parent != null) parent.mkdirs();
+        try (InputStream in = new FileInputStream(src); OutputStream output = new FileOutputStream(out, false)) {
+            copyStream(in, output);
+        }
+    }
+
+    private void copyStream(InputStream input, OutputStream output) throws Exception {
+        byte[] buffer = new byte[64 * 1024];
+        int read;
+        while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+    }
+
+    private void persistReadPermission(Uri uri) {
+        try {
+            getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            permissionStatus = "picker_persisted_read_permission";
+        } catch (Throwable t) {
+            permissionStatus = "picker_read_permission_runtime_only";
+        }
+    }
+
+    private void persistActiveModel(File file) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putString(PREF_ACTIVE_MODEL_PATH, file.getAbsolutePath())
+            .putString(PREF_ACTIVE_MODEL_LOCAL_PATH, file.getAbsolutePath())
+            .putString(PREF_ACTIVE_MODEL_NAME, file.getName())
+            .apply();
+    }
+
+    private void persistActiveIbl(File file) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putString(PREF_ACTIVE_IBL_PATH, file.getAbsolutePath())
+            .putString(PREF_ACTIVE_IBL_NAME, file.getName())
+            .apply();
+    }
+
+    private File modelsDir() {
+        File dir = new File(getFilesDir(), "solum/assets/models");
+        dir.mkdirs();
+        return dir;
+    }
+
+    private File iblDir() {
+        File dir = new File(getFilesDir(), "solum/assets/ibl");
+        dir.mkdirs();
+        return dir;
+    }
+
+    private File uniqueFile(File dir, String fileName) {
+        dir.mkdirs();
+        File out = new File(dir, fileName);
+        if (!out.exists()) return out;
+        String base = fileName;
+        String ext = "";
+        int dot = fileName.lastIndexOf('.');
+        if (dot > 0) {
+            base = fileName.substring(0, dot);
+            ext = fileName.substring(dot);
+        }
+        for (int i = 1; i < 1000; i++) {
+            out = new File(dir, base + "_" + i + ext);
+            if (!out.exists()) return out;
+        }
+        return new File(dir, base + "_" + System.currentTimeMillis() + ext);
+    }
+
+    private String displayNameForUri(Uri uri, String fallback) {
+        try (Cursor cursor = getContentResolver().query(uri, new String[] { OpenableColumns.DISPLAY_NAME }, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                String name = cursor.getString(0);
+                if (name != null && !name.trim().isEmpty()) return name;
+            }
+        } catch (Throwable ignored) { }
+        String last = uri.getLastPathSegment();
+        return last == null || last.trim().isEmpty() ? fallback : last;
+    }
+
+    private static boolean isModelName(String name) {
+        String lower = name == null ? "" : name.toLowerCase(Locale.US);
+        return lower.endsWith(".glb") || lower.endsWith(".gltf");
+    }
+
+    private static boolean isIblName(String name) {
+        String lower = name == null ? "" : name.toLowerCase(Locale.US);
+        return lower.endsWith(".hdr") || lower.endsWith(".ktx") || lower.endsWith(".ktx1") || lower.endsWith(".exr");
+    }
+
+    private static String safeFileName(String name) {
+        String safe = name == null ? "imported_asset" : name.trim();
+        if (safe.isEmpty()) safe = "imported_asset";
+        return safe.replaceAll("[^A-Za-z0-9._-]", "_");
+    }
+
+    private static boolean sameFile(File a, File b) {
+        if (a == null || b == null) return false;
+        return a.getAbsolutePath().equals(b.getAbsolutePath());
     }
 
     private static ByteBuffer readFile(File file) throws Exception {
@@ -765,15 +1316,25 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
         if (statusView != null) {
             statusView.setText("Model: " + (modelName == null || modelName.isEmpty() ? "none" : modelName)
+                + "\nRenderer: Filament"
+                + "\nGLB loader: gltfio loaded=" + gltfioLoaded
                 + "\nLoad: " + loadStatus
+                + "\nSource: " + shorten(modelSourcePath, 72)
+                + "\nCopied: " + shorten(modelCopiedPath, 72)
                 + "\nCamera: " + cameraStatus
                 + "\nLight preset: " + lightingPreset.label + " / " + lightingStatus
                 + "\nSun/Ambient/Fill/Exp/BG: " + oneDecimal(sunLightIntensity) + " / " + noDecimal(ambientFallbackIntensity) + " / " + oneDecimal(fillLightIntensity) + " / " + twoDecimal(exposure) + " / " + twoDecimal(backgroundBrightness)
-                + "\nambientFallback=" + noDecimal(ambientFallbackIntensity) + " iblStatus=" + iblStatus
-                + "\nenvironmentMode=" + environmentMode + " realIblReady=" + realIblReady + " futureIblAssetPath=" + futureIblAssetPath
+                + "\niblMode=" + iblMode + " iblFile=" + iblFile
+                + "\niblLoadStatus=" + iblLoadStatus
+                + "\nrealIblReady=" + realIblReady + " skyboxReady=" + skyboxReady + " indirectLightReady=" + indirectLightReady
+                + "\nfallbackReason=" + fallbackReason
+                + "\nenvironmentMode=" + environmentMode + " activeIbl=" + shorten(futureIblAssetPath, 72)
                 + "\nQuality: " + qualityFeatureStatus
                 + "\nactualAA=" + actualAA + " sampleCount=" + actualSampleCount + " dynamicResolution=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
                 + "\naoEnabled=" + aoEnabled + " bloomEnabled=" + bloomEnabled + " shadowsEnabled=" + shadowsEnabled + " refractionEnabled=" + refractionEnabled
+                + "\nimportCopyStatus=" + importCopyStatus
+                + "\nscanDownloadStatus=" + scanDownloadStatus + " copied/skipped/failed=" + scanCopiedCount + "/" + scanSkippedCount + "/" + scanFailedCount
+                + "\npermissionStatus=" + permissionStatus
                 + "\nrefractionToggleAffectsTransmission=" + refractionToggleAffectsTransmission
                 + "\nadvancedValues=" + advancedValuesEnabled + " lastInputError=" + lastInputError
                 + "\nLifecycle: " + lifecycleStatus
@@ -826,19 +1387,31 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private void updateLightingControlLabels() {
         setSliderLabel(sunSliderLabel, "Sun", sunLightIntensity);
-        setSliderLabel(ambientSliderLabel, "Ambient", ambientFallbackIntensity);
+        setSliderLabel(ambientSliderLabel, realIblReady.equals("true") ? "IBL" : "Ambient", ambientFallbackIntensity);
         setSliderLabel(fillSliderLabel, "Fill", fillLightIntensity);
         setSliderLabel(exposureSliderLabel, "Exp", exposure);
         setSliderLabel(backgroundSliderLabel, "BG", backgroundBrightness);
         setSliderProgress(sunSlider, sunLightIntensity, 0.0f, 20.0f, 0.5f);
         setSliderProgress(ambientSlider, ambientFallbackIntensity, 0.0f, 10_000.0f, 100.0f);
         setSliderProgress(fillSlider, fillLightIntensity, 0.0f, 20.0f, 0.5f);
-        setSliderProgress(exposureSlider, exposure, 0.20f, 1.00f, 0.01f);
+        setSliderProgress(exposureSlider, exposure, 0.30f, 2.00f, 0.01f);
         setSliderProgress(backgroundSlider, backgroundBrightness, 0.05f, 0.45f, 0.01f);
         updateAdvancedFieldValues();
         updateToggleLabels();
         if (lightingButton != null) lightingButton.setText("Lighting: " + lightingPreset.label);
+        updateIblButton();
         if (advancedValuesButton != null) advancedValuesButton.setText("Advanced Values: " + (advancedValuesEnabled ? "On" : "Off"));
+    }
+
+    private void updateIblButton() {
+        if (iblButton == null) return;
+        if ("procedural_fallback".equals(iblMode)) {
+            iblButton.setText("IBL: Procedural fallback");
+        } else if ("unsupported_exr".equals(iblMode)) {
+            iblButton.setText("IBL: EXR unsupported");
+        } else {
+            iblButton.setText("IBL: " + shorten(iblFile, 28));
+        }
     }
 
     private void updateToggleLabels() {

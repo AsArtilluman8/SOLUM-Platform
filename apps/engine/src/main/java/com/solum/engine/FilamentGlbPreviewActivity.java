@@ -59,7 +59,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
@@ -92,6 +94,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String PREF_FILAMENT_RENDER_SCALE = "filament_render_scale";
     private static final String PREF_FILAMENT_DYNAMIC_RESOLUTION = "filament_dynamic_resolution";
     private static final String PREF_FILAMENT_MSAA_SAMPLES = "filament_msaa_samples";
+    private static final String PREF_FILAMENT_FXAA_ENABLED = "filament_fxaa_enabled";
     private static final String PREF_FILAMENT_SKYBOX_VISIBLE = "filament_skybox_visible";
     private static final String PREF_FILAMENT_IBL_ROTATION = "filament_ibl_rotation";
     private static final String PREF_FILAMENT_SUN_AZIMUTH = "filament_sun_azimuth";
@@ -108,7 +111,10 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String PREF_FILAMENT_CAMERA_TARGET_Y = "filament_camera_target_y";
     private static final String PREF_FILAMENT_CAMERA_TARGET_Z = "filament_camera_target_z";
     private static final String PREF_FILAMENT_CAMERA_FOV = "filament_camera_fov";
+    private static final String PREF_FILAMENT_CONFIG_JSON = "filament_config_json";
+    private static final String PREF_FILAMENT_DEFAULT_CONFIG_JSON = "filament_default_config_json";
     private static final String CONFIG_FILE_NAME = "filament_render_config.json";
+    private static final int CONFIG_SCHEMA_VERSION = 2;
     private static final int REQUEST_IMPORT_MODEL = 4101;
     private static final int REQUEST_IMPORT_IBL = 4102;
     private static final long HUD_UPDATE_NS = 250_000_000L;
@@ -130,6 +136,11 @@ public class FilamentGlbPreviewActivity extends Activity {
     private Button bloomButton;
     private Button shadowsButton;
     private Button refractionButton;
+    private Button dynamicResolutionButton;
+    private Button msaaButton;
+    private Button fxaaButton;
+    private Button skyboxButton;
+    private Button glassRefractionButton;
     private Button collapseButton;
     private Button assetsTabButton;
     private Button lightingTabButton;
@@ -169,11 +180,13 @@ public class FilamentGlbPreviewActivity extends Activity {
     private TextView glassSummaryView;
     private TextView configSummaryView;
     private TextView debugSummaryView;
+    private TextView lastActionStatusView;
     private TextView sunSliderLabel;
     private TextView ambientSliderLabel;
     private TextView fillSliderLabel;
     private TextView exposureSliderLabel;
     private TextView backgroundSliderLabel;
+    private final List<SliderBinding> sliderBindings = new ArrayList<>();
     private EditText advancedSunField;
     private EditText advancedAmbientField;
     private EditText advancedFillField;
@@ -191,7 +204,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private AoMode aoMode = AoMode.OFF;
     private BloomMode bloomMode = BloomMode.OFF;
     private ShadowMode shadowMode = ShadowMode.OFF;
-    private RefractionMode refractionMode = RefractionMode.OFF;
+    private RefractionMode refractionMode = RefractionMode.ON;
     private WorkspaceTab activeTab = WorkspaceTab.ASSETS;
     private boolean panelCollapsed = true;
     private boolean frameCallbackActive = false;
@@ -257,6 +270,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private boolean refractionEnabled = false;
     private boolean advancedValuesEnabled = false;
     private boolean dynamicResolutionEnabled = true;
+    private boolean fxaaEnabled = true;
     private boolean ditheringEnabled = true;
     private boolean skyboxVisible = true;
     private float sunLightIntensity = 2.5f;
@@ -282,6 +296,13 @@ public class FilamentGlbPreviewActivity extends Activity {
     private float cameraTargetZ = 0.0f;
     private float cameraFov = 45.0f;
     private String configStatus = "not_loaded";
+    private String lastActionStatus = "created";
+    private String configPrivateSaved = "false";
+    private String configExportSaved = "false";
+    private String lastConfigError = "none";
+    private String lastConfigLoadSource = "none";
+    private String lastConfigSaveTimestamp = "none";
+    private int loadedConfigVersion = 0;
     private String modelTransformStatus = "not_applied";
     private String transformTargetStatus = "none";
     private String cameraApplyStatus = "not_applied";
@@ -347,9 +368,9 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private enum BloomMode {
         OFF("Bloom Off"),
-        SOFT("Bloom Soft"),
+        SOFT("Bloom Low"),
         MEDIUM("Bloom Medium"),
-        DEBUG("Bloom Debug");
+        HIGH("Bloom High");
 
         final String label;
 
@@ -365,9 +386,9 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private enum ShadowMode {
         OFF("Shadows Off"),
-        SOFT("Shadows Soft"),
+        SOFT("Shadows Soft Low"),
         MEDIUM("Shadows Medium"),
-        SHARP("Shadows Sharp");
+        SHARP("Shadows Sharp Inspect");
 
         final String label;
 
@@ -383,8 +404,7 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private enum RefractionMode {
         OFF("Refraction Off"),
-        ON("Refraction On"),
-        DEBUG("Refraction Debug");
+        ON("Refraction On");
 
         final String label;
 
@@ -399,16 +419,19 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private enum LightingPreset {
-        SAFE_STUDIO("Safe Studio", new float[] {-0.35f, -0.75f, -0.55f}, 2.5f, 1.0f, 0.0f, 1.0f, 0.14f, new float[] {0.70f, -0.35f, -0.62f}, RefractionMode.OFF),
-        BALANCED("Balanced", new float[] {-0.28f, -0.78f, -0.55f}, 3.0f, 1.0f, 0.0f, 1.0f, 0.16f, new float[] {0.66f, -0.38f, -0.65f}, RefractionMode.OFF),
-        CINEMATIC_FOREST("Cinematic Forest", new float[] {-0.62f, -0.62f, -0.48f}, 2.0f, 1.0f, 0.0f, 0.95f, 0.12f, new float[] {0.48f, -0.32f, -0.82f}, RefractionMode.OFF),
-        GLASS_PREVIEW("Glass Preview", new float[] {-0.35f, -0.82f, -0.45f}, 2.0f, 1.0f, 0.0f, 1.0f, 0.12f, new float[] {0.65f, -0.30f, -0.70f}, RefractionMode.ON),
-        CHARACTER_PREVIEW("Character Preview", new float[] {-0.30f, -0.78f, -0.54f}, 2.5f, 1.0f, 0.0f, 1.0f, 0.16f, new float[] {0.68f, -0.35f, -0.64f}, RefractionMode.OFF),
-        DARK_INSPECT("Dark Inspect", new float[] {-0.48f, -0.70f, -0.52f}, 1.0f, 0.7f, 0.0f, 0.8f, 0.08f, new float[] {0.50f, -0.30f, -0.80f}, RefractionMode.OFF),
-        BRIGHT_INSPECT("Bright Inspect", new float[] {-0.20f, -0.82f, -0.48f}, 4.0f, 1.2f, 0.0f, 1.1f, 0.20f, new float[] {0.62f, -0.42f, -0.66f}, RefractionMode.OFF);
+        SAFE_STUDIO("Safe Studio", -145.0f, 45.0f, 2.5f, 1.0f, 0.0f, 1.0f, 0.14f, new float[] {0.70f, -0.35f, -0.62f}, RefractionMode.ON),
+        BALANCED("Balanced", -130.0f, 48.0f, 3.0f, 1.0f, 0.2f, 1.0f, 0.16f, new float[] {0.66f, -0.38f, -0.65f}, RefractionMode.ON),
+        DARK_INSPECT("Dark Inspect", -155.0f, 38.0f, 1.2f, 0.7f, 0.0f, 0.8f, 0.08f, new float[] {0.50f, -0.30f, -0.80f}, RefractionMode.ON),
+        CHARACTER_PREVIEW("Character Preview", -135.0f, 48.0f, 2.8f, 1.0f, 0.35f, 1.0f, 0.16f, new float[] {0.68f, -0.35f, -0.64f}, RefractionMode.ON),
+        PRODUCT_PREVIEW("Product Preview", -120.0f, 55.0f, 3.5f, 1.2f, 0.25f, 1.05f, 0.18f, new float[] {0.62f, -0.42f, -0.66f}, RefractionMode.ON),
+        GLASS_PREVIEW("Glass Preview", -145.0f, 50.0f, 2.0f, 1.3f, 0.15f, 1.0f, 0.12f, new float[] {0.65f, -0.30f, -0.70f}, RefractionMode.ON),
+        CINEMATIC_FOREST("Cinematic Forest", -220.0f, 35.0f, 2.0f, 1.0f, 0.0f, 0.95f, 0.12f, new float[] {0.48f, -0.32f, -0.82f}, RefractionMode.ON),
+        OUTDOOR_SOFT("Outdoor Soft", -105.0f, 55.0f, 4.0f, 1.2f, 0.15f, 1.05f, 0.20f, new float[] {0.62f, -0.42f, -0.66f}, RefractionMode.ON),
+        NIGHT_INSPECT("Night Inspect", -175.0f, 24.0f, 0.8f, 0.45f, 0.2f, 0.75f, 0.04f, new float[] {0.50f, -0.30f, -0.80f}, RefractionMode.ON);
 
         final String label;
-        final float[] sunDirection;
+        final float sunAzimuth;
+        final float sunElevation;
         final float sunIntensity;
         final float ambientFallbackIntensity;
         final float fillIntensity;
@@ -417,9 +440,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         final float[] fillDirection;
         final RefractionMode refractionMode;
 
-        LightingPreset(String label, float[] sunDirection, float sunIntensity, float ambientFallbackIntensity, float fillIntensity, float exposure, float backgroundBrightness, float[] fillDirection, RefractionMode refractionMode) {
+        LightingPreset(String label, float sunAzimuth, float sunElevation, float sunIntensity, float ambientFallbackIntensity, float fillIntensity, float exposure, float backgroundBrightness, float[] fillDirection, RefractionMode refractionMode) {
             this.label = label;
-            this.sunDirection = sunDirection;
+            this.sunAzimuth = sunAzimuth;
+            this.sunElevation = sunElevation;
             this.sunIntensity = sunIntensity;
             this.ambientFallbackIntensity = ambientFallbackIntensity;
             this.fillIntensity = fillIntensity;
@@ -430,13 +454,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
 
         LightingPreset next() {
-            if (this == SAFE_STUDIO) return BALANCED;
-            if (this == BALANCED) return CINEMATIC_FOREST;
-            if (this == CINEMATIC_FOREST) return GLASS_PREVIEW;
-            if (this == GLASS_PREVIEW) return CHARACTER_PREVIEW;
-            if (this == CHARACTER_PREVIEW) return DARK_INSPECT;
-            if (this == DARK_INSPECT) return BRIGHT_INSPECT;
-            return SAFE_STUDIO;
+            return values()[(ordinal() + 1) % values().length];
         }
     }
 
@@ -506,6 +524,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         tabScroll.addView(tabRow, new HorizontalScrollView.LayoutParams(HorizontalScrollView.LayoutParams.WRAP_CONTENT, HorizontalScrollView.LayoutParams.WRAP_CONTENT));
 
         workspacePanel.addView(collapseButton);
+        lastActionStatusView = overlayText(10.0f, 1);
+        lastActionStatusView.setBackgroundColor(Color.argb(130, 4, 24, 30));
+        workspacePanel.addView(lastActionStatusView);
         workspacePanel.addView(tabScroll);
 
         assetsPanel = new LinearLayout(this);
@@ -581,6 +602,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             aoMode = aoMode.next();
             persistWorkspaceSettings();
             applyQualityProfile();
+            setLastAction("ao_" + aoMode.name().toLowerCase(Locale.US));
             updateHud();
         });
         bloomButton = button("");
@@ -588,6 +610,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             bloomMode = bloomMode.next();
             persistWorkspaceSettings();
             applyQualityProfile();
+            setLastAction("bloom_" + bloomMode.name().toLowerCase(Locale.US));
             updateHud();
         });
         shadowsButton = button("");
@@ -596,6 +619,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             persistWorkspaceSettings();
             applyQualityProfile();
             applyLightingValues();
+            setLastAction("shadows_" + shadowMode.name().toLowerCase(Locale.US));
             updateHud();
         });
         refractionButton = button("");
@@ -603,6 +627,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             refractionMode = refractionMode.next();
             persistWorkspaceSettings();
             applyQualityProfile();
+            setLastAction("refraction_" + refractionMode.name().toLowerCase(Locale.US));
             updateHud();
         });
         lightingPanel.addView(lightingButton);
@@ -619,14 +644,24 @@ public class FilamentGlbPreviewActivity extends Activity {
             fillLightIntensity = v;
             applyLightingValues();
         });
-        addLightingSlider(lightingPanel, "Az", -180.0f, 180.0f, 1.0f, sunAzimuth, v -> {
+        addLightingSlider(lightingPanel, "Sun Azimuth", 0.0f, 360.0f, 1.0f, normalizedAzimuth(sunAzimuth), v -> {
             sunAzimuth = v;
             applyLightingValues();
         });
-        addLightingSlider(lightingPanel, "El", 0.0f, 89.0f, 1.0f, sunElevation, v -> {
+        addLightingSlider(lightingPanel, "Sun Elevation", -20.0f, 90.0f, 1.0f, sunElevation, v -> {
             sunElevation = v;
             applyLightingValues();
         });
+        LinearLayout dirRow1 = row();
+        dirRow1.addView(button("Front", v -> setSunDirection("front", 180.0f, 35.0f)), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        dirRow1.addView(button("Front Left", v -> setSunDirection("front_left", 225.0f, 40.0f)), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        dirRow1.addView(button("Front Right", v -> setSunDirection("front_right", 135.0f, 40.0f)), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        lightingPanel.addView(dirRow1);
+        LinearLayout dirRow2 = row();
+        dirRow2.addView(button("Top Soft", v -> setSunDirection("top_soft", 180.0f, 82.0f)), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        dirRow2.addView(button("Side", v -> setSunDirection("side", 90.0f, 30.0f)), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        dirRow2.addView(button("Back Rim", v -> setSunDirection("back_rim", 0.0f, 28.0f)), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        lightingPanel.addView(dirRow2);
         exposureSlider = addLightingSlider(lightingPanel, "Exp", 0.30f, 2.50f, 0.01f, exposure, v -> {
             exposure = v;
             applyLightingValues();
@@ -650,17 +685,29 @@ public class FilamentGlbPreviewActivity extends Activity {
         qualitySummaryView = overlayText(10.0f, 12);
         qualitySummaryView.setBackgroundColor(Color.TRANSPARENT);
         renderPanel.addView(qualityButton);
-        renderPanel.addView(button("Dynamic Resolution: On", v -> {
+        dynamicResolutionButton = button("", v -> {
             dynamicResolutionEnabled = !dynamicResolutionEnabled;
             applyQualityProfile();
+            setLastAction("dynamic_resolution_" + (dynamicResolutionEnabled ? "on" : "off"));
             updateHud();
-        }));
-        renderPanel.addView(button("MSAA Cycle 1/2/4", v -> {
+        });
+        renderPanel.addView(dynamicResolutionButton);
+        msaaButton = button("", v -> {
             actualSampleCount = actualSampleCount == 1 ? 2 : (actualSampleCount == 2 ? 4 : 1);
             applyQualityProfile();
+            setLastAction("msaa_" + actualSampleCount + "x");
             updateHud();
-        }));
-        addLightingSlider(renderPanel, "Scale", 0.50f, 1.00f, 0.01f, renderScale, v -> {
+        });
+        renderPanel.addView(msaaButton);
+        fxaaButton = button("", v -> {
+            fxaaEnabled = !fxaaEnabled;
+            applyQualityProfile();
+            setLastAction("fxaa_" + (fxaaEnabled ? "on" : "off"));
+            updateHud();
+        });
+        renderPanel.addView(fxaaButton);
+        renderPanel.addView(button("TAA: not_exposed"));
+        addLightingSlider(renderPanel, "Render Scale", 0.50f, 1.00f, 0.01f, renderScale, v -> {
             renderScale = v;
             applyQualityProfile();
         });
@@ -672,11 +719,13 @@ public class FilamentGlbPreviewActivity extends Activity {
         iblSummaryView = overlayText(10.0f, 12);
         iblSummaryView.setBackgroundColor(Color.TRANSPARENT);
         iblPanel.addView(iblButton);
-        iblPanel.addView(button("Skybox On/Off", v -> {
+        skyboxButton = button("", v -> {
             skyboxVisible = !skyboxVisible;
             applySkyboxVisibility();
+            setLastAction("skybox_" + (skyboxVisible ? "on" : "off"));
             updateHud();
-        }));
+        });
+        iblPanel.addView(skyboxButton);
         addLightingSlider(iblPanel, "IBL", 0.0f, 10.0f, 0.1f, ambientUserIntensity, v -> {
             ambientUserIntensity = v;
             applyLightingValues();
@@ -701,12 +750,14 @@ public class FilamentGlbPreviewActivity extends Activity {
 
         glassSummaryView = overlayText(10.0f, 10);
         glassSummaryView.setBackgroundColor(Color.TRANSPARENT);
-        glassPanel.addView(button("Refraction On/Off", v -> {
+        glassRefractionButton = button("", v -> {
             refractionMode = refractionMode.next();
             persistWorkspaceSettings();
             applyQualityProfile();
+            setLastAction("refraction_" + (refractionMode == RefractionMode.ON ? "on" : "off"));
             updateHud();
-        }));
+        });
+        glassPanel.addView(glassRefractionButton);
         glassPanel.addView(glassSummaryView);
 
         configSummaryView = overlayText(10.0f, 10);
@@ -779,6 +830,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (requestCode == REQUEST_IMPORT_MODEL) {
             if (resultCode != RESULT_OK || data == null || data.getData() == null) {
                 importCopyStatus = "model_picker_cancelled";
+                setLastAction("model_picker_cancelled");
                 updateHud();
                 return;
             }
@@ -788,6 +840,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (requestCode == REQUEST_IMPORT_IBL) {
             if (resultCode != RESULT_OK || data == null || data.getData() == null) {
                 importCopyStatus = "ibl_picker_cancelled";
+                setLastAction("ibl_picker_cancelled");
                 updateHud();
                 return;
             }
@@ -830,8 +883,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private void closePreview() {
-        returningToVulkan = true;
-        legacyVulkanReturnStatus = "known_legacy_return_untested_close_preview_finishes_filament_activity";
+        returningToVulkan = false;
+        legacyVulkanReturnStatus = "deprecated_hidden_close_preview_finishes_filament_only";
         lifecycleStatus = "close_preview_requested";
         stopFrames("close_preview_stop_frames");
         if (surfaceView != null) surfaceView.setOnTouchListener(null);
@@ -1005,12 +1058,14 @@ public class FilamentGlbPreviewActivity extends Activity {
             modelSourcePath = uri.toString();
             modelCopiedPath = out.getAbsolutePath();
             importCopyStatus = "model_import_copied";
+            setLastAction("imported_model_ok");
             modelPath = out.getAbsolutePath();
             modelName = out.getName();
             persistActiveModel(out);
             loadModel();
         } catch (Throwable t) {
             importCopyStatus = "model_import_failed: " + shortMessage(t);
+            setLastAction("imported_model_failed");
             loadStatus = importCopyStatus;
             updateHud();
         }
@@ -1023,10 +1078,12 @@ public class FilamentGlbPreviewActivity extends Activity {
             if (!isIblName(sourceName)) throw new IllegalArgumentException("unsupported_ibl_extension_hdr_ktx_ktx1_exr_required");
             File out = copyUriToAssetFile(uri, sourceName, iblDir());
             importCopyStatus = "ibl_import_copied";
+            setLastAction("imported_ibl_ok");
             loadIblFile(out, "picker_import");
         } catch (Throwable t) {
             String failedStatus = "ibl_import_failed: " + shortMessage(t);
             importCopyStatus = failedStatus;
+            setLastAction("imported_ibl_failed");
             createEnvironmentFallback();
             iblLoadStatus = failedStatus;
             fallbackReason = "ibl_import_failed";
@@ -1420,6 +1477,8 @@ public class FilamentGlbPreviewActivity extends Activity {
             ambientUserIntensity = lightingPreset.ambientFallbackIntensity;
             ambientFallbackIntensity = ambientToInternal(ambientUserIntensity);
             sunLightIntensity = lightingPreset.sunIntensity;
+            sunAzimuth = lightingPreset.sunAzimuth;
+            sunElevation = lightingPreset.sunElevation;
             fillLightIntensity = lightingPreset.fillIntensity;
             exposure = lightingPreset.exposure;
             backgroundBrightness = lightingPreset.backgroundBrightness;
@@ -1432,6 +1491,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             lightingStatus = "apply_failed";
         }
         if (lightingButton != null) lightingButton.setText("Lighting: " + lightingPreset.label);
+        setLastAction("lighting_preset_" + lightingPreset.name().toLowerCase(Locale.US));
     }
 
     private void resetSafeLighting() {
@@ -1439,7 +1499,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         aoMode = AoMode.OFF;
         bloomMode = BloomMode.OFF;
         shadowMode = ShadowMode.OFF;
-        refractionMode = RefractionMode.OFF;
+        refractionMode = RefractionMode.ON;
         lastInputError = "none";
         applyLightingPreset();
         applyQualityProfile();
@@ -1496,12 +1556,19 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private float[] sunDirectionFromAngles() {
-        double az = Math.toRadians(sunAzimuth);
+        double az = Math.toRadians(normalizedAzimuth(sunAzimuth));
         double el = Math.toRadians(sunElevation);
         float x = (float) (Math.cos(el) * Math.sin(az));
         float y = (float) -Math.sin(el);
         float z = (float) (Math.cos(el) * Math.cos(az));
         return new float[] {x, y, z};
+    }
+
+    private void setSunDirection(String label, float azimuth, float elevation) {
+        sunAzimuth = normalizedAzimuth(azimuth);
+        sunElevation = clamp(elevation, -20.0f, 90.0f);
+        applyLightingValues();
+        setLastAction("sun_direction_" + label);
     }
 
     private void applyQualityProfile() {
@@ -1512,6 +1579,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             com.google.android.filament.View.BloomOptions bloom = view.getBloomOptions();
             com.google.android.filament.View.DynamicResolutionOptions dynamic = view.getDynamicResolutionOptions();
             com.google.android.filament.View.RenderQuality renderQuality = view.getRenderQuality();
+            actualSampleCount = sanitizeMsaa(actualSampleCount);
             aoEnabled = aoMode != AoMode.OFF;
             bloomEnabled = bloomMode != BloomMode.OFF;
             shadowsEnabled = shadowMode != ShadowMode.OFF;
@@ -1533,7 +1601,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 renderQuality.hdrColorBuffer = QualityLevel.LOW;
                 setActualQualityStatus("NONE", actualSampleCount, 0.58f, dynamic.maxScale, "low_quality_only_dynamic_safe");
             } else if (qualityProfile == FilamentQualityProfile.HIGH_PREVIEW || qualityProfile == FilamentQualityProfile.ULTRA_PREVIEW) {
-                view.setAntiAliasing(AntiAliasing.FXAA);
+                view.setAntiAliasing(fxaaEnabled ? AntiAliasing.FXAA : AntiAliasing.NONE);
                 if (qualityProfile == FilamentQualityProfile.ULTRA_PREVIEW && actualSampleCount < 4) actualSampleCount = 4;
                 view.setSampleCount(actualSampleCount);
                 view.setAmbientOcclusion(aoEnabled ? AmbientOcclusion.SSAO : AmbientOcclusion.NONE);
@@ -1548,9 +1616,9 @@ public class FilamentGlbPreviewActivity extends Activity {
                 dynamic.maxScale = qualityProfile == FilamentQualityProfile.ULTRA_PREVIEW ? 1.00f : Math.max(dynamic.minScale, renderScale);
                 dynamic.quality = QualityLevel.MEDIUM;
                 renderQuality.hdrColorBuffer = QualityLevel.HIGH;
-                setActualQualityStatus("FXAA", actualSampleCount, dynamic.minScale, dynamic.maxScale, qualityProfile.name().toLowerCase(Locale.US) + "_quality_only");
+                setActualQualityStatus(fxaaEnabled ? "FXAA" : "NONE", actualSampleCount, dynamic.minScale, dynamic.maxScale, qualityProfile.name().toLowerCase(Locale.US) + "_quality_only");
             } else {
-                view.setAntiAliasing(AntiAliasing.FXAA);
+                view.setAntiAliasing(fxaaEnabled ? AntiAliasing.FXAA : AntiAliasing.NONE);
                 view.setSampleCount(actualSampleCount);
                 view.setAmbientOcclusion(aoEnabled ? AmbientOcclusion.SSAO : AmbientOcclusion.NONE);
                 view.setShadowingEnabled(shadowsEnabled);
@@ -1564,7 +1632,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 dynamic.maxScale = Math.max(dynamic.minScale, renderScale);
                 dynamic.quality = QualityLevel.MEDIUM;
                 renderQuality.hdrColorBuffer = QualityLevel.MEDIUM;
-                setActualQualityStatus("FXAA", actualSampleCount, 0.72f, dynamic.maxScale, "medium_quality_only_dynamic_safe");
+                setActualQualityStatus(fxaaEnabled ? "FXAA" : "NONE", actualSampleCount, 0.72f, dynamic.maxScale, "medium_quality_only_dynamic_safe");
             }
             view.setAmbientOcclusionOptions(ao);
             view.setBloomOptions(bloom);
@@ -1578,6 +1646,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             qualityFeatureStatus = "apply_failed";
         }
         if (qualityButton != null) qualityButton.setText("Quality: " + qualityProfile.label);
+        updateAllSliderLabels();
         updateToggleLabels();
     }
 
@@ -1756,7 +1825,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         aoMode = enumPref(prefs, PREF_FILAMENT_AO_MODE, AoMode.OFF);
         bloomMode = enumPref(prefs, PREF_FILAMENT_BLOOM_MODE, BloomMode.OFF);
         shadowMode = enumPref(prefs, PREF_FILAMENT_SHADOW_MODE, ShadowMode.OFF);
-        refractionMode = enumPref(prefs, PREF_FILAMENT_REFRACTION_MODE, RefractionMode.OFF);
+        refractionMode = enumPref(prefs, PREF_FILAMENT_REFRACTION_MODE, RefractionMode.ON);
         panelCollapsed = prefs.getBoolean(PREF_FILAMENT_PANEL_COLLAPSED, true);
         sunLightIntensity = prefs.getFloat(PREF_FILAMENT_SUN, lightingPreset.sunIntensity);
         ambientUserIntensity = prefs.getFloat(PREF_FILAMENT_AMBIENT, lightingPreset.ambientFallbackIntensity);
@@ -1766,6 +1835,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         renderScale = prefs.getFloat(PREF_FILAMENT_RENDER_SCALE, 0.95f);
         dynamicResolutionEnabled = prefs.getBoolean(PREF_FILAMENT_DYNAMIC_RESOLUTION, true);
         actualSampleCount = prefs.getInt(PREF_FILAMENT_MSAA_SAMPLES, 2);
+        fxaaEnabled = prefs.getBoolean(PREF_FILAMENT_FXAA_ENABLED, true);
         skyboxVisible = prefs.getBoolean(PREF_FILAMENT_SKYBOX_VISIBLE, true);
         iblRotation = prefs.getFloat(PREF_FILAMENT_IBL_ROTATION, 0.0f);
         sunAzimuth = prefs.getFloat(PREF_FILAMENT_SUN_AZIMUTH, -145.0f);
@@ -1803,6 +1873,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             .putFloat(PREF_FILAMENT_RENDER_SCALE, renderScale)
             .putBoolean(PREF_FILAMENT_DYNAMIC_RESOLUTION, dynamicResolutionEnabled)
             .putInt(PREF_FILAMENT_MSAA_SAMPLES, actualSampleCount)
+            .putBoolean(PREF_FILAMENT_FXAA_ENABLED, fxaaEnabled)
             .putBoolean(PREF_FILAMENT_SKYBOX_VISIBLE, skyboxVisible)
             .putFloat(PREF_FILAMENT_IBL_ROTATION, iblRotation)
             .putFloat(PREF_FILAMENT_SUN_AZIMUTH, sunAzimuth)
@@ -2158,6 +2229,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             modelTransformStatus = "false_apply_failed: " + shortMessage(t);
             transformTargetStatus = "rootEntity_failed";
         }
+        updateAllSliderLabels();
         updateHud();
     }
 
@@ -2194,6 +2266,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         } catch (Throwable t) {
             cameraApplyStatus = "apply_failed: " + shortMessage(t);
         }
+        updateAllSliderLabels();
         updateHud();
     }
 
@@ -2233,13 +2306,16 @@ public class FilamentGlbPreviewActivity extends Activity {
         aoMode = AoMode.OFF;
         bloomMode = BloomMode.OFF;
         shadowMode = ShadowMode.OFF;
-        refractionMode = RefractionMode.OFF;
+        refractionMode = RefractionMode.ON;
         dynamicResolutionEnabled = true;
         renderScale = 0.95f;
         actualSampleCount = 2;
+        fxaaEnabled = true;
         skyboxVisible = true;
         iblRotation = 0.0f;
         sunLightIntensity = 2.5f;
+        sunAzimuth = -145.0f;
+        sunElevation = 45.0f;
         ambientUserIntensity = 1.0f;
         fillLightIntensity = 0.0f;
         exposure = 1.0f;
@@ -2249,33 +2325,103 @@ public class FilamentGlbPreviewActivity extends Activity {
         applyQualityProfile();
         applyLightingValues();
         configStatus = "safe_defaults_reset";
+        setLastAction("safe_defaults_reset");
         updateHud();
     }
 
     private File configFile() {
         File dir = new File("/storage/emulated/0/Download/SOLUM/config");
-        if (!dir.mkdirs() && !dir.isDirectory()) dir = new File(getFilesDir(), "solum/config");
         dir.mkdirs();
         return new File(dir, CONFIG_FILE_NAME);
     }
 
     private void saveConfig(File file, String reason) {
+        JSONObject json = buildConfigJson();
+        String text = json.toString();
+        boolean privateOk = false;
+        boolean exportOk = false;
+        String error = "none";
         try {
-            JSONObject json = new JSONObject();
+            SharedPreferences.Editor editor = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putString(PREF_FILAMENT_CONFIG_JSON, text);
+            if ("save_as_default".equals(reason)) editor.putString(PREF_FILAMENT_DEFAULT_CONFIG_JSON, text);
+            privateOk = editor.commit();
+        } catch (Throwable t) {
+            error = shortMessage(t);
+        }
+        try {
+            writeText(file, text);
+            exportOk = true;
+        } catch (Throwable t) {
+            if ("none".equals(error)) error = shortMessage(t);
+        }
+        persistWorkspaceSettings();
+        configPrivateSaved = String.valueOf(privateOk);
+        configExportSaved = String.valueOf(exportOk);
+        lastConfigError = error;
+        lastConfigSaveTimestamp = nowTimestamp();
+        if (privateOk && exportOk) configStatus = reason + "_ok";
+        else if (privateOk) configStatus = reason + "_private_ok_export_failed";
+        else configStatus = reason + "_failed";
+        setLastAction(configStatus);
+        updateHud();
+    }
+
+    private void loadConfig(File file, String reason) {
+        String text = null;
+        String source = "none";
+        try {
+            if (file != null && file.isFile()) {
+                text = readText(file);
+                source = "download_json";
+            } else {
+                text = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(PREF_FILAMENT_CONFIG_JSON, "");
+                source = "shared_preferences";
+            }
+            if (text == null || text.trim().isEmpty()) throw new IllegalStateException("config_missing");
+            JSONObject json;
+            try {
+                json = new JSONObject(text);
+            } catch (Throwable parseDownload) {
+                if (!"download_json".equals(source)) throw parseDownload;
+                text = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(PREF_FILAMENT_CONFIG_JSON, "");
+                source = "shared_preferences_after_download_invalid";
+                if (text == null || text.trim().isEmpty()) throw parseDownload;
+                json = new JSONObject(text);
+            }
+            applyConfigJson(json);
+            lastConfigLoadSource = source;
+            lastConfigError = "none";
+            configStatus = reason + "_ok";
+            setLastAction(configStatus);
+        } catch (Throwable t) {
+            lastConfigLoadSource = source;
+            lastConfigError = shortMessage(t);
+            configStatus = reason + "_failed";
+            setLastAction(configStatus);
+        }
+        updateHud();
+    }
+
+    private JSONObject buildConfigJson() {
+        JSONObject json = new JSONObject();
+        try {
             json.put("schema", "solum_filament_render_config");
-            json.put("schemaVersion", 1);
+            json.put("schemaVersion", CONFIG_SCHEMA_VERSION);
             json.put("qualityProfile", qualityProfile.name());
             json.put("renderScale", renderScale);
             json.put("dynamicResolutionEnabled", dynamicResolutionEnabled);
+            json.put("dynamicMinScale", dynamicMinScale);
+            json.put("dynamicMaxScale", dynamicMaxScale);
             json.put("aaMode", actualAA);
             json.put("msaaSamples", actualSampleCount);
             json.put("taaSupported", "not_exposed");
             json.put("taaEnabled", false);
-            json.put("fxaaEnabled", "FXAA".equals(actualAA));
+            json.put("fxaaEnabled", fxaaEnabled);
             json.put("ditheringEnabled", ditheringEnabled);
             json.put("lightingPreset", lightingPreset.name());
             json.put("sunIntensity", sunLightIntensity);
-            json.put("sunAzimuth", sunAzimuth);
+            json.put("sunAzimuth", normalizedAzimuth(sunAzimuth));
             json.put("sunElevation", sunElevation);
             json.put("iblStrength", ambientUserIntensity);
             json.put("iblRotation", iblRotation);
@@ -2284,8 +2430,10 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("background", backgroundBrightness);
             json.put("skyboxVisible", skyboxVisible);
             json.put("aoMode", aoMode.name());
+            json.put("aoStatus", aoActualStatus);
             json.put("bloomMode", bloomMode.name());
             json.put("shadowMode", shadowMode.name());
+            json.put("shadowStatus", shadowActualStatus);
             json.put("refractionMode", refractionMode.name());
             json.put("cameraDistance", cameraDistance);
             json.put("cameraTargetX", cameraTargetX);
@@ -2305,72 +2453,62 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("activeIblName", iblFile);
             json.put("activeModelPath", modelCopiedPath);
             json.put("activeModelName", modelName);
-            writeText(file, json.toString(2));
-            persistWorkspaceSettings();
-            configStatus = reason + "_ok: " + file.getAbsolutePath();
-        } catch (Throwable t) {
-            configStatus = reason + "_failed: " + shortMessage(t);
-        }
-        updateHud();
+        } catch (Throwable ignored) { }
+        return json;
     }
 
-    private void loadConfig(File file, String reason) {
-        try {
-            if (file == null || !file.isFile()) throw new IllegalStateException("config_missing");
-            JSONObject json = new JSONObject(readText(file));
-            qualityProfile = enumValue(FilamentQualityProfile.class, json.optString("qualityProfile"), FilamentQualityProfile.MEDIUM);
-            lightingPreset = enumValue(LightingPreset.class, json.optString("lightingPreset"), LightingPreset.SAFE_STUDIO);
-            aoMode = enumValue(AoMode.class, json.optString("aoMode"), AoMode.OFF);
-            bloomMode = enumValue(BloomMode.class, json.optString("bloomMode"), BloomMode.OFF);
-            shadowMode = enumValue(ShadowMode.class, json.optString("shadowMode"), ShadowMode.OFF);
-            refractionMode = enumValue(RefractionMode.class, json.optString("refractionMode"), RefractionMode.OFF);
-            renderScale = (float) json.optDouble("renderScale", renderScale);
-            dynamicResolutionEnabled = json.optBoolean("dynamicResolutionEnabled", dynamicResolutionEnabled);
-            actualSampleCount = json.optInt("msaaSamples", actualSampleCount);
-            ditheringEnabled = json.optBoolean("ditheringEnabled", ditheringEnabled);
-            sunLightIntensity = (float) json.optDouble("sunIntensity", sunLightIntensity);
-            sunAzimuth = (float) json.optDouble("sunAzimuth", sunAzimuth);
-            sunElevation = (float) json.optDouble("sunElevation", sunElevation);
-            ambientUserIntensity = (float) json.optDouble("iblStrength", ambientUserIntensity);
-            iblRotation = (float) json.optDouble("iblRotation", iblRotation);
-            fillLightIntensity = (float) json.optDouble("fillIntensity", fillLightIntensity);
-            exposure = (float) json.optDouble("exposure", exposure);
-            backgroundBrightness = (float) json.optDouble("background", backgroundBrightness);
-            skyboxVisible = json.optBoolean("skyboxVisible", skyboxVisible);
-            cameraDistance = (float) json.optDouble("cameraDistance", cameraDistance);
-            cameraTargetX = (float) json.optDouble("cameraTargetX", cameraTargetX);
-            cameraTargetY = (float) json.optDouble("cameraTargetY", cameraTargetY);
-            cameraTargetZ = (float) json.optDouble("cameraTargetZ", cameraTargetZ);
-            cameraFov = (float) json.optDouble("fov", cameraFov);
-            modelRotationX = (float) json.optDouble("modelRotateX", modelRotationX);
-            modelRotationY = (float) json.optDouble("modelRotateY", modelRotationY);
-            modelRotationZ = (float) json.optDouble("modelRotateZ", modelRotationZ);
-            modelScale = (float) json.optDouble("modelScale", modelScale);
-            modelOffsetX = (float) json.optDouble("modelOffsetX", modelOffsetX);
-            modelOffsetY = (float) json.optDouble("modelOffsetY", modelOffsetY);
-            modelOffsetZ = (float) json.optDouble("modelOffsetZ", modelOffsetZ);
-            panelCollapsed = json.optBoolean("panelCollapsed", panelCollapsed);
-            activeTab = enumValue(WorkspaceTab.class, json.optString("lastSelectedTab"), activeTab);
-            String loadedModel = json.optString("activeModelPath", "");
-            if (!loadedModel.isEmpty() && new File(loadedModel).isFile()) {
-                modelPath = loadedModel;
-                modelName = json.optString("activeModelName", new File(loadedModel).getName());
-                loadModel();
-            }
-            String loadedIbl = json.optString("activeIblPath", "");
-            if (!loadedIbl.isEmpty() && new File(loadedIbl).isFile()) loadIblFile(new File(loadedIbl), "config_load");
-            applyQualityProfile();
-            applyLightingValues();
-            applyIblRotation();
-            applySkyboxVisibility();
-            applyModelTransform();
-            applyCameraControls();
-            syncWorkspaceUi();
-            configStatus = reason + "_ok: " + file.getAbsolutePath();
-        } catch (Throwable t) {
-            configStatus = reason + "_failed: " + shortMessage(t);
+    private void applyConfigJson(JSONObject json) {
+        loadedConfigVersion = json.optInt("schemaVersion", 0);
+        qualityProfile = enumValue(FilamentQualityProfile.class, json.optString("qualityProfile"), FilamentQualityProfile.MEDIUM);
+        lightingPreset = enumValue(LightingPreset.class, json.optString("lightingPreset"), LightingPreset.SAFE_STUDIO);
+        aoMode = enumValue(AoMode.class, json.optString("aoMode"), AoMode.OFF);
+        bloomMode = enumValue(BloomMode.class, json.optString("bloomMode"), BloomMode.OFF);
+        shadowMode = enumValue(ShadowMode.class, json.optString("shadowMode"), ShadowMode.OFF);
+        refractionMode = enumValue(RefractionMode.class, json.optString("refractionMode"), RefractionMode.ON);
+        renderScale = (float) json.optDouble("renderScale", renderScale);
+        dynamicResolutionEnabled = json.optBoolean("dynamicResolutionEnabled", dynamicResolutionEnabled);
+        actualSampleCount = sanitizeMsaa(json.optInt("msaaSamples", actualSampleCount));
+        fxaaEnabled = json.optBoolean("fxaaEnabled", fxaaEnabled);
+        ditheringEnabled = json.optBoolean("ditheringEnabled", ditheringEnabled);
+        sunLightIntensity = (float) json.optDouble("sunIntensity", sunLightIntensity);
+        sunAzimuth = normalizedAzimuth((float) json.optDouble("sunAzimuth", sunAzimuth));
+        sunElevation = (float) json.optDouble("sunElevation", sunElevation);
+        ambientUserIntensity = (float) json.optDouble("iblStrength", ambientUserIntensity);
+        iblRotation = (float) json.optDouble("iblRotation", iblRotation);
+        fillLightIntensity = (float) json.optDouble("fillIntensity", fillLightIntensity);
+        exposure = (float) json.optDouble("exposure", exposure);
+        backgroundBrightness = (float) json.optDouble("background", backgroundBrightness);
+        skyboxVisible = json.optBoolean("skyboxVisible", skyboxVisible);
+        cameraDistance = (float) json.optDouble("cameraDistance", cameraDistance);
+        cameraTargetX = (float) json.optDouble("cameraTargetX", cameraTargetX);
+        cameraTargetY = (float) json.optDouble("cameraTargetY", cameraTargetY);
+        cameraTargetZ = (float) json.optDouble("cameraTargetZ", cameraTargetZ);
+        cameraFov = (float) json.optDouble("fov", cameraFov);
+        modelRotationX = (float) json.optDouble("modelRotateX", modelRotationX);
+        modelRotationY = (float) json.optDouble("modelRotateY", modelRotationY);
+        modelRotationZ = (float) json.optDouble("modelRotateZ", modelRotationZ);
+        modelScale = (float) json.optDouble("modelScale", modelScale);
+        modelOffsetX = (float) json.optDouble("modelOffsetX", modelOffsetX);
+        modelOffsetY = (float) json.optDouble("modelOffsetY", modelOffsetY);
+        modelOffsetZ = (float) json.optDouble("modelOffsetZ", modelOffsetZ);
+        panelCollapsed = json.optBoolean("panelCollapsed", panelCollapsed);
+        activeTab = enumValue(WorkspaceTab.class, json.optString("lastSelectedTab"), activeTab);
+        String loadedModel = json.optString("activeModelPath", "");
+        if (!loadedModel.isEmpty() && new File(loadedModel).isFile()) {
+            modelPath = loadedModel;
+            modelName = json.optString("activeModelName", new File(loadedModel).getName());
+            loadModel();
         }
-        updateHud();
+        String loadedIbl = json.optString("activeIblPath", "");
+        if (!loadedIbl.isEmpty() && new File(loadedIbl).isFile()) loadIblFile(new File(loadedIbl), "config_load");
+        applyQualityProfile();
+        applyLightingValues();
+        applyIblRotation();
+        applySkyboxVisibility();
+        applyModelTransform();
+        applyCameraControls();
+        persistWorkspaceSettings();
+        syncWorkspaceUi();
     }
 
     private void writeText(File file, String text) throws Exception {
@@ -2403,6 +2541,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + " ms | CPU " + oneDecimal(rollingRenderCpuMs) + " ms | frame " + liveFrameCounter
                 + " | " + qualityProfile.label + " | IBL " + iblFile + " | " + lightingPreset.label);
         }
+        if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
         if (assetsSummaryView != null) {
             assetsSummaryView.setText("Active model: " + (modelName == null || modelName.isEmpty() ? "none" : modelName)
                 + "\nActive IBL: " + iblFile
@@ -2415,7 +2554,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             qualitySummaryView.setText("actualAA=" + actualAA + " sampleCount=" + actualSampleCount
                 + "\ndynamicResolutionEnabled=" + dynamicResolutionEnabled
                 + "\nrenderScale=" + twoDecimal(renderScale) + " dynamicScale=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
-                + "\ntaaSupported=not_exposed taaEnabled=false fxaaEnabled=" + "FXAA".equals(actualAA)
+                + "\ntaaSupported=not_exposed taaEnabled=false fxaaToggle=" + fxaaEnabled + " fxaaActuallyActive=" + "FXAA".equals(actualAA)
                 + "\nditheringEnabled=" + ditheringEnabled + " anisotropicFiltering=not_exposed textureLodBias=not_exposed"
                 + "\naoMode=" + aoMode.name() + " aoApplied=" + aoActuallyApplied
                 + "\nshadowsMode=" + shadowMode.name() + " shadowsApplied=" + shadowsActuallyApplied
@@ -2436,11 +2575,11 @@ public class FilamentGlbPreviewActivity extends Activity {
             shadowSummaryView.setText("shadowsSupported=true"
                 + "\nshadowsEnabled=" + shadowsEnabled + " shadowMode=" + shadowMode.name()
                 + "\nshadowType=" + shadowTypeStatus
-                + "\nshadowMapSize=not_exposed cascadeStatus=not_exposed cascadeCount=not_exposed"
+                + "\nshadowMapSizeStatus=not_exposed csmStatus=not_exposed cascadeCountStatus=not_exposed"
                 + "\ncontactShadowsSupported=not_exposed contactShadowsEnabled=false"
-                + "\nshadowStrength=not_exposed shadowSoftness=not_exposed shadowBiasStatus=not_exposed"
+                + "\nshadowStrength=not_exposed shadowSoftness=not_exposed shadowDistance=not_exposed shadowBiasStatus=not_exposed"
                 + "\ncastReceiveFlags=applied_to_renderables_if_loaded"
-                + "\nstatus=" + shadowActualStatus);
+                + "\nactualFilamentShadowSettingsSummary=" + shadowActualStatus);
         }
         if (cameraSummaryView != null) {
             cameraSummaryView.setText("cameraDistance=" + twoDecimal(cameraDistance)
@@ -2472,6 +2611,11 @@ public class FilamentGlbPreviewActivity extends Activity {
             configSummaryView.setText("configPath=" + configFile().getAbsolutePath()
                 + "\nSharedPreferences backup=" + PREFS_NAME
                 + "\nconfigStatus=" + configStatus
+                + "\nconfigPrivateSaved=" + configPrivateSaved + " configExportSaved=" + configExportSaved
+                + "\nlastConfigError=" + lastConfigError
+                + "\nlastConfigLoadSource=" + lastConfigLoadSource
+                + "\nlastConfigSaveTimestamp=" + lastConfigSaveTimestamp
+                + "\nloadedConfigVersion=" + loadedConfigVersion
                 + "\nmissing paths on load=skip_no_crash"
                 + "\nlastSelectedTab=" + activeTab.name() + " panelCollapsed=" + panelCollapsed);
         }
@@ -2493,18 +2637,22 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nfallbackReason=" + fallbackReason
                 + "\nenvironmentMode=" + environmentMode + " activeIbl=" + shorten(futureIblAssetPath, 72)
                 + "\nQuality: " + qualityFeatureStatus
-                + "\nactualAA=" + actualAA + " sampleCount=" + actualSampleCount + " dynamicResolutionEnabled=" + dynamicResolutionEnabled + " dynamicResolution=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
-                + "\ntaaSupported=not_exposed taaEnabled=false fxaaSupported=true dithering=" + ditheringEnabled
+                + "\nactualAA=" + actualAA + " actualMSAA=" + actualSampleCount + "x actualDynamicResolution=" + dynamicResolutionEnabled + " actualRenderScale=" + twoDecimal(renderScale) + " dynamicScale=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
+                + "\ntaaSupported=not_exposed ssrSupported=not_exposed ditheringStatus=" + (ditheringEnabled ? "on_view_default" : "off_not_exposed") + " fxaaSupported=true"
                 + "\naoMode=" + aoMode.name() + " aoEnabled=" + aoEnabled + " aoApplied=" + aoActuallyApplied + " aoType=" + aoTypeStatus
                 + "\naoStatus=" + aoActualStatus + " aoLikelyInvisibleReason=" + aoLikelyInvisibleReason
                 + "\nshadowsMode=" + shadowMode.name() + " shadowsEnabled=" + shadowsEnabled + " shadowsApplied=" + shadowsActuallyApplied
                 + "\nshadowStatus=" + shadowActualStatus + " shadowType=" + shadowTypeStatus
+                + "\nshadowMapSizeStatus=not_exposed contactShadowsSupported=not_exposed csmStatus=not_exposed cascadeCountStatus=not_exposed shadowBiasStatus=not_exposed"
                 + "\nbloomMode=" + bloomMode.name() + " " + bloomActualStatus
-                + "\nrefractionMode=" + refractionMode.name() + " refractionEnabled=" + refractionEnabled + " refractionApplied=" + refractionActuallyApplied
+                + "\nrefractionSupported=true_screen_space_view_api refractionMode=" + refractionMode.name() + " refractionEnabled=" + refractionEnabled + " refractionActuallyApplied=" + refractionActuallyApplied
                 + "\nmodelTransform=" + modelTransformStatus + " target=" + transformTargetStatus + " rx/ry/rz=" + oneDecimal(modelRotationX) + "/" + oneDecimal(modelRotationY) + "/" + oneDecimal(modelRotationZ) + " scale=" + twoDecimal(modelScale)
                 + "\ncameraControls=" + cameraStatus + " apply=" + cameraApplyStatus
                 + "\nLegacy Vulkan=deprecated/hidden normal_ui_route=false"
-                + "\nconfigStatus=" + configStatus + " path=" + configFile().getAbsolutePath()
+                + "\nconfigPath=" + configFile().getAbsolutePath()
+                + "\nconfigPrivateSaved=" + configPrivateSaved + " configExportSaved=" + configExportSaved + " lastConfigError=" + lastConfigError
+                + "\nlastConfigLoadSource=" + lastConfigLoadSource + " lastConfigSaveTimestamp=" + lastConfigSaveTimestamp + " loadedConfigVersion=" + loadedConfigVersion
+                + "\nconfigStatus=" + configStatus + " lastActionStatus=" + lastActionStatus
                 + "\nmaterialInspectorStatus=" + materialInspectorStatus + " materialCount=" + materialCount
                 + "\nimportCopyStatus=" + importCopyStatus
                 + "\nscanDownloadStatus=" + scanDownloadStatus + " copied/skipped/failed=" + scanCopiedCount + "/" + scanSkippedCount + "/" + scanFailedCount
@@ -2533,11 +2681,15 @@ public class FilamentGlbPreviewActivity extends Activity {
         SeekBar slider = new SeekBar(this);
         slider.setMax(Math.max(1, Math.round((max - min) / step)));
         slider.setProgress(valueToProgress(value, min, max, step));
+        SliderBinding binding = new SliderBinding(text, slider, label, min, max, step);
+        sliderBindings.add(binding);
         slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (!fromUser) return;
-                callback.onValue(progressToValue(progress, min, max, step));
+                float newValue = progressToValue(progress, min, max, step);
+                setSliderLabel(text, label, newValue);
+                callback.onValue(newValue);
             }
 
             @Override
@@ -2571,6 +2723,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         setSliderProgress(exposureSlider, exposure, 0.30f, 2.50f, 0.01f);
         setSliderProgress(backgroundSlider, backgroundBrightness, 0.0f, 0.80f, 0.01f);
         updateAdvancedFieldValues();
+        updateAllSliderLabels();
         updateToggleLabels();
         if (lightingButton != null) lightingButton.setText("Lighting: " + lightingPreset.label);
         updateIblButton();
@@ -2593,17 +2746,58 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (bloomButton != null) bloomButton.setText(bloomMode.label);
         if (shadowsButton != null) shadowsButton.setText(shadowMode.label);
         if (refractionButton != null) refractionButton.setText(refractionMode.label);
+        if (glassRefractionButton != null) glassRefractionButton.setText(refractionMode.label);
+        if (dynamicResolutionButton != null) dynamicResolutionButton.setText("Dynamic Resolution: " + (dynamicResolutionEnabled ? "On" : "Off"));
+        if (msaaButton != null) msaaButton.setText("MSAA: " + actualSampleCount + "x");
+        if (fxaaButton != null) fxaaButton.setText("FXAA: " + (fxaaEnabled ? "On" : "Off"));
+        if (skyboxButton != null) skyboxButton.setText("Skybox: " + (skyboxVisible ? "On" : "Off"));
+        if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
+    }
+
+    private void updateAllSliderLabels() {
+        for (SliderBinding binding : sliderBindings) {
+            float value = currentSliderValue(binding.label);
+            setSliderLabel(binding.text, binding.label, value);
+            setSliderProgress(binding.slider, value, binding.min, binding.max, binding.step);
+        }
     }
 
     private void setSliderLabel(TextView label, String name, float value) {
         if (label == null) return;
-        if ("Exp".equals(name) || "BG".equals(name) || "Ambient".equals(name) || "IBL".equals(name) || "Fill".equals(name)) {
+        if ("Exp".equals(name) || "BG".equals(name) || "Ambient".equals(name) || "IBL".equals(name) || "Fill".equals(name)
+            || "Exposure".equals(name) || "Background".equals(name) || name.contains("Scale") || name.contains("Offset")
+            || name.startsWith("Pan") || name.startsWith("Target") || name.contains("Distance")) {
             label.setText(name + " " + twoDecimal(value));
         } else if ("Sun".equals(name)) {
             label.setText(name + " " + oneDecimal(value));
         } else {
             label.setText(name + " " + oneDecimal(value));
         }
+    }
+
+    private float currentSliderValue(String label) {
+        if ("Sun".equals(label)) return sunLightIntensity;
+        if ("Ambient".equals(label) || "IBL".equals(label)) return ambientUserIntensity;
+        if ("Fill".equals(label)) return fillLightIntensity;
+        if ("Exp".equals(label) || "Exposure".equals(label)) return exposure;
+        if ("BG".equals(label) || "Background".equals(label)) return backgroundBrightness;
+        if ("Sun Azimuth".equals(label)) return normalizedAzimuth(sunAzimuth);
+        if ("Sun Elevation".equals(label)) return sunElevation;
+        if ("Render Scale".equals(label)) return renderScale;
+        if ("Rot".equals(label)) return iblRotation;
+        if ("Dist".equals(label) || "Camera Distance".equals(label)) return cameraDistance;
+        if ("Pan X".equals(label)) return cameraTargetX;
+        if ("Pan Y".equals(label)) return cameraTargetY;
+        if ("Target Z".equals(label)) return cameraTargetZ;
+        if ("FOV".equals(label)) return cameraFov;
+        if ("Rot X".equals(label)) return modelRotationX;
+        if ("Rot Y".equals(label)) return modelRotationY;
+        if ("Rot Z".equals(label)) return modelRotationZ;
+        if ("Scale".equals(label)) return modelScale;
+        if ("Off X".equals(label) || "Offset X".equals(label)) return modelOffsetX;
+        if ("Off Y".equals(label) || "Offset Y".equals(label)) return modelOffsetY;
+        if ("Off Z".equals(label) || "Offset Z".equals(label)) return modelOffsetZ;
+        return 0.0f;
     }
 
     private void setSliderProgress(SeekBar slider, float value, float min, float max, float step) {
@@ -2741,8 +2935,47 @@ public class FilamentGlbPreviewActivity extends Activity {
         return out;
     }
 
+    private static float normalizedAzimuth(float value) {
+        float out = value % 360.0f;
+        if (out < 0.0f) out += 360.0f;
+        return out;
+    }
+
+    private static int sanitizeMsaa(int value) {
+        if (value <= 1) return 1;
+        if (value <= 2) return 2;
+        return 4;
+    }
+
+    private void setLastAction(String status) {
+        lastActionStatus = status == null || status.isEmpty() ? "none" : status;
+        if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
+    }
+
+    private static String nowTimestamp() {
+        return new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(new Date());
+    }
+
     private interface SliderCallback {
         void onValue(float value);
+    }
+
+    private static final class SliderBinding {
+        final TextView text;
+        final SeekBar slider;
+        final String label;
+        final float min;
+        final float max;
+        final float step;
+
+        SliderBinding(TextView text, SeekBar slider, String label, float min, float max, float step) {
+            this.text = text;
+            this.slider = slider;
+            this.label = label;
+            this.min = min;
+            this.max = max;
+            this.step = step;
+        }
     }
 
     private static String oneDecimal(float value) {

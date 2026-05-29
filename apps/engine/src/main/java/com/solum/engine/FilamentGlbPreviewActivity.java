@@ -61,6 +61,25 @@ public class FilamentGlbPreviewActivity extends Activity {
     private int fillLightEntity = 0;
     private TextView hudView;
     private TextView statusView;
+    private TextView assetsStatusView;
+    private TextView cameraStatusView;
+    private TextView materialStatusView;
+    private ScrollView controlScroll;
+    private LinearLayout controlPanel;
+    private LinearLayout tabRow;
+    private LinearLayout assetsPanel;
+    private LinearLayout cameraPanel;
+    private LinearLayout lightingPanel;
+    private LinearLayout qualityPanel;
+    private LinearLayout materialPanel;
+    private LinearLayout debugPanel;
+    private Button collapseButton;
+    private Button assetsTabButton;
+    private Button cameraTabButton;
+    private Button lightingTabButton;
+    private Button qualityTabButton;
+    private Button materialTabButton;
+    private Button debugTabButton;
     private Button qualityButton;
     private Button lightingButton;
     private Button advancedValuesButton;
@@ -91,7 +110,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     private boolean frameCallbackActive = false;
     private boolean destroying = false;
     private boolean destroyed = false;
-    private boolean returningToVulkan = false;
+    private boolean closingPreview = false;
+    private boolean panelCollapsed = true;
     private long lastFrameNs = 0L;
     private long lastHudUpdateNs = 0L;
     private float rollingFrameMs = 0.0f;
@@ -112,7 +132,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String lightingStatus = "not_applied";
     private String lastInputError = "none";
     private String refractionToggleAffectsTransmission = "false_screen_space_only_alpha_transmission_left_to_gltfio";
-    private String legacyVulkanReturnStatus = "not_requested";
+    private String legacyVulkanReturnStatus = "hidden_disabled_no_filament_return";
+    private String activeTab = "Lighting";
     private String actualAA = "FXAA";
     private int actualSampleCount = 2;
     private float dynamicMinScale = 0.72f;
@@ -204,32 +225,125 @@ public class FilamentGlbPreviewActivity extends Activity {
         hudParams.gravity = Gravity.TOP;
         root.addView(hudView, hudParams);
 
-        LinearLayout controls = new LinearLayout(this);
-        controls.setOrientation(LinearLayout.VERTICAL);
-        controls.setPadding(dp(10), dp(8), dp(10), dp(8));
-        controls.setBackgroundColor(Color.argb(172, 4, 12, 16));
-        qualityButton = button("Quality: " + qualityProfile.label);
-        qualityButton.setOnClickListener(v -> {
-            qualityProfile = qualityProfile.next();
-            applyQualityProfile();
-            updateHud();
+        controlPanel = new LinearLayout(this);
+        controlPanel.setOrientation(LinearLayout.VERTICAL);
+        controlPanel.setPadding(dp(8), dp(6), dp(8), dp(6));
+        controlPanel.setBackgroundColor(Color.argb(168, 3, 13, 18));
+
+        LinearLayout panelHeader = new LinearLayout(this);
+        panelHeader.setOrientation(LinearLayout.HORIZONTAL);
+        panelHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView rendererBadge = overlayText(10.0f, 1);
+        rendererBadge.setText("Renderer: Filament | GLB loader: gltfio | Legacy Vulkan: hidden");
+        rendererBadge.setBackgroundColor(Color.TRANSPARENT);
+        panelHeader.addView(rendererBadge, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        collapseButton = button("Expand");
+        collapseButton.setOnClickListener(v -> {
+            panelCollapsed = !panelCollapsed;
+            syncPanelVisibility();
         });
+        panelHeader.addView(collapseButton, new LinearLayout.LayoutParams(dp(104), LinearLayout.LayoutParams.WRAP_CONTENT));
+        controlPanel.addView(panelHeader);
+
+        tabRow = new LinearLayout(this);
+        tabRow.setOrientation(LinearLayout.HORIZONTAL);
+        assetsTabButton = tabButton("Assets");
+        cameraTabButton = tabButton("Camera");
+        lightingTabButton = tabButton("Lighting");
+        qualityTabButton = tabButton("Quality");
+        materialTabButton = tabButton("Material");
+        debugTabButton = tabButton("Debug");
+        tabRow.addView(assetsTabButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        tabRow.addView(cameraTabButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        tabRow.addView(lightingTabButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        tabRow.addView(qualityTabButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        tabRow.addView(materialTabButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        tabRow.addView(debugTabButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        controlPanel.addView(tabRow);
+
+        assetsPanel = new LinearLayout(this);
+        assetsPanel.setOrientation(LinearLayout.VERTICAL);
+        assetsStatusView = overlayText(10.0f, 4);
+        assetsStatusView.setBackgroundColor(Color.TRANSPARENT);
+        Button reloadButton = button("Reload");
+        reloadButton.setOnClickListener(v -> loadModel());
+        Button closeButton = button("Close Preview");
+        closeButton.setOnClickListener(v -> closePreview());
+        assetsPanel.addView(assetsStatusView);
+        assetsPanel.addView(reloadButton);
+        assetsPanel.addView(closeButton);
+        controlPanel.addView(assetsPanel);
+
+        cameraPanel = new LinearLayout(this);
+        cameraPanel.setOrientation(LinearLayout.VERTICAL);
+        cameraStatusView = overlayText(10.0f, 3);
+        cameraStatusView.setBackgroundColor(Color.TRANSPARENT);
+        Button resetViewButton = button("Reset View");
+        resetViewButton.setOnClickListener(v -> resetView());
+        Button fitModelButton = button("Fit Model");
+        fitModelButton.setOnClickListener(v -> fitModel());
+        cameraPanel.addView(cameraStatusView);
+        cameraPanel.addView(resetViewButton);
+        cameraPanel.addView(fitModelButton);
+        controlPanel.addView(cameraPanel);
+
+        lightingPanel = new LinearLayout(this);
+        lightingPanel.setOrientation(LinearLayout.VERTICAL);
         lightingButton = button("Lighting: " + lightingPreset.label);
         lightingButton.setOnClickListener(v -> {
             lightingPreset = lightingPreset.next();
             applyLightingPreset();
             updateHud();
         });
-        Button reloadButton = button("Reload");
-        reloadButton.setOnClickListener(v -> loadModel());
-        Button closeButton = button("Close Preview");
-        closeButton.setOnClickListener(v -> closePreview());
         Button resetButton = button("Reset Safe Lighting");
         resetButton.setOnClickListener(v -> resetSafeLighting());
+        lightingPanel.addView(lightingButton);
+        lightingPanel.addView(resetButton);
+        sunSlider = addLightingSlider(lightingPanel, "Sun", 0.0f, 20.0f, 0.5f, sunLightIntensity, v -> {
+            sunLightIntensity = v;
+            applyLightingValues();
+        });
+        ambientSlider = addLightingSlider(lightingPanel, "Ambient", 0.0f, 10_000.0f, 100.0f, ambientFallbackIntensity, v -> {
+            ambientFallbackIntensity = v;
+            applyLightingValues();
+        });
+        fillSlider = addLightingSlider(lightingPanel, "Fill", 0.0f, 20.0f, 0.5f, fillLightIntensity, v -> {
+            fillLightIntensity = v;
+            applyLightingValues();
+        });
+        exposureSlider = addLightingSlider(lightingPanel, "Exposure", 0.20f, 1.00f, 0.01f, exposure, v -> {
+            exposure = v;
+            applyLightingValues();
+        });
+        backgroundSlider = addLightingSlider(lightingPanel, "Background", 0.05f, 0.45f, 0.01f, backgroundBrightness, v -> {
+            backgroundBrightness = v;
+            applyLightingValues();
+        });
         advancedValuesButton = button("");
         advancedValuesButton.setOnClickListener(v -> {
             advancedValuesEnabled = !advancedValuesEnabled;
             updateAdvancedValuesVisibility();
+            updateHud();
+        });
+        lightingPanel.addView(advancedValuesButton);
+        advancedValuesPanel = new LinearLayout(this);
+        advancedValuesPanel.setOrientation(LinearLayout.VERTICAL);
+        advancedValuesPanel.setPadding(0, dp(4), 0, dp(4));
+        advancedValuesPanel.setVisibility(View.GONE);
+        advancedSunField = addAdvancedField(advancedValuesPanel, "Sun", 0.0f, 300.0f, v -> sunLightIntensity = v);
+        advancedAmbientField = addAdvancedField(advancedValuesPanel, "Ambient", 0.0f, 15_000.0f, v -> ambientFallbackIntensity = v);
+        advancedFillField = addAdvancedField(advancedValuesPanel, "Fill", 0.0f, 300.0f, v -> fillLightIntensity = v);
+        advancedExposureField = addAdvancedField(advancedValuesPanel, "Exposure", 0.10f, 1.50f, v -> exposure = v);
+        advancedBackgroundField = addAdvancedField(advancedValuesPanel, "Background", 0.02f, 0.80f, v -> backgroundBrightness = v);
+        lightingPanel.addView(advancedValuesPanel);
+        controlPanel.addView(lightingPanel);
+
+        qualityPanel = new LinearLayout(this);
+        qualityPanel.setOrientation(LinearLayout.VERTICAL);
+        qualityButton = button("Quality: " + qualityProfile.label);
+        qualityButton.setOnClickListener(v -> {
+            qualityProfile = qualityProfile.next();
+            applyQualityProfile();
             updateHud();
         });
         aoButton = button("");
@@ -257,66 +371,110 @@ public class FilamentGlbPreviewActivity extends Activity {
             applyQualityProfile();
             updateHud();
         });
+        qualityPanel.addView(qualityButton);
+        qualityPanel.addView(aoButton);
+        qualityPanel.addView(bloomButton);
+        qualityPanel.addView(shadowsButton);
+        qualityPanel.addView(refractionButton);
+        controlPanel.addView(qualityPanel);
+
+        materialPanel = new LinearLayout(this);
+        materialPanel.setOrientation(LinearLayout.VERTICAL);
+        materialStatusView = overlayText(10.0f, 2);
+        materialStatusView.setBackgroundColor(Color.TRANSPARENT);
+        materialStatusView.setText("Material Inspector: planned\nNo material overrides in P39.");
+        materialPanel.addView(materialStatusView);
+        controlPanel.addView(materialPanel);
+
+        debugPanel = new LinearLayout(this);
+        debugPanel.setOrientation(LinearLayout.VERTICAL);
         statusView = overlayText(10.0f, 16);
-        controls.addView(qualityButton);
-        controls.addView(lightingButton);
-        controls.addView(resetButton);
-        sunSlider = addLightingSlider(controls, "Sun", 0.0f, 20.0f, 0.5f, sunLightIntensity, v -> {
-            sunLightIntensity = v;
-            applyLightingValues();
-        });
-        ambientSlider = addLightingSlider(controls, "Ambient", 0.0f, 10_000.0f, 100.0f, ambientFallbackIntensity, v -> {
-            ambientFallbackIntensity = v;
-            applyLightingValues();
-        });
-        fillSlider = addLightingSlider(controls, "Fill", 0.0f, 20.0f, 0.5f, fillLightIntensity, v -> {
-            fillLightIntensity = v;
-            applyLightingValues();
-        });
-        exposureSlider = addLightingSlider(controls, "Exp", 0.20f, 1.00f, 0.01f, exposure, v -> {
-            exposure = v;
-            applyLightingValues();
-        });
-        backgroundSlider = addLightingSlider(controls, "BG", 0.05f, 0.45f, 0.01f, backgroundBrightness, v -> {
-            backgroundBrightness = v;
-            applyLightingValues();
-        });
-        controls.addView(advancedValuesButton);
-        advancedValuesPanel = new LinearLayout(this);
-        advancedValuesPanel.setOrientation(LinearLayout.VERTICAL);
-        advancedValuesPanel.setPadding(0, dp(4), 0, dp(4));
-        advancedValuesPanel.setVisibility(View.GONE);
-        advancedSunField = addAdvancedField(advancedValuesPanel, "Sun", 0.0f, 300.0f, v -> sunLightIntensity = v);
-        advancedAmbientField = addAdvancedField(advancedValuesPanel, "Ambient", 0.0f, 15_000.0f, v -> ambientFallbackIntensity = v);
-        advancedFillField = addAdvancedField(advancedValuesPanel, "Fill", 0.0f, 300.0f, v -> fillLightIntensity = v);
-        advancedExposureField = addAdvancedField(advancedValuesPanel, "Exposure", 0.10f, 1.50f, v -> exposure = v);
-        advancedBackgroundField = addAdvancedField(advancedValuesPanel, "Background", 0.02f, 0.80f, v -> backgroundBrightness = v);
-        controls.addView(advancedValuesPanel);
-        controls.addView(aoButton);
-        controls.addView(bloomButton);
-        controls.addView(shadowsButton);
-        controls.addView(refractionButton);
-        controls.addView(reloadButton);
-        controls.addView(closeButton);
-        controls.addView(statusView);
-        ScrollView controlScroll = new ScrollView(this);
+        debugPanel.addView(statusView);
+        controlPanel.addView(debugPanel);
+
+        controlScroll = new ScrollView(this);
         controlScroll.setFillViewport(false);
-        controlScroll.addView(controls, new ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
-        int labHeight = Math.max(dp(260), Math.round(getResources().getDisplayMetrics().heightPixels * 0.40f));
-        FrameLayout.LayoutParams controlParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, labHeight);
+        controlScroll.addView(controlPanel, new ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
+        FrameLayout.LayoutParams controlParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(112));
         controlParams.gravity = Gravity.BOTTOM;
-        controlParams.setMargins(dp(12), dp(12), dp(12), dp(28));
+        controlParams.setMargins(dp(10), dp(12), dp(10), dp(24));
         root.addView(controlScroll, controlParams);
+        syncPanelVisibility();
         setContentView(root);
         createViewer();
         loadModel();
         updateHud();
     }
 
+    private Button tabButton(String label) {
+        Button button = button(label);
+        button.setTextSize(9.0f);
+        button.setMinHeight(dp(38));
+        button.setOnClickListener(v -> {
+            activeTab = label;
+            panelCollapsed = false;
+            syncPanelVisibility();
+            updateHud();
+        });
+        return button;
+    }
+
+    private void syncPanelVisibility() {
+        if (collapseButton != null) collapseButton.setText(panelCollapsed ? "Expand" : "Collapse");
+        int contentVisibility = panelCollapsed ? View.GONE : View.VISIBLE;
+        if (tabRow != null) tabRow.setVisibility(contentVisibility);
+        setSectionVisible(assetsPanel, "Assets", contentVisibility);
+        setSectionVisible(cameraPanel, "Camera", contentVisibility);
+        setSectionVisible(lightingPanel, "Lighting", contentVisibility);
+        setSectionVisible(qualityPanel, "Quality", contentVisibility);
+        setSectionVisible(materialPanel, "Material", contentVisibility);
+        setSectionVisible(debugPanel, "Debug", contentVisibility);
+        markTab(assetsTabButton, "Assets");
+        markTab(cameraTabButton, "Camera");
+        markTab(lightingTabButton, "Lighting");
+        markTab(qualityTabButton, "Quality");
+        markTab(materialTabButton, "Material");
+        markTab(debugTabButton, "Debug");
+        if (controlScroll != null) {
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) controlScroll.getLayoutParams();
+            params.height = panelCollapsed ? dp(64) : Math.max(dp(230), Math.round(getResources().getDisplayMetrics().heightPixels * 0.32f));
+            controlScroll.setLayoutParams(params);
+        }
+    }
+
+    private void setSectionVisible(View section, String tab, int contentVisibility) {
+        if (section == null) return;
+        section.setVisibility(!panelCollapsed && tab.equals(activeTab) ? View.VISIBLE : View.GONE);
+    }
+
+    private void markTab(Button button, String tab) {
+        if (button == null) return;
+        boolean active = tab.equals(activeTab);
+        button.setText(active ? tab + " *" : tab);
+        button.setTextColor(active ? Color.rgb(120, 245, 255) : Color.rgb(218, 248, 255));
+        button.setBackgroundColor(active ? Color.argb(230, 4, 36, 44) : Color.argb(190, 4, 24, 30));
+    }
+
+    private void resetView() {
+        if (modelViewer != null) {
+            modelViewer.transformToUnitCube(new Float3(0.0f, 0.0f, 0.0f));
+        }
+        cameraStatus = "orbit_drag_pinch_zoom_reset_view";
+        updateHud();
+    }
+
+    private void fitModel() {
+        if (modelViewer != null) {
+            modelViewer.transformToUnitCube(new Float3(0.0f, 0.0f, 0.0f));
+        }
+        cameraStatus = "orbit_drag_pinch_zoom_fit_model";
+        updateHud();
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
-        if (!destroying && !destroyed && !returningToVulkan) startFrames();
+        if (!destroying && !destroyed && !closingPreview) startFrames();
     }
 
     @Override
@@ -332,7 +490,7 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        stopFrames(returningToVulkan ? "close_preview_destroyed" : "destroyed");
+        stopFrames(closingPreview ? "close_preview_destroyed" : "destroyed");
         releaseFilamentResources();
         super.onDestroy();
     }
@@ -364,8 +522,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private void closePreview() {
-        returningToVulkan = true;
-        legacyVulkanReturnStatus = "known_legacy_return_untested_close_preview_finishes_filament_activity";
+        closingPreview = true;
+        legacyVulkanReturnStatus = "legacy_disabled_close_preview_finishes_activity";
         lifecycleStatus = "close_preview_requested";
         stopFrames("close_preview_stop_frames");
         if (surfaceView != null) surfaceView.setOnTouchListener(null);
@@ -692,7 +850,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void releaseFilamentResources() {
         if (destroyed || destroying) return;
         destroying = true;
-        lifecycleStatus = returningToVulkan ? "close_preview_releasing_filament" : "destroyed";
+        lifecycleStatus = closingPreview ? "close_preview_releasing_filament" : "destroyed";
         try {
             if (modelViewer != null) {
                 Engine engine = modelViewer.getEngine();
@@ -759,24 +917,34 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private void updateHud() {
         if (hudView != null) {
-            hudView.setText("Filament Preview | FPS " + oneDecimal(rollingFps) + " | " + oneDecimal(rollingFrameMs)
+            hudView.setText("Renderer: Filament | GLB loader: gltfio | FPS " + oneDecimal(rollingFps) + " | " + oneDecimal(rollingFrameMs)
                 + " ms | CPU " + oneDecimal(rollingRenderCpuMs) + " ms | frame " + liveFrameCounter
-                + " | " + qualityProfile.label + " | " + lightingPreset.label);
+                + " | Quality " + qualityProfile.label + " | Lighting " + lightingPreset.label);
+        }
+        String activeModel = modelName == null || modelName.isEmpty() ? "none" : modelName;
+        if (assetsStatusView != null) {
+            assetsStatusView.setText("Active model: " + activeModel
+                + "\nLoad: " + loadStatus
+                + "\nImport/scan: planned for Asset Browser patch"
+                + "\nClose returns to Android/app stack, not legacy Vulkan.");
+        }
+        if (cameraStatusView != null) {
+            cameraStatusView.setText("Orbit/pinch: enabled"
+                + "\nStatus: " + cameraStatus
+                + "\nFuture camera controls: planned");
         }
         if (statusView != null) {
-            statusView.setText("Model: " + (modelName == null || modelName.isEmpty() ? "none" : modelName)
+            statusView.setText("Renderer path: Filament"
+                + "\nGLB loader: gltfio"
+                + "\nLegacy Vulkan: hidden/disabled fallback"
+                + "\nModel: " + activeModel
                 + "\nLoad: " + loadStatus
-                + "\nCamera: " + cameraStatus
-                + "\nLight preset: " + lightingPreset.label + " / " + lightingStatus
-                + "\nSun/Ambient/Fill/Exp/BG: " + oneDecimal(sunLightIntensity) + " / " + noDecimal(ambientFallbackIntensity) + " / " + oneDecimal(fillLightIntensity) + " / " + twoDecimal(exposure) + " / " + twoDecimal(backgroundBrightness)
-                + "\nambientFallback=" + noDecimal(ambientFallbackIntensity) + " iblStatus=" + iblStatus
-                + "\nenvironmentMode=" + environmentMode + " realIblReady=" + realIblReady + " futureIblAssetPath=" + futureIblAssetPath
+                + "\nLifecycle: " + lifecycleStatus
                 + "\nQuality: " + qualityFeatureStatus
                 + "\nactualAA=" + actualAA + " sampleCount=" + actualSampleCount + " dynamicResolution=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
                 + "\naoEnabled=" + aoEnabled + " bloomEnabled=" + bloomEnabled + " shadowsEnabled=" + shadowsEnabled + " refractionEnabled=" + refractionEnabled
                 + "\nrefractionToggleAffectsTransmission=" + refractionToggleAffectsTransmission
                 + "\nadvancedValues=" + advancedValuesEnabled + " lastInputError=" + lastInputError
-                + "\nLifecycle: " + lifecycleStatus
                 + "\nlegacyVulkanReturnStatus: " + legacyVulkanReturnStatus
                 + "\nlastLifecycleError: " + lastLifecycleError);
         }
@@ -828,8 +996,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         setSliderLabel(sunSliderLabel, "Sun", sunLightIntensity);
         setSliderLabel(ambientSliderLabel, "Ambient", ambientFallbackIntensity);
         setSliderLabel(fillSliderLabel, "Fill", fillLightIntensity);
-        setSliderLabel(exposureSliderLabel, "Exp", exposure);
-        setSliderLabel(backgroundSliderLabel, "BG", backgroundBrightness);
+        setSliderLabel(exposureSliderLabel, "Exposure", exposure);
+        setSliderLabel(backgroundSliderLabel, "Background", backgroundBrightness);
         setSliderProgress(sunSlider, sunLightIntensity, 0.0f, 20.0f, 0.5f);
         setSliderProgress(ambientSlider, ambientFallbackIntensity, 0.0f, 10_000.0f, 100.0f);
         setSliderProgress(fillSlider, fillLightIntensity, 0.0f, 20.0f, 0.5f);
@@ -850,7 +1018,7 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private void setSliderLabel(TextView label, String name, float value) {
         if (label == null) return;
-        if ("Exp".equals(name) || "BG".equals(name)) {
+        if ("Exp".equals(name) || "BG".equals(name) || "Exposure".equals(name) || "Background".equals(name)) {
             label.setText(name + " " + twoDecimal(value));
         } else if ("Sun".equals(name) || "Fill".equals(name)) {
             label.setText(name + " " + oneDecimal(value));

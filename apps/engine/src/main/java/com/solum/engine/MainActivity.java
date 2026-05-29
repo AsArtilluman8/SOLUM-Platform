@@ -512,9 +512,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         surfaceView.getHolder().addCallback(this);
         surfaceView.setOnTouchListener((view, event) -> handleCameraTouch(event));
         topHudView = panelText(11f, 2);
-        topHudView.setText("SOLUM Engine / SOLUM V2  |  Vulkan loading");
+        topHudView.setText("SOLUM Engine | Renderer: Filament default | Legacy Vulkan hidden");
         statusView = panelText(11f, 9);
-        statusView.setText("SOLUM Engine\nVulkan: loading\nStatus: starting");
+        statusView.setText("SOLUM Engine\nRenderer: Filament default\nLegacy Vulkan: hidden/debug fallback");
         diagnosticsStatusView = new TextView(this);
         diagnosticsStatusView.setTextColor(Color.rgb(222, 242, 250));
         diagnosticsStatusView.setTextSize(10f);
@@ -570,7 +570,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         assetsPanel.addView(assetsWorkflowHint);
         importGlbButton = compactButton("Import GLB/GLTF");
         importGlbButton.setOnClickListener(v -> chooseGlbForImport());
-        filamentPreviewButton = compactButton("Open in Filament Preview");
+        filamentPreviewButton = compactButton("Open Filament Workspace");
         filamentPreviewButton.setOnClickListener(v -> openFilamentPreview());
         scanModelsButton = compactButton("Scan Models");
         scanModelsButton.setOnClickListener(v -> scanModelsFromButton());
@@ -694,37 +694,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         materialPanel.addView(presetApplyButton);
         glassEnableButton = compactButton("Glass On/Off");
         glassEnableButton.setOnClickListener(v -> toggleGlassEnabled());
-        materialPanel.addView(glassEnableButton);
         glassRenderModeButton = compactButton("Glass Render: Auto");
         glassRenderModeButton.setOnClickListener(v -> cycleGlassRenderMode());
-        materialPanel.addView(glassRenderModeButton);
         glassTypeButton = compactButton("Glass Type: Thin");
         glassTypeButton.setOnClickListener(v -> cycleGlassType());
-        materialPanel.addView(glassTypeButton);
         selectGlassCandidateButton = compactButton("Select Glass Candidate");
         selectGlassCandidateButton.setOnClickListener(v -> selectBestGlassCandidate());
-        materialPanel.addView(selectGlassCandidateButton);
         assignSelectedAsGlassButton = compactButton("Assign Selected As Glass");
         assignSelectedAsGlassButton.setOnClickListener(v -> assignSelectedAsGlass());
-        materialPanel.addView(assignSelectedAsGlassButton);
         clearManualRoleButton = compactButton("Clear Manual Role");
         clearManualRoleButton.setOnClickListener(v -> clearManualRoleOverride());
         materialPanel.addView(clearManualRoleButton);
         glassTintPresetButton = compactButton("Glass Tint: Clear");
         glassTintPresetButton.setOnClickListener(v -> cycleGlassTintPreset());
-        materialPanel.addView(glassTintPresetButton);
-        materialPanel.addView(sliderControl("Glass Opacity", 0.0f, 1.0f, glassOpacity, v -> {
-            glassOpacity = clamp(v, 0.0f, 1.0f);
-            applyLightingControls();
-        }));
-        materialPanel.addView(sliderControl("Glass Edge", 0.0f, 2.0f, glassEdge, v -> {
-            glassEdge = clamp(v, 0.0f, 2.0f);
-            applyLightingControls();
-        }));
-        materialPanel.addView(sliderControl("Glass Rough", 0.0f, 1.0f, glassRoughness, v -> {
-            glassRoughness = clamp(v, 0.0f, 1.0f);
-            applyLightingControls();
-        }));
         materialPanel.addView(sliderControl("Emissive", 0.0f, 2.0f, emissiveIntensity, v -> {
             emissiveIntensity = clamp(v, 0.0f, 2.0f);
             applyLightingControls();
@@ -759,22 +741,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         materialPanel.addView(resetAlphaButton);
         glassDebugButton = compactButton("Glass Debug");
         glassDebugButton.setOnClickListener(v -> cycleGlassDebugView());
-        materialPanel.addView(glassDebugButton);
         showGlassGeometryButton = compactButton("Show Glass Geometry");
         showGlassGeometryButton.setOnClickListener(v -> toggleShowGlassGeometry());
-        materialPanel.addView(showGlassGeometryButton);
         glassRouteTestButton = compactButton("Glass Route Test");
         glassRouteTestButton.setOnClickListener(v -> exportGlassRouteTestFromButton());
-        materialPanel.addView(glassRouteTestButton);
         glassDetailTestButton = compactButton("Glass Detail Test");
         glassDetailTestButton.setOnClickListener(v -> showGlassDetailTestFromButton());
-        materialPanel.addView(glassDetailTestButton);
         materialLabTestButton = compactButton("Material Lab Test");
         materialLabTestButton.setOnClickListener(v -> showMaterialLabTestFromButton());
-        materialPanel.addView(materialLabTestButton);
         resetSelectedSlotButton = compactButton("Reset Selected Slot");
         resetSelectedSlotButton.setOnClickListener(v -> resetSelectedMaterialSlot());
-        materialPanel.addView(resetSelectedSlotButton);
         calibrationPresetButton = compactButton("Calib: Balanced");
         calibrationPresetButton.setOnClickListener(v -> cycleCalibrationPreset());
         materialPanel.addView(calibrationPresetButton);
@@ -815,9 +791,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         debugPanel.addView(chooseFolderButton);
         debugPanel.addView(exportButton);
         debugPanel.addView(debugZipButton);
-        debugPanel.addView(debugGlassRouteTestButton);
-        debugPanel.addView(debugGlassDetailTestButton);
-        debugPanel.addView(debugMaterialLabTestButton);
         debugPanel.addView(diagnosticsStatusView);
         inspectorPanel.addView(debugPanel);
         root.addView(dockScroll);
@@ -2898,8 +2871,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 }
                 scanModels("after_import");
                 importGlbButton.setText("ok".equals(modelState.importStatus) ? "Import OK" : "Import Failed");
-                attemptActiveModelGpuUpload("model_import");
                 persistActiveModelMetadata();
+                if ("ok".equals(modelState.importStatus)) openFilamentPreview();
             } catch (Throwable t) {
                 modelState.importStatus = "failed";
                 modelState.importRoute = "failed";

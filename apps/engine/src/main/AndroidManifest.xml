@@ -7,6 +7,10 @@
         android:allowBackup="false"
         android:supportsRtl="true">
         <activity
+            android:name=".FilamentGlbPreviewActivity"
+            android:screenOrientation="portrait"
+            android:exported="false" />
+        <activity
             android:name=".MainActivity"
             android:screenOrientation="portrait"
             android:exported="true">

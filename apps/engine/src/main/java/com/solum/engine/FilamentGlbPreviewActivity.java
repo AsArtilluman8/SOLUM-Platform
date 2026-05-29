@@ -4,16 +4,21 @@ import android.app.Activity;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.text.InputType;
 import android.view.Choreographer;
 import android.view.Gravity;
+import android.view.KeyEvent;
+import android.view.View;
 import android.view.SurfaceView;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.view.inputmethod.EditorInfo;
 
 import com.google.android.filament.ColorGrading;
 import com.google.android.filament.Engine;
@@ -58,17 +63,24 @@ public class FilamentGlbPreviewActivity extends Activity {
     private TextView statusView;
     private Button qualityButton;
     private Button lightingButton;
+    private Button advancedValuesButton;
     private Button aoButton;
     private Button bloomButton;
     private Button shadowsButton;
     private Button refractionButton;
+    private LinearLayout advancedValuesPanel;
     private TextView sunSliderLabel;
-    private TextView indirectSliderLabel;
+    private TextView ambientSliderLabel;
     private TextView fillSliderLabel;
     private TextView exposureSliderLabel;
     private TextView backgroundSliderLabel;
+    private EditText advancedSunField;
+    private EditText advancedAmbientField;
+    private EditText advancedFillField;
+    private EditText advancedExposureField;
+    private EditText advancedBackgroundField;
     private SeekBar sunSlider;
-    private SeekBar indirectSlider;
+    private SeekBar ambientSlider;
     private SeekBar fillSlider;
     private SeekBar exposureSlider;
     private SeekBar backgroundSlider;
@@ -98,6 +110,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String futureIblAssetPath = "none";
     private String cameraStatus = "orbit_drag_pinch_zoom_unit_cube";
     private String lightingStatus = "not_applied";
+    private String lastInputError = "none";
+    private String refractionToggleAffectsTransmission = "false_screen_space_only_alpha_transmission_left_to_gltfio";
     private String legacyVulkanReturnStatus = "not_requested";
     private String actualAA = "FXAA";
     private int actualSampleCount = 2;
@@ -106,12 +120,13 @@ public class FilamentGlbPreviewActivity extends Activity {
     private boolean aoEnabled = false;
     private boolean bloomEnabled = false;
     private boolean shadowsEnabled = false;
-    private boolean refractionEnabled = false;
-    private float sunLightIntensity = 8_000.0f;
-    private float indirectLightIntensity = 3_000.0f;
-    private float fillLightIntensity = 1_000.0f;
-    private float exposure = 0.65f;
-    private float backgroundBrightness = 0.18f;
+    private boolean refractionEnabled = true;
+    private boolean advancedValuesEnabled = false;
+    private float sunLightIntensity = 6.0f;
+    private float ambientFallbackIntensity = 3_000.0f;
+    private float fillLightIntensity = 0.0f;
+    private float exposure = 0.55f;
+    private float backgroundBrightness = 0.16f;
 
     private enum FilamentQualityProfile {
         LOW("Low"),
@@ -132,26 +147,26 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private enum LightingPreset {
-        SAFE_STUDIO("Safe Studio", new float[] {-0.35f, -0.75f, -0.55f}, 8_000.0f, 3_000.0f, 1_000.0f, 0.65f, 0.18f, new float[] {0.70f, -0.35f, -0.62f}),
-        BALANCED("Balanced", new float[] {-0.28f, -0.78f, -0.55f}, 11_000.0f, 4_500.0f, 1_500.0f, 0.70f, 0.22f, new float[] {0.66f, -0.38f, -0.65f}),
-        BRIGHT_INSPECT("Bright Inspect", new float[] {-0.20f, -0.82f, -0.48f}, 15_000.0f, 6_000.0f, 2_500.0f, 0.78f, 0.28f, new float[] {0.62f, -0.42f, -0.66f}),
-        CINEMATIC("Cinematic", new float[] {-0.62f, -0.62f, -0.48f}, 6_000.0f, 2_200.0f, 700.0f, 0.55f, 0.12f, new float[] {0.48f, -0.32f, -0.82f}),
-        NEUTRAL("Neutral", new float[] {-0.35f, -0.82f, -0.45f}, 7_000.0f, 2_500.0f, 800.0f, 0.62f, 0.16f, new float[] {0.65f, -0.30f, -0.70f});
+        SAFE_STUDIO("Safe Studio", new float[] {-0.35f, -0.75f, -0.55f}, 6.0f, 3_000.0f, 0.0f, 0.55f, 0.16f, new float[] {0.70f, -0.35f, -0.62f}),
+        BALANCED("Balanced", new float[] {-0.28f, -0.78f, -0.55f}, 9.0f, 4_500.0f, 0.0f, 0.62f, 0.18f, new float[] {0.66f, -0.38f, -0.65f}),
+        BRIGHT_INSPECT("Bright Inspect", new float[] {-0.20f, -0.82f, -0.48f}, 14.0f, 6_000.0f, 0.0f, 0.68f, 0.22f, new float[] {0.62f, -0.42f, -0.66f}),
+        CINEMATIC("Cinematic", new float[] {-0.62f, -0.62f, -0.48f}, 3.5f, 2_200.0f, 0.0f, 0.45f, 0.10f, new float[] {0.48f, -0.32f, -0.82f}),
+        NEUTRAL("Neutral", new float[] {-0.35f, -0.82f, -0.45f}, 5.0f, 2_500.0f, 0.0f, 0.50f, 0.14f, new float[] {0.65f, -0.30f, -0.70f});
 
         final String label;
         final float[] sunDirection;
         final float sunIntensity;
-        final float indirectIntensity;
+        final float ambientFallbackIntensity;
         final float fillIntensity;
         final float exposure;
         final float backgroundBrightness;
         final float[] fillDirection;
 
-        LightingPreset(String label, float[] sunDirection, float sunIntensity, float indirectIntensity, float fillIntensity, float exposure, float backgroundBrightness, float[] fillDirection) {
+        LightingPreset(String label, float[] sunDirection, float sunIntensity, float ambientFallbackIntensity, float fillIntensity, float exposure, float backgroundBrightness, float[] fillDirection) {
             this.label = label;
             this.sunDirection = sunDirection;
             this.sunIntensity = sunIntensity;
-            this.indirectIntensity = indirectIntensity;
+            this.ambientFallbackIntensity = ambientFallbackIntensity;
             this.fillIntensity = fillIntensity;
             this.exposure = exposure;
             this.backgroundBrightness = backgroundBrightness;
@@ -211,6 +226,12 @@ public class FilamentGlbPreviewActivity extends Activity {
         closeButton.setOnClickListener(v -> closePreview());
         Button resetButton = button("Reset Safe Lighting");
         resetButton.setOnClickListener(v -> resetSafeLighting());
+        advancedValuesButton = button("");
+        advancedValuesButton.setOnClickListener(v -> {
+            advancedValuesEnabled = !advancedValuesEnabled;
+            updateAdvancedValuesVisibility();
+            updateHud();
+        });
         aoButton = button("");
         aoButton.setOnClickListener(v -> {
             aoEnabled = !aoEnabled;
@@ -240,26 +261,37 @@ public class FilamentGlbPreviewActivity extends Activity {
         controls.addView(qualityButton);
         controls.addView(lightingButton);
         controls.addView(resetButton);
-        sunSlider = addLightingSlider(controls, "Sun", 0.0f, 30_000.0f, sunLightIntensity, v -> {
+        sunSlider = addLightingSlider(controls, "Sun", 0.0f, 20.0f, 0.5f, sunLightIntensity, v -> {
             sunLightIntensity = v;
             applyLightingValues();
         });
-        indirectSlider = addLightingSlider(controls, "IBL", 0.0f, 15_000.0f, indirectLightIntensity, v -> {
-            indirectLightIntensity = v;
+        ambientSlider = addLightingSlider(controls, "Ambient", 0.0f, 10_000.0f, 100.0f, ambientFallbackIntensity, v -> {
+            ambientFallbackIntensity = v;
             applyLightingValues();
         });
-        fillSlider = addLightingSlider(controls, "Fill", 0.0f, 8_000.0f, fillLightIntensity, v -> {
+        fillSlider = addLightingSlider(controls, "Fill", 0.0f, 20.0f, 0.5f, fillLightIntensity, v -> {
             fillLightIntensity = v;
             applyLightingValues();
         });
-        exposureSlider = addLightingSlider(controls, "Exp", 0.30f, 1.20f, exposure, v -> {
+        exposureSlider = addLightingSlider(controls, "Exp", 0.20f, 1.00f, 0.01f, exposure, v -> {
             exposure = v;
             applyLightingValues();
         });
-        backgroundSlider = addLightingSlider(controls, "BG", 0.05f, 0.70f, backgroundBrightness, v -> {
+        backgroundSlider = addLightingSlider(controls, "BG", 0.05f, 0.45f, 0.01f, backgroundBrightness, v -> {
             backgroundBrightness = v;
             applyLightingValues();
         });
+        controls.addView(advancedValuesButton);
+        advancedValuesPanel = new LinearLayout(this);
+        advancedValuesPanel.setOrientation(LinearLayout.VERTICAL);
+        advancedValuesPanel.setPadding(0, dp(4), 0, dp(4));
+        advancedValuesPanel.setVisibility(View.GONE);
+        advancedSunField = addAdvancedField(advancedValuesPanel, "Sun", 0.0f, 300.0f, v -> sunLightIntensity = v);
+        advancedAmbientField = addAdvancedField(advancedValuesPanel, "Ambient", 0.0f, 15_000.0f, v -> ambientFallbackIntensity = v);
+        advancedFillField = addAdvancedField(advancedValuesPanel, "Fill", 0.0f, 300.0f, v -> fillLightIntensity = v);
+        advancedExposureField = addAdvancedField(advancedValuesPanel, "Exposure", 0.10f, 1.50f, v -> exposure = v);
+        advancedBackgroundField = addAdvancedField(advancedValuesPanel, "Background", 0.02f, 0.80f, v -> backgroundBrightness = v);
+        controls.addView(advancedValuesPanel);
         controls.addView(aoButton);
         controls.addView(bloomButton);
         controls.addView(shadowsButton);
@@ -323,6 +355,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             createEnvironmentFallback();
             applyQualityProfile();
             applyLightingValues();
+            updateAdvancedValuesVisibility();
             lifecycleStatus = "viewer_created";
         } catch (Throwable t) {
             lastLifecycleError = shortMessage(t);
@@ -461,7 +494,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (modelViewer == null) return;
         Engine engine = modelViewer.getEngine();
         indirectLight = new IndirectLight.Builder()
-            .intensity(indirectLightIntensity)
+            .intensity(ambientFallbackIntensity)
             .build(engine);
         skybox = new Skybox.Builder()
             .color(backgroundColor())
@@ -473,7 +506,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             .castShadows(false)
             .direction(lightingPreset.fillDirection[0], lightingPreset.fillDirection[1], lightingPreset.fillDirection[2])
             .color(0.86f, 0.92f, 1.0f)
-            .intensity(lightingPreset.fillIntensity)
+            .intensity(fillLightIntensity)
             .build(engine, fillLightEntity);
         modelViewer.getScene().addEntity(fillLightEntity);
     }
@@ -481,7 +514,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void applyLightingPreset() {
         if (modelViewer == null) return;
         try {
-            indirectLightIntensity = lightingPreset.indirectIntensity;
+            ambientFallbackIntensity = lightingPreset.ambientFallbackIntensity;
             sunLightIntensity = lightingPreset.sunIntensity;
             fillLightIntensity = lightingPreset.fillIntensity;
             exposure = lightingPreset.exposure;
@@ -499,7 +532,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         aoEnabled = false;
         bloomEnabled = false;
         shadowsEnabled = false;
-        refractionEnabled = false;
+        refractionEnabled = true;
+        lastInputError = "none";
         applyLightingPreset();
         applyQualityProfile();
         updateHud();
@@ -508,12 +542,12 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void applyLightingValues() {
         if (modelViewer == null) return;
         try {
-            sunLightIntensity = clamp(sunLightIntensity, 0.0f, 30_000.0f);
-            indirectLightIntensity = clamp(indirectLightIntensity, 0.0f, 15_000.0f);
-            fillLightIntensity = clamp(fillLightIntensity, 0.0f, 8_000.0f);
-            exposure = clamp(exposure, 0.30f, 1.20f);
-            backgroundBrightness = clamp(backgroundBrightness, 0.05f, 0.70f);
-            if (indirectLight != null) indirectLight.setIntensity(indirectLightIntensity);
+            sunLightIntensity = clamp(sunLightIntensity, 0.0f, 300.0f);
+            ambientFallbackIntensity = clamp(ambientFallbackIntensity, 0.0f, 15_000.0f);
+            fillLightIntensity = clamp(fillLightIntensity, 0.0f, 300.0f);
+            exposure = clamp(exposure, 0.10f, 1.50f);
+            backgroundBrightness = clamp(backgroundBrightness, 0.02f, 0.80f);
+            if (indirectLight != null) indirectLight.setIntensity(ambientFallbackIntensity);
             if (skybox != null) skybox.setColor(backgroundColor());
 
             Engine engine = modelViewer.getEngine();
@@ -540,7 +574,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             clear.discard = true;
             clear.clearColor = backgroundColor();
             modelViewer.getRenderer().setClearOptions(clear);
-            lightingStatus = "live_values_applied_safe_ranges";
+            lightingStatus = advancedValuesEnabled ? "live_values_applied_advanced_ranges" : "live_values_applied_safe_slider_ranges";
         } catch (Throwable t) {
             lastLifecycleError = shortMessage(t);
             lightingStatus = "apply_failed";
@@ -734,11 +768,14 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nLoad: " + loadStatus
                 + "\nCamera: " + cameraStatus
                 + "\nLight preset: " + lightingPreset.label + " / " + lightingStatus
-                + "\nSun/IBL/Fill/Exp/BG: " + noDecimal(sunLightIntensity) + " / " + noDecimal(indirectLightIntensity) + " / " + noDecimal(fillLightIntensity) + " / " + twoDecimal(exposure) + " / " + twoDecimal(backgroundBrightness)
-                + "\nIBL: " + iblStatus + " / " + environmentMode + " / realIblReady=" + realIblReady + " / future=" + futureIblAssetPath
+                + "\nSun/Ambient/Fill/Exp/BG: " + oneDecimal(sunLightIntensity) + " / " + noDecimal(ambientFallbackIntensity) + " / " + oneDecimal(fillLightIntensity) + " / " + twoDecimal(exposure) + " / " + twoDecimal(backgroundBrightness)
+                + "\nambientFallback=" + noDecimal(ambientFallbackIntensity) + " iblStatus=" + iblStatus
+                + "\nenvironmentMode=" + environmentMode + " realIblReady=" + realIblReady + " futureIblAssetPath=" + futureIblAssetPath
                 + "\nQuality: " + qualityFeatureStatus
                 + "\nactualAA=" + actualAA + " sampleCount=" + actualSampleCount + " dynamicResolution=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
                 + "\naoEnabled=" + aoEnabled + " bloomEnabled=" + bloomEnabled + " shadowsEnabled=" + shadowsEnabled + " refractionEnabled=" + refractionEnabled
+                + "\nrefractionToggleAffectsTransmission=" + refractionToggleAffectsTransmission
+                + "\nadvancedValues=" + advancedValuesEnabled + " lastInputError=" + lastInputError
                 + "\nLifecycle: " + lifecycleStatus
                 + "\nlegacyVulkanReturnStatus: " + legacyVulkanReturnStatus
                 + "\nlastLifecycleError: " + lastLifecycleError);
@@ -755,17 +792,17 @@ public class FilamentGlbPreviewActivity extends Activity {
         return view;
     }
 
-    private SeekBar addLightingSlider(LinearLayout parent, String label, float min, float max, float value, SliderCallback callback) {
+    private SeekBar addLightingSlider(LinearLayout parent, String label, float min, float max, float step, float value, SliderCallback callback) {
         TextView text = overlayText(10.0f, 1);
         text.setBackgroundColor(Color.TRANSPARENT);
         SeekBar slider = new SeekBar(this);
-        slider.setMax(1000);
-        slider.setProgress(valueToProgress(value, min, max));
+        slider.setMax(Math.max(1, Math.round((max - min) / step)));
+        slider.setProgress(valueToProgress(value, min, max, step));
         slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (!fromUser) return;
-                callback.onValue(progressToValue(progress, min, max));
+                callback.onValue(progressToValue(progress, min, max, step));
             }
 
             @Override
@@ -777,7 +814,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             }
         });
         if ("Sun".equals(label)) sunSliderLabel = text;
-        else if ("IBL".equals(label)) indirectSliderLabel = text;
+        else if ("Ambient".equals(label)) ambientSliderLabel = text;
         else if ("Fill".equals(label)) fillSliderLabel = text;
         else if ("Exp".equals(label)) exposureSliderLabel = text;
         else if ("BG".equals(label)) backgroundSliderLabel = text;
@@ -789,17 +826,19 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private void updateLightingControlLabels() {
         setSliderLabel(sunSliderLabel, "Sun", sunLightIntensity);
-        setSliderLabel(indirectSliderLabel, "IBL", indirectLightIntensity);
+        setSliderLabel(ambientSliderLabel, "Ambient", ambientFallbackIntensity);
         setSliderLabel(fillSliderLabel, "Fill", fillLightIntensity);
         setSliderLabel(exposureSliderLabel, "Exp", exposure);
         setSliderLabel(backgroundSliderLabel, "BG", backgroundBrightness);
-        setSliderProgress(sunSlider, sunLightIntensity, 0.0f, 30_000.0f);
-        setSliderProgress(indirectSlider, indirectLightIntensity, 0.0f, 15_000.0f);
-        setSliderProgress(fillSlider, fillLightIntensity, 0.0f, 8_000.0f);
-        setSliderProgress(exposureSlider, exposure, 0.30f, 1.20f);
-        setSliderProgress(backgroundSlider, backgroundBrightness, 0.05f, 0.70f);
+        setSliderProgress(sunSlider, sunLightIntensity, 0.0f, 20.0f, 0.5f);
+        setSliderProgress(ambientSlider, ambientFallbackIntensity, 0.0f, 10_000.0f, 100.0f);
+        setSliderProgress(fillSlider, fillLightIntensity, 0.0f, 20.0f, 0.5f);
+        setSliderProgress(exposureSlider, exposure, 0.20f, 1.00f, 0.01f);
+        setSliderProgress(backgroundSlider, backgroundBrightness, 0.05f, 0.45f, 0.01f);
+        updateAdvancedFieldValues();
         updateToggleLabels();
         if (lightingButton != null) lightingButton.setText("Lighting: " + lightingPreset.label);
+        if (advancedValuesButton != null) advancedValuesButton.setText("Advanced Values: " + (advancedValuesEnabled ? "On" : "Off"));
     }
 
     private void updateToggleLabels() {
@@ -813,15 +852,97 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (label == null) return;
         if ("Exp".equals(name) || "BG".equals(name)) {
             label.setText(name + " " + twoDecimal(value));
+        } else if ("Sun".equals(name) || "Fill".equals(name)) {
+            label.setText(name + " " + oneDecimal(value));
         } else {
             label.setText(name + " " + noDecimal(value));
         }
     }
 
-    private void setSliderProgress(SeekBar slider, float value, float min, float max) {
+    private void setSliderProgress(SeekBar slider, float value, float min, float max, float step) {
         if (slider == null) return;
-        int progress = valueToProgress(value, min, max);
+        int progress = valueToProgress(value, min, max, step);
         if (slider.getProgress() != progress) slider.setProgress(progress);
+    }
+
+    private EditText addAdvancedField(LinearLayout parent, String label, float min, float max, SliderCallback callback) {
+        TextView fieldLabel = overlayText(10.0f, 1);
+        fieldLabel.setBackgroundColor(Color.TRANSPARENT);
+        fieldLabel.setText(label + " advanced " + oneDecimal(min) + "-" + oneDecimal(max));
+        EditText field = new EditText(this);
+        field.setSingleLine(true);
+        field.setHint(label);
+        field.setTextColor(Color.rgb(218, 248, 255));
+        field.setHintTextColor(Color.rgb(130, 170, 178));
+        field.setTextSize(12.0f);
+        field.setSelectAllOnFocus(true);
+        field.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        field.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        field.setBackgroundColor(Color.argb(220, 4, 24, 30));
+        field.setPadding(dp(10), dp(4), dp(10), dp(4));
+        field.setOnEditorActionListener((view, actionId, event) -> {
+            boolean enterPressed = event != null && event.getAction() == KeyEvent.ACTION_UP && event.getKeyCode() == KeyEvent.KEYCODE_ENTER;
+            if (actionId == EditorInfo.IME_ACTION_DONE || enterPressed) {
+                applyAdvancedField(field, label, min, max, callback);
+                field.clearFocus();
+                return true;
+            }
+            return false;
+        });
+        field.setOnFocusChangeListener((view, hasFocus) -> {
+            if (!hasFocus) applyAdvancedField(field, label, min, max, callback);
+        });
+        parent.addView(fieldLabel);
+        parent.addView(field);
+        return field;
+    }
+
+    private void applyAdvancedField(EditText field, String label, float min, float max, SliderCallback callback) {
+        if (field == null) return;
+        String raw = field.getText() == null ? "" : field.getText().toString().trim();
+        if (raw.isEmpty()) {
+            lastInputError = label + "_empty_kept_previous";
+            updateAdvancedFieldValues();
+            updateHud();
+            return;
+        }
+        try {
+            float parsed = Float.parseFloat(raw);
+            if (Float.isNaN(parsed) || Float.isInfinite(parsed)) throw new NumberFormatException("not_finite");
+            float clamped = clamp(parsed, min, max);
+            callback.onValue(clamped);
+            lastInputError = parsed == clamped ? "none" : label + "_clamped_to_" + compactValue(clamped);
+            applyLightingValues();
+        } catch (Throwable ignored) {
+            lastInputError = label + "_invalid_kept_previous";
+            updateAdvancedFieldValues();
+            updateHud();
+        }
+    }
+
+    private void updateAdvancedValuesVisibility() {
+        if (advancedValuesPanel != null) {
+            advancedValuesPanel.setVisibility(advancedValuesEnabled ? View.VISIBLE : View.GONE);
+        }
+        if (advancedValuesButton != null) {
+            advancedValuesButton.setText("Advanced Values: " + (advancedValuesEnabled ? "On" : "Off"));
+        }
+        updateAdvancedFieldValues();
+    }
+
+    private void updateAdvancedFieldValues() {
+        setAdvancedFieldText(advancedSunField, oneDecimal(sunLightIntensity));
+        setAdvancedFieldText(advancedAmbientField, noDecimal(ambientFallbackIntensity));
+        setAdvancedFieldText(advancedFillField, oneDecimal(fillLightIntensity));
+        setAdvancedFieldText(advancedExposureField, twoDecimal(exposure));
+        setAdvancedFieldText(advancedBackgroundField, twoDecimal(backgroundBrightness));
+    }
+
+    private void setAdvancedFieldText(EditText field, String value) {
+        if (field == null || field.hasFocus()) return;
+        if (!value.equals(field.getText() == null ? "" : field.getText().toString())) {
+            field.setText(value);
+        }
     }
 
     private Button button(String label) {
@@ -840,18 +961,16 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private float[] backgroundColor() {
-        float bg = clamp(backgroundBrightness, 0.05f, 0.70f);
+        float bg = clamp(backgroundBrightness, 0.02f, 0.80f);
         return new float[] {bg * 0.80f, bg * 0.90f, bg, 1.0f};
     }
 
-    private static int valueToProgress(float value, float min, float max) {
-        float normalized = (clamp(value, min, max) - min) / Math.max(0.0001f, max - min);
-        return Math.round(normalized * 1000.0f);
+    private static int valueToProgress(float value, float min, float max, float step) {
+        return Math.round((clamp(value, min, max) - min) / Math.max(0.0001f, step));
     }
 
-    private static float progressToValue(int progress, float min, float max) {
-        float normalized = clamp(progress / 1000.0f, 0.0f, 1.0f);
-        return min + (max - min) * normalized;
+    private static float progressToValue(int progress, float min, float max, float step) {
+        return clamp(min + progress * step, min, max);
     }
 
     private static float clamp(float value, float min, float max) {
@@ -872,6 +991,10 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private static String twoDecimal(float value) {
         return String.format(Locale.US, "%.2f", value);
+    }
+
+    private static String compactValue(float value) {
+        return Math.abs(value - Math.round(value)) < 0.0001f ? noDecimal(value) : twoDecimal(value);
     }
 
     private static String shorten(String value, int max) {

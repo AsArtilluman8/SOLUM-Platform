@@ -13,6 +13,7 @@ import android.text.InputType;
 import android.view.Choreographer;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.SurfaceView;
 import android.view.WindowManager;
@@ -40,6 +41,7 @@ import com.google.android.filament.Texture;
 import com.google.android.filament.TransformManager;
 import com.google.android.filament.View.AmbientOcclusion;
 import com.google.android.filament.View.AntiAliasing;
+import com.google.android.filament.View.Dithering;
 import com.google.android.filament.View.QualityLevel;
 import com.google.android.filament.View.ShadowType;
 import com.google.android.filament.android.UiHelper;
@@ -91,10 +93,19 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String PREF_FILAMENT_BLOOM_MODE = "filament_bloom_mode";
     private static final String PREF_FILAMENT_SHADOW_MODE = "filament_shadow_mode";
     private static final String PREF_FILAMENT_REFRACTION_MODE = "filament_refraction_mode";
+    private static final String PREF_FILAMENT_COLOR_MODE = "filament_color_mode";
+    private static final String PREF_FILAMENT_FOG_MODE = "filament_fog_mode";
+    private static final String PREF_FILAMENT_LIGHT_RIG = "filament_light_rig";
     private static final String PREF_FILAMENT_RENDER_SCALE = "filament_render_scale";
     private static final String PREF_FILAMENT_DYNAMIC_RESOLUTION = "filament_dynamic_resolution";
     private static final String PREF_FILAMENT_MSAA_SAMPLES = "filament_msaa_samples";
     private static final String PREF_FILAMENT_FXAA_ENABLED = "filament_fxaa_enabled";
+    private static final String PREF_FILAMENT_TAA_ENABLED = "filament_taa_enabled";
+    private static final String PREF_FILAMENT_SSR_ENABLED = "filament_ssr_enabled";
+    private static final String PREF_FILAMENT_DITHERING_ENABLED = "filament_dithering_enabled";
+    private static final String PREF_FILAMENT_FOG_DENSITY = "filament_fog_density";
+    private static final String PREF_FILAMENT_FOG_DISTANCE = "filament_fog_distance";
+    private static final String PREF_FILAMENT_FOG_HEIGHT = "filament_fog_height";
     private static final String PREF_FILAMENT_SKYBOX_VISIBLE = "filament_skybox_visible";
     private static final String PREF_FILAMENT_IBL_ROTATION = "filament_ibl_rotation";
     private static final String PREF_FILAMENT_SUN_AZIMUTH = "filament_sun_azimuth";
@@ -114,7 +125,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String PREF_FILAMENT_CONFIG_JSON = "filament_config_json";
     private static final String PREF_FILAMENT_DEFAULT_CONFIG_JSON = "filament_default_config_json";
     private static final String CONFIG_FILE_NAME = "filament_render_config.json";
-    private static final int CONFIG_SCHEMA_VERSION = 2;
+    private static final int CONFIG_SCHEMA_VERSION = 3;
     private static final int REQUEST_IMPORT_MODEL = 4101;
     private static final int REQUEST_IMPORT_IBL = 4102;
     private static final long HUD_UPDATE_NS = 250_000_000L;
@@ -126,6 +137,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     private ColorGrading colorGrading;
     private final List<Texture> iblOwnedTextures = new ArrayList<>();
     private int fillLightEntity = 0;
+    private int pointLightEntity = 0;
+    private int spotLightEntity = 0;
     private TextView hudView;
     private TextView statusView;
     private Button qualityButton;
@@ -139,8 +152,13 @@ public class FilamentGlbPreviewActivity extends Activity {
     private Button dynamicResolutionButton;
     private Button msaaButton;
     private Button fxaaButton;
+    private Button ditheringButton;
+    private Button taaButton;
+    private Button ssrButton;
+    private Button colorModeButton;
+    private Button fogButton;
+    private Button lightRigButton;
     private Button skyboxButton;
-    private Button glassRefractionButton;
     private Button collapseButton;
     private Button assetsTabButton;
     private Button lightingTabButton;
@@ -149,7 +167,9 @@ public class FilamentGlbPreviewActivity extends Activity {
     private Button shadowsTabButton;
     private Button cameraTabButton;
     private Button modelTabButton;
-    private Button glassTabButton;
+    private Button colorTabButton;
+    private Button fogTabButton;
+    private Button lightsTabButton;
     private Button configTabButton;
     private Button qualityTabButton;
     private Button materialTabButton;
@@ -163,7 +183,9 @@ public class FilamentGlbPreviewActivity extends Activity {
     private LinearLayout shadowsPanel;
     private LinearLayout cameraPanel;
     private LinearLayout modelPanel;
-    private LinearLayout glassPanel;
+    private LinearLayout colorPanel;
+    private LinearLayout fogPanel;
+    private LinearLayout lightsPanel;
     private LinearLayout configPanel;
     private LinearLayout qualityPanel;
     private LinearLayout materialPanel;
@@ -177,7 +199,9 @@ public class FilamentGlbPreviewActivity extends Activity {
     private TextView shadowSummaryView;
     private TextView cameraSummaryView;
     private TextView modelSummaryView;
-    private TextView glassSummaryView;
+    private TextView colorSummaryView;
+    private TextView fogSummaryView;
+    private TextView lightsSummaryView;
     private TextView configSummaryView;
     private TextView debugSummaryView;
     private TextView lastActionStatusView;
@@ -201,6 +225,9 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private FilamentQualityProfile qualityProfile = FilamentQualityProfile.MEDIUM;
     private LightingPreset lightingPreset = LightingPreset.SAFE_STUDIO;
+    private ColorMode colorMode = ColorMode.NEUTRAL;
+    private FogMode fogMode = FogMode.OFF;
+    private LightRig lightRig = LightRig.OFF;
     private AoMode aoMode = AoMode.OFF;
     private BloomMode bloomMode = BloomMode.OFF;
     private ShadowMode shadowMode = ShadowMode.OFF;
@@ -210,7 +237,6 @@ public class FilamentGlbPreviewActivity extends Activity {
     private boolean frameCallbackActive = false;
     private boolean destroying = false;
     private boolean destroyed = false;
-    private boolean returningToVulkan = false;
     private long lastFrameNs = 0L;
     private long lastHudUpdateNs = 0L;
     private float rollingFrameMs = 0.0f;
@@ -271,6 +297,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     private boolean advancedValuesEnabled = false;
     private boolean dynamicResolutionEnabled = true;
     private boolean fxaaEnabled = true;
+    private boolean taaEnabled = false;
+    private boolean ssrEnabled = false;
     private boolean ditheringEnabled = true;
     private boolean skyboxVisible = true;
     private float sunLightIntensity = 2.5f;
@@ -295,6 +323,12 @@ public class FilamentGlbPreviewActivity extends Activity {
     private float cameraTargetY = 0.0f;
     private float cameraTargetZ = 0.0f;
     private float cameraFov = 45.0f;
+    private float colorContrast = 1.0f;
+    private float colorSaturation = 1.0f;
+    private float colorTemperature = 0.0f;
+    private float fogDensity = 0.0f;
+    private float fogDistance = 80.0f;
+    private float fogHeight = 0.0f;
     private String configStatus = "not_loaded";
     private String lastActionStatus = "created";
     private String configPrivateSaved = "false";
@@ -306,6 +340,18 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String modelTransformStatus = "not_applied";
     private String transformTargetStatus = "none";
     private String cameraApplyStatus = "not_applied";
+    private String colorGradingStatus = "not_applied";
+    private String toneMapperStatus = "not_applied";
+    private String fogStatus = "not_applied";
+    private String taaStatus = "off_default";
+    private String ssrStatus = "off_default";
+    private String guardBandStatus = "not_applied";
+    private String ditheringStatus = "on_default";
+    private String pickingStatus = "deferred_no_pick_yet";
+    private String selectedRenderable = "none";
+    private String selectedMaterialIndexStatus = "none";
+    private float pickDepth = -1.0f;
+    private String lightRigStatus = "off";
 
     private enum FilamentQualityProfile {
         LOW("Low"),
@@ -330,13 +376,15 @@ public class FilamentGlbPreviewActivity extends Activity {
     private enum WorkspaceTab {
         ASSETS("Assets"),
         RENDER("Render"),
+        COLOR("Color"),
+        FOG("Fog"),
         LIGHTING("Lighting"),
+        LIGHTS("Lights"),
         IBL("IBL"),
         SHADOWS("Shadows"),
         CAMERA("Camera"),
         MODEL("Model"),
         MATERIAL("Material"),
-        GLASS("Glass"),
         CONFIG("Config"),
         DEBUG("Debug");
 
@@ -344,6 +392,77 @@ public class FilamentGlbPreviewActivity extends Activity {
 
         WorkspaceTab(String label) {
             this.label = label;
+        }
+    }
+
+    private enum ColorMode {
+        NEUTRAL("Neutral", com.google.android.filament.ColorGrading.ToneMapping.ACES, 1.00f, 1.00f, 0.0f),
+        PBR_NEUTRAL("PBR Neutral", com.google.android.filament.ColorGrading.ToneMapping.ACES_LEGACY, 1.00f, 1.00f, 0.0f),
+        FILMIC("Filmic", com.google.android.filament.ColorGrading.ToneMapping.FILMIC, 1.03f, 1.02f, 0.0f),
+        CINEMATIC("Cinematic", com.google.android.filament.ColorGrading.ToneMapping.FILMIC, 1.06f, 1.04f, 0.03f),
+        PRODUCT("Product", com.google.android.filament.ColorGrading.ToneMapping.ACES, 1.04f, 1.03f, 0.0f),
+        CHARACTER("Character", com.google.android.filament.ColorGrading.ToneMapping.ACES, 1.02f, 1.02f, 0.02f),
+        NIGHT("Night", com.google.android.filament.ColorGrading.ToneMapping.ACES, 0.96f, 0.90f, -0.05f);
+
+        final String label;
+        final com.google.android.filament.ColorGrading.ToneMapping toneMapping;
+        final float contrast;
+        final float saturation;
+        final float temperature;
+
+        ColorMode(String label, com.google.android.filament.ColorGrading.ToneMapping toneMapping, float contrast, float saturation, float temperature) {
+            this.label = label;
+            this.toneMapping = toneMapping;
+            this.contrast = contrast;
+            this.saturation = saturation;
+            this.temperature = temperature;
+        }
+
+        ColorMode next() {
+            return values()[(ordinal() + 1) % values().length];
+        }
+    }
+
+    private enum FogMode {
+        OFF("Fog Off", 0.0f, 100.0f, 0.0f),
+        SOFT_DEPTH("Soft Depth", 0.018f, 75.0f, 0.0f),
+        FOREST_HAZE("Forest Haze", 0.030f, 55.0f, -0.2f),
+        NIGHT_MIST("Night Mist", 0.038f, 42.0f, -0.4f),
+        CINEMATIC_LOW("Cinematic Low", 0.020f, 65.0f, -0.8f);
+
+        final String label;
+        final float density;
+        final float distance;
+        final float height;
+
+        FogMode(String label, float density, float distance, float height) {
+            this.label = label;
+            this.density = density;
+            this.distance = distance;
+            this.height = height;
+        }
+
+        FogMode next() {
+            return values()[(ordinal() + 1) % values().length];
+        }
+    }
+
+    private enum LightRig {
+        OFF("Rig Off"),
+        STUDIO_KEY("Studio Key"),
+        RIM_LIGHT("Rim Light"),
+        PRODUCT_LIGHT("Product Light"),
+        NIGHT_LAMP("Night Lamp"),
+        MAGIC_PREVIEW("Magic Preview Light");
+
+        final String label;
+
+        LightRig(String label) {
+            this.label = label;
+        }
+
+        LightRig next() {
+            return values()[(ordinal() + 1) % values().length];
         }
     }
 
@@ -424,7 +543,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         DARK_INSPECT("Dark Inspect", -155.0f, 38.0f, 1.2f, 0.7f, 0.0f, 0.8f, 0.08f, new float[] {0.50f, -0.30f, -0.80f}, RefractionMode.ON),
         CHARACTER_PREVIEW("Character Preview", -135.0f, 48.0f, 2.8f, 1.0f, 0.35f, 1.0f, 0.16f, new float[] {0.68f, -0.35f, -0.64f}, RefractionMode.ON),
         PRODUCT_PREVIEW("Product Preview", -120.0f, 55.0f, 3.5f, 1.2f, 0.25f, 1.05f, 0.18f, new float[] {0.62f, -0.42f, -0.66f}, RefractionMode.ON),
-        GLASS_PREVIEW("Glass Preview", -145.0f, 50.0f, 2.0f, 1.3f, 0.15f, 1.0f, 0.12f, new float[] {0.65f, -0.30f, -0.70f}, RefractionMode.ON),
+        REFRACTION_PREVIEW("Refraction Preview", -145.0f, 50.0f, 2.0f, 1.3f, 0.15f, 1.0f, 0.12f, new float[] {0.65f, -0.30f, -0.70f}, RefractionMode.ON),
         CINEMATIC_FOREST("Cinematic Forest", -220.0f, 35.0f, 2.0f, 1.0f, 0.0f, 0.95f, 0.12f, new float[] {0.48f, -0.32f, -0.82f}, RefractionMode.ON),
         OUTDOOR_SOFT("Outdoor Soft", -105.0f, 55.0f, 4.0f, 1.2f, 0.15f, 1.05f, 0.20f, new float[] {0.62f, -0.42f, -0.66f}, RefractionMode.ON),
         NIGHT_INSPECT("Night Inspect", -175.0f, 24.0f, 0.8f, 0.45f, 0.2f, 0.75f, 0.04f, new float[] {0.50f, -0.30f, -0.80f}, RefractionMode.ON);
@@ -498,25 +617,29 @@ public class FilamentGlbPreviewActivity extends Activity {
         tabRow.setOrientation(LinearLayout.HORIZONTAL);
         assetsTabButton = tabButton("Assets", WorkspaceTab.ASSETS);
         renderTabButton = tabButton("Render", WorkspaceTab.RENDER);
+        colorTabButton = tabButton("Color", WorkspaceTab.COLOR);
+        fogTabButton = tabButton("Fog", WorkspaceTab.FOG);
         lightingTabButton = tabButton("Lighting", WorkspaceTab.LIGHTING);
+        lightsTabButton = tabButton("Lights", WorkspaceTab.LIGHTS);
         iblTabButton = tabButton("IBL", WorkspaceTab.IBL);
         shadowsTabButton = tabButton("Shadows", WorkspaceTab.SHADOWS);
         cameraTabButton = tabButton("Camera", WorkspaceTab.CAMERA);
         modelTabButton = tabButton("Model", WorkspaceTab.MODEL);
         materialTabButton = tabButton("Material", WorkspaceTab.MATERIAL);
-        glassTabButton = tabButton("Glass", WorkspaceTab.GLASS);
         configTabButton = tabButton("Config", WorkspaceTab.CONFIG);
         debugTabButton = tabButton("Debug", WorkspaceTab.DEBUG);
         LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT);
         tabRow.addView(assetsTabButton, tabParams);
         tabRow.addView(renderTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
+        tabRow.addView(colorTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
+        tabRow.addView(fogTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(lightingTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
+        tabRow.addView(lightsTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(iblTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(shadowsTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(cameraTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(modelTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(materialTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
-        tabRow.addView(glassTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(configTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(debugTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
         HorizontalScrollView tabScroll = new HorizontalScrollView(this);
@@ -533,8 +656,14 @@ public class FilamentGlbPreviewActivity extends Activity {
         assetsPanel.setOrientation(LinearLayout.VERTICAL);
         renderPanel = new LinearLayout(this);
         renderPanel.setOrientation(LinearLayout.VERTICAL);
+        colorPanel = new LinearLayout(this);
+        colorPanel.setOrientation(LinearLayout.VERTICAL);
+        fogPanel = new LinearLayout(this);
+        fogPanel.setOrientation(LinearLayout.VERTICAL);
         lightingPanel = new LinearLayout(this);
         lightingPanel.setOrientation(LinearLayout.VERTICAL);
+        lightsPanel = new LinearLayout(this);
+        lightsPanel.setOrientation(LinearLayout.VERTICAL);
         iblPanel = new LinearLayout(this);
         iblPanel.setOrientation(LinearLayout.VERTICAL);
         shadowsPanel = new LinearLayout(this);
@@ -547,8 +676,6 @@ public class FilamentGlbPreviewActivity extends Activity {
         qualityPanel.setOrientation(LinearLayout.VERTICAL);
         materialPanel = new LinearLayout(this);
         materialPanel.setOrientation(LinearLayout.VERTICAL);
-        glassPanel = new LinearLayout(this);
-        glassPanel.setOrientation(LinearLayout.VERTICAL);
         configPanel = new LinearLayout(this);
         configPanel.setOrientation(LinearLayout.VERTICAL);
         debugPanel = new LinearLayout(this);
@@ -706,7 +833,27 @@ public class FilamentGlbPreviewActivity extends Activity {
             updateHud();
         });
         renderPanel.addView(fxaaButton);
-        renderPanel.addView(button("TAA: not_exposed"));
+        ditheringButton = button("", v -> {
+            ditheringEnabled = !ditheringEnabled;
+            applyQualityProfile();
+            setLastAction("dithering_" + (ditheringEnabled ? "on" : "off"));
+            updateHud();
+        });
+        renderPanel.addView(ditheringButton);
+        taaButton = button("", v -> {
+            taaEnabled = !taaEnabled;
+            applyQualityProfile();
+            setLastAction("taa_" + (taaEnabled ? "on" : "off"));
+            updateHud();
+        });
+        renderPanel.addView(taaButton);
+        ssrButton = button("", v -> {
+            ssrEnabled = !ssrEnabled;
+            applyQualityProfile();
+            setLastAction("ssr_" + (ssrEnabled ? "on" : "off"));
+            updateHud();
+        });
+        renderPanel.addView(ssrButton);
         addLightingSlider(renderPanel, "Render Scale", 0.50f, 1.00f, 0.01f, renderScale, v -> {
             renderScale = v;
             applyQualityProfile();
@@ -715,6 +862,52 @@ public class FilamentGlbPreviewActivity extends Activity {
         renderPanel.addView(bloomButton);
         renderPanel.addView(refractionButton);
         renderPanel.addView(qualitySummaryView);
+
+        colorSummaryView = overlayText(10.0f, 12);
+        colorSummaryView.setBackgroundColor(Color.TRANSPARENT);
+        colorModeButton = button("", v -> {
+            colorMode = colorMode.next();
+            applyColorGrading();
+            persistWorkspaceSettings();
+            setLastAction("color_" + colorMode.name().toLowerCase(Locale.US));
+            updateHud();
+        });
+        colorPanel.addView(colorModeButton);
+        colorPanel.addView(button("Reset Color Grading", v -> {
+            colorMode = ColorMode.NEUTRAL;
+            applyColorGrading();
+            persistWorkspaceSettings();
+            setLastAction("color_reset_neutral");
+            updateHud();
+        }));
+        colorPanel.addView(colorSummaryView);
+
+        fogSummaryView = overlayText(10.0f, 12);
+        fogSummaryView.setBackgroundColor(Color.TRANSPARENT);
+        fogButton = button("", v -> {
+            fogMode = fogMode.next();
+            fogDensity = fogMode.density;
+            fogDistance = fogMode.distance;
+            fogHeight = fogMode.height;
+            applyFogOptions();
+            persistWorkspaceSettings();
+            setLastAction("fog_" + fogMode.name().toLowerCase(Locale.US));
+            updateHud();
+        });
+        fogPanel.addView(fogButton);
+        addLightingSlider(fogPanel, "Fog Density", 0.0f, 0.08f, 0.001f, fogDensity, v -> {
+            fogDensity = v;
+            applyFogOptions();
+        });
+        addLightingSlider(fogPanel, "Fog Distance", 10.0f, 160.0f, 1.0f, fogDistance, v -> {
+            fogDistance = v;
+            applyFogOptions();
+        });
+        addLightingSlider(fogPanel, "Fog Height", -5.0f, 5.0f, 0.1f, fogHeight, v -> {
+            fogHeight = v;
+            applyFogOptions();
+        });
+        fogPanel.addView(fogSummaryView);
 
         iblSummaryView = overlayText(10.0f, 12);
         iblSummaryView.setBackgroundColor(Color.TRANSPARENT);
@@ -741,24 +934,24 @@ public class FilamentGlbPreviewActivity extends Activity {
         shadowsPanel.addView(shadowsButton);
         shadowsPanel.addView(shadowSummaryView);
 
+        lightsSummaryView = overlayText(10.0f, 12);
+        lightsSummaryView.setBackgroundColor(Color.TRANSPARENT);
+        lightRigButton = button("", v -> {
+            lightRig = lightRig.next();
+            applyLightRig();
+            persistWorkspaceSettings();
+            setLastAction("light_rig_" + lightRig.name().toLowerCase(Locale.US));
+            updateHud();
+        });
+        lightsPanel.addView(lightRigButton);
+        lightsPanel.addView(lightsSummaryView);
+
         buildCameraPanel();
         buildModelPanel();
 
         materialSummaryView = overlayText(10.0f, 12);
         materialSummaryView.setBackgroundColor(Color.TRANSPARENT);
         materialPanel.addView(materialSummaryView);
-
-        glassSummaryView = overlayText(10.0f, 10);
-        glassSummaryView.setBackgroundColor(Color.TRANSPARENT);
-        glassRefractionButton = button("", v -> {
-            refractionMode = refractionMode.next();
-            persistWorkspaceSettings();
-            applyQualityProfile();
-            setLastAction("refraction_" + (refractionMode == RefractionMode.ON ? "on" : "off"));
-            updateHud();
-        });
-        glassPanel.addView(glassRefractionButton);
-        glassPanel.addView(glassSummaryView);
 
         configSummaryView = overlayText(10.0f, 10);
         configSummaryView.setBackgroundColor(Color.TRANSPARENT);
@@ -779,13 +972,15 @@ public class FilamentGlbPreviewActivity extends Activity {
 
         workspacePanel.addView(assetsPanel);
         workspacePanel.addView(renderPanel);
+        workspacePanel.addView(colorPanel);
+        workspacePanel.addView(fogPanel);
         workspacePanel.addView(lightingPanel);
+        workspacePanel.addView(lightsPanel);
         workspacePanel.addView(iblPanel);
         workspacePanel.addView(shadowsPanel);
         workspacePanel.addView(cameraPanel);
         workspacePanel.addView(modelPanel);
         workspacePanel.addView(materialPanel);
-        workspacePanel.addView(glassPanel);
         workspacePanel.addView(configPanel);
         workspacePanel.addView(debugPanel);
         ScrollView controlScroll = new ScrollView(this);
@@ -809,7 +1004,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (!destroying && !destroyed && !returningToVulkan) startFrames();
+        if (!destroying && !destroyed) startFrames();
     }
 
     @Override
@@ -850,7 +1045,7 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        stopFrames(returningToVulkan ? "close_preview_destroyed" : "destroyed");
+        stopFrames("destroyed");
         releaseFilamentResources();
         super.onDestroy();
     }
@@ -868,6 +1063,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             surfaceView.setOnTouchListener((view, event) -> {
                 if (destroying || destroyed || modelViewer == null) return true;
                 modelViewer.onTouchEvent(event);
+                if (event.getAction() == MotionEvent.ACTION_UP) requestPick(event);
                 return true;
             });
             createEnvironmentFallback();
@@ -883,7 +1079,6 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private void closePreview() {
-        returningToVulkan = false;
         legacyVulkanReturnStatus = "deprecated_hidden_close_preview_finishes_filament_only";
         lifecycleStatus = "close_preview_requested";
         stopFrames("close_preview_stop_frames");
@@ -958,6 +1153,25 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
     }
 
+    private void requestPick(MotionEvent event) {
+        if (modelViewer == null || event == null) return;
+        try {
+            int x = Math.max(0, Math.round(event.getX()));
+            int y = Math.max(0, Math.round(event.getY()));
+            modelViewer.getView().setTransparentPickingEnabled(true);
+            modelViewer.getView().pick(x, y, this, result -> {
+                selectedRenderable = result.renderable == 0 ? "none" : String.valueOf(result.renderable);
+                pickDepth = result.depth;
+                selectedMaterialIndexStatus = selectedRenderable.equals("none") ? "none" : "deferred_material_slot_mapping_limited_by_gltfio_java_api";
+                pickingStatus = selectedRenderable.equals("none") ? "ok_no_renderable_at_tap" : "ok_renderable_selected";
+                updateHud();
+            });
+            pickingStatus = "pick_requested";
+        } catch (Throwable t) {
+            pickingStatus = "not_exposed_or_failed: " + shortMessage(t);
+        }
+    }
+
     private Button tabButton(String label, WorkspaceTab tab) {
         Button button = button(label);
         button.setMinHeight(dp(42));
@@ -977,26 +1191,30 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (tabRow != null) tabRow.setVisibility(panelCollapsed ? View.GONE : View.VISIBLE);
         setPanelVisible(assetsPanel, activeTab == WorkspaceTab.ASSETS && !panelCollapsed);
         setPanelVisible(renderPanel, activeTab == WorkspaceTab.RENDER && !panelCollapsed);
+        setPanelVisible(colorPanel, activeTab == WorkspaceTab.COLOR && !panelCollapsed);
+        setPanelVisible(fogPanel, activeTab == WorkspaceTab.FOG && !panelCollapsed);
         setPanelVisible(lightingPanel, activeTab == WorkspaceTab.LIGHTING && !panelCollapsed);
+        setPanelVisible(lightsPanel, activeTab == WorkspaceTab.LIGHTS && !panelCollapsed);
         setPanelVisible(iblPanel, activeTab == WorkspaceTab.IBL && !panelCollapsed);
         setPanelVisible(shadowsPanel, activeTab == WorkspaceTab.SHADOWS && !panelCollapsed);
         setPanelVisible(cameraPanel, activeTab == WorkspaceTab.CAMERA && !panelCollapsed);
         setPanelVisible(modelPanel, activeTab == WorkspaceTab.MODEL && !panelCollapsed);
         setPanelVisible(qualityPanel, false);
         setPanelVisible(materialPanel, activeTab == WorkspaceTab.MATERIAL && !panelCollapsed);
-        setPanelVisible(glassPanel, activeTab == WorkspaceTab.GLASS && !panelCollapsed);
         setPanelVisible(configPanel, activeTab == WorkspaceTab.CONFIG && !panelCollapsed);
         setPanelVisible(debugPanel, activeTab == WorkspaceTab.DEBUG && !panelCollapsed);
         updateTabState(assetsTabButton, WorkspaceTab.ASSETS);
         updateTabState(renderTabButton, WorkspaceTab.RENDER);
+        updateTabState(colorTabButton, WorkspaceTab.COLOR);
+        updateTabState(fogTabButton, WorkspaceTab.FOG);
         updateTabState(lightingTabButton, WorkspaceTab.LIGHTING);
+        updateTabState(lightsTabButton, WorkspaceTab.LIGHTS);
         updateTabState(iblTabButton, WorkspaceTab.IBL);
         updateTabState(shadowsTabButton, WorkspaceTab.SHADOWS);
         updateTabState(cameraTabButton, WorkspaceTab.CAMERA);
         updateTabState(modelTabButton, WorkspaceTab.MODEL);
         updateTabState(qualityTabButton, WorkspaceTab.RENDER);
         updateTabState(materialTabButton, WorkspaceTab.MATERIAL);
-        updateTabState(glassTabButton, WorkspaceTab.GLASS);
         updateTabState(configTabButton, WorkspaceTab.CONFIG);
         updateTabState(debugTabButton, WorkspaceTab.DEBUG);
         if (activeTab == WorkspaceTab.MATERIAL && !panelCollapsed) updateMaterialInspector();
@@ -1273,6 +1491,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             EntityManager.get().destroy(fillLightEntity);
             fillLightEntity = 0;
         }
+        destroyAdditionalLights(engine);
         destroyEnvironmentResources(engine);
         indirectLight = new IndirectLight.Builder()
             .intensity(ambientFallbackIntensity)
@@ -1301,6 +1520,22 @@ public class FilamentGlbPreviewActivity extends Activity {
         modelViewer.getScene().addEntity(fillLightEntity);
         applySkyboxVisibility();
         applyIblRotation();
+        applyLightRig();
+    }
+
+    private void destroyAdditionalLights(Engine engine) {
+        if (engine == null) return;
+        int[] entities = new int[] {pointLightEntity, spotLightEntity};
+        for (int entity : entities) {
+            if (entity == 0) continue;
+            try {
+                if (modelViewer != null && modelViewer.getScene() != null) modelViewer.getScene().removeEntity(entity);
+                engine.getLightManager().destroy(entity);
+                EntityManager.get().destroy(entity);
+            } catch (Throwable ignored) { }
+        }
+        pointLightEntity = 0;
+        spotLightEntity = 0;
     }
 
     private void loadIblFile(File file, String reason) {
@@ -1537,6 +1772,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                     lights.setShadowCaster(fillInstance, false);
                 }
             }
+            applyLightRig();
             modelViewer.getCamera().setExposure(exposure);
             applyRenderableShadowMode();
             Renderer.ClearOptions clear = modelViewer.getRenderer().getClearOptions();
@@ -1638,6 +1874,12 @@ public class FilamentGlbPreviewActivity extends Activity {
             view.setBloomOptions(bloom);
             view.setDynamicResolutionOptions(dynamic);
             view.setRenderQuality(renderQuality);
+            view.setDithering(ditheringEnabled ? Dithering.TEMPORAL : Dithering.NONE);
+            ditheringStatus = ditheringEnabled ? "TEMPORAL" : "NONE";
+            applyTemporalAaOptions(view);
+            applyScreenSpaceReflectionsOptions(view);
+            applyGuardBandOptions(view);
+            applyFogOptions();
             applyColorGrading();
             applyLightingValues();
             persistWorkspaceSettings();
@@ -1743,6 +1985,58 @@ public class FilamentGlbPreviewActivity extends Activity {
         qualityFeatureStatus = status + "_aoMode_" + aoMode.name() + "_bloomMode_" + bloomMode.name() + "_shadowsMode_" + shadowMode.name() + "_refractionMode_" + refractionMode.name();
     }
 
+    private void applyTemporalAaOptions(com.google.android.filament.View view) {
+        try {
+            com.google.android.filament.View.TemporalAntiAliasingOptions taa = view.getTemporalAntiAliasingOptions();
+            taa.enabled = taaEnabled;
+            taa.filterWidth = 1.0f;
+            taa.feedback = qualityProfile == FilamentQualityProfile.ULTRA_PREVIEW ? 0.10f : 0.08f;
+            taa.sharpness = qualityProfile == FilamentQualityProfile.LOW ? 0.0f : 0.25f;
+            taa.filterHistory = true;
+            taa.filterInput = true;
+            taa.useYCoCg = true;
+            taa.hdr = true;
+            taa.preventFlickering = true;
+            taa.historyReprojection = true;
+            view.setTemporalAntiAliasingOptions(taa);
+            taaStatus = taaEnabled
+                ? "enabled feedback=" + twoDecimal(taa.feedback) + " filterWidth=" + twoDecimal(taa.filterWidth)
+                : "off_mobile_safe_default";
+        } catch (Throwable t) {
+            taaEnabled = false;
+            taaStatus = "not_exposed_or_failed: " + shortMessage(t);
+        }
+    }
+
+    private void applyScreenSpaceReflectionsOptions(com.google.android.filament.View view) {
+        try {
+            com.google.android.filament.View.ScreenSpaceReflectionsOptions ssr = view.getScreenSpaceReflectionsOptions();
+            ssr.enabled = ssrEnabled;
+            ssr.thickness = 0.08f;
+            ssr.bias = 0.01f;
+            ssr.maxDistance = qualityProfile == FilamentQualityProfile.ULTRA_PREVIEW ? 4.0f : 2.0f;
+            ssr.stride = qualityProfile == FilamentQualityProfile.ULTRA_PREVIEW ? 1.0f : 2.0f;
+            view.setScreenSpaceReflectionsOptions(ssr);
+            ssrStatus = ssrEnabled
+                ? "enabled maxDistance=" + oneDecimal(ssr.maxDistance) + " stride=" + oneDecimal(ssr.stride)
+                : "off_mobile_safe_default";
+        } catch (Throwable t) {
+            ssrEnabled = false;
+            ssrStatus = "not_exposed_or_failed: " + shortMessage(t);
+        }
+    }
+
+    private void applyGuardBandOptions(com.google.android.filament.View view) {
+        try {
+            com.google.android.filament.View.GuardBandOptions guardBand = view.getGuardBandOptions();
+            guardBand.enabled = qualityProfile != FilamentQualityProfile.LOW;
+            view.setGuardBandOptions(guardBand);
+            guardBandStatus = guardBand.enabled ? "enabled" : "disabled_low_quality";
+        } catch (Throwable t) {
+            guardBandStatus = "not_exposed_or_failed: " + shortMessage(t);
+        }
+    }
+
     private void applyColorGrading() {
         if (modelViewer == null) return;
         Engine engine = modelViewer.getEngine();
@@ -1751,20 +2045,105 @@ public class FilamentGlbPreviewActivity extends Activity {
             engine.destroyColorGrading(colorGrading);
             colorGrading = null;
         }
-        float gradeExposure = 0.0f;
+        colorContrast = colorMode.contrast;
+        colorSaturation = colorMode.saturation;
+        colorTemperature = colorMode.temperature;
+        float tint = 0.0f;
         colorGrading = new ColorGrading.Builder()
             .quality(qualityProfile == FilamentQualityProfile.HIGH_PREVIEW ? ColorGrading.QualityLevel.MEDIUM : ColorGrading.QualityLevel.LOW)
-            .exposure(gradeExposure)
-            .contrast(1.0f)
-            .saturation(1.0f)
+            .toneMapping(colorMode.toneMapping)
+            .exposure(0.0f)
+            .whiteBalance(colorTemperature, tint)
+            .contrast(colorContrast)
+            .saturation(colorSaturation)
             .build(engine);
         modelViewer.getView().setColorGrading(colorGrading);
+        toneMapperStatus = colorMode.toneMapping.name();
+        colorGradingStatus = "applied_" + colorMode.name().toLowerCase(Locale.US);
+        if (colorModeButton != null) colorModeButton.setText("Color Mode: " + colorMode.label);
+    }
+
+    private void applyFogOptions() {
+        if (modelViewer == null) return;
+        try {
+            com.google.android.filament.View view = modelViewer.getView();
+            com.google.android.filament.View.FogOptions fog = view.getFogOptions();
+            boolean enabled = fogMode != FogMode.OFF && fogDensity > 0.0f;
+            fog.enabled = enabled;
+            fog.density = enabled ? clamp(fogDensity, 0.0f, 0.08f) : 0.0f;
+            fog.distance = clamp(fogDistance, 10.0f, 160.0f);
+            fog.cutOffDistance = Math.max(fog.distance + 80.0f, 120.0f);
+            fog.maximumOpacity = enabled ? 0.72f : 0.0f;
+            fog.height = fogHeight;
+            fog.heightFalloff = 0.18f;
+            fog.color = colorMode == ColorMode.NIGHT
+                ? new float[] {0.08f, 0.10f, 0.16f}
+                : new float[] {0.62f, 0.68f, 0.72f};
+            fog.fogColorFromIbl = realIblReady.equals("true");
+            view.setFogOptions(fog);
+            fogStatus = enabled
+                ? "enabled density=" + threeDecimal(fog.density) + " distance=" + oneDecimal(fog.distance) + " height=" + oneDecimal(fog.height)
+                : "off_mobile_safe_default";
+            if (fogButton != null) fogButton.setText(fogMode.label);
+        } catch (Throwable t) {
+            fogStatus = "not_exposed_or_failed: " + shortMessage(t);
+        }
+    }
+
+    private void applyLightRig() {
+        if (modelViewer == null || modelViewer.getScene() == null) return;
+        try {
+            Engine engine = modelViewer.getEngine();
+            destroyAdditionalLights(engine);
+            if (lightRig == LightRig.OFF) {
+                lightRigStatus = "off_mobile_safe_default";
+                if (lightRigButton != null) lightRigButton.setText(lightRig.label);
+                return;
+            }
+            float pointIntensity = 0.0f;
+            float spotIntensity = 0.0f;
+            float[] pointColor = new float[] {1.0f, 0.92f, 0.82f};
+            float[] spotColor = new float[] {0.72f, 0.82f, 1.0f};
+            if (lightRig == LightRig.STUDIO_KEY) { pointIntensity = 2000.0f; spotIntensity = 0.0f; }
+            else if (lightRig == LightRig.RIM_LIGHT) { pointIntensity = 0.0f; spotIntensity = 1600.0f; }
+            else if (lightRig == LightRig.PRODUCT_LIGHT) { pointIntensity = 2600.0f; spotIntensity = 1200.0f; }
+            else if (lightRig == LightRig.NIGHT_LAMP) { pointIntensity = 850.0f; spotIntensity = 0.0f; pointColor = new float[] {1.0f, 0.70f, 0.42f}; }
+            else if (lightRig == LightRig.MAGIC_PREVIEW) { pointIntensity = 1200.0f; spotIntensity = 1400.0f; pointColor = new float[] {0.62f, 0.72f, 1.0f}; spotColor = new float[] {0.86f, 0.55f, 1.0f}; }
+            if (pointIntensity > 0.0f) {
+                pointLightEntity = EntityManager.get().create();
+                new LightManager.Builder(LightManager.Type.POINT)
+                    .position(1.8f, 1.4f, 2.2f)
+                    .color(pointColor[0], pointColor[1], pointColor[2])
+                    .intensity(pointIntensity)
+                    .falloff(4.0f)
+                    .castShadows(false)
+                    .build(engine, pointLightEntity);
+                modelViewer.getScene().addEntity(pointLightEntity);
+            }
+            if (spotIntensity > 0.0f) {
+                spotLightEntity = EntityManager.get().create();
+                new LightManager.Builder(LightManager.Type.SPOT)
+                    .position(-1.6f, 1.6f, 2.4f)
+                    .direction(0.45f, -0.35f, -0.82f)
+                    .color(spotColor[0], spotColor[1], spotColor[2])
+                    .intensity(spotIntensity)
+                    .falloff(5.0f)
+                    .spotLightCone(0.35f, 0.75f)
+                    .castShadows(false)
+                    .build(engine, spotLightEntity);
+                modelViewer.getScene().addEntity(spotLightEntity);
+            }
+            lightRigStatus = "active=" + lightRig.name() + " point=" + (pointLightEntity != 0) + " spot=" + (spotLightEntity != 0) + " shadows=false";
+            if (lightRigButton != null) lightRigButton.setText("Light Rig: " + lightRig.label);
+        } catch (Throwable t) {
+            lightRigStatus = "failed: " + shortMessage(t);
+        }
     }
 
     private void releaseFilamentResources() {
         if (destroyed || destroying) return;
         destroying = true;
-        lifecycleStatus = returningToVulkan ? "close_preview_releasing_filament" : "destroyed";
+        lifecycleStatus = "destroyed";
         try {
             if (modelViewer != null) {
                 Engine engine = modelViewer.getEngine();
@@ -1781,6 +2160,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                     EntityManager.get().destroy(fillLightEntity);
                     fillLightEntity = 0;
                 }
+                destroyAdditionalLights(engine);
                 destroyEnvironmentResources(engine);
                 modelViewer.destroyModel();
                 modelViewer.destroy();
@@ -1826,6 +2206,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         bloomMode = enumPref(prefs, PREF_FILAMENT_BLOOM_MODE, BloomMode.OFF);
         shadowMode = enumPref(prefs, PREF_FILAMENT_SHADOW_MODE, ShadowMode.OFF);
         refractionMode = enumPref(prefs, PREF_FILAMENT_REFRACTION_MODE, RefractionMode.ON);
+        colorMode = enumPref(prefs, PREF_FILAMENT_COLOR_MODE, ColorMode.NEUTRAL);
+        fogMode = enumPref(prefs, PREF_FILAMENT_FOG_MODE, FogMode.OFF);
+        lightRig = enumPref(prefs, PREF_FILAMENT_LIGHT_RIG, LightRig.OFF);
         panelCollapsed = prefs.getBoolean(PREF_FILAMENT_PANEL_COLLAPSED, true);
         sunLightIntensity = prefs.getFloat(PREF_FILAMENT_SUN, lightingPreset.sunIntensity);
         ambientUserIntensity = prefs.getFloat(PREF_FILAMENT_AMBIENT, lightingPreset.ambientFallbackIntensity);
@@ -1836,6 +2219,12 @@ public class FilamentGlbPreviewActivity extends Activity {
         dynamicResolutionEnabled = prefs.getBoolean(PREF_FILAMENT_DYNAMIC_RESOLUTION, true);
         actualSampleCount = prefs.getInt(PREF_FILAMENT_MSAA_SAMPLES, 2);
         fxaaEnabled = prefs.getBoolean(PREF_FILAMENT_FXAA_ENABLED, true);
+        taaEnabled = prefs.getBoolean(PREF_FILAMENT_TAA_ENABLED, false);
+        ssrEnabled = prefs.getBoolean(PREF_FILAMENT_SSR_ENABLED, false);
+        ditheringEnabled = prefs.getBoolean(PREF_FILAMENT_DITHERING_ENABLED, true);
+        fogDensity = prefs.getFloat(PREF_FILAMENT_FOG_DENSITY, fogMode.density);
+        fogDistance = prefs.getFloat(PREF_FILAMENT_FOG_DISTANCE, fogMode.distance);
+        fogHeight = prefs.getFloat(PREF_FILAMENT_FOG_HEIGHT, fogMode.height);
         skyboxVisible = prefs.getBoolean(PREF_FILAMENT_SKYBOX_VISIBLE, true);
         iblRotation = prefs.getFloat(PREF_FILAMENT_IBL_ROTATION, 0.0f);
         sunAzimuth = prefs.getFloat(PREF_FILAMENT_SUN_AZIMUTH, -145.0f);
@@ -1864,6 +2253,9 @@ public class FilamentGlbPreviewActivity extends Activity {
             .putString(PREF_FILAMENT_BLOOM_MODE, bloomMode.name())
             .putString(PREF_FILAMENT_SHADOW_MODE, shadowMode.name())
             .putString(PREF_FILAMENT_REFRACTION_MODE, refractionMode.name())
+            .putString(PREF_FILAMENT_COLOR_MODE, colorMode.name())
+            .putString(PREF_FILAMENT_FOG_MODE, fogMode.name())
+            .putString(PREF_FILAMENT_LIGHT_RIG, lightRig.name())
             .putBoolean(PREF_FILAMENT_PANEL_COLLAPSED, panelCollapsed)
             .putFloat(PREF_FILAMENT_SUN, sunLightIntensity)
             .putFloat(PREF_FILAMENT_AMBIENT, ambientUserIntensity)
@@ -1874,6 +2266,12 @@ public class FilamentGlbPreviewActivity extends Activity {
             .putBoolean(PREF_FILAMENT_DYNAMIC_RESOLUTION, dynamicResolutionEnabled)
             .putInt(PREF_FILAMENT_MSAA_SAMPLES, actualSampleCount)
             .putBoolean(PREF_FILAMENT_FXAA_ENABLED, fxaaEnabled)
+            .putBoolean(PREF_FILAMENT_TAA_ENABLED, taaEnabled)
+            .putBoolean(PREF_FILAMENT_SSR_ENABLED, ssrEnabled)
+            .putBoolean(PREF_FILAMENT_DITHERING_ENABLED, ditheringEnabled)
+            .putFloat(PREF_FILAMENT_FOG_DENSITY, fogDensity)
+            .putFloat(PREF_FILAMENT_FOG_DISTANCE, fogDistance)
+            .putFloat(PREF_FILAMENT_FOG_HEIGHT, fogHeight)
             .putBoolean(PREF_FILAMENT_SKYBOX_VISIBLE, skyboxVisible)
             .putFloat(PREF_FILAMENT_IBL_ROTATION, iblRotation)
             .putFloat(PREF_FILAMENT_SUN_AZIMUTH, sunAzimuth)
@@ -2307,10 +2705,19 @@ public class FilamentGlbPreviewActivity extends Activity {
         bloomMode = BloomMode.OFF;
         shadowMode = ShadowMode.OFF;
         refractionMode = RefractionMode.ON;
+        colorMode = ColorMode.NEUTRAL;
+        fogMode = FogMode.OFF;
+        lightRig = LightRig.OFF;
         dynamicResolutionEnabled = true;
         renderScale = 0.95f;
         actualSampleCount = 2;
         fxaaEnabled = true;
+        taaEnabled = false;
+        ssrEnabled = false;
+        ditheringEnabled = true;
+        fogDensity = 0.0f;
+        fogDistance = 100.0f;
+        fogHeight = 0.0f;
         skyboxVisible = true;
         iblRotation = 0.0f;
         sunLightIntensity = 2.5f;
@@ -2324,6 +2731,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         resetCameraControls();
         applyQualityProfile();
         applyLightingValues();
+        applyFogOptions();
+        applyLightRig();
         configStatus = "safe_defaults_reset";
         setLastAction("safe_defaults_reset");
         updateHud();
@@ -2415,10 +2824,28 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("dynamicMaxScale", dynamicMaxScale);
             json.put("aaMode", actualAA);
             json.put("msaaSamples", actualSampleCount);
-            json.put("taaSupported", "not_exposed");
-            json.put("taaEnabled", false);
+            json.put("taaSupported", true);
+            json.put("taaEnabled", taaEnabled);
+            json.put("taaStatus", taaStatus);
+            json.put("ssrSupported", true);
+            json.put("ssrEnabled", ssrEnabled);
+            json.put("ssrStatus", ssrStatus);
+            json.put("guardBandStatus", guardBandStatus);
             json.put("fxaaEnabled", fxaaEnabled);
             json.put("ditheringEnabled", ditheringEnabled);
+            json.put("ditheringStatus", ditheringStatus);
+            json.put("colorMode", colorMode.name());
+            json.put("toneMapper", toneMapperStatus);
+            json.put("colorContrast", colorContrast);
+            json.put("colorSaturation", colorSaturation);
+            json.put("colorTemperature", colorTemperature);
+            json.put("fogMode", fogMode.name());
+            json.put("fogDensity", fogDensity);
+            json.put("fogDistance", fogDistance);
+            json.put("fogHeight", fogHeight);
+            json.put("fogStatus", fogStatus);
+            json.put("lightRig", lightRig.name());
+            json.put("lightRigStatus", lightRigStatus);
             json.put("lightingPreset", lightingPreset.name());
             json.put("sunIntensity", sunLightIntensity);
             json.put("sunAzimuth", normalizedAzimuth(sunAzimuth));
@@ -2465,11 +2892,19 @@ public class FilamentGlbPreviewActivity extends Activity {
         bloomMode = enumValue(BloomMode.class, json.optString("bloomMode"), BloomMode.OFF);
         shadowMode = enumValue(ShadowMode.class, json.optString("shadowMode"), ShadowMode.OFF);
         refractionMode = enumValue(RefractionMode.class, json.optString("refractionMode"), RefractionMode.ON);
+        colorMode = enumValue(ColorMode.class, json.optString("colorMode"), ColorMode.NEUTRAL);
+        fogMode = enumValue(FogMode.class, json.optString("fogMode"), FogMode.OFF);
+        lightRig = enumValue(LightRig.class, json.optString("lightRig"), LightRig.OFF);
         renderScale = (float) json.optDouble("renderScale", renderScale);
         dynamicResolutionEnabled = json.optBoolean("dynamicResolutionEnabled", dynamicResolutionEnabled);
         actualSampleCount = sanitizeMsaa(json.optInt("msaaSamples", actualSampleCount));
         fxaaEnabled = json.optBoolean("fxaaEnabled", fxaaEnabled);
+        taaEnabled = json.optBoolean("taaEnabled", taaEnabled);
+        ssrEnabled = json.optBoolean("ssrEnabled", ssrEnabled);
         ditheringEnabled = json.optBoolean("ditheringEnabled", ditheringEnabled);
+        fogDensity = (float) json.optDouble("fogDensity", fogDensity);
+        fogDistance = (float) json.optDouble("fogDistance", fogDistance);
+        fogHeight = (float) json.optDouble("fogHeight", fogHeight);
         sunLightIntensity = (float) json.optDouble("sunIntensity", sunLightIntensity);
         sunAzimuth = normalizedAzimuth((float) json.optDouble("sunAzimuth", sunAzimuth));
         sunElevation = (float) json.optDouble("sunElevation", sunElevation);
@@ -2503,6 +2938,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (!loadedIbl.isEmpty() && new File(loadedIbl).isFile()) loadIblFile(new File(loadedIbl), "config_load");
         applyQualityProfile();
         applyLightingValues();
+        applyFogOptions();
+        applyLightRig();
         applyIblRotation();
         applySkyboxVisibility();
         applyModelTransform();
@@ -2554,12 +2991,44 @@ public class FilamentGlbPreviewActivity extends Activity {
             qualitySummaryView.setText("actualAA=" + actualAA + " sampleCount=" + actualSampleCount
                 + "\ndynamicResolutionEnabled=" + dynamicResolutionEnabled
                 + "\nrenderScale=" + twoDecimal(renderScale) + " dynamicScale=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
-                + "\ntaaSupported=not_exposed taaEnabled=false fxaaToggle=" + fxaaEnabled + " fxaaActuallyActive=" + "FXAA".equals(actualAA)
-                + "\nditheringEnabled=" + ditheringEnabled + " anisotropicFiltering=not_exposed textureLodBias=not_exposed"
+                + "\ntaaSupported=true taaEnabled=" + taaEnabled + " taaStatus=" + taaStatus
+                + "\nssrSupported=true ssrEnabled=" + ssrEnabled + " ssrStatus=" + ssrStatus
+                + "\nfxaaSupported=true fxaaToggle=" + fxaaEnabled + " fxaaActuallyActive=" + "FXAA".equals(actualAA)
+                + "\nditheringStatus=" + ditheringStatus + " guardBandStatus=" + guardBandStatus
+                + "\nanisotropicFiltering=not_exposed textureLodBias=not_exposed"
                 + "\naoMode=" + aoMode.name() + " aoApplied=" + aoActuallyApplied
                 + "\nshadowsMode=" + shadowMode.name() + " shadowsApplied=" + shadowsActuallyApplied
                 + "\nbloom=" + bloomActualStatus
                 + "\nrefraction=" + refractionActualStatus);
+        }
+        if (colorSummaryView != null) {
+            colorSummaryView.setText("colorGradingSupported=true"
+                + "\ncolorMode=" + colorMode.label
+                + "\ntoneMapper=" + toneMapperStatus
+                + "\ncontrast=" + twoDecimal(colorContrast) + " saturation=" + twoDecimal(colorSaturation)
+                + "\ntemperature=" + twoDecimal(colorTemperature) + " whitePoint=not_exposed"
+                + "\nhighlightProtection=not_exposed"
+                + "\ncolorGradingStatus=" + colorGradingStatus);
+        }
+        if (fogSummaryView != null) {
+            fogSummaryView.setText("fogSupported=true"
+                + "\nfogEnabled=" + (fogMode != FogMode.OFF && fogDensity > 0.0f)
+                + "\nfogMode=" + fogMode.label
+                + "\nfogDensity=" + threeDecimal(fogDensity)
+                + "\nfogDistance=" + oneDecimal(fogDistance)
+                + "\nfogHeight=" + oneDecimal(fogHeight)
+                + "\nfogFromIbl=" + realIblReady
+                + "\nfogStatus=" + fogStatus);
+        }
+        if (lightsSummaryView != null) {
+            lightsSummaryView.setText("pointLightSupported=true"
+                + "\nspotLightSupported=true"
+                + "\nadditionalLightsEnabled=" + (lightRig != LightRig.OFF)
+                + "\nactiveLightRig=" + lightRig.label
+                + "\nlightCount=" + activeLightCount()
+                + "\nfalloffSupported=true spotConeSupported=true"
+                + "\nadditionalLightShadows=false_mobile_safe"
+                + "\nlightRigStatus=" + lightRigStatus);
         }
         if (iblSummaryView != null) {
             iblSummaryView.setText("activeIblName=" + iblFile
@@ -2597,16 +3066,6 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\ntransformTarget=" + transformTargetStatus
                 + "\nno_vertex_bake=true no_model_specific_hack=true");
         }
-        if (glassSummaryView != null) {
-            glassSummaryView.setText("Author Material Mode=default"
-                + "\nGlass override=disabled_by_default"
-                + "\nrefractionSupported=true_screen_space_view_api"
-                + "\nrefractionEnabled=" + refractionEnabled
-                + "\nrefractionActuallyApplied=" + refractionActuallyApplied
-                + "\ntransparentObjectCount=not_exposed"
-                + "\nglassMaterialCount=not_exposed"
-                + "\nalpha/transmission status=limited_by_gltfio_java_api");
-        }
         if (configSummaryView != null) {
             configSummaryView.setText("configPath=" + configFile().getAbsolutePath()
                 + "\nSharedPreferences backup=" + PREFS_NAME
@@ -2638,7 +3097,12 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nenvironmentMode=" + environmentMode + " activeIbl=" + shorten(futureIblAssetPath, 72)
                 + "\nQuality: " + qualityFeatureStatus
                 + "\nactualAA=" + actualAA + " actualMSAA=" + actualSampleCount + "x actualDynamicResolution=" + dynamicResolutionEnabled + " actualRenderScale=" + twoDecimal(renderScale) + " dynamicScale=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
-                + "\ntaaSupported=not_exposed ssrSupported=not_exposed ditheringStatus=" + (ditheringEnabled ? "on_view_default" : "off_not_exposed") + " fxaaSupported=true"
+                + "\ntaaSupported=true taaEnabled=" + taaEnabled + " taaStatus=" + taaStatus
+                + "\nssrSupported=true ssrEnabled=" + ssrEnabled + " ssrStatus=" + ssrStatus
+                + "\nditheringStatus=" + ditheringStatus + " guardBandStatus=" + guardBandStatus + " fxaaSupported=true"
+                + "\ncolorGradingSupported=true colorMode=" + colorMode.name() + " toneMapper=" + toneMapperStatus + " colorGradingStatus=" + colorGradingStatus
+                + "\nfogSupported=true fogMode=" + fogMode.name() + " fogStatus=" + fogStatus
+                + "\nlightCount=" + activeLightCount() + " pointLightSupported=true spotLightSupported=true activeLightRig=" + lightRig.name()
                 + "\naoMode=" + aoMode.name() + " aoEnabled=" + aoEnabled + " aoApplied=" + aoActuallyApplied + " aoType=" + aoTypeStatus
                 + "\naoStatus=" + aoActualStatus + " aoLikelyInvisibleReason=" + aoLikelyInvisibleReason
                 + "\nshadowsMode=" + shadowMode.name() + " shadowsEnabled=" + shadowsEnabled + " shadowsApplied=" + shadowsActuallyApplied
@@ -2648,7 +3112,8 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nrefractionSupported=true_screen_space_view_api refractionMode=" + refractionMode.name() + " refractionEnabled=" + refractionEnabled + " refractionActuallyApplied=" + refractionActuallyApplied
                 + "\nmodelTransform=" + modelTransformStatus + " target=" + transformTargetStatus + " rx/ry/rz=" + oneDecimal(modelRotationX) + "/" + oneDecimal(modelRotationY) + "/" + oneDecimal(modelRotationZ) + " scale=" + twoDecimal(modelScale)
                 + "\ncameraControls=" + cameraStatus + " apply=" + cameraApplyStatus
-                + "\nLegacy Vulkan=deprecated/hidden normal_ui_route=false"
+                + "\npickingSupported=true selectedRenderable=" + selectedRenderable + " selectedMaterialIndex=" + selectedMaterialIndexStatus + " pickDepth=" + oneDecimal(pickDepth) + " pickStatus=" + pickingStatus
+                + "\nLegacy Vulkan=removed_from_normal_flow/deprecated/build_required_only normal_ui_route=false"
                 + "\nconfigPath=" + configFile().getAbsolutePath()
                 + "\nconfigPrivateSaved=" + configPrivateSaved + " configExportSaved=" + configExportSaved + " lastConfigError=" + lastConfigError
                 + "\nlastConfigLoadSource=" + lastConfigLoadSource + " lastConfigSaveTimestamp=" + lastConfigSaveTimestamp + " loadedConfigVersion=" + loadedConfigVersion
@@ -2746,10 +3211,15 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (bloomButton != null) bloomButton.setText(bloomMode.label);
         if (shadowsButton != null) shadowsButton.setText(shadowMode.label);
         if (refractionButton != null) refractionButton.setText(refractionMode.label);
-        if (glassRefractionButton != null) glassRefractionButton.setText(refractionMode.label);
         if (dynamicResolutionButton != null) dynamicResolutionButton.setText("Dynamic Resolution: " + (dynamicResolutionEnabled ? "On" : "Off"));
         if (msaaButton != null) msaaButton.setText("MSAA: " + actualSampleCount + "x");
         if (fxaaButton != null) fxaaButton.setText("FXAA: " + (fxaaEnabled ? "On" : "Off"));
+        if (ditheringButton != null) ditheringButton.setText("Dithering: " + (ditheringEnabled ? "On" : "Off"));
+        if (taaButton != null) taaButton.setText("TAA: " + (taaEnabled ? "On" : "Off"));
+        if (ssrButton != null) ssrButton.setText("SSR: " + (ssrEnabled ? "On" : "Off"));
+        if (colorModeButton != null) colorModeButton.setText("Color Mode: " + colorMode.label);
+        if (fogButton != null) fogButton.setText(fogMode.label);
+        if (lightRigButton != null) lightRigButton.setText("Light Rig: " + lightRig.label);
         if (skyboxButton != null) skyboxButton.setText("Skybox: " + (skyboxVisible ? "On" : "Off"));
         if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
     }
@@ -2764,7 +3234,9 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private void setSliderLabel(TextView label, String name, float value) {
         if (label == null) return;
-        if ("Exp".equals(name) || "BG".equals(name) || "Ambient".equals(name) || "IBL".equals(name) || "Fill".equals(name)
+        if ("Fog Density".equals(name)) {
+            label.setText(name + " " + threeDecimal(value));
+        } else if ("Exp".equals(name) || "BG".equals(name) || "Ambient".equals(name) || "IBL".equals(name) || "Fill".equals(name)
             || "Exposure".equals(name) || "Background".equals(name) || name.contains("Scale") || name.contains("Offset")
             || name.startsWith("Pan") || name.startsWith("Target") || name.contains("Distance")) {
             label.setText(name + " " + twoDecimal(value));
@@ -2784,6 +3256,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         if ("Sun Azimuth".equals(label)) return normalizedAzimuth(sunAzimuth);
         if ("Sun Elevation".equals(label)) return sunElevation;
         if ("Render Scale".equals(label)) return renderScale;
+        if ("Fog Density".equals(label)) return fogDensity;
+        if ("Fog Distance".equals(label)) return fogDistance;
+        if ("Fog Height".equals(label)) return fogHeight;
         if ("Rot".equals(label)) return iblRotation;
         if ("Dist".equals(label) || "Camera Distance".equals(label)) return cameraDistance;
         if ("Pan X".equals(label)) return cameraTargetX;
@@ -2947,6 +3422,14 @@ public class FilamentGlbPreviewActivity extends Activity {
         return 4;
     }
 
+    private int activeLightCount() {
+        int count = 1; // ModelViewer sun light.
+        if (fillLightEntity != 0) count++;
+        if (pointLightEntity != 0) count++;
+        if (spotLightEntity != 0) count++;
+        return count;
+    }
+
     private void setLastAction(String status) {
         lastActionStatus = status == null || status.isEmpty() ? "none" : status;
         if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
@@ -2988,6 +3471,10 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private static String twoDecimal(float value) {
         return String.format(Locale.US, "%.2f", value);
+    }
+
+    private static String threeDecimal(float value) {
+        return String.format(Locale.US, "%.3f", value);
     }
 
     private static String compactValue(float value) {

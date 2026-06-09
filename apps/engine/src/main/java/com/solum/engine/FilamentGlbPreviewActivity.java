@@ -12,14 +12,18 @@ import android.graphics.Shader;
 import android.net.Uri;
 import android.opengl.Matrix;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.provider.OpenableColumns;
 import android.text.InputType;
 import android.view.Choreographer;
+import android.view.FrameMetrics;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.SurfaceView;
+import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
@@ -141,6 +145,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final int REQUEST_IMPORT_MODEL = 4101;
     private static final int REQUEST_IMPORT_IBL = 4102;
     private static final long HUD_UPDATE_NS = 250_000_000L;
+    private static final String GFXINFO_FRAMESTATS_COMMAND = "adb shell dumpsys gfxinfo com.solum.engine framestats";
 
     private SurfaceView surfaceView;
     private SunGlareOverlayView sunGlareOverlayView;
@@ -226,6 +231,9 @@ public class FilamentGlbPreviewActivity extends Activity {
     private TextView exposureSliderLabel;
     private TextView backgroundSliderLabel;
     private final List<SliderBinding> sliderBindings = new ArrayList<>();
+    private HandlerThread frameMetricsThread;
+    private Handler frameMetricsHandler;
+    private Window.OnFrameMetricsAvailableListener frameMetricsListener;
     private EditText advancedSunField;
     private EditText advancedAmbientField;
     private EditText advancedFillField;
@@ -274,6 +282,14 @@ public class FilamentGlbPreviewActivity extends Activity {
     private long ssrSlowFrameBaseline = 0L;
     private long ssrJankFrameBaseline = 0L;
     private String timingSourceStatus = "wall_clock_frame_interval_cpu_approx";
+    private String frameMetricsStatus = "not_started";
+    private long frameMetricsSampleCount = 0L;
+    private float frameMetricsTotalMs = 0.0f;
+    private float frameMetricsGpuMs = 0.0f;
+    private float frameMetricsSwapMs = 0.0f;
+    private float frameMetricsDrawMs = 0.0f;
+    private long frameMetricsSlowCount = 0L;
+    private long frameMetricsJankCount = 0L;
     private String frameBudgetStatus = "waiting_for_samples";
     private String smoothnessStatus = "waiting_for_samples";
     private String ssrPerformanceWarning = "off";
@@ -932,11 +948,13 @@ public class FilamentGlbPreviewActivity extends Activity {
         renderPanel.addView(bloomButton);
         addLightingSlider(renderPanel, "Bloom Strength", 0.0f, 0.25f, 0.005f, bloomStrength, v -> {
             bloomStrength = v;
+            if (bloomStrength > 0.0f && bloomMode == BloomMode.OFF) bloomMode = BloomMode.SOFT;
             applyQualityProfile();
             refreshUiNow();
         });
         addLightingSlider(renderPanel, "Bloom Highlight", 100.0f, 1200.0f, 10.0f, bloomHighlight, v -> {
             bloomHighlight = v;
+            if (bloomMode == BloomMode.OFF) bloomMode = BloomMode.SOFT;
             applyQualityProfile();
             refreshUiNow();
         });
@@ -1107,6 +1125,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         controlParams.setMargins(dp(12), dp(12), dp(12), dp(28));
         root.addView(controlScroll, controlParams);
         setContentView(root);
+        startFrameMetricsDiagnostics();
         syncWorkspaceUi();
         scanDownloadForAssets("startup");
         createViewer();
@@ -1160,6 +1179,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     @Override
     protected void onDestroy() {
         stopFrames("destroyed");
+        stopFrameMetricsDiagnostics();
         releaseFilamentResources();
         super.onDestroy();
     }
@@ -1269,6 +1289,64 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (cpuMs >= 0.0f && cpuMs < 250.0f) {
             rollingRenderCpuMs = rollingRenderCpuMs <= 0.0f ? cpuMs : (rollingRenderCpuMs * 0.82f + cpuMs * 0.18f);
         }
+    }
+
+    private void startFrameMetricsDiagnostics() {
+        try {
+            frameMetricsThread = new HandlerThread("solum-frame-metrics");
+            frameMetricsThread.start();
+            frameMetricsHandler = new Handler(frameMetricsThread.getLooper());
+            frameMetricsListener = (window, frameMetrics, dropCountSinceLastInvocation) -> {
+                try {
+                    recordAndroidFrameMetrics(frameMetrics);
+                } catch (Throwable t) {
+                    frameMetricsStatus = "listener_failed: " + shortMessage(t);
+                }
+            };
+            getWindow().addOnFrameMetricsAvailableListener(frameMetricsListener, frameMetricsHandler);
+            frameMetricsStatus = "android_window_frame_metrics_enabled";
+        } catch (Throwable t) {
+            frameMetricsStatus = "not_available_or_failed: " + shortMessage(t);
+            stopFrameMetricsDiagnostics();
+        }
+    }
+
+    private void stopFrameMetricsDiagnostics() {
+        try {
+            if (frameMetricsListener != null) getWindow().removeOnFrameMetricsAvailableListener(frameMetricsListener);
+        } catch (Throwable ignored) { }
+        frameMetricsListener = null;
+        frameMetricsHandler = null;
+        if (frameMetricsThread != null) {
+            try { frameMetricsThread.quitSafely(); } catch (Throwable ignored) { }
+            frameMetricsThread = null;
+        }
+    }
+
+    private void recordAndroidFrameMetrics(FrameMetrics metrics) {
+        if (metrics == null) return;
+        float totalMs = nanosToMs(metrics.getMetric(FrameMetrics.TOTAL_DURATION));
+        float gpuMs = nanosToMs(metrics.getMetric(FrameMetrics.GPU_DURATION));
+        float swapMs = nanosToMs(metrics.getMetric(FrameMetrics.SWAP_BUFFERS_DURATION));
+        float drawMs = nanosToMs(metrics.getMetric(FrameMetrics.DRAW_DURATION));
+        if (totalMs > 0.0f && totalMs < 1000.0f) {
+            frameMetricsTotalMs = smoothMetric(frameMetricsTotalMs, totalMs, 0.25f);
+            if (totalMs > 22.2f) frameMetricsSlowCount++;
+            if (totalMs > 33.3f) frameMetricsJankCount++;
+        }
+        if (gpuMs > 0.0f && gpuMs < 1000.0f) frameMetricsGpuMs = smoothMetric(frameMetricsGpuMs, gpuMs, 0.25f);
+        if (swapMs > 0.0f && swapMs < 1000.0f) frameMetricsSwapMs = smoothMetric(frameMetricsSwapMs, swapMs, 0.25f);
+        if (drawMs > 0.0f && drawMs < 1000.0f) frameMetricsDrawMs = smoothMetric(frameMetricsDrawMs, drawMs, 0.25f);
+        frameMetricsSampleCount++;
+        frameMetricsStatus = gpuMs > 0.0f ? "android_frame_metrics_gpu_duration_available" : "android_frame_metrics_gpu_duration_unavailable";
+    }
+
+    private static float nanosToMs(long nanos) {
+        return nanos <= 0L ? 0.0f : nanos / 1_000_000.0f;
+    }
+
+    private static float smoothMetric(float previous, float value, float alpha) {
+        return previous <= 0.0f ? value : previous * (1.0f - alpha) + value * alpha;
     }
 
     private void recordFrameSample(float frameMs) {
@@ -2157,8 +2235,10 @@ public class FilamentGlbPreviewActivity extends Activity {
             bloom.strength = clamp(bloomStrength, 0.0f, 0.25f);
             bloom.highlight = clamp(bloomHighlight, 100.0f, 1200.0f);
         }
-        bloomStrength = bloom.strength;
-        bloomHighlight = bloom.highlight;
+        if (bloomMode != BloomMode.OFF) {
+            bloomStrength = bloom.strength;
+            bloomHighlight = bloom.highlight;
+        }
         bloomActualStatus = "mode=" + bloomMode.name() + " enabled=" + bloom.enabled + " strength=" + threeDecimal(bloom.strength)
             + " highlight=" + oneDecimal(bloom.highlight) + " thresholdBoolean=" + bloom.threshold + " dirt=not_exposed softness=not_exposed";
     }
@@ -3266,7 +3346,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + " ms | avg " + oneDecimal(avgFrameMs) + " p95 " + oneDecimal(p95FrameMs)
                 + " | jank " + jankFrameCounter + " slow " + slowFrameCounter
                 + " | CPU " + oneDecimal(rollingRenderCpuMs) + " ms | " + frameBudgetStatus
-                + " | frame " + liveFrameCounter + " | " + qualityProfile.label + " | IBL " + iblFile + " | " + lightingPreset.label);
+                + " | frame " + liveFrameCounter + " | " + qualityProfile.label + " | " + gpuTimingWarningShort());
         }
         if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
         if (assetsSummaryView != null) {
@@ -3284,12 +3364,15 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\ntaaSupported=true taaEnabled=" + taaEnabled + " taaStatus=" + taaStatus
                 + "\nssrSupported=true ssrEnabled=" + ssrEnabled + " ssrStatus=" + ssrStatus + (ssrEnabled ? " WARNING_manual_heavy_mobile" : "")
                 + "\nssrPerformanceWarning=" + ssrPerformanceWarning
+                + "\ngpuTimingStatus=" + gpuTimingStatus()
+                + "\nandroidFrameMetrics=" + frameMetricsStatus + " samples=" + frameMetricsSampleCount + " totalMs=" + oneDecimal(frameMetricsTotalMs) + " gpuMs=" + gpuMetricLabel()
                 + "\nfxaaSupported=true fxaaToggle=" + fxaaEnabled + " fxaaActuallyActive=" + "FXAA".equals(actualAA)
                 + "\nditheringStatus=" + ditheringStatus + " guardBandStatus=" + guardBandStatus
                 + "\nsunGlareMode=" + sunGlareMode.name() + " sunGlareStatus=" + sunGlareStatus
                 + "\nframeStats wallFps=" + oneDecimal(rollingFps) + " visualSmoothness=" + visualSmoothnessLabel() + " targetFps=" + presetTargetFps() + " timingSource=" + timingSourceStatus
                 + "\nframeMs current=" + oneDecimal(rollingFrameMs) + " avg=" + oneDecimal(avgFrameMs) + " min=" + oneDecimal(minFrameMs) + " max=" + oneDecimal(maxFrameMs) + " p95=" + oneDecimal(p95FrameMs) + " worst=" + oneDecimal(worstFrameMs)
                 + "\nframeBudget=" + frameBudgetStatus + " smoothness=" + smoothnessStatus + " slow=" + slowFrameCounter + " jank=" + jankFrameCounter
+                + "\ngfxinfoCommand=" + GFXINFO_FRAMESTATS_COMMAND
                 + "\nanisotropicFiltering=not_exposed textureLodBias=not_exposed"
                 + "\naoMode=" + aoMode.name() + " aoApplied=" + aoActuallyApplied
                 + "\nshadowsMode=" + shadowMode.name() + " shadowsApplied=" + shadowsActuallyApplied
@@ -3402,6 +3485,9 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\ntaaSupported=true taaEnabled=" + taaEnabled + " taaStatus=" + taaStatus
                 + "\nssrSupported=true ssrEnabled=" + ssrEnabled + " ssrStatus=" + ssrStatus + (ssrEnabled ? " WARNING_manual_heavy_mobile" : "")
                 + "\nssrPerformanceWarning=" + ssrPerformanceWarning
+                + "\ngpuTimingStatus=" + gpuTimingStatus()
+                + "\nandroidFrameMetricsStatus=" + frameMetricsStatus + " samples=" + frameMetricsSampleCount + " totalMs=" + oneDecimal(frameMetricsTotalMs) + " gpuMs=" + gpuMetricLabel() + " swapMs=" + oneDecimal(frameMetricsSwapMs) + " drawMs=" + oneDecimal(frameMetricsDrawMs)
+                + "\ngfxinfoFramestatsCommand=" + GFXINFO_FRAMESTATS_COMMAND
                 + "\nditheringStatus=" + ditheringStatus + " guardBandStatus=" + guardBandStatus + " fxaaSupported=true"
                 + "\ncolorGradingSupported=true colorMode=" + colorMode.name() + " toneMapper=" + toneMapperStatus + " colorGradingStatus=" + colorGradingStatus
                 + "\nfogSupported=true fogMode=" + fogMode.name() + " fogStatus=" + fogStatus
@@ -3457,6 +3543,21 @@ public class FilamentGlbPreviewActivity extends Activity {
             return "gpu_not_measured_ssr_manual_heavy_wallP95=" + oneDecimal(visibleSmoothFps) + "fps";
         }
         return oneDecimal(visibleSmoothFps) + "fps_p95_wall";
+    }
+
+    private String gpuTimingStatus() {
+        if (frameMetricsGpuMs > 0.0f) return "android_frame_metrics_gpu_duration_estimate_ms=" + oneDecimal(frameMetricsGpuMs);
+        return "FPS/wall timing is estimated; GPU timing is not exposed by Filament Java; use FrameMetrics/gfxinfo/Perfetto/AGI";
+    }
+
+    private String gpuTimingWarningShort() {
+        if (ssrEnabled && frameMetricsGpuMs <= 0.0f) return "wall FPS estimated; GPU timing not exposed; SSR may feel lower";
+        if (frameMetricsGpuMs <= 0.0f) return "wall FPS estimated; GPU timing not exposed";
+        return "GPU " + oneDecimal(frameMetricsGpuMs) + "ms";
+    }
+
+    private String gpuMetricLabel() {
+        return frameMetricsGpuMs > 0.0f ? oneDecimal(frameMetricsGpuMs) : "unavailable";
     }
 
     private boolean currentConfigDiffersFromSaved() {

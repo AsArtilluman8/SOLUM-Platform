@@ -99,8 +99,14 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String PREF_FILAMENT_SHADOW_MODE = "filament_shadow_mode";
     private static final String PREF_FILAMENT_REFRACTION_MODE = "filament_refraction_mode";
     private static final String PREF_FILAMENT_COLOR_MODE = "filament_color_mode";
+    private static final String PREF_FILAMENT_COLOR_EXPOSURE = "filament_color_exposure";
+    private static final String PREF_FILAMENT_COLOR_CONTRAST = "filament_color_contrast";
+    private static final String PREF_FILAMENT_COLOR_SATURATION = "filament_color_saturation";
+    private static final String PREF_FILAMENT_COLOR_TEMPERATURE = "filament_color_temperature";
     private static final String PREF_FILAMENT_FOG_MODE = "filament_fog_mode";
     private static final String PREF_FILAMENT_LIGHT_RIG = "filament_light_rig";
+    private static final String PREF_FILAMENT_BLOOM_STRENGTH = "filament_bloom_strength";
+    private static final String PREF_FILAMENT_BLOOM_HIGHLIGHT = "filament_bloom_highlight";
     private static final String PREF_FILAMENT_RENDER_SCALE = "filament_render_scale";
     private static final String PREF_FILAMENT_DYNAMIC_RESOLUTION = "filament_dynamic_resolution";
     private static final String PREF_FILAMENT_MSAA_SAMPLES = "filament_msaa_samples";
@@ -131,7 +137,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String PREF_FILAMENT_CONFIG_JSON = "filament_config_json";
     private static final String PREF_FILAMENT_DEFAULT_CONFIG_JSON = "filament_default_config_json";
     private static final String CONFIG_FILE_NAME = "filament_render_config.json";
-    private static final int CONFIG_SCHEMA_VERSION = 4;
+    private static final int CONFIG_SCHEMA_VERSION = 5;
     private static final int REQUEST_IMPORT_MODEL = 4101;
     private static final int REQUEST_IMPORT_IBL = 4102;
     private static final long HUD_UPDATE_NS = 250_000_000L;
@@ -163,6 +169,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private Button taaButton;
     private Button ssrButton;
     private Button colorModeButton;
+    private Button resetColorButton;
     private Button fogButton;
     private Button sunGlareButton;
     private Button lightRigButton;
@@ -247,9 +254,11 @@ public class FilamentGlbPreviewActivity extends Activity {
     private boolean destroying = false;
     private boolean destroyed = false;
     private long lastFrameNs = 0L;
+    private long lastFrameWallNs = 0L;
     private long lastHudUpdateNs = 0L;
     private float rollingFrameMs = 0.0f;
     private float rollingFps = 0.0f;
+    private float visibleSmoothFps = 0.0f;
     private float rollingRenderCpuMs = 0.0f;
     private long liveFrameCounter = 0L;
     private final float[] frameWindowMs = new float[180];
@@ -262,8 +271,12 @@ public class FilamentGlbPreviewActivity extends Activity {
     private float worstFrameMs = 0.0f;
     private long jankFrameCounter = 0L;
     private long slowFrameCounter = 0L;
+    private long ssrSlowFrameBaseline = 0L;
+    private long ssrJankFrameBaseline = 0L;
+    private String timingSourceStatus = "wall_clock_frame_interval_cpu_approx";
     private String frameBudgetStatus = "waiting_for_samples";
     private String smoothnessStatus = "waiting_for_samples";
+    private String ssrPerformanceWarning = "off";
     private String modelPath = "";
     private String modelName = "";
     private String loadStatus = "not_started";
@@ -329,6 +342,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     private float exposure = 1.0f;
     private float backgroundBrightness = 0.14f;
     private float renderScale = 0.95f;
+    private float bloomStrength = 0.025f;
+    private float bloomHighlight = 800.0f;
     private float iblRotation = 0.0f;
     private float sunAzimuth = -145.0f;
     private float sunElevation = 45.0f;
@@ -344,6 +359,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private float cameraTargetY = 0.0f;
     private float cameraTargetZ = 0.0f;
     private float cameraFov = 45.0f;
+    private float colorExposure = 0.0f;
     private float colorContrast = 1.0f;
     private float colorSaturation = 1.0f;
     private float colorTemperature = 0.0f;
@@ -651,7 +667,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             panelCollapsed = !panelCollapsed;
             persistWorkspaceSettings();
             syncWorkspaceUi();
-            updateHud();
+            refreshUiNow();
         });
 
         tabRow = new LinearLayout(this);
@@ -730,7 +746,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         scanDownloadButton.setOnClickListener(v -> {
             scanDownloadForAssets("manual_button");
             updateIblButton();
-            updateHud();
+            refreshUiNow();
         });
         Button reloadButton = button("Reload Model");
         reloadButton.setOnClickListener(v -> loadModel());
@@ -749,13 +765,13 @@ public class FilamentGlbPreviewActivity extends Activity {
             persistWorkspaceSettings();
             applyQualityProfile();
             setLastAction("quality_" + qualityProfile.name().toLowerCase(Locale.US) + "_ssr_forced_off");
-            updateHud();
+            refreshUiNow();
         });
         lightingButton = button("Lighting: " + lightingPreset.label);
         lightingButton.setOnClickListener(v -> {
             lightingPreset = lightingPreset.next();
             applyLightingPreset();
-            updateHud();
+            refreshUiNow();
         });
         iblButton = button("IBL: Procedural fallback");
         iblButton.setOnClickListener(v -> cycleIblPreset());
@@ -765,7 +781,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         advancedValuesButton.setOnClickListener(v -> {
             advancedValuesEnabled = !advancedValuesEnabled;
             updateAdvancedValuesVisibility();
-            updateHud();
+            refreshUiNow();
         });
         aoButton = button("");
         aoButton.setOnClickListener(v -> {
@@ -773,15 +789,17 @@ public class FilamentGlbPreviewActivity extends Activity {
             persistWorkspaceSettings();
             applyQualityProfile();
             setLastAction("ao_" + aoMode.name().toLowerCase(Locale.US));
-            updateHud();
+            refreshUiNow();
         });
         bloomButton = button("");
         bloomButton.setOnClickListener(v -> {
             bloomMode = bloomMode.next();
+            bloomStrength = defaultBloomStrength(bloomMode);
+            bloomHighlight = defaultBloomHighlight(bloomMode);
             persistWorkspaceSettings();
             applyQualityProfile();
             setLastAction("bloom_" + bloomMode.name().toLowerCase(Locale.US));
-            updateHud();
+            refreshUiNow();
         });
         shadowsButton = button("");
         shadowsButton.setOnClickListener(v -> {
@@ -790,7 +808,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             applyQualityProfile();
             applyLightingValues();
             setLastAction("shadows_" + shadowMode.name().toLowerCase(Locale.US));
-            updateHud();
+            refreshUiNow();
         });
         refractionButton = button("");
         refractionButton.setOnClickListener(v -> {
@@ -798,7 +816,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             persistWorkspaceSettings();
             applyQualityProfile();
             setLastAction("refraction_" + refractionMode.name().toLowerCase(Locale.US));
-            updateHud();
+            refreshUiNow();
         });
         lightingPanel.addView(lightingButton);
         lightingPanel.addView(resetButton);
@@ -859,42 +877,43 @@ public class FilamentGlbPreviewActivity extends Activity {
             dynamicResolutionEnabled = !dynamicResolutionEnabled;
             applyQualityProfile();
             setLastAction("dynamic_resolution_" + (dynamicResolutionEnabled ? "on" : "off"));
-            updateHud();
+            refreshUiNow();
         });
         renderPanel.addView(dynamicResolutionButton);
         msaaButton = button("", v -> {
             actualSampleCount = actualSampleCount == 1 ? 2 : (actualSampleCount == 2 ? 4 : 1);
             applyQualityProfile();
             setLastAction("msaa_" + actualSampleCount + "x");
-            updateHud();
+            refreshUiNow();
         });
         renderPanel.addView(msaaButton);
         fxaaButton = button("", v -> {
             fxaaEnabled = !fxaaEnabled;
             applyQualityProfile();
             setLastAction("fxaa_" + (fxaaEnabled ? "on" : "off"));
-            updateHud();
+            refreshUiNow();
         });
         renderPanel.addView(fxaaButton);
         ditheringButton = button("", v -> {
             ditheringEnabled = !ditheringEnabled;
             applyQualityProfile();
             setLastAction("dithering_" + (ditheringEnabled ? "on" : "off"));
-            updateHud();
+            refreshUiNow();
         });
         renderPanel.addView(ditheringButton);
         taaButton = button("", v -> {
             taaEnabled = !taaEnabled;
             applyQualityProfile();
             setLastAction("taa_" + (taaEnabled ? "on" : "off"));
-            updateHud();
+            refreshUiNow();
         });
         renderPanel.addView(taaButton);
         ssrButton = button("", v -> {
             ssrEnabled = !ssrEnabled;
+            resetSsrPerformanceBaseline();
             applyQualityProfile();
             setLastAction("ssr_" + (ssrEnabled ? "on" : "off"));
-            updateHud();
+            refreshUiNow();
         });
         renderPanel.addView(ssrButton);
         sunGlareButton = button("", v -> {
@@ -902,7 +921,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             applySunGlareOverlay();
             persistWorkspaceSettings();
             setLastAction("sun_glare_" + sunGlareMode.name().toLowerCase(Locale.US));
-            updateHud();
+            refreshUiNow();
         });
         renderPanel.addView(sunGlareButton);
         addLightingSlider(renderPanel, "Render Scale", 0.50f, 1.00f, 0.01f, renderScale, v -> {
@@ -911,6 +930,16 @@ public class FilamentGlbPreviewActivity extends Activity {
         });
         renderPanel.addView(aoButton);
         renderPanel.addView(bloomButton);
+        addLightingSlider(renderPanel, "Bloom Strength", 0.0f, 0.25f, 0.005f, bloomStrength, v -> {
+            bloomStrength = v;
+            applyQualityProfile();
+            refreshUiNow();
+        });
+        addLightingSlider(renderPanel, "Bloom Highlight", 100.0f, 1200.0f, 10.0f, bloomHighlight, v -> {
+            bloomHighlight = v;
+            applyQualityProfile();
+            refreshUiNow();
+        });
         renderPanel.addView(refractionButton);
         renderPanel.addView(qualitySummaryView);
 
@@ -918,19 +947,46 @@ public class FilamentGlbPreviewActivity extends Activity {
         colorSummaryView.setBackgroundColor(Color.TRANSPARENT);
         colorModeButton = button("", v -> {
             colorMode = colorMode.next();
+            applyColorModeDefaults();
             applyColorGrading();
             persistWorkspaceSettings();
             setLastAction("color_" + colorMode.name().toLowerCase(Locale.US));
-            updateHud();
+            refreshUiNow();
         });
         colorPanel.addView(colorModeButton);
-        colorPanel.addView(button("Reset Color Grading", v -> {
+        resetColorButton = button("Reset Color Grading", v -> {
             colorMode = ColorMode.NEUTRAL;
+            applyColorModeDefaults();
             applyColorGrading();
             persistWorkspaceSettings();
             setLastAction("color_reset_neutral");
-            updateHud();
-        }));
+            refreshUiNow();
+        });
+        colorPanel.addView(resetColorButton);
+        addLightingSlider(colorPanel, "Color Exposure", -2.0f, 2.0f, 0.05f, colorExposure, v -> {
+            colorExposure = v;
+            applyColorGrading();
+            persistWorkspaceSettings();
+            refreshUiNow();
+        });
+        addLightingSlider(colorPanel, "Color Contrast", 0.50f, 1.50f, 0.01f, colorContrast, v -> {
+            colorContrast = v;
+            applyColorGrading();
+            persistWorkspaceSettings();
+            refreshUiNow();
+        });
+        addLightingSlider(colorPanel, "Color Saturation", 0.0f, 1.60f, 0.01f, colorSaturation, v -> {
+            colorSaturation = v;
+            applyColorGrading();
+            persistWorkspaceSettings();
+            refreshUiNow();
+        });
+        addLightingSlider(colorPanel, "Color Temperature", -0.30f, 0.30f, 0.01f, colorTemperature, v -> {
+            colorTemperature = v;
+            applyColorGrading();
+            persistWorkspaceSettings();
+            refreshUiNow();
+        });
         colorPanel.addView(colorSummaryView);
 
         fogSummaryView = overlayText(10.0f, 12);
@@ -943,7 +999,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             applyFogOptions();
             persistWorkspaceSettings();
             setLastAction("fog_" + fogMode.name().toLowerCase(Locale.US));
-            updateHud();
+            refreshUiNow();
         });
         fogPanel.addView(fogButton);
         addLightingSlider(fogPanel, "Fog Density", 0.0f, 0.08f, 0.001f, fogDensity, v -> {
@@ -967,7 +1023,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             skyboxVisible = !skyboxVisible;
             applySkyboxVisibility();
             setLastAction("skybox_" + (skyboxVisible ? "on" : "off"));
-            updateHud();
+            refreshUiNow();
         });
         iblPanel.addView(skyboxButton);
         addLightingSlider(iblPanel, "IBL", 0.0f, 10.0f, 0.1f, ambientUserIntensity, v -> {
@@ -992,7 +1048,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             applyLightRig();
             persistWorkspaceSettings();
             setLastAction("light_rig_" + lightRig.name().toLowerCase(Locale.US));
-            updateHud();
+            refreshUiNow();
         });
         lightsPanel.addView(lightRigButton);
         lightsPanel.addView(lightsSummaryView);
@@ -1022,7 +1078,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         resetFrameCountersButton.setOnClickListener(v -> {
             resetFrameCounters();
             setLastAction("fps_jank_counters_reset");
-            updateHud();
+            refreshUiNow();
         });
         debugPanel.addView(closeButton);
         debugPanel.addView(resetFrameCountersButton);
@@ -1056,7 +1112,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         createViewer();
         restorePersistedIbl();
         loadModel();
-        updateHud();
+        refreshUiNow();
     }
 
     @Override
@@ -1084,7 +1140,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             if (resultCode != RESULT_OK || data == null || data.getData() == null) {
                 importCopyStatus = "model_picker_cancelled";
                 setLastAction("model_picker_cancelled");
-                updateHud();
+                refreshUiNow();
                 return;
             }
             importModelFromUri(data.getData());
@@ -1094,7 +1150,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             if (resultCode != RESULT_OK || data == null || data.getData() == null) {
                 importCopyStatus = "ibl_picker_cancelled";
                 setLastAction("ibl_picker_cancelled");
-                updateHud();
+                refreshUiNow();
                 return;
             }
             importIblFromUri(data.getData());
@@ -1151,9 +1207,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         frameCallbackActive = true;
         lifecycleStatus = "running";
         lastFrameNs = 0L;
+        lastFrameWallNs = 0L;
         lastHudUpdateNs = 0L;
         Choreographer.getInstance().postFrameCallback(frameCallback);
-        updateHud();
+        refreshUiNow();
     }
 
     private void stopFrames(String status) {
@@ -1162,13 +1219,14 @@ public class FilamentGlbPreviewActivity extends Activity {
             Choreographer.getInstance().removeFrameCallback(frameCallback);
         }
         lifecycleStatus = status;
-        updateHud();
+        refreshUiNow();
     }
 
     private void doFrame(long frameTimeNanos) {
         if (!frameCallbackActive || destroying || destroyed || modelViewer == null) return;
         try {
-            updateFrameTiming(frameTimeNanos);
+            long frameStartWallNs = System.nanoTime();
+            updateFrameTiming(frameTimeNanos, frameStartWallNs);
             if (modelViewer.getAnimator() != null && modelViewer.getAnimator().getAnimationCount() > 0) {
                 float seconds = frameTimeNanos / 1_000_000_000.0f;
                 modelViewer.getAnimator().applyAnimation(0, seconds);
@@ -1190,19 +1248,20 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
     }
 
-    private void updateFrameTiming(long frameTimeNanos) {
-        if (lastFrameNs > 0L) {
-            float instantMs = (frameTimeNanos - lastFrameNs) / 1_000_000.0f;
+    private void updateFrameTiming(long frameTimeNanos, long frameWallNs) {
+        if (lastFrameWallNs > 0L) {
+            float instantMs = (frameWallNs - lastFrameWallNs) / 1_000_000.0f;
             if (instantMs > 0.0f && instantMs < 250.0f) {
-                rollingFrameMs = rollingFrameMs <= 0.0f ? instantMs : (rollingFrameMs * 0.82f + instantMs * 0.18f);
+                rollingFrameMs = rollingFrameMs <= 0.0f ? instantMs : (rollingFrameMs * 0.70f + instantMs * 0.30f);
                 rollingFps = 1000.0f / Math.max(1.0f, rollingFrameMs);
                 recordFrameSample(instantMs);
             }
         }
         lastFrameNs = frameTimeNanos;
+        lastFrameWallNs = frameWallNs;
         if (lastHudUpdateNs == 0L || frameTimeNanos - lastHudUpdateNs >= HUD_UPDATE_NS) {
             lastHudUpdateNs = frameTimeNanos;
-            updateHud();
+            refreshUiNow();
         }
     }
 
@@ -1230,6 +1289,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             p95FrameMs = 0.0f;
             frameBudgetStatus = "waiting_for_samples";
             smoothnessStatus = "waiting_for_samples";
+            visibleSmoothFps = 0.0f;
             return;
         }
         float[] samples = Arrays.copyOf(frameWindowMs, frameWindowCount);
@@ -1245,11 +1305,29 @@ public class FilamentGlbPreviewActivity extends Activity {
         Arrays.sort(samples);
         int p95Index = Math.min(samples.length - 1, Math.max(0, (int) Math.ceil(samples.length * 0.95f) - 1));
         p95FrameMs = samples[p95Index];
+        visibleSmoothFps = 1000.0f / Math.max(1.0f, p95FrameMs);
         if (p95FrameMs <= 16.6f) frameBudgetStatus = "within_60fps_budget_16.6ms";
         else if (p95FrameMs <= 22.2f) frameBudgetStatus = "within_45fps_budget_22.2ms";
         else if (p95FrameMs <= 33.3f) frameBudgetStatus = "within_30fps_budget_33.3ms";
         else frameBudgetStatus = "over_30fps_budget_jank_risk";
-        smoothnessStatus = "target=" + presetTargetFps() + "fps actual=" + oneDecimal(rollingFps) + "fps p95=" + oneDecimal(p95FrameMs) + "ms";
+        updateSsrPerformanceWarning();
+        smoothnessStatus = "target=" + presetTargetFps() + "fps actualWall=" + oneDecimal(rollingFps) + "fps visibleP95=" + oneDecimal(visibleSmoothFps) + "fps p95=" + oneDecimal(p95FrameMs) + "ms";
+    }
+
+    private void updateSsrPerformanceWarning() {
+        if (!ssrEnabled) {
+            ssrPerformanceWarning = "off";
+            ssrSlowFrameBaseline = slowFrameCounter;
+            ssrJankFrameBaseline = jankFrameCounter;
+            return;
+        }
+        long slowDelta = Math.max(0L, slowFrameCounter - ssrSlowFrameBaseline);
+        long jankDelta = Math.max(0L, jankFrameCounter - ssrJankFrameBaseline);
+        if (jankDelta > 0L || slowDelta >= 6L || visibleSmoothFps < 25.0f) {
+            ssrPerformanceWarning = "WARNING_ssr_manual_heavy_slowDelta=" + slowDelta + "_jankDelta=" + jankDelta + "_visibleP95Fps=" + oneDecimal(visibleSmoothFps);
+        } else {
+            ssrPerformanceWarning = "enabled_monitoring_slowDelta=" + slowDelta + "_jankDelta=" + jankDelta;
+        }
     }
 
     private void resetFrameCounters() {
@@ -1258,6 +1336,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         frameWindowCount = 0;
         rollingFrameMs = 0.0f;
         rollingFps = 0.0f;
+        visibleSmoothFps = 0.0f;
         rollingRenderCpuMs = 0.0f;
         avgFrameMs = 0.0f;
         minFrameMs = 0.0f;
@@ -1266,6 +1345,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         worstFrameMs = 0.0f;
         jankFrameCounter = 0L;
         slowFrameCounter = 0L;
+        ssrSlowFrameBaseline = 0L;
+        ssrJankFrameBaseline = 0L;
+        ssrPerformanceWarning = ssrEnabled ? "enabled_after_counter_reset" : "off";
         frameBudgetStatus = "reset_waiting_for_samples";
         smoothnessStatus = "reset_waiting_for_samples";
     }
@@ -1288,7 +1370,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 pickDepth = result.depth;
                 selectedMaterialIndexStatus = selectedRenderable.equals("none") ? "none" : "deferred_material_slot_mapping_limited_by_gltfio_java_api";
                 pickingStatus = selectedRenderable.equals("none") ? "ok_no_renderable_at_tap" : "ok_renderable_selected";
-                updateHud();
+                refreshUiNow();
             });
             pickingStatus = "pick_requested";
         } catch (Throwable t) {
@@ -1305,7 +1387,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             panelCollapsed = false;
             persistWorkspaceSettings();
             syncWorkspaceUi();
-            updateHud();
+            refreshUiNow();
         });
         return button;
     }
@@ -1409,7 +1491,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             importCopyStatus = "model_import_failed: " + shortMessage(t);
             setLastAction("imported_model_failed");
             loadStatus = importCopyStatus;
-            updateHud();
+            refreshUiNow();
         }
     }
 
@@ -1429,7 +1511,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             createEnvironmentFallback();
             iblLoadStatus = failedStatus;
             fallbackReason = "ibl_import_failed";
-            updateHud();
+            refreshUiNow();
         }
     }
 
@@ -1485,7 +1567,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void loadModel() {
         if (modelViewer == null) {
             loadStatus = "viewer_not_ready";
-            updateHud();
+            refreshUiNow();
             return;
         }
         try {
@@ -1493,14 +1575,14 @@ public class FilamentGlbPreviewActivity extends Activity {
             if (modelPath == null || modelPath.isEmpty()) {
                 loadStatus = "no_active_glb_or_gltf";
                 gltfioLoaded = "false";
-                updateHud();
+                refreshUiNow();
                 return;
             }
             File file = new File(modelPath);
             if (!file.isFile()) {
                 loadStatus = "file_missing: " + modelPath;
                 gltfioLoaded = "false";
-                updateHud();
+                refreshUiNow();
                 return;
             }
             modelSourcePath = modelSourcePath.equals("none") ? file.getAbsolutePath() : modelSourcePath;
@@ -1515,7 +1597,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             } else {
                 loadStatus = "unsupported_extension_expected_glb_or_gltf";
                 gltfioLoaded = "false";
-                updateHud();
+                refreshUiNow();
                 return;
             }
             modelViewer.transformToUnitCube(new Float3(0.0f, 0.0f, 0.0f));
@@ -1531,7 +1613,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             gltfioLoaded = "false";
             materialInspectorStatus = "not_available_model_load_failed";
         }
-        updateHud();
+        refreshUiNow();
     }
 
     private void applyRenderableShadowMode() {
@@ -1686,7 +1768,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             futureIblAssetPath = file.getAbsolutePath();
             persistActiveIbl(file);
             updateIblButton();
-            updateHud();
+            refreshUiNow();
             return;
         }
         try {
@@ -1709,7 +1791,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             fallbackReason = "ibl_loader_exception";
         }
         updateIblButton();
-        updateHud();
+        refreshUiNow();
     }
 
     private void loadKtxIbl(File file, String reason) throws Exception {
@@ -1857,12 +1939,14 @@ public class FilamentGlbPreviewActivity extends Activity {
         lightingPreset = LightingPreset.SAFE_STUDIO;
         aoMode = AoMode.OFF;
         bloomMode = BloomMode.OFF;
+        bloomStrength = defaultBloomStrength(bloomMode);
+        bloomHighlight = defaultBloomHighlight(bloomMode);
         shadowMode = ShadowMode.OFF;
         refractionMode = RefractionMode.ON;
         lastInputError = "none";
         applyLightingPreset();
         applyQualityProfile();
-        updateHud();
+        refreshUiNow();
     }
 
     private void applyLightingValues() {
@@ -1913,7 +1997,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             lightingStatus = "apply_failed";
         }
         updateLightingControlLabels();
-        updateHud();
+        refreshUiNow();
     }
 
     private float[] sunDirectionFromAngles() {
@@ -2064,16 +2148,33 @@ public class FilamentGlbPreviewActivity extends Activity {
             bloom.strength = 0.0f;
             bloom.highlight = 1000.0f;
         } else if (bloomMode == BloomMode.SOFT) {
-            bloom.strength = 0.025f;
-            bloom.highlight = 800.0f;
+            bloom.strength = clamp(bloomStrength, 0.0f, 0.08f);
+            bloom.highlight = clamp(bloomHighlight, 500.0f, 1200.0f);
         } else if (bloomMode == BloomMode.MEDIUM) {
-            bloom.strength = 0.05f;
-            bloom.highlight = 500.0f;
+            bloom.strength = clamp(bloomStrength, 0.0f, 0.14f);
+            bloom.highlight = clamp(bloomHighlight, 250.0f, 1200.0f);
         } else {
-            bloom.strength = 0.12f;
-            bloom.highlight = 250.0f;
+            bloom.strength = clamp(bloomStrength, 0.0f, 0.25f);
+            bloom.highlight = clamp(bloomHighlight, 100.0f, 1200.0f);
         }
-        bloomActualStatus = "mode=" + bloomMode.name() + " enabled=" + bloom.enabled + " strength=" + twoDecimal(bloom.strength);
+        bloomStrength = bloom.strength;
+        bloomHighlight = bloom.highlight;
+        bloomActualStatus = "mode=" + bloomMode.name() + " enabled=" + bloom.enabled + " strength=" + threeDecimal(bloom.strength)
+            + " highlight=" + oneDecimal(bloom.highlight) + " thresholdBoolean=" + bloom.threshold + " dirt=not_exposed softness=not_exposed";
+    }
+
+    private float defaultBloomStrength(BloomMode mode) {
+        if (mode == BloomMode.SOFT) return 0.025f;
+        if (mode == BloomMode.MEDIUM) return 0.05f;
+        if (mode == BloomMode.HIGH) return 0.12f;
+        return 0.0f;
+    }
+
+    private float defaultBloomHighlight(BloomMode mode) {
+        if (mode == BloomMode.SOFT) return 800.0f;
+        if (mode == BloomMode.MEDIUM) return 500.0f;
+        if (mode == BloomMode.HIGH) return 250.0f;
+        return 1000.0f;
     }
 
     private void applyShadowOptions(com.google.android.filament.View view) {
@@ -2201,15 +2302,23 @@ public class FilamentGlbPreviewActivity extends Activity {
         colorGrading = new ColorGrading.Builder()
             .quality(qualityProfile == FilamentQualityProfile.HIGH_PREVIEW ? ColorGrading.QualityLevel.MEDIUM : ColorGrading.QualityLevel.LOW)
             .toneMapping(colorMode.toneMapping)
-            .exposure(0.0f)
+            .exposure(colorExposure)
             .whiteBalance(colorTemperature, tint)
             .contrast(colorContrast)
             .saturation(colorSaturation)
             .build(engine);
         modelViewer.getView().setColorGrading(colorGrading);
         toneMapperStatus = colorMode.toneMapping.name();
-        colorGradingStatus = "applied_" + colorMode.name().toLowerCase(Locale.US);
+        colorGradingStatus = "applied_" + colorMode.name().toLowerCase(Locale.US)
+            + "_manual_exposure_contrast_saturation_temperature";
         if (colorModeButton != null) colorModeButton.setText("Color Mode: " + colorMode.label);
+    }
+
+    private void applyColorModeDefaults() {
+        colorExposure = 0.0f;
+        colorContrast = colorMode.contrast;
+        colorSaturation = colorMode.saturation;
+        colorTemperature = colorMode.temperature;
     }
 
     private void applyFogOptions() {
@@ -2366,6 +2475,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         exposure = prefs.getFloat(PREF_FILAMENT_EXPOSURE, lightingPreset.exposure);
         backgroundBrightness = prefs.getFloat(PREF_FILAMENT_BG, lightingPreset.backgroundBrightness);
         renderScale = prefs.getFloat(PREF_FILAMENT_RENDER_SCALE, 0.95f);
+        bloomStrength = prefs.getFloat(PREF_FILAMENT_BLOOM_STRENGTH, defaultBloomStrength(bloomMode));
+        bloomHighlight = prefs.getFloat(PREF_FILAMENT_BLOOM_HIGHLIGHT, defaultBloomHighlight(bloomMode));
         dynamicResolutionEnabled = prefs.getBoolean(PREF_FILAMENT_DYNAMIC_RESOLUTION, true);
         actualSampleCount = prefs.getInt(PREF_FILAMENT_MSAA_SAMPLES, 2);
         fxaaEnabled = prefs.getBoolean(PREF_FILAMENT_FXAA_ENABLED, true);
@@ -2391,6 +2502,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         cameraTargetY = prefs.getFloat(PREF_FILAMENT_CAMERA_TARGET_Y, 0.0f);
         cameraTargetZ = prefs.getFloat(PREF_FILAMENT_CAMERA_TARGET_Z, 0.0f);
         cameraFov = prefs.getFloat(PREF_FILAMENT_CAMERA_FOV, 45.0f);
+        colorExposure = prefs.getFloat(PREF_FILAMENT_COLOR_EXPOSURE, 0.0f);
+        colorContrast = prefs.getFloat(PREF_FILAMENT_COLOR_CONTRAST, colorMode.contrast);
+        colorSaturation = prefs.getFloat(PREF_FILAMENT_COLOR_SATURATION, colorMode.saturation);
+        colorTemperature = prefs.getFloat(PREF_FILAMENT_COLOR_TEMPERATURE, colorMode.temperature);
         ambientFallbackIntensity = ambientToInternal(ambientUserIntensity);
     }
 
@@ -2414,6 +2529,8 @@ public class FilamentGlbPreviewActivity extends Activity {
             .putFloat(PREF_FILAMENT_EXPOSURE, exposure)
             .putFloat(PREF_FILAMENT_BG, backgroundBrightness)
             .putFloat(PREF_FILAMENT_RENDER_SCALE, renderScale)
+            .putFloat(PREF_FILAMENT_BLOOM_STRENGTH, bloomStrength)
+            .putFloat(PREF_FILAMENT_BLOOM_HIGHLIGHT, bloomHighlight)
             .putBoolean(PREF_FILAMENT_DYNAMIC_RESOLUTION, dynamicResolutionEnabled)
             .putInt(PREF_FILAMENT_MSAA_SAMPLES, actualSampleCount)
             .putBoolean(PREF_FILAMENT_FXAA_ENABLED, fxaaEnabled)
@@ -2439,6 +2556,10 @@ public class FilamentGlbPreviewActivity extends Activity {
             .putFloat(PREF_FILAMENT_CAMERA_TARGET_Y, cameraTargetY)
             .putFloat(PREF_FILAMENT_CAMERA_TARGET_Z, cameraTargetZ)
             .putFloat(PREF_FILAMENT_CAMERA_FOV, cameraFov)
+            .putFloat(PREF_FILAMENT_COLOR_EXPOSURE, colorExposure)
+            .putFloat(PREF_FILAMENT_COLOR_CONTRAST, colorContrast)
+            .putFloat(PREF_FILAMENT_COLOR_SATURATION, colorSaturation)
+            .putFloat(PREF_FILAMENT_COLOR_TEMPERATURE, colorTemperature)
             .apply();
     }
 
@@ -2482,7 +2603,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             createEnvironmentFallback();
             getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().remove(PREF_ACTIVE_IBL_PATH).remove(PREF_ACTIVE_IBL_NAME).apply();
             updateIblButton();
-            updateHud();
+            refreshUiNow();
         } else {
             loadIblFile(next, "preset_cycle");
         }
@@ -2779,7 +2900,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             transformTargetStatus = "rootEntity_failed";
         }
         updateAllSliderLabels();
-        updateHud();
+        refreshUiNow();
     }
 
     private void resetCameraControls() {
@@ -2816,7 +2937,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             cameraApplyStatus = "apply_failed: " + shortMessage(t);
         }
         updateAllSliderLabels();
-        updateHud();
+        refreshUiNow();
     }
 
     private void applySkyboxVisibility() {
@@ -2846,7 +2967,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         } catch (Throwable t) {
             iblStatus = "iblRotation_not_exposed_or_failed: " + shortMessage(t);
         }
-        updateHud();
+        refreshUiNow();
     }
 
     private void resetSafeDefaults() {
@@ -2857,6 +2978,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         shadowMode = ShadowMode.OFF;
         refractionMode = RefractionMode.ON;
         colorMode = ColorMode.NEUTRAL;
+        applyColorModeDefaults();
         fogMode = FogMode.OFF;
         lightRig = LightRig.OFF;
         sunGlareMode = SunGlareMode.OFF;
@@ -2887,7 +3009,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         applyLightRig();
         configStatus = "safe_defaults_reset";
         setLastAction("safe_defaults_reset");
-        updateHud();
+        refreshUiNow();
     }
 
     private File configFile() {
@@ -2925,7 +3047,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         else if (privateOk) configStatus = reason + "_private_ok_export_failed";
         else configStatus = reason + "_failed";
         setLastAction(configStatus);
-        updateHud();
+        refreshUiNow();
     }
 
     private void loadConfig(File file, String reason) {
@@ -2961,7 +3083,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             configStatus = reason + "_failed";
             setLastAction(configStatus);
         }
-        updateHud();
+        refreshUiNow();
     }
 
     private JSONObject buildConfigJson() {
@@ -2988,6 +3110,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("ditheringStatus", ditheringStatus);
             json.put("colorMode", colorMode.name());
             json.put("toneMapper", toneMapperStatus);
+            json.put("colorExposure", colorExposure);
             json.put("colorContrast", colorContrast);
             json.put("colorSaturation", colorSaturation);
             json.put("colorTemperature", colorTemperature);
@@ -3013,6 +3136,9 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("aoMode", aoMode.name());
             json.put("aoStatus", aoActualStatus);
             json.put("bloomMode", bloomMode.name());
+            json.put("bloomStrength", bloomStrength);
+            json.put("bloomHighlight", bloomHighlight);
+            json.put("bloomStatus", bloomActualStatus);
             json.put("shadowMode", shadowMode.name());
             json.put("shadowStatus", shadowActualStatus);
             json.put("refractionMode", refractionMode.name());
@@ -3051,6 +3177,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         sunGlareMode = enumValue(SunGlareMode.class, json.optString("sunGlareMode"), SunGlareMode.OFF);
         lightRig = enumValue(LightRig.class, json.optString("lightRig"), LightRig.OFF);
         renderScale = (float) json.optDouble("renderScale", renderScale);
+        bloomStrength = (float) json.optDouble("bloomStrength", bloomStrength);
+        bloomHighlight = (float) json.optDouble("bloomHighlight", bloomHighlight);
         dynamicResolutionEnabled = json.optBoolean("dynamicResolutionEnabled", dynamicResolutionEnabled);
         actualSampleCount = sanitizeMsaa(json.optInt("msaaSamples", actualSampleCount));
         fxaaEnabled = json.optBoolean("fxaaEnabled", fxaaEnabled);
@@ -3060,6 +3188,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         fogDensity = (float) json.optDouble("fogDensity", fogDensity);
         fogDistance = (float) json.optDouble("fogDistance", fogDistance);
         fogHeight = (float) json.optDouble("fogHeight", fogHeight);
+        colorExposure = (float) json.optDouble("colorExposure", colorExposure);
+        colorContrast = (float) json.optDouble("colorContrast", colorContrast);
+        colorSaturation = (float) json.optDouble("colorSaturation", colorSaturation);
+        colorTemperature = (float) json.optDouble("colorTemperature", colorTemperature);
         sunLightIntensity = (float) json.optDouble("sunIntensity", sunLightIntensity);
         sunAzimuth = normalizedAzimuth((float) json.optDouble("sunAzimuth", sunAzimuth));
         sunElevation = (float) json.optDouble("sunElevation", sunElevation);
@@ -3129,7 +3261,8 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private void updateHud() {
         if (hudView != null) {
-            hudView.setText("Renderer: Filament | GLB loader: gltfio | FPS " + oneDecimal(rollingFps) + " | " + oneDecimal(rollingFrameMs)
+            hudView.setText("Renderer: Filament | GLB loader: gltfio | wall FPS " + oneDecimal(rollingFps) + " | visual " + visualSmoothnessLabel()
+                + " | target " + presetTargetFps() + " | frame " + oneDecimal(rollingFrameMs)
                 + " ms | avg " + oneDecimal(avgFrameMs) + " p95 " + oneDecimal(p95FrameMs)
                 + " | jank " + jankFrameCounter + " slow " + slowFrameCounter
                 + " | CPU " + oneDecimal(rollingRenderCpuMs) + " ms | " + frameBudgetStatus
@@ -3150,10 +3283,12 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nrenderScale=" + twoDecimal(renderScale) + " dynamicScale=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
                 + "\ntaaSupported=true taaEnabled=" + taaEnabled + " taaStatus=" + taaStatus
                 + "\nssrSupported=true ssrEnabled=" + ssrEnabled + " ssrStatus=" + ssrStatus + (ssrEnabled ? " WARNING_manual_heavy_mobile" : "")
+                + "\nssrPerformanceWarning=" + ssrPerformanceWarning
                 + "\nfxaaSupported=true fxaaToggle=" + fxaaEnabled + " fxaaActuallyActive=" + "FXAA".equals(actualAA)
                 + "\nditheringStatus=" + ditheringStatus + " guardBandStatus=" + guardBandStatus
                 + "\nsunGlareMode=" + sunGlareMode.name() + " sunGlareStatus=" + sunGlareStatus
-                + "\nframeStats fps=" + oneDecimal(rollingFps) + " frameMs=" + oneDecimal(rollingFrameMs) + " avg=" + oneDecimal(avgFrameMs) + " min=" + oneDecimal(minFrameMs) + " max=" + oneDecimal(maxFrameMs) + " p95=" + oneDecimal(p95FrameMs) + " worst=" + oneDecimal(worstFrameMs)
+                + "\nframeStats wallFps=" + oneDecimal(rollingFps) + " visualSmoothness=" + visualSmoothnessLabel() + " targetFps=" + presetTargetFps() + " timingSource=" + timingSourceStatus
+                + "\nframeMs current=" + oneDecimal(rollingFrameMs) + " avg=" + oneDecimal(avgFrameMs) + " min=" + oneDecimal(minFrameMs) + " max=" + oneDecimal(maxFrameMs) + " p95=" + oneDecimal(p95FrameMs) + " worst=" + oneDecimal(worstFrameMs)
                 + "\nframeBudget=" + frameBudgetStatus + " smoothness=" + smoothnessStatus + " slow=" + slowFrameCounter + " jank=" + jankFrameCounter
                 + "\nanisotropicFiltering=not_exposed textureLodBias=not_exposed"
                 + "\naoMode=" + aoMode.name() + " aoApplied=" + aoActuallyApplied
@@ -3165,8 +3300,10 @@ public class FilamentGlbPreviewActivity extends Activity {
             colorSummaryView.setText("colorGradingSupported=true"
                 + "\ncolorMode=" + colorMode.label
                 + "\ntoneMapper=" + toneMapperStatus
+                + "\nexposure=" + twoDecimal(colorExposure)
                 + "\ncontrast=" + twoDecimal(colorContrast) + " saturation=" + twoDecimal(colorSaturation)
                 + "\ntemperature=" + twoDecimal(colorTemperature) + " whitePoint=not_exposed"
+                + "\nLUT/palette=not_exposed_by_current_java_api"
                 + "\nhighlightProtection=not_exposed"
                 + "\ncolorGradingStatus=" + colorGradingStatus);
         }
@@ -3259,10 +3396,12 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nenvironmentMode=" + environmentMode + " activeIbl=" + shorten(futureIblAssetPath, 72)
                 + "\nQuality: " + qualityFeatureStatus
                 + "\nactualAA=" + actualAA + " actualMSAA=" + actualSampleCount + "x actualDynamicResolution=" + dynamicResolutionEnabled + " actualRenderScale=" + twoDecimal(renderScale) + " dynamicScale=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
-                + "\nframeStats current=" + oneDecimal(rollingFrameMs) + "ms avg=" + oneDecimal(avgFrameMs) + " min=" + oneDecimal(minFrameMs) + " max=" + oneDecimal(maxFrameMs) + " p95=" + oneDecimal(p95FrameMs) + " worst=" + oneDecimal(worstFrameMs)
+                + "\nframeStats wallFps=" + oneDecimal(rollingFps) + " visualSmoothness=" + visualSmoothnessLabel() + " targetFps=" + presetTargetFps() + " timingSource=" + timingSourceStatus
+                + "\nframeMs current=" + oneDecimal(rollingFrameMs) + "ms avg=" + oneDecimal(avgFrameMs) + " min=" + oneDecimal(minFrameMs) + " max=" + oneDecimal(maxFrameMs) + " p95=" + oneDecimal(p95FrameMs) + " worst=" + oneDecimal(worstFrameMs)
                 + "\nframeBudgetStatus=" + frameBudgetStatus + " slowFrames=" + slowFrameCounter + " jankFrames=" + jankFrameCounter + " renderCpuApproxMs=" + oneDecimal(rollingRenderCpuMs)
                 + "\ntaaSupported=true taaEnabled=" + taaEnabled + " taaStatus=" + taaStatus
                 + "\nssrSupported=true ssrEnabled=" + ssrEnabled + " ssrStatus=" + ssrStatus + (ssrEnabled ? " WARNING_manual_heavy_mobile" : "")
+                + "\nssrPerformanceWarning=" + ssrPerformanceWarning
                 + "\nditheringStatus=" + ditheringStatus + " guardBandStatus=" + guardBandStatus + " fxaaSupported=true"
                 + "\ncolorGradingSupported=true colorMode=" + colorMode.name() + " toneMapper=" + toneMapperStatus + " colorGradingStatus=" + colorGradingStatus
                 + "\nfogSupported=true fogMode=" + fogMode.name() + " fogStatus=" + fogStatus
@@ -3293,6 +3432,31 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nlegacyVulkanReturnStatus: " + legacyVulkanReturnStatus
                 + "\nlastLifecycleError: " + lastLifecycleError);
         }
+    }
+
+    private void refreshUiNow() {
+        updateAllSliderLabels();
+        updateToggleLabels();
+        updateIblButton();
+        if (lightingButton != null) lightingButton.setText("Lighting: " + lightingPreset.label);
+        if (qualityButton != null) qualityButton.setText("Quality: " + qualityProfile.label);
+        if (colorModeButton != null) colorModeButton.setText("Color Mode: " + colorMode.label);
+        if (fogButton != null) fogButton.setText(fogMode.label);
+        updateHud();
+    }
+
+    private void resetSsrPerformanceBaseline() {
+        ssrSlowFrameBaseline = slowFrameCounter;
+        ssrJankFrameBaseline = jankFrameCounter;
+        ssrPerformanceWarning = ssrEnabled ? "enabled_monitoring_from_now" : "off";
+    }
+
+    private String visualSmoothnessLabel() {
+        if (frameWindowCount <= 0) return "waiting_for_samples";
+        if (ssrEnabled && p95FrameMs <= 22.2f) {
+            return "gpu_not_measured_ssr_manual_heavy_wallP95=" + oneDecimal(visibleSmoothFps) + "fps";
+        }
+        return oneDecimal(visibleSmoothFps) + "fps_p95_wall";
     }
 
     private boolean currentConfigDiffersFromSaved() {
@@ -3450,8 +3614,11 @@ public class FilamentGlbPreviewActivity extends Activity {
             label.setText(name + " " + threeDecimal(value));
         } else if ("Exp".equals(name) || "BG".equals(name) || "Ambient".equals(name) || "IBL".equals(name) || "Fill".equals(name)
             || "Exposure".equals(name) || "Background".equals(name) || name.contains("Scale") || name.contains("Offset")
-            || name.startsWith("Pan") || name.startsWith("Target") || name.contains("Distance")) {
+            || name.startsWith("Pan") || name.startsWith("Target") || name.contains("Distance")
+            || name.startsWith("Color ") || "Bloom Strength".equals(name)) {
             label.setText(name + " " + twoDecimal(value));
+        } else if ("Bloom Highlight".equals(name)) {
+            label.setText(name + " " + oneDecimal(value));
         } else if ("Sun".equals(name)) {
             label.setText(name + " " + oneDecimal(value));
         } else {
@@ -3468,6 +3635,12 @@ public class FilamentGlbPreviewActivity extends Activity {
         if ("Sun Azimuth".equals(label)) return normalizedAzimuth(sunAzimuth);
         if ("Sun Elevation".equals(label)) return sunElevation;
         if ("Render Scale".equals(label)) return renderScale;
+        if ("Bloom Strength".equals(label)) return bloomStrength;
+        if ("Bloom Highlight".equals(label)) return bloomHighlight;
+        if ("Color Exposure".equals(label)) return colorExposure;
+        if ("Color Contrast".equals(label)) return colorContrast;
+        if ("Color Saturation".equals(label)) return colorSaturation;
+        if ("Color Temperature".equals(label)) return colorTemperature;
         if ("Fog Density".equals(label)) return fogDensity;
         if ("Fog Distance".equals(label)) return fogDistance;
         if ("Fog Height".equals(label)) return fogHeight;
@@ -3531,7 +3704,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (raw.isEmpty()) {
             lastInputError = label + "_empty_kept_previous";
             updateAdvancedFieldValues();
-            updateHud();
+            refreshUiNow();
             return;
         }
         try {
@@ -3544,7 +3717,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         } catch (Throwable ignored) {
             lastInputError = label + "_invalid_kept_previous";
             updateAdvancedFieldValues();
-            updateHud();
+            refreshUiNow();
         }
     }
 

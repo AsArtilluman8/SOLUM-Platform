@@ -4,6 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RENDER = ROOT / "apps/engine/src/main/java/com/solum/engine/render"
+ENVIRONMENT = ROOT / "apps/engine/src/main/java/com/solum/engine/environment"
 SCENE = ROOT / "apps/engine/src/main/java/com/solum/engine/scene"
 ACTIVITY = ROOT / "apps/engine/src/main/java/com/solum/engine/FilamentGlbPreviewActivity.java"
 
@@ -21,6 +22,10 @@ checks["render_package"] = {"status": "present" if RENDER.is_dir() else "missing
 if not RENDER.is_dir():
     missing.append("render_package")
 
+checks["environment_package"] = {"status": "present" if ENVIRONMENT.is_dir() else "missing", "path": str(ENVIRONMENT.relative_to(ROOT))}
+if not ENVIRONMENT.is_dir():
+    missing.append("environment_package")
+
 for name in [
     "RenderSettings",
     "RenderActualState",
@@ -35,9 +40,22 @@ for name in [
 
 require_file("SceneObject", SCENE / "SceneObject.java")
 require_file("SceneRegistry", SCENE / "SceneRegistry.java")
+for name in [
+    "EnvironmentApi",
+    "EnvironmentSettings",
+    "EnvironmentActualState",
+    "EnvironmentDiagnostics",
+    "TimeOfDayController",
+    "SkyIblPreset",
+    "CelestialBodyState",
+    "EnvironmentController",
+]:
+    require_file(name, ENVIRONMENT / f"{name}.java")
 
 activity_text = ACTIVITY.read_text(encoding="utf-8") if ACTIVITY.is_file() else ""
 api_text = (RENDER / "RenderControlApi.java").read_text(encoding="utf-8") if (RENDER / "RenderControlApi.java").is_file() else ""
+environment_api_text = (ENVIRONMENT / "EnvironmentApi.java").read_text(encoding="utf-8") if (ENVIRONMENT / "EnvironmentApi.java").is_file() else ""
+environment_text = "\n".join(path.read_text(encoding="utf-8", errors="replace") for path in ENVIRONMENT.glob("*.java")) if ENVIRONMENT.is_dir() else ""
 diagnostics_text = (RENDER / "RenderDiagnostics.java").read_text(encoding="utf-8") if (RENDER / "RenderDiagnostics.java").is_file() else ""
 controller_text = (RENDER / "FilamentRenderController.java").read_text(encoding="utf-8") if (RENDER / "FilamentRenderController.java").is_file() else ""
 activity_refs = ["RenderControlApi", "FilamentRenderController"]
@@ -68,6 +86,23 @@ checks["render_api_contract_methods"] = {
 if missing_methods:
     missing.append("render_api_contract_methods")
 
+environment_methods = [
+    "getSettings", "getActualState", "getDiagnostics", "setTimeOfDay", "setTimeSpeed",
+    "setEnvironmentPreset", "setSunEnabled", "setSunAzimuth", "setSunElevation",
+    "setSunIntensityLux", "setSunColorTemperatureKelvin", "setMoonEnabled",
+    "setMoonAzimuth", "setMoonElevation", "setMoonIntensityLux", "setMoonPhase",
+    "setIblPreset", "setIblStrength", "setIblRotation", "setSkyboxPreset",
+    "setSkyboxVisible", "setStarsEnabled", "setStarsIntensity", "setCloudAmount",
+    "apply", "update",
+]
+missing_environment_methods = [method for method in environment_methods if method not in environment_api_text]
+checks["environment_api_contract_methods"] = {
+    "status": "present" if not missing_environment_methods else "missing",
+    "missing_methods": missing_environment_methods,
+}
+if missing_environment_methods:
+    missing.append("environment_api_contract_methods")
+
 for key, haystack, terms in [
     ("diagnostics_on_demand_activity", activity_text, ["Copy Short Report", "Export Full Report", "buildShortDiagnosticsReport", "buildFullDiagnosticsReportJson", "SOLUM_REPORTS"]),
     ("fps_confidence_terms", activity_text + diagnostics_text, ["primaryFrameMs", "primaryFps", "primaryFpsSource", "javaCallbackFps", "p50FrameMs", "p95FrameMs", "worstFrameMs", "jitterMs", "fpsStability", "fpsConfidence", "timingDisagreement"]),
@@ -76,6 +111,8 @@ for key, haystack, terms in [
     ("cost_diagnostics_terms", controller_text + activity_text, ["RenderCostDiagnostics", "estimated_cost", "not_runtime_measured", "needs_cost_probe_later"]),
     ("fog_visibility_terms", controller_text + activity_text, ["fogVisibilityConfidence", "may_be_hidden_by_skybox_or_exposure", "fogWarning"]),
     ("render_control_center_sections", activity_text, ["Render Control Center: Basic", "Render Control Center: Lighting", "Render Control Center: Sky / IBL", "Render Control Center: PostFX", "Render Control Center: Color / Fog", "Debug"]),
+    ("p51_environment_ui_report_terms", activity_text, ["Environment / Time of Day", "Time", "Dawn", "Noon", "Sunset", "Night", "environmentSettings", "environmentActualState", "environmentDiagnostics", "environmentShortReportSection"]),
+    ("p51_environment_runtime_terms", activity_text + environment_text, ["EnvironmentController", "TimeOfDayController", "setTimeOfDay", "setSunIntensityLux", "setMoonIntensityLux", "slot_ready_asset_missing", "placeholder_not_rendered", "planned_p52_assets"]),
     ("render_control_center_api_driven_status", activity_text, ["featureLine", "compactOwnershipSummary", "compactCostSummary", "RenderFeatureDescriptor", "RenderCostDiagnostics"]),
     ("render_control_center_debug_on_demand", activity_text, ["debugPanel.getVisibility() == View.VISIBLE", "Copy Short Report", "Export Full Report"]),
     ("startup_crash_report_fallback", activity_text, ["installCrashReporter", "writeCrashReport", "SOLUM_CRASHES", "solum_crashes", "startupMilestone"]),

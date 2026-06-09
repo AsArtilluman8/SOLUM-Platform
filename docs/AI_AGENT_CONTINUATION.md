@@ -24,13 +24,13 @@ Do not claim planned systems are implemented.
 
 ## Current priority order
 
-1. P50 Full Render Control Center mobile UX.
-2. P51 Sky / IBL / Sun / Time of Day foundation.
-3. P52 Scene Workspace / multi-model scene.
-4. P53 Asset Shelf.
-5. P54 Transform Gizmo.
-6. P55 Animation Preview.
-7. P56 Scene Save/Load.
+1. P51 Environment API + Time of Day + Sun/Moon Light Foundation.
+2. P52 Environment assets: HDRI/IBL/star slots.
+3. P53 Scene Workspace / multi-model scene.
+4. P54 Asset Shelf.
+5. P55 Transform Gizmo.
+6. P56 Animation Preview.
+7. P57 Scene Save/Load.
 8. Labs and package/agent systems later.
 
 ## Active near-term patch
@@ -38,13 +38,13 @@ Do not claim planned systems are implemented.
 Current near-term work:
 
 ```text
-P50 — Full Render Control Center mobile UX
+P51 — Environment API + Time of Day foundation
 ```
 
 Main goal:
 
 ```text
-Render Control Center must organize existing render controls into Basic / Lighting / Sky-IBL / PostFX / Color-Fog / Debug, using Render API truth, descriptors, ownership, diagnostics, and cost warnings.
+EnvironmentApi owns time of day, sun/moon intent, IBL/skybox slots, stars placeholder state, fallback, and diagnostics. Heavy HDRI/IBL/star assets are P52.
 ```
 
 ## Important rules
@@ -53,7 +53,7 @@ Render Control Center must organize existing render controls into Basic / Lighti
 - Do not add new visual features before fixing current control truth.
 - Do not add a huge API UI until existing controls work.
 - Render Control Center is UI over the existing Render API; do not add new visual renderer features in P50.
-- Sky / IBL is status/control foundation only; full Sky / Sun / Time of Day remains planned for P51.
+- Sky / IBL has P51 Environment API controls; real HDRI/star assets remain planned for P52.
 - Keep live HUD lightweight; full diagnostics run by button/copy/export only.
 - Do not use Java callback FPS as primary FPS.
 - Frame ms is primary truth. FPS is derived from frame ms.
@@ -87,6 +87,8 @@ Render Control Center must organize existing render controls into Basic / Lighti
 - `docs/design/SOLUM_DIAGNOSTICS_ON_DEMAND.md`
 - `docs/design/SOLUM_MALI_RENDER_OPTIMIZATION_RULES.md`
 - `docs/design/SOLUM_RENDER_CONTROL_CENTER.md`
+- `docs/design/SOLUM_ENVIRONMENT_API.md`
+- `docs/design/SOLUM_ENVIRONMENT_ASSET_PIPELINE.md`
 
 ## Build command shape
 

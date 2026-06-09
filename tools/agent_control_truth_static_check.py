@@ -4,6 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "apps/engine/src/main/java/com/solum/engine/FilamentGlbPreviewActivity.java"
+ENVIRONMENT = ROOT / "apps/engine/src/main/java/com/solum/engine/environment"
 
 CHECKS = {
     "requestedMSAA": ["requestedSampleCount", "requestedMSAA"],
@@ -33,6 +34,8 @@ CHECKS = {
     "render_control_center_sections": ["Render Control Center: Basic", "Render Control Center: Lighting", "Render Control Center: Sky / IBL", "Render Control Center: PostFX", "Render Control Center: Color / Fog", "WorkspaceTab.POSTFX"],
     "render_control_center_preserves_debug_on_demand": ["debugPanel.getVisibility() == View.VISIBLE", "Copy Short Report", "Export Full Report", "Reset FPS/Jank Counters"],
     "render_control_center_api_terms": ["RenderControlApi", "RenderFeatureDescriptor", "RenderCostDiagnostics", "featureLine", "compactCostSummary"],
+    "p51_environment_api_terms": ["EnvironmentApi", "EnvironmentController", "TimeOfDayController", "Environment / Time of Day", "setTimeOfDay", "environmentSettings", "environmentActualState", "environmentDiagnostics"],
+    "p51_environment_truth_terms": ["placeholder_not_rendered", "slot_ready_asset_missing", "planned_p52_assets", "missing_asset_fallback", "activity_local"],
     "crash_report_fallback": ["installCrashReporter", "SOLUM_CRASHES", "solum_crashes", "crash_", "writeCrashReport", "startupMilestone"],
     "startup_milestones": ["onCreate_start", "crash_handler_installed", "before_build_ui", "after_build_ui", "before_create_viewer", "after_create_viewer", "before_load_model", "after_load_model", "onCreate_done"],
 }
@@ -77,6 +80,8 @@ def main():
         print(json.dumps({"target": str(TARGET), "status": "missing_file"}, indent=2))
         return 1
     text = TARGET.read_text(encoding="utf-8", errors="replace")
+    if ENVIRONMENT.is_dir():
+        text += "\n" + "\n".join(path.read_text(encoding="utf-8", errors="replace") for path in ENVIRONMENT.glob("*.java"))
     result = {
         "target": str(TARGET.relative_to(ROOT)),
         "status": "static_check_only_not_runtime_proof",

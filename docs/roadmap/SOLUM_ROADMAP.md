@@ -78,20 +78,32 @@ Required sections:
 
 Rule: Render Control Center is UI over `RenderControlApi`, `RenderDiagnostics`, `RenderOwnershipMap`, `RenderFeatureDescriptor`, and `RenderCostDiagnostics`. Debug remains on-demand; no full JSON live wall. Sky / IBL is a foundation/status area only. Full Sky / Sun / Time of Day stays planned for P51.
 
-### P51 — Sky / IBL / Sun / Time of Day Foundation
+### P51 — Environment API + Time of Day + Sun/Moon Foundation
 
-Goal: build the real sky/time system after the P50 UI foundation.
+Goal: build the API-first environment foundation after the P50 UI foundation.
 
 Required outcomes:
 
-- explicit sky system ownership;
-- sun/time-of-day model;
-- IBL/skybox integration plan;
-- diagnostics for sky, sun, IBL, and exposure interactions;
-- mobile cost/safety status;
-- no fake day/night cycle without render/runtime proof.
+- `EnvironmentApi` owns time/day/sun/moon/stars/IBL/skybox preset intent;
+- simple non-astronomical time-of-day model;
+- sun directional light applies through current Filament light path where safe;
+- moon/stars/IBL/skybox slots exist and honestly report placeholder or missing asset fallback;
+- reports include environment settings, actual state, and diagnostics;
+- no weather, volumetric clouds, heavy HDRI asset pack, fake main sky sphere, or runtime atmosphere model.
 
-### P52 — Scene Workspace
+### P52 — Environment Assets
+
+Goal: add real environment assets and pipeline after the P51 API foundation.
+
+Required outcomes:
+
+- CC0 HDRI/IBL/star source tracking;
+- Filament `cmgen` pipeline;
+- mobile-size KTX environment outputs;
+- day/sunset/night IBL and skybox slots load from assets;
+- diagnostics distinguish real loaded assets from fallback.
+
+### P53 — Scene Workspace
 
 Goal: move beyond a single model preview.
 
@@ -104,7 +116,7 @@ Required outcomes:
 - transform values;
 - object lifecycle and unload/release rules.
 
-### P53 — Asset Shelf v1
+### P54 — Asset Shelf v1
 
 Goal: create the local asset browser and registry foundation.
 
@@ -117,7 +129,7 @@ Required outcomes:
 - unload/release assets safely;
 - prepare the structure for future cloud/community packages.
 
-### P54 — Transform Gizmo v1
+### P55 — Transform Gizmo v1
 
 Goal: add touch-first object transform tools.
 
@@ -131,7 +143,7 @@ Required outcomes:
 
 Reference existing good solutions before implementation, such as common transform-control patterns in professional editors and open-source libraries. Reuse ideas where license-compatible and technically practical.
 
-### P55 — Animation Preview v1
+### P56 — Animation Preview v1
 
 Goal: inspect and play glTF/GLB animations.
 
@@ -144,7 +156,7 @@ Required outcomes:
 - timeline/scrub;
 - diagnostics for skeleton, morph targets, and unsupported states.
 
-### P56 — Scene Save/Load v1
+### P57 — Scene Save/Load v1
 
 Goal: persist scene state separately from temporary render preview settings.
 

@@ -65,6 +65,12 @@ import com.google.android.filament.utils.KTX1Loader;
 import com.google.android.filament.utils.Manipulator;
 import com.google.android.filament.utils.ModelViewer;
 import com.google.android.filament.utils.Utils;
+import com.solum.engine.environment.CelestialBodyState;
+import com.solum.engine.environment.EnvironmentActualState;
+import com.solum.engine.environment.EnvironmentApi;
+import com.solum.engine.environment.EnvironmentController;
+import com.solum.engine.environment.EnvironmentDiagnostics;
+import com.solum.engine.environment.EnvironmentSettings;
 import com.solum.engine.render.FilamentRenderController;
 import com.solum.engine.render.RenderCostDiagnostics;
 import com.solum.engine.render.RenderActualState;
@@ -169,6 +175,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private SunGlareOverlayView sunGlareOverlayView;
     private ModelViewer modelViewer;
     private RenderControlApi renderControlApi;
+    private EnvironmentApi environmentApi;
     private final SceneRegistry sceneRegistry = new SceneRegistry();
     private IndirectLight indirectLight;
     private Skybox skybox;
@@ -199,6 +206,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private Button sunGlareButton;
     private Button lightRigButton;
     private Button skyboxButton;
+    private Button moonButton;
     private Button collapseButton;
     private Button assetsTabButton;
     private Button lightingTabButton;
@@ -248,6 +256,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private TextView configSummaryView;
     private TextView debugSummaryView;
     private TextView lastActionStatusView;
+    private TextView environmentSummaryView;
     private TextView sunSliderLabel;
     private TextView ambientSliderLabel;
     private TextView fillSliderLabel;
@@ -267,6 +276,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private SeekBar fillSlider;
     private SeekBar exposureSlider;
     private SeekBar backgroundSlider;
+    private SeekBar timeOfDaySlider;
     private final Choreographer.FrameCallback frameCallback = this::doFrame;
 
     private FilamentQualityProfile qualityProfile = FilamentQualityProfile.MEDIUM;
@@ -424,6 +434,12 @@ public class FilamentGlbPreviewActivity extends Activity {
     private float iblRotation = 0.0f;
     private float sunAzimuth = -145.0f;
     private float sunElevation = 45.0f;
+    private float sunColorTemperatureKelvin = 6000.0f;
+    private boolean moonEnabled = true;
+    private float moonIntensityLux = 0.3f;
+    private float moonPhase = 0.5f;
+    private float starsIntensity = 1.0f;
+    private String environmentApplyStatus = "not_applied";
     private float modelRotationX = 0.0f;
     private float modelRotationY = 0.0f;
     private float modelRotationZ = 0.0f;
@@ -1143,11 +1159,73 @@ public class FilamentGlbPreviewActivity extends Activity {
         iblSummaryView = overlayText(10.0f, 12);
         iblSummaryView.setBackgroundColor(Color.TRANSPARENT);
         iblPanel.addView(sectionHeader("Render Control Center: Sky / IBL"));
+        environmentSummaryView = overlayText(10.0f, 12);
+        environmentSummaryView.setBackgroundColor(Color.TRANSPARENT);
+        iblPanel.addView(sectionHeader("Environment / Time of Day"));
+        timeOfDaySlider = addLightingSlider(iblPanel, "Time", 0.0f, 24.0f, 0.25f, 12.0f, v -> {
+            ensureEnvironmentApi();
+            environmentApi.setTimeOfDay(v);
+            applyEnvironmentStateToActivity("time_slider");
+        });
+        LinearLayout timePresetRow = row();
+        timePresetRow.addView(button("Dawn", v -> setEnvironmentPreset("DAWN")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        timePresetRow.addView(button("Noon", v -> setEnvironmentPreset("NOON")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        timePresetRow.addView(button("Sunset", v -> setEnvironmentPreset("SUNSET")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        timePresetRow.addView(button("Night", v -> setEnvironmentPreset("NIGHT")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        iblPanel.addView(timePresetRow);
+        addLightingSlider(iblPanel, "Env Sun Az", 0.0f, 360.0f, 1.0f, normalizedAzimuth(sunAzimuth), v -> {
+            ensureEnvironmentApi();
+            environmentApi.setSunAzimuth(v);
+            applyEnvironmentStateToActivity("sun_azimuth");
+        });
+        addLightingSlider(iblPanel, "Env Sun El", -20.0f, 90.0f, 1.0f, sunElevation, v -> {
+            ensureEnvironmentApi();
+            environmentApi.setSunElevation(v);
+            applyEnvironmentStateToActivity("sun_elevation");
+        });
+        addLightingSlider(iblPanel, "Env Sun Lux", 0.0f, 20.0f, 0.5f, sunLightIntensity, v -> {
+            ensureEnvironmentApi();
+            environmentApi.setSunIntensityLux(v);
+            applyEnvironmentStateToActivity("sun_lux");
+        });
+        addLightingSlider(iblPanel, "Sun K", 2500.0f, 7500.0f, 100.0f, sunColorTemperatureKelvin, v -> {
+            ensureEnvironmentApi();
+            environmentApi.setSunColorTemperatureKelvin(v);
+            applyEnvironmentStateToActivity("sun_kelvin");
+        });
+        moonButton = button("", v -> {
+            ensureEnvironmentApi();
+            moonEnabled = !moonEnabled;
+            environmentApi.setMoonEnabled(moonEnabled);
+            applyEnvironmentStateToActivity("moon_toggle");
+        });
+        iblPanel.addView(moonButton);
+        addLightingSlider(iblPanel, "Moon Lux", 0.0f, 1.0f, 0.05f, moonIntensityLux, v -> {
+            ensureEnvironmentApi();
+            moonIntensityLux = v;
+            environmentApi.setMoonIntensityLux(v);
+            applyEnvironmentStateToActivity("moon_lux");
+        });
+        addLightingSlider(iblPanel, "Moon Phase", 0.0f, 1.0f, 0.05f, moonPhase, v -> {
+            ensureEnvironmentApi();
+            moonPhase = v;
+            environmentApi.setMoonPhase(v);
+            applyEnvironmentStateToActivity("moon_phase");
+        });
+        addLightingSlider(iblPanel, "Stars", 0.0f, 1.0f, 0.05f, starsIntensity, v -> {
+            ensureEnvironmentApi();
+            starsIntensity = v;
+            environmentApi.setStarsIntensity(v);
+            applyEnvironmentStateToActivity("stars_intensity");
+        });
+        iblPanel.addView(environmentSummaryView);
         iblPanel.addView(iblButton);
         skyboxButton = button("", v -> {
             skyboxVisible = !skyboxVisible;
             markManualOverride("skybox");
             applySkyboxVisibility();
+            ensureEnvironmentApi();
+            environmentApi.setSkyboxVisible(skyboxVisible);
             setLastAction("skybox_" + (skyboxVisible ? "on" : "off"));
             refreshUiNow();
         });
@@ -1428,6 +1506,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 .build(Manipulator.Mode.ORBIT);
             modelViewer = new ModelViewer(surfaceView, Engine.create(), uiHelper, manipulator);
             renderControlApi = new FilamentRenderController(modelViewer.getView());
+            environmentApi = new EnvironmentController(renderControlApi);
             surfaceView.setOnTouchListener((view, event) -> {
                 if (destroying || destroyed || modelViewer == null) return true;
                 modelViewer.onTouchEvent(event);
@@ -1435,6 +1514,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 return true;
             });
             createEnvironmentFallback();
+            applyEnvironmentStateToActivity("viewer_created");
             applyQualityProfile();
             applyLightingValues();
             applyCameraControls();
@@ -1481,6 +1561,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         try {
             long frameStartWallNs = System.nanoTime();
             updateFrameTiming(frameTimeNanos, frameStartWallNs);
+            updateEnvironmentClock();
             if (modelViewer.getAnimator() != null && modelViewer.getAnimator().getAnimationCount() > 0) {
                 float seconds = frameTimeNanos / 1_000_000_000.0f;
                 modelViewer.getAnimator().applyAnimation(0, seconds);
@@ -2369,9 +2450,10 @@ public class FilamentGlbPreviewActivity extends Activity {
             int sunInstance = lights.getInstance(modelViewer.getLight());
             if (sunInstance != 0) {
                 float[] sunDirection = sunDirectionFromAngles();
+                float[] sunColor = sunColorFromKelvin(sunColorTemperatureKelvin);
                 lights.setDirection(sunInstance, sunDirection[0], sunDirection[1], sunDirection[2]);
                 lights.setIntensity(sunInstance, sunLightIntensity);
-                lights.setColor(sunInstance, 1.0f, 0.96f, 0.90f);
+                lights.setColor(sunInstance, sunColor[0], sunColor[1], sunColor[2]);
                 lights.setShadowCaster(sunInstance, shadowMode != ShadowMode.OFF);
             }
             if (fillLightEntity != 0) {
@@ -2401,6 +2483,85 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
         updateLightingControlLabels();
         refreshUiNow();
+    }
+
+    private void ensureEnvironmentApi() {
+        if (environmentApi == null) {
+            environmentApi = new EnvironmentController(renderControlApi);
+        } else if (environmentApi instanceof EnvironmentController) {
+            ((EnvironmentController) environmentApi).setRenderControlApi(renderControlApi);
+        }
+    }
+
+    private void setEnvironmentPreset(String preset) {
+        ensureEnvironmentApi();
+        environmentApi.setEnvironmentPreset(preset);
+        applyEnvironmentStateToActivity("preset_" + preset.toLowerCase(Locale.US));
+    }
+
+    private void updateEnvironmentClock() {
+        if (environmentApi == null || lastFrameWallNs == 0L || rollingFrameMs <= 0.0f) return;
+        EnvironmentSettings settings = environmentApi.getSettings();
+        if (settings.getTimeSpeed() == 0.0f) return;
+        environmentApi.update(Math.max(0.0f, rollingFrameMs / 1000.0f));
+        applyEnvironmentStateToActivity("time_speed");
+    }
+
+    private void applyEnvironmentStateToActivity(String reason) {
+        ensureEnvironmentApi();
+        EnvironmentActualState actual = environmentApi.getActualState();
+        EnvironmentSettings settings = environmentApi.getSettings();
+        CelestialBodyState sun = actual.getSun();
+        sunAzimuth = normalizedAzimuth(sun.getAzimuthDeg());
+        sunElevation = clamp(sun.getElevationDeg(), -20.0f, 90.0f);
+        sunLightIntensity = sun.isVisible() ? clamp(sun.getIntensityLux(), 0.0f, 20.0f) : 0.0f;
+        sunColorTemperatureKelvin = sun.getColorTemperatureKelvin();
+        ambientUserIntensity = clamp(actual.getAmbientIntensity() * settings.getIblStrength(), 0.0f, 10.0f);
+        ambientFallbackIntensity = ambientToInternal(ambientUserIntensity);
+        backgroundBrightness = actual.getBackgroundBrightness();
+        exposure = actual.getExposureHint();
+        skyboxVisible = settings.isSkyboxVisible();
+        iblRotation = settings.getIblRotationDeg();
+        moonEnabled = settings.isMoonEnabled();
+        moonIntensityLux = settings.getMoonIntensityLux();
+        moonPhase = settings.getMoonPhase();
+        starsIntensity = settings.getStarsIntensity();
+        environmentMode = "environment_api_" + actual.getActiveEnvironmentPreset().toLowerCase(Locale.US);
+        fallbackReason = actual.isFallbackActive() ? "missing_asset_fallback" : fallbackReason;
+        iblStatus = environmentApi.getDiagnostics().getIblSlotStatus();
+        environmentApplyStatus = "activity_local_applied_reason_" + reason;
+        applyLightingValues();
+        applySkyboxVisibility();
+        applyIblRotation();
+        syncRenderApiRequestedState();
+        if (renderControlApi != null) renderControlApi.apply();
+        updateEnvironmentControlLabels();
+        setLastAction("environment_" + reason);
+    }
+
+    private void updateEnvironmentControlLabels() {
+        if (environmentApi == null) return;
+        EnvironmentActualState actual = environmentApi.getActualState();
+        EnvironmentDiagnostics diagnostics = environmentApi.getDiagnostics();
+        if (moonButton != null) moonButton.setText("Moon: " + (moonEnabled ? "On" : "Off") + " / " + diagnostics.getMoonStatus());
+        if (environmentSummaryView != null) {
+            CelestialBodyState sun = actual.getSun();
+            CelestialBodyState moon = actual.getMoon();
+            environmentSummaryView.setText("timeOfDay=" + twoDecimal(actual.getActiveTimeOfDayHours()) + " preset=" + actual.getActiveEnvironmentPreset()
+                + "\nsun lux/elev=" + oneDecimal(sun.getIntensityLux()) + "/" + oneDecimal(sun.getElevationDeg()) + " K=" + oneDecimal(sun.getColorTemperatureKelvin())
+                + "\nmoon lux/elev=" + oneDecimal(moon.getIntensityLux()) + "/" + oneDecimal(moon.getElevationDeg()) + " phase=" + twoDecimal(moon.getPhase())
+                + "\niblPreset=" + actual.getActiveIblPreset() + " skyboxPreset=" + actual.getActiveSkyboxPreset()
+                + "\nstarsVisibility=" + twoDecimal(actual.getStarsVisibility()) + " status=" + diagnostics.getStarsStatus()
+                + "\nfallback=" + diagnostics.getFallbackStatus()
+                + "\napply=" + environmentApplyStatus);
+        }
+    }
+
+    private float[] sunColorFromKelvin(float kelvin) {
+        if (kelvin < 4200.0f) return new float[] {1.0f, 0.78f, 0.55f};
+        if (kelvin < 5200.0f) return new float[] {1.0f, 0.88f, 0.72f};
+        if (kelvin > 6800.0f) return new float[] {0.82f, 0.90f, 1.0f};
+        return new float[] {1.0f, 0.96f, 0.90f};
     }
 
     private float[] sunDirectionFromAngles() {
@@ -4013,10 +4174,11 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\niblRotation=" + oneDecimal(iblRotation) + " skyboxVisible=" + skyboxVisible
                 + "\nskyboxBlur=not_exposed backgroundBrightness=" + twoDecimal(backgroundBrightness)
                 + "\nstatus=" + iblLoadStatus
-                + "\nP51 Sky/Sun/Time of Day planned, not implemented in P50"
+                + "\nEnvironment API=" + environmentShortStatus()
                 + "\n" + featureLine("ibl")
                 + "\n" + featureLine("skybox"));
         }
+        updateEnvironmentControlLabels();
         if (shadowSummaryView != null) {
             shadowSummaryView.setText("shadowsSupported=true"
                 + "\nshadowsEnabled=" + shadowsEnabled + " shadowMode=" + shadowMode.name()
@@ -4105,6 +4267,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nCamera: " + cameraStatus
                 + "\nLight preset: " + lightingPreset.label + " / " + lightingStatus
                 + "\nSun/Ambient/Fill/Exp/BG: " + oneDecimal(sunLightIntensity) + " / " + oneDecimal(ambientUserIntensity) + " / " + oneDecimal(fillLightIntensity) + " / " + twoDecimal(exposure) + " / " + twoDecimal(backgroundBrightness)
+                + "\nEnvironment: " + environmentShortStatus()
                 + "\nambientUser=" + oneDecimal(ambientUserIntensity) + " ambientInternal=" + oneDecimal(ambientFallbackIntensity)
                 + "\niblMode=" + iblMode + " iblFile=" + iblFile
                 + "\niblLoadStatus=" + iblLoadStatus
@@ -4287,6 +4450,18 @@ public class FilamentGlbPreviewActivity extends Activity {
         return renderControlApi == null ? "render_api_missing" : renderControlApi.getOwnershipMap().shortSummary();
     }
 
+    private String environmentShortStatus() {
+        if (environmentApi == null) return "environment_api_missing";
+        EnvironmentActualState actual = environmentApi.getActualState();
+        EnvironmentDiagnostics diagnostics = environmentApi.getDiagnostics();
+        return "time=" + twoDecimal(actual.getActiveTimeOfDayHours())
+            + " preset=" + actual.getActiveEnvironmentPreset()
+            + " sunLux=" + oneDecimal(actual.getSun().getIntensityLux())
+            + " moon=" + diagnostics.getMoonStatus()
+            + " stars=" + diagnostics.getStarsStatus()
+            + " fallback=" + diagnostics.getFallbackStatus();
+    }
+
     private String compactCostSummary() {
         if (renderControlApi == null) return "render_api_missing";
         RenderCostDiagnostics cost = RenderCostDiagnostics.fromSettings(renderControlApi.getSettings());
@@ -4373,6 +4548,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             + "\nexpensiveFeatures=" + cost.getEnabledExpensiveFeatures()
             + "\ncostCauseSummary=" + cost.getCostCauseSummary()
             + "\nscene=" + sceneRegistry.summary() + " model=" + (modelName == null || modelName.isEmpty() ? "none" : modelName)
+            + "\nenvironment=" + environmentShortReportSection()
             + "\nownership=" + ownership
             + "\nnot_verified_or_not_exposed=" + notReady
             + "\nappBuild=unknown_local_debug";
@@ -4396,6 +4572,9 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("performanceCostSummary", costDiagnosticsJson());
             json.put("sceneRegistrySummary", sceneRegistryJson());
             json.put("activeModelInfo", activeModelJson());
+            json.put("environmentSettings", environmentSettingsJson());
+            json.put("environmentActualState", environmentActualStateJson());
+            json.put("environmentDiagnostics", environmentDiagnosticsJson());
             json.put("not_verified_not_exposed", notVerifiedJson());
             json.put("app", appBuildJson());
         } catch (Throwable ignored) { }
@@ -4525,6 +4704,113 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("summary", sceneRegistry.summary());
         json.put("selectedObjectId", sceneRegistry.getSelectedObjectId());
         json.put("objectCount", sceneRegistry.getObjects().size());
+        return json;
+    }
+
+    private String environmentShortReportSection() {
+        if (environmentApi == null) return "environment_api_missing";
+        EnvironmentActualState actual = environmentApi.getActualState();
+        EnvironmentDiagnostics diagnostics = environmentApi.getDiagnostics();
+        return "timeOfDay=" + twoDecimal(actual.getActiveTimeOfDayHours())
+            + " environmentPreset=" + actual.getActiveEnvironmentPreset()
+            + " sunLuxElevation=" + oneDecimal(actual.getSun().getIntensityLux()) + "/" + oneDecimal(actual.getSun().getElevationDeg())
+            + " moonLuxElevation=" + oneDecimal(actual.getMoon().getIntensityLux()) + "/" + oneDecimal(actual.getMoon().getElevationDeg())
+            + " iblPreset=" + actual.getActiveIblPreset()
+            + " skyboxPreset=" + actual.getActiveSkyboxPreset()
+            + " starsStatus=" + diagnostics.getStarsStatus()
+            + " fallbackStatus=" + diagnostics.getFallbackStatus();
+    }
+
+    private JSONObject environmentSettingsJson() throws Exception {
+        JSONObject json = new JSONObject();
+        if (environmentApi == null) {
+            json.put("status", "environment_api_missing");
+            return json;
+        }
+        EnvironmentSettings settings = environmentApi.getSettings();
+        json.put("timeOfDayHours", settings.getTimeOfDayHours());
+        json.put("timeSpeed", settings.getTimeSpeed());
+        json.put("environmentPreset", settings.getEnvironmentPreset());
+        json.put("sunEnabled", settings.isSunEnabled());
+        json.put("sunAzimuthDeg", settings.getSunAzimuthDeg());
+        json.put("sunElevationDeg", settings.getSunElevationDeg());
+        json.put("sunIntensityLux", settings.getSunIntensityLux());
+        json.put("sunColorTemperatureKelvin", settings.getSunColorTemperatureKelvin());
+        json.put("moonEnabled", settings.isMoonEnabled());
+        json.put("moonAzimuthDeg", settings.getMoonAzimuthDeg());
+        json.put("moonElevationDeg", settings.getMoonElevationDeg());
+        json.put("moonIntensityLux", settings.getMoonIntensityLux());
+        json.put("moonPhase", settings.getMoonPhase());
+        json.put("iblPreset", settings.getIblPreset());
+        json.put("iblStrength", settings.getIblStrength());
+        json.put("iblRotationDeg", settings.getIblRotationDeg());
+        json.put("skyboxPreset", settings.getSkyboxPreset());
+        json.put("skyboxVisible", settings.isSkyboxVisible());
+        json.put("starsEnabled", settings.isStarsEnabled());
+        json.put("starsIntensity", settings.getStarsIntensity());
+        json.put("cloudAmount", settings.getCloudAmount());
+        json.put("fallbackAllowed", settings.isFallbackAllowed());
+        return json;
+    }
+
+    private JSONObject environmentActualStateJson() throws Exception {
+        JSONObject json = new JSONObject();
+        if (environmentApi == null) {
+            json.put("status", "environment_api_missing");
+            return json;
+        }
+        EnvironmentActualState actual = environmentApi.getActualState();
+        json.put("activeTimeOfDayHours", actual.getActiveTimeOfDayHours());
+        json.put("activeEnvironmentPreset", actual.getActiveEnvironmentPreset());
+        json.put("sun", celestialBodyJson(actual.getSun()));
+        json.put("moon", celestialBodyJson(actual.getMoon()));
+        json.put("activeIblPreset", actual.getActiveIblPreset());
+        json.put("activeSkyboxPreset", actual.getActiveSkyboxPreset());
+        json.put("starsVisibility", actual.getStarsVisibility());
+        json.put("backgroundBrightness", actual.getBackgroundBrightness());
+        json.put("ambientIntensity", actual.getAmbientIntensity());
+        json.put("exposureHint", actual.getExposureHint());
+        json.put("fallbackActive", actual.isFallbackActive());
+        json.put("applyStatus", actual.getApplyStatus());
+        return json;
+    }
+
+    private JSONObject celestialBodyJson(CelestialBodyState body) throws Exception {
+        JSONObject json = new JSONObject();
+        json.put("enabled", body.isEnabled());
+        json.put("visible", body.isVisible());
+        json.put("azimuthDeg", body.getAzimuthDeg());
+        json.put("elevationDeg", body.getElevationDeg());
+        json.put("directionX", body.getDirectionX());
+        json.put("directionY", body.getDirectionY());
+        json.put("directionZ", body.getDirectionZ());
+        json.put("intensityLux", body.getIntensityLux());
+        json.put("colorTemperatureKelvin", body.getColorTemperatureKelvin());
+        json.put("phase", body.getPhase());
+        json.put("status", body.getStatus());
+        return json;
+    }
+
+    private JSONObject environmentDiagnosticsJson() throws Exception {
+        JSONObject json = new JSONObject();
+        if (environmentApi == null) {
+            json.put("status", "environment_api_missing");
+            return json;
+        }
+        EnvironmentDiagnostics diagnostics = environmentApi.getDiagnostics();
+        json.put("environmentTruthText", diagnostics.getEnvironmentTruthText());
+        json.put("environmentOwnershipSummary", diagnostics.getEnvironmentOwnershipSummary());
+        json.put("timeOfDayStatus", diagnostics.getTimeOfDayStatus());
+        json.put("sunStatus", diagnostics.getSunStatus());
+        json.put("moonStatus", diagnostics.getMoonStatus());
+        json.put("iblSlotStatus", diagnostics.getIblSlotStatus());
+        json.put("skyboxSlotStatus", diagnostics.getSkyboxSlotStatus());
+        json.put("starsStatus", diagnostics.getStarsStatus());
+        json.put("cloudStatus", diagnostics.getCloudStatus());
+        json.put("fallbackStatus", diagnostics.getFallbackStatus());
+        json.put("mobileSafetyStatus", diagnostics.getMobileSafetyStatus());
+        json.put("lastApplyStatus", diagnostics.getLastApplyStatus());
+        json.put("notImplementedYet", new JSONArray(diagnostics.getNotImplementedYet()));
         return json;
     }
 
@@ -4705,6 +4991,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (lightRigButton != null) lightRigButton.setText("Light Rig: " + lightRig.label);
         if (skyboxButton != null) skyboxButton.setText("Skybox: " + (skyboxVisible ? "On" : "Off"));
         if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
+        updateEnvironmentControlLabels();
     }
 
     private void updateAllSliderLabels() {
@@ -4722,11 +5009,12 @@ public class FilamentGlbPreviewActivity extends Activity {
         } else if ("Exp".equals(name) || "BG".equals(name) || "Ambient".equals(name) || "IBL".equals(name) || "Fill".equals(name)
             || "Exposure".equals(name) || "Background".equals(name) || name.contains("Scale") || name.contains("Offset")
             || name.startsWith("Pan") || name.startsWith("Target") || name.contains("Distance")
-            || name.startsWith("Color ") || "Bloom Strength".equals(name)) {
+            || name.startsWith("Color ") || "Bloom Strength".equals(name) || "Time".equals(name)
+            || "Moon Lux".equals(name) || "Moon Phase".equals(name) || "Stars".equals(name)) {
             label.setText(name + " " + twoDecimal(value));
         } else if ("Bloom Highlight".equals(name)) {
             label.setText(name + " " + oneDecimal(value));
-        } else if ("Sun".equals(name)) {
+        } else if ("Sun".equals(name) || name.startsWith("Env Sun") || "Sun K".equals(name)) {
             label.setText(name + " " + oneDecimal(value));
         } else {
             label.setText(name + " " + oneDecimal(value));
@@ -4734,6 +5022,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private float currentSliderValue(String label) {
+        if ("Time".equals(label) && environmentApi != null) return environmentApi.getActualState().getActiveTimeOfDayHours();
         if ("Sun".equals(label)) return sunLightIntensity;
         if ("Ambient".equals(label) || "IBL".equals(label)) return ambientUserIntensity;
         if ("Fill".equals(label)) return fillLightIntensity;
@@ -4741,6 +5030,13 @@ public class FilamentGlbPreviewActivity extends Activity {
         if ("BG".equals(label) || "Background".equals(label)) return backgroundBrightness;
         if ("Sun Azimuth".equals(label)) return normalizedAzimuth(sunAzimuth);
         if ("Sun Elevation".equals(label)) return sunElevation;
+        if ("Env Sun Az".equals(label)) return normalizedAzimuth(sunAzimuth);
+        if ("Env Sun El".equals(label)) return sunElevation;
+        if ("Env Sun Lux".equals(label)) return sunLightIntensity;
+        if ("Sun K".equals(label)) return sunColorTemperatureKelvin;
+        if ("Moon Lux".equals(label)) return moonIntensityLux;
+        if ("Moon Phase".equals(label)) return moonPhase;
+        if ("Stars".equals(label)) return starsIntensity;
         if ("Render Scale".equals(label)) return renderScale;
         if ("Bloom Strength".equals(label)) return bloomStrength;
         if ("Bloom Highlight".equals(label)) return bloomHighlight;

@@ -1,6 +1,6 @@
 {
-  "active_patch": "P48",
-  "priority": "render_api_foundation_scene_registry_agent_brief",
+  "active_patch": "P49",
+  "priority": "render_api_contract_diagnostics_on_demand_fps_confidence",
   "main_file": "apps/engine/src/main/java/com/solum/engine/FilamentGlbPreviewActivity.java",
   "key_docs": [
     "docs/AI_AGENT_CONTINUATION.md",
@@ -9,6 +9,8 @@
     "BUILD.md",
     "docs/roadmap/SOLUM_ROADMAP.md",
     "docs/design/SOLUM_RENDER_API_FOUNDATION.md",
+    "docs/design/SOLUM_DIAGNOSTICS_ON_DEMAND.md",
+    "docs/design/SOLUM_MALI_RENDER_OPTIMIZATION_RULES.md",
     "docs/design/SOLUM_RENDER_FOUNDATION_PLAN.md",
     "docs/audits/FILAMENT_RUNTIME_FORENSICS.md",
     "docs/audits/FILAMENT_API_SURFACE_AUDIT.md",
@@ -55,10 +57,12 @@
     "FPS primary source used",
     "beginFrame/renderedFps accessibility",
     "remaining limitations",
-    "next recommended patch"
+    "next recommended patch",
+    "do not read huge files blindly",
+    "use exact file/line reads if brief is insufficient",
+    "quality must not be reduced to save tokens"
   ],
   "current_near_term_order": [
-    "P48",
     "P49",
     "P50",
     "P51",

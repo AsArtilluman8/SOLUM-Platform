@@ -7,6 +7,11 @@ import com.google.android.filament.View.Dithering;
 import com.google.android.filament.View.QualityLevel;
 import com.google.android.filament.View.ShadowType;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 
 public class FilamentRenderController implements RenderControlApi {
@@ -14,6 +19,8 @@ public class FilamentRenderController implements RenderControlApi {
     private final RenderSettings settings = new RenderSettings();
     private final RenderActualState actualState = new RenderActualState();
     private final RenderDiagnostics diagnostics = new RenderDiagnostics();
+    private final RenderOwnershipMap ownershipMap = new RenderOwnershipMap();
+    private final List<RenderFeatureDescriptor> featureDescriptors = buildFeatureDescriptors();
 
     public FilamentRenderController(View view) {
         this.view = view;
@@ -33,8 +40,57 @@ public class FilamentRenderController implements RenderControlApi {
     public RenderDiagnostics getDiagnostics() { return diagnostics; }
 
     @Override
+    public List<RenderFeatureDescriptor> getFeatureDescriptors() {
+        return Collections.unmodifiableList(featureDescriptors);
+    }
+
+    @Override
+    public RenderOwnershipMap getOwnershipMap() {
+        return ownershipMap;
+    }
+
+    @Override
+    public String buildShortReport() {
+        refreshDiagnosticsSummaries();
+        return "SOLUM Render Short Report"
+            + "\nprofile=" + settings.getQualityProfileName()
+            + "\nrenderScale=" + settings.getRenderScale() + " dynamicResolution=" + settings.isDynamicResolution()
+            + "\nmsaa=" + settings.getMsaaSampleCount() + " fxaa=" + settings.isFxaa() + " taa=" + settings.isTaa()
+            + "\nexpensive=" + diagnostics.getEnabledExpensiveFeatures()
+            + "\nownership=" + ownershipMap.shortSummary()
+            + "\nnot_verified_or_not_exposed=" + ownershipMap.notVerifiedOrNotExposedSummary()
+            + "\nrenderTruth=" + diagnostics.getRenderTruthText();
+    }
+
+    @Override
+    public File exportFullReport(File targetFile) throws Exception {
+        if (targetFile == null) throw new IllegalArgumentException("targetFile_missing");
+        File parent = targetFile.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+            throw new IllegalStateException("report_dir_unavailable");
+        }
+        String json = "{"
+            + "\"schema\":\"solum_render_report\","
+            + "\"source\":\"RenderControlApi\","
+            + "\"profile\":\"" + escape(settings.getQualityProfileName()) + "\","
+            + "\"renderTruth\":\"" + escape(diagnostics.getRenderTruthText()) + "\","
+            + "\"ownershipSummary\":\"" + escape(ownershipMap.shortSummary()) + "\","
+            + "\"costCauseSummary\":\"" + escape(diagnostics.getCostCauseSummary()) + "\","
+            + "\"note\":\"minimal_api_report_activity_exports_richer_report\""
+            + "}";
+        FileOutputStream out = new FileOutputStream(targetFile);
+        try {
+            out.write(json.getBytes("UTF-8"));
+        } finally {
+            out.close();
+        }
+        return targetFile;
+    }
+
+    @Override
     public void apply() {
         diagnostics.clearNotExposedOrNotVerifiedItems();
+        refreshDiagnosticsSummaries();
         if (view == null) {
             diagnostics.setRenderTruthText("render_api_view_missing");
             diagnostics.addNotExposedOrNotVerifiedItem("filament_view_missing");
@@ -73,8 +129,18 @@ public class FilamentRenderController implements RenderControlApi {
 
             actualState.setColorApplyStatus("activity_local_applied_by_FilamentGlbPreviewActivity");
             actualState.setFogApplyStatus("activity_local_applied_by_FilamentGlbPreviewActivity");
+            actualState.setLightingApplyStatus("activity_local_applied_by_FilamentGlbPreviewActivity");
+            actualState.setIblApplyStatus("activity_local_applied_by_FilamentGlbPreviewActivity");
+            actualState.setSkyboxApplyStatus("activity_local_applied_by_FilamentGlbPreviewActivity");
+            actualState.setSunGlareApplyStatus("activity_local_overlay_not_renderer_core");
+            actualState.setModelTransformApplyStatus("activity_local_scene_registry_partial");
+            actualState.setCameraApplyStatus("activity_local_modelviewer_camera");
+            updateFogTruth();
             diagnostics.addNotExposedOrNotVerifiedItem("color_grading_lifecycle_activity_local");
             diagnostics.addNotExposedOrNotVerifiedItem("fog_options_activity_local");
+            diagnostics.addNotExposedOrNotVerifiedItem("lighting_activity_local");
+            diagnostics.addNotExposedOrNotVerifiedItem("ibl_skybox_activity_local");
+            diagnostics.addNotExposedOrNotVerifiedItem("model_camera_activity_local_scene_registry_partial");
             diagnostics.addNotExposedOrNotVerifiedItem("performance_timing_activity_local");
             diagnostics.setRenderTruthText("render_api_applied profile=" + settings.getQualityProfileName()
                 + " msaa=" + actualState.getActualMsaa() + " taa=" + actualState.isActualTaa()
@@ -99,10 +165,60 @@ public class FilamentRenderController implements RenderControlApi {
     @Override public void setBloomMode(String mode) { settings.setBloomMode(mode); }
     @Override public void setBloomStrength(float strength) { settings.setBloomStrength(strength); }
     @Override public void setBloomHighlight(float highlight) { settings.setBloomHighlight(highlight); }
+    @Override public void setShadowMode(String mode) { settings.setShadowsMode(mode); }
+    @Override public void setFogMode(String mode) { settings.setFogMode(mode); }
+    @Override public void setFogDensity(float density) { settings.setFogDensity(density); }
+    @Override public void setFogHeight(float height) { settings.setFogHeight(height); }
+    @Override public void setFogStart(float start) { settings.setFogStart(start); }
+    @Override public void setFogEnd(float end) { settings.setFogEnd(end); }
+    @Override public void setFogColorRgb(float red, float green, float blue) { settings.setFogColorRgb(red, green, blue); }
     @Override public void setColorExposure(float exposure) { settings.setColorExposure(exposure); }
     @Override public void setColorContrast(float contrast) { settings.setColorContrast(contrast); }
     @Override public void setColorSaturation(float saturation) { settings.setColorSaturation(saturation); }
     @Override public void setColorTemperature(float temperature) { settings.setColorTemperature(temperature); }
+    @Override public void setColorTint(float tint) { settings.setColorTint(tint); }
+    @Override public void setSunIntensity(float intensity) { settings.setSunIntensity(intensity); }
+    @Override public void setAmbientIntensity(float intensity) { settings.setAmbientIntensity(intensity); }
+    @Override public void setFillIntensity(float intensity) { settings.setFillIntensity(intensity); }
+    @Override public void setBackgroundIntensity(float intensity) { settings.setBackgroundIntensity(intensity); }
+    @Override public void setSunDirection(float x, float y, float z) { settings.setSunDirection(x, y, z); }
+    @Override public void setLightingPreset(String preset) { settings.setLightingPreset(preset); }
+    @Override public void setLightRig(String rig) { settings.setLightRig(rig); }
+    @Override public void setIblIntensity(float intensity) { settings.setIblIntensity(intensity); }
+    @Override public void setIblRotation(float degrees) { settings.setIblRotation(degrees); }
+    @Override public void setSkyboxEnabled(boolean enabled) { settings.setSkyboxEnabled(enabled); }
+    @Override public void setSunGlareEnabled(boolean enabled) { settings.setSunGlareEnabled(enabled); }
+    @Override public void setSunGlareStrength(float strength) { settings.setSunGlareStrength(strength); }
+    @Override public void setSunGlareSize(float size) { settings.setSunGlareSize(size); }
+    @Override public void setModelScale(float scale) { settings.setModelScale(scale); }
+    @Override public void setModelOffset(float x, float y, float z) { settings.setModelOffset(x, y, z); }
+    @Override public void setModelRotation(float x, float y, float z) { settings.setModelRotation(x, y, z); }
+    @Override public void setCameraPreset(String preset) { settings.setCameraPreset(preset); }
+
+    private void refreshDiagnosticsSummaries() {
+        diagnostics.setOwnershipSummary(ownershipMap.shortSummary());
+        diagnostics.setCostDiagnostics(RenderCostDiagnostics.fromSettings(settings));
+        updateFogTruth();
+    }
+
+    private void updateFogTruth() {
+        boolean fogRequested = !isMode("OFF", settings.getFogMode()) && settings.getFogDensity() > 0.0f;
+        String confidence;
+        String warning;
+        if (!fogRequested) {
+            confidence = "off";
+            warning = "fog_off";
+        } else if (settings.isSkyboxEnabled() || settings.getColorExposure() > 1.0f || settings.getBackgroundIntensity() > 0.45f) {
+            confidence = "may_be_hidden_by_skybox_or_exposure";
+            warning = "fog_requested_but_visibility_depends_on_skybox_exposure_background";
+        } else {
+            confidence = "visible_likely";
+            warning = "visibility_not_runtime_verified";
+        }
+        actualState.setFogVisibilityConfidence(confidence);
+        actualState.setFogWarning(warning);
+        diagnostics.setFogDiagnostics(fogRequested ? settings.getFogMode() : "off", actualState.getFogApplyStatus(), confidence, warning);
+    }
 
     private void applyAo(QualityLevel quality) {
         try {
@@ -262,6 +378,36 @@ public class FilamentRenderController implements RenderControlApi {
         }
     }
 
+    private static List<RenderFeatureDescriptor> buildFeatureDescriptors() {
+        List<RenderFeatureDescriptor> out = new ArrayList<>();
+        out.add(feature("quality_profile", "Quality profile", "quality", "free", "low_safe", "controller_owned", ""));
+        out.add(feature("render_scale", "Render scale", "quality", "high", "medium_safe", "controller_owned", "1.0 can be expensive on high-res phones"));
+        out.add(feature("dynamic_resolution", "Dynamic resolution", "quality", "free", "low_safe", "controller_owned", "keep enabled for phone preview"));
+        out.add(feature("msaa", "MSAA", "quality", "high", "medium_safe", "controller_owned", "4x is high estimated cost"));
+        out.add(feature("fxaa", "FXAA", "quality", "low", "low_safe", "controller_owned", ""));
+        out.add(feature("taa", "TAA", "quality", "medium", "experimental", "partial", "not free; visual/runtime confidence pending"));
+        out.add(feature("dithering", "Dithering", "postfx", "low", "low_safe", "controller_owned", ""));
+        out.add(feature("ssr", "SSR", "postfx", "extreme", "screenshot_only", "partial", "gameplay unsafe on Mali until proven"));
+        out.add(feature("refraction", "Refraction", "postfx", "medium", "experimental", "partial", "screen-space only; material transmission is separate"));
+        out.add(feature("ao", "AO", "postfx", "medium", "medium_safe", "partial", "strong/debug modes can be expensive"));
+        out.add(feature("bloom", "Bloom", "postfx", "medium", "medium_safe", "partial", "high mode can be expensive"));
+        out.add(feature("shadows", "Shadows", "lighting", "medium", "medium_safe", "partial", "Filament default shadow settings not fully exposed"));
+        out.add(feature("fog", "Fog", "scene", "low", "medium_safe", "activity_local", "visibility can be hidden by skybox/exposure/background"));
+        out.add(feature("color_grading", "Color grading", "postfx", "low", "low_safe", "activity_local", ""));
+        out.add(feature("lighting_core", "Lighting core", "lighting", "low", "low_safe", "activity_local", ""));
+        out.add(feature("ibl", "IBL", "lighting", "medium", "medium_safe", "activity_local", "large/high intensity IBL needs future probe"));
+        out.add(feature("skybox", "Skybox", "scene", "medium", "medium_safe", "activity_local", ""));
+        out.add(feature("sun_glare", "Sun glare", "postfx", "low", "experimental", "activity_local", "overlay, not renderer core"));
+        out.add(feature("camera_model_transform", "Camera/model transform", "scene", "free", "low_safe", "partial", "SceneRegistry owns summary only"));
+        out.add(feature("fps_timing", "FPS timing", "debug", "low", "low_safe", "partial", "FrameMetrics only; GPU timing may be unavailable"));
+        return out;
+    }
+
+    private static RenderFeatureDescriptor feature(String id, String label, String category, String mobileCost,
+            String mobileSafe, String status, String warning) {
+        return new RenderFeatureDescriptor(id, label, category, mobileCost, mobileSafe, status, warning);
+    }
+
     private boolean aoEnabled() {
         return !isMode("OFF", settings.getAoMode());
     }
@@ -289,5 +435,10 @@ public class FilamentRenderController implements RenderControlApi {
         String msg = t == null ? "unknown" : t.getMessage();
         if (msg == null || msg.trim().isEmpty()) msg = t == null ? "unknown" : t.getClass().getSimpleName();
         return msg.replace('\n', ' ').replace('\r', ' ').toLowerCase(Locale.US);
+    }
+
+    private static String escape(String value) {
+        if (value == null) return "";
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

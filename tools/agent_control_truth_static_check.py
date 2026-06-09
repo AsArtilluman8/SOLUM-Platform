@@ -14,6 +14,7 @@ CHECKS = {
     "requestedDynamicResolution": ["requestedDynamicResolution"],
     "actualDynamicResolution": ["actualDynamicResolution"],
     "timing_disagreement": ["timingDisagreement", "timing_disagreement"],
+    "fps_confidence_stability": ["fpsConfidence", "fpsStability", "p50FrameMs", "jitterMs"],
     "javaCallbackFps_debug_only": ["Java callback FPS debug-only"],
     "FrameMetrics": ["FrameMetrics", "frameMetricsTotalMs"],
     "p95_worst_jank": ["p95FrameMs", "worstFrameMs", "jankFrameCounter"],
@@ -28,6 +29,7 @@ CHECKS = {
     "manual_override_status": ["markManualOverride", "manualOverrideStatus", "manualOverrideCount"],
     "labels_after_manual_clicks": ["refreshUiNow", "updateToggleLabels", "updateAllSliderLabels", "setLastAction"],
     "preset_mismatch_status_exists": ["updatePresetMismatchStatus", "presetMismatchStatus", "presetMismatch"],
+    "diagnostics_on_demand": ["Copy Short Report", "Export Full Report", "buildShortDiagnosticsReport", "buildFullDiagnosticsReportJson"],
 }
 
 def status_for(text, needles):

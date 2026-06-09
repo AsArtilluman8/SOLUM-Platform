@@ -1,6 +1,9 @@
 package com.solum.engine;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
@@ -33,6 +36,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.widget.Toast;
 import android.view.inputmethod.EditorInfo;
 
 import com.google.android.filament.ColorGrading;
@@ -62,8 +66,11 @@ import com.google.android.filament.utils.Manipulator;
 import com.google.android.filament.utils.ModelViewer;
 import com.google.android.filament.utils.Utils;
 import com.solum.engine.render.FilamentRenderController;
+import com.solum.engine.render.RenderCostDiagnostics;
 import com.solum.engine.render.RenderActualState;
 import com.solum.engine.render.RenderControlApi;
+import com.solum.engine.render.RenderFeatureDescriptor;
+import com.solum.engine.render.RenderOwnershipMap;
 import com.solum.engine.scene.SceneRegistry;
 
 import java.io.File;
@@ -81,6 +88,7 @@ import java.util.List;
 import java.util.Locale;
 
 import kotlin.jvm.functions.Function1;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class FilamentGlbPreviewActivity extends Activity {
@@ -145,6 +153,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String PREF_FILAMENT_CONFIG_JSON = "filament_config_json";
     private static final String PREF_FILAMENT_DEFAULT_CONFIG_JSON = "filament_default_config_json";
     private static final String CONFIG_FILE_NAME = "filament_render_config.json";
+    private static final String RENDER_REPORT_DIR = "/storage/emulated/0/Download/SOLUM_REPORTS";
     private static final int CONFIG_SCHEMA_VERSION = 6;
     private static final int REQUEST_IMPORT_MODEL = 4101;
     private static final int REQUEST_IMPORT_IBL = 4102;
@@ -306,6 +315,15 @@ public class FilamentGlbPreviewActivity extends Activity {
     private float renderedFps = 0.0f;
     private String frameBudgetStatus = "waiting_for_samples";
     private String smoothnessStatus = "waiting_for_samples";
+    private float p50FrameMs = 0.0f;
+    private float jitterMs = 0.0f;
+    private String jitterScore = "waiting_for_samples";
+    private String fpsStability = "waiting_for_samples";
+    private String fpsConfidence = "waiting_for_samples";
+    private String lastDiagnosticsExportStatus = "not_run";
+    private String lastDiagnosticsCopyStatus = "not_run";
+    private String lastDiagnosticsReportPath = "none";
+    private String fullDiagnosticsAvailability = "on_demand_only";
     private String ssrPerformanceWarning = "off";
     private String modelPath = "";
     private String modelName = "";
@@ -1163,8 +1181,14 @@ public class FilamentGlbPreviewActivity extends Activity {
             setLastAction("fps_jank_counters_reset");
             refreshUiNow();
         });
+        Button copyShortReportButton = button("Copy Short Report");
+        copyShortReportButton.setOnClickListener(v -> copyShortDiagnosticsReport());
+        Button exportFullReportButton = button("Export Full Report");
+        exportFullReportButton.setOnClickListener(v -> exportFullDiagnosticsReport());
         debugPanel.addView(closeButton);
         debugPanel.addView(resetFrameCountersButton);
+        debugPanel.addView(copyShortReportButton);
+        debugPanel.addView(exportFullReportButton);
         debugPanel.addView(statusView);
 
         workspacePanel.addView(assetsPanel);
@@ -1431,7 +1455,12 @@ public class FilamentGlbPreviewActivity extends Activity {
             avgFrameMs = 0.0f;
             minFrameMs = 0.0f;
             maxFrameMs = 0.0f;
+            p50FrameMs = 0.0f;
             p95FrameMs = 0.0f;
+            jitterMs = 0.0f;
+            jitterScore = "waiting_for_samples";
+            fpsStability = "waiting_for_samples";
+            fpsConfidence = "waiting_for_samples";
             frameBudgetStatus = "waiting_for_samples";
             smoothnessStatus = "waiting_for_samples";
             visibleSmoothFps = 0.0f;
@@ -1448,15 +1477,22 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
         avgFrameMs = sum / frameWindowCount;
         Arrays.sort(samples);
+        int p50Index = Math.min(samples.length - 1, Math.max(0, (int) Math.ceil(samples.length * 0.50f) - 1));
         int p95Index = Math.min(samples.length - 1, Math.max(0, (int) Math.ceil(samples.length * 0.95f) - 1));
+        p50FrameMs = samples[p50Index];
         p95FrameMs = samples[p95Index];
+        jitterMs = Math.max(0.0f, p95FrameMs - p50FrameMs);
+        jitterScore = jitterMs > 16.0f || worstFrameMs > p50FrameMs * 3.0f ? "high"
+            : (jitterMs > 8.0f || worstFrameMs > p50FrameMs * 2.0f ? "medium" : "low");
+        fpsStability = frameWindowCount < 30 ? "waiting_for_samples"
+            : ("high".equals(jitterScore) ? "unstable" : ("medium".equals(jitterScore) ? "medium" : "stable"));
         visibleSmoothFps = 1000.0f / Math.max(1.0f, p95FrameMs);
         if (p95FrameMs <= 16.6f) frameBudgetStatus = "within_60fps_budget_16.6ms";
         else if (p95FrameMs <= 22.2f) frameBudgetStatus = "within_45fps_budget_22.2ms";
         else if (p95FrameMs <= 33.3f) frameBudgetStatus = "within_30fps_budget_33.3ms";
         else frameBudgetStatus = "over_30fps_budget_jank_risk";
         updateSsrPerformanceWarning();
-        smoothnessStatus = "target=" + presetTargetFps() + "fps javaCallback=" + oneDecimal(rollingFps) + "fps estimatedVisible=" + oneDecimal(visibleSmoothFps) + "fps p95=" + oneDecimal(p95FrameMs) + "ms";
+        smoothnessStatus = "target=" + presetTargetFps() + "fps javaCallback=" + oneDecimal(rollingFps) + "fps estimatedVisible=" + oneDecimal(visibleSmoothFps) + "fps p50=" + oneDecimal(p50FrameMs) + "ms p95=" + oneDecimal(p95FrameMs) + "ms jitter=" + oneDecimal(jitterMs) + "ms stability=" + fpsStability;
         updateTimingTruthStatus();
     }
 
@@ -1473,12 +1509,24 @@ public class FilamentGlbPreviewActivity extends Activity {
         boolean disagreesWithJava = rollingFps > 0.0f && primaryFps > 0.0f && Math.abs(rollingFps - primaryFps) >= Math.max(12.0f, primaryFps * 0.35f);
         boolean disagreesWithFrameMetrics = frameMetricsTotalMs > 0.0f && p95FrameMs > 0.0f && Math.abs(frameMetricsTotalMs - p95FrameMs) >= Math.max(8.0f, p95FrameMs * 0.35f);
         timingDisagreement = disagreesWithJava || disagreesWithFrameMetrics;
+        if (frameWindowCount < 30) {
+            fpsConfidence = "waiting_for_samples";
+        } else if (!timingDisagreement && frameMetricsSampleCount >= 12L && frameMetricsTotalMs > 0.0f && p95FrameMs > 0.0f) {
+            fpsConfidence = "high";
+        } else if (!timingDisagreement && p95FrameMs > 0.0f) {
+            fpsConfidence = "medium";
+        } else {
+            fpsConfidence = "low";
+        }
         timingDisagreementStatus = "timing_disagreement=" + timingDisagreement
             + " primarySource=" + primaryFpsSource
             + " primaryFps=" + oneDecimal(primaryFps)
             + " primaryFrameMs=" + oneDecimal(primaryFrameMs)
             + " javaCallbackFps=" + oneDecimal(rollingFps)
-            + " frameMetricsTotalMs=" + oneDecimal(frameMetricsTotalMs);
+            + " frameMetricsTotalMs=" + oneDecimal(frameMetricsTotalMs)
+            + " confidence=" + fpsConfidence
+            + " stability=" + fpsStability;
+        updateRenderDiagnosticsFrameTiming();
     }
 
     private void updateSsrPerformanceWarning() {
@@ -1508,8 +1556,13 @@ public class FilamentGlbPreviewActivity extends Activity {
         avgFrameMs = 0.0f;
         minFrameMs = 0.0f;
         maxFrameMs = 0.0f;
+        p50FrameMs = 0.0f;
         p95FrameMs = 0.0f;
         worstFrameMs = 0.0f;
+        jitterMs = 0.0f;
+        jitterScore = "reset_waiting_for_samples";
+        fpsStability = "reset_waiting_for_samples";
+        fpsConfidence = "reset_waiting_for_samples";
         jankFrameCounter = 0L;
         slowFrameCounter = 0L;
         ssrSlowFrameBaseline = 0L;
@@ -1519,6 +1572,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         smoothnessStatus = "reset_waiting_for_samples";
         timingDisagreement = false;
         timingDisagreementStatus = "reset_waiting_for_samples";
+        updateRenderDiagnosticsFrameTiming();
     }
 
     private int presetTargetFps() {
@@ -2286,10 +2340,37 @@ public class FilamentGlbPreviewActivity extends Activity {
         renderControlApi.setBloomMode(bloomMode.name());
         renderControlApi.setBloomStrength(bloomStrength);
         renderControlApi.setBloomHighlight(bloomHighlight);
+        renderControlApi.setShadowMode(shadowMode.name());
+        renderControlApi.setFogMode(fogMode.name());
+        renderControlApi.setFogDensity(fogDensity);
+        renderControlApi.setFogHeight(fogHeight);
+        renderControlApi.setFogStart(0.0f);
+        renderControlApi.setFogEnd(fogDistance);
+        renderControlApi.setFogColorRgb(backgroundColor()[0], backgroundColor()[1], backgroundColor()[2]);
         renderControlApi.setColorExposure(colorExposure);
         renderControlApi.setColorContrast(colorContrast);
         renderControlApi.setColorSaturation(colorSaturation);
         renderControlApi.setColorTemperature(colorTemperature);
+        renderControlApi.setColorTint(0.0f);
+        renderControlApi.setSunIntensity(sunLightIntensity);
+        renderControlApi.setAmbientIntensity(ambientUserIntensity);
+        renderControlApi.setFillIntensity(fillLightIntensity);
+        renderControlApi.setBackgroundIntensity(backgroundBrightness);
+        float[] direction = sunDirectionFromAngles();
+        renderControlApi.setSunDirection(direction[0], direction[1], direction[2]);
+        renderControlApi.setLightingPreset(lightingPreset.name());
+        renderControlApi.setLightRig(lightRig.name());
+        renderControlApi.setIblIntensity(ambientUserIntensity);
+        renderControlApi.setIblRotation(iblRotation);
+        renderControlApi.setSkyboxEnabled(skyboxVisible);
+        renderControlApi.setSunGlareEnabled(sunGlareMode != SunGlareMode.OFF);
+        renderControlApi.setSunGlareStrength(sunGlareStrength());
+        renderControlApi.setSunGlareSize(sunGlareSize());
+        renderControlApi.setModelScale(modelScale);
+        renderControlApi.setModelOffset(modelOffsetX, modelOffsetY, modelOffsetZ);
+        renderControlApi.setModelRotation(modelRotationX, modelRotationY, modelRotationZ);
+        renderControlApi.setCameraPreset("ORBIT_MANUAL");
+        updateRenderDiagnosticsFrameTiming();
     }
 
     private void applyRenderControlApi() {
@@ -2318,6 +2399,28 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (state.getBloomApplyStatus() != null && !state.getBloomApplyStatus().isEmpty()) {
             bloomApplyStatus = "api_" + state.getBloomApplyStatus();
         }
+    }
+
+    private void updateRenderDiagnosticsFrameTiming() {
+        if (renderControlApi == null) return;
+        renderControlApi.getDiagnostics().setFrameTiming(
+            oneDecimal(primaryFrameMs()),
+            oneDecimal(primaryFpsValue()),
+            primaryFpsSource,
+            oneDecimal(rollingFps) + "_debug_only",
+            oneDecimal(frameMetricsTotalMs),
+            frameMetricsGpuMs > 0.0f ? oneDecimal(frameMetricsGpuMs) : "gpu_timing_unavailable_frame_metrics_only",
+            oneDecimal(frameMetricsDrawMs),
+            oneDecimal(frameMetricsSwapMs),
+            oneDecimal(p50FrameMs),
+            oneDecimal(p95FrameMs),
+            oneDecimal(worstFrameMs),
+            oneDecimal(jitterMs),
+            fpsStability,
+            fpsConfidence,
+            timingDisagreement,
+            timingDisagreementStatus
+        );
     }
 
     private void applyQualityProfileDefaults(String reason) {
@@ -2595,6 +2698,18 @@ public class FilamentGlbPreviewActivity extends Activity {
         sunGlareOverlayView.configure(clamp(x, 0.08f, 0.92f), clamp(y, 0.06f, 0.78f), radius, alpha);
         sunGlareOverlayView.setVisibility(View.VISIBLE);
         sunGlareStatus = "applied_overlay_" + sunGlareMode.name().toLowerCase(Locale.US) + "_screen_space_no_ssr";
+    }
+
+    private float sunGlareStrength() {
+        if (sunGlareMode == SunGlareMode.SUBTLE) return 0.10f;
+        if (sunGlareMode == SunGlareMode.MEDIUM) return 0.17f;
+        return 0.0f;
+    }
+
+    private float sunGlareSize() {
+        if (sunGlareMode == SunGlareMode.SUBTLE) return 0.18f;
+        if (sunGlareMode == SunGlareMode.MEDIUM) return 0.25f;
+        return 0.0f;
     }
 
     private void applyColorGrading() {
@@ -3529,13 +3644,22 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("frameMetricsGpuMs", frameMetricsGpuMs);
             json.put("frameMetricsSwapMs", frameMetricsSwapMs);
             json.put("frameMetricsDrawMs", frameMetricsDrawMs);
+            json.put("p50FrameMs", p50FrameMs);
             json.put("worstMs", worstFrameMs);
             json.put("p95Ms", p95FrameMs);
+            json.put("jitterMs", jitterMs);
+            json.put("jitterScore", jitterScore);
+            json.put("fpsStability", fpsStability);
+            json.put("fpsConfidence", fpsConfidence);
             json.put("jankCount", jankFrameCounter);
             json.put("slowCount", slowFrameCounter);
             json.put("timing_disagreement", timingDisagreement);
             json.put("primaryFpsSource", primaryFpsSource);
             json.put("beginFrameStatus", beginFrameStatus);
+            json.put("diagnosticsOnDemand", fullDiagnosticsAvailability);
+            json.put("lastDiagnosticsCopyStatus", lastDiagnosticsCopyStatus);
+            json.put("lastDiagnosticsExportStatus", lastDiagnosticsExportStatus);
+            json.put("lastDiagnosticsReportPath", lastDiagnosticsReportPath);
         } catch (Throwable ignored) { }
         return json;
     }
@@ -3643,6 +3767,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + " | frame " + oneDecimal(primaryFrameMs()) + " ms"
                 + " | p95 " + oneDecimal(p95FrameMs) + " ms"
                 + " | " + renderHealthLabel()
+                + " | " + fpsConfidence
                 + " | " + qualityProfile.label
                 + " | cause: " + performanceDoctorCause());
         }
@@ -3673,7 +3798,8 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nmanualOverrideStatus=" + manualOverrideStatus
                 + "\nvisibleEstimate=" + visualSmoothnessLabel() + " targetFps=" + presetTargetFps()
                 + "\nprimaryFpsSource=" + primaryFpsSource + " timing_disagreement=" + timingDisagreement
-                + "\nframeMs current=" + oneDecimal(rollingFrameMs) + " avg=" + oneDecimal(avgFrameMs) + " min=" + oneDecimal(minFrameMs) + " max=" + oneDecimal(maxFrameMs) + " p95=" + oneDecimal(p95FrameMs) + " worst=" + oneDecimal(worstFrameMs)
+                + "\nframeMs current=" + oneDecimal(rollingFrameMs) + " avg=" + oneDecimal(avgFrameMs) + " min=" + oneDecimal(minFrameMs) + " max=" + oneDecimal(maxFrameMs) + " p50=" + oneDecimal(p50FrameMs) + " p95=" + oneDecimal(p95FrameMs) + " worst=" + oneDecimal(worstFrameMs)
+                + "\nfpsConfidence=" + fpsConfidence + " fpsStability=" + fpsStability + " jitterMs=" + oneDecimal(jitterMs) + " jitterScore=" + jitterScore
                 + "\nframeStatus=" + renderHealthLabel() + " frameBudget=" + frameBudgetStatus + " slow=" + slowFrameCounter + " jank=" + jankFrameCounter
                 + "\nanisotropicFiltering=not_exposed textureLodBias=not_exposed"
                 + "\naoRequested=" + requestedAoMode + " aoActual=" + actualAoMode + " aoApplyStatus=" + aoApplyStatus + " aoApplied=" + aoActuallyApplied
@@ -3681,6 +3807,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nbloom=" + bloomActualStatus
                 + "\nrefraction=" + refractionActualStatus
                 + "\nrenderApi=" + (renderControlApi == null ? "missing" : renderControlApi.getDiagnostics().getRenderTruthText())
+                + "\nownershipSummary=" + (renderControlApi == null ? "missing" : renderControlApi.getOwnershipMap().shortSummary())
                 + "\nrenderApiNotVerified=" + (renderControlApi == null ? "none" : renderControlApi.getDiagnostics().getNotExposedOrNotVerifiedItems()));
         }
         if (colorSummaryView != null) {
@@ -3702,7 +3829,9 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nfogDistance=" + oneDecimal(fogDistance)
                 + "\nfogHeight=" + oneDecimal(fogHeight)
                 + "\nfogFromIbl=" + realIblReady
-                + "\nfogStatus=" + fogStatus);
+                + "\nfogStatus=" + fogStatus
+                + "\nfogVisibilityConfidence=" + (renderControlApi == null ? "not_verified" : renderControlApi.getDiagnostics().getFogVisibilityConfidence())
+                + "\nfogWarning=" + (renderControlApi == null ? "not_verified" : renderControlApi.getDiagnostics().getFogWarning()));
         }
         if (lightsSummaryView != null) {
             lightsSummaryView.setText("pointLightSupported=true"
@@ -3768,12 +3897,15 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\n\nPerformance:"
                 + "\nPrimary HUD FPS: " + primaryFpsHud()
                 + "\nPrimary FPS source: " + primaryFpsSource
+                + "\nFPS confidence/stability: " + fpsConfidence + "/" + fpsStability
                 + "\nEstimated visible FPS: " + estimatedVisibleFpsHud()
                 + "\nJava callback FPS debug-only: " + oneDecimal(rollingFps)
                 + "\nCurrent frame ms: " + oneDecimal(rollingFrameMs)
                 + "\nAvg frame ms: " + oneDecimal(avgFrameMs)
+                + "\np50 frame ms: " + oneDecimal(p50FrameMs)
                 + "\np95 frame ms: " + oneDecimal(p95FrameMs)
                 + "\nWorst frame ms: " + oneDecimal(worstFrameMs)
+                + "\nJitter ms/score: " + oneDecimal(jitterMs) + "/" + jitterScore
                 + "\nJank count: " + jankFrameCounter
                 + "\nSlow count: " + slowFrameCounter
                 + "\nFrameMetrics slow/jank count: " + frameMetricsSlowCount + "/" + frameMetricsJankCount
@@ -3793,6 +3925,12 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nPerfetto/AGI status: external_deferred"
                 + "\n\nExpensive feature warnings:"
                 + expensiveFeatureWarningsDebug()
+                + "\n\nOn-demand diagnostics:"
+                + "\nCopy Short Report status: " + lastDiagnosticsCopyStatus
+                + "\nExport Full Report status: " + lastDiagnosticsExportStatus
+                + "\nFull report path: " + lastDiagnosticsReportPath
+                + "\nOwnership summary: " + (renderControlApi == null ? "missing" : renderControlApi.getOwnershipMap().shortSummary())
+                + "\nCost diagnostics: " + (renderControlApi == null ? "missing" : renderControlApi.getDiagnostics().getCostCauseSummary())
                 + "\n\nRuntime state:"
                 + "\nModel: " + (modelName == null || modelName.isEmpty() ? "none" : modelName)
                 + "\nRenderer: Filament"
@@ -3979,6 +4117,240 @@ public class FilamentGlbPreviewActivity extends Activity {
         } catch (Throwable ignored) {
             return true;
         }
+    }
+
+    private void copyShortDiagnosticsReport() {
+        String report = buildShortDiagnosticsReport();
+        try {
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (clipboard == null) throw new IllegalStateException("clipboard_unavailable");
+            clipboard.setPrimaryClip(ClipData.newPlainText("SOLUM Render Short Report", report));
+            lastDiagnosticsCopyStatus = "copied_short_report";
+            setLastAction("copy_short_report_ok");
+            Toast.makeText(this, "Short report copied", Toast.LENGTH_SHORT).show();
+        } catch (Throwable t) {
+            lastDiagnosticsCopyStatus = "copy_failed: " + shortMessage(t);
+            setLastAction(lastDiagnosticsCopyStatus);
+        }
+        refreshUiNow();
+    }
+
+    private void exportFullDiagnosticsReport() {
+        try {
+            JSONObject report = buildFullDiagnosticsReportJson();
+            File dir = new File(RENDER_REPORT_DIR);
+            if (!dir.isDirectory() && !dir.mkdirs()) throw new IllegalStateException("download_report_dir_unavailable");
+            File out = new File(dir, "render_report_" + reportTimestamp() + ".json");
+            writeText(out, report.toString());
+            lastDiagnosticsReportPath = out.getAbsolutePath();
+            lastDiagnosticsExportStatus = "exported_full_report";
+            setLastAction("export_full_report_ok");
+            Toast.makeText(this, "Full report exported", Toast.LENGTH_SHORT).show();
+        } catch (Throwable t) {
+            lastDiagnosticsExportStatus = "export_failed_or_skipped: " + shortMessage(t);
+            lastDiagnosticsReportPath = "unavailable_kept_in_app_state";
+            setLastAction(lastDiagnosticsExportStatus);
+        }
+        refreshUiNow();
+    }
+
+    private String buildShortDiagnosticsReport() {
+        syncRenderApiRequestedState();
+        RenderCostDiagnostics cost = RenderCostDiagnostics.fromSettings(renderControlApi == null ? null : renderControlApi.getSettings());
+        String ownership = renderControlApi == null ? "render_api_missing" : renderControlApi.getOwnershipMap().shortSummary();
+        String notReady = renderControlApi == null ? "render_api_missing" : joinLabels(renderControlApi.getOwnershipMap().notVerifiedOrNotExposedSummary(), ", ");
+        return "SOLUM Render Short Report"
+            + "\ntimestamp=" + nowTimestamp()
+            + "\nprofile=" + qualityProfile.name()
+            + "\nprimaryFrameMs=" + oneDecimal(primaryFrameMs()) + " primaryFps=" + oneDecimal(primaryFpsValue()) + " source=" + primaryFpsSource
+            + "\np50FrameMs=" + oneDecimal(p50FrameMs) + " p95FrameMs=" + oneDecimal(p95FrameMs) + " worstFrameMs=" + oneDecimal(worstFrameMs)
+            + "\nfpsConfidence=" + fpsConfidence + " fpsStability=" + fpsStability + " jitterMs=" + oneDecimal(jitterMs) + " timingDisagreement=" + timingDisagreement
+            + "\nexpensiveFeatures=" + cost.getEnabledExpensiveFeatures()
+            + "\ncostCauseSummary=" + cost.getCostCauseSummary()
+            + "\nscene=" + sceneRegistry.summary() + " model=" + (modelName == null || modelName.isEmpty() ? "none" : modelName)
+            + "\nownership=" + ownership
+            + "\nnot_verified_or_not_exposed=" + notReady
+            + "\nappBuild=unknown_local_debug";
+    }
+
+    private JSONObject buildFullDiagnosticsReportJson() {
+        syncRenderApiRequestedState();
+        JSONObject json = new JSONObject();
+        try {
+            json.put("schema", "solum_render_full_report");
+            json.put("schemaVersion", 1);
+            json.put("timestamp", nowTimestamp());
+            json.put("liveHudPolicy", "lightweight");
+            json.put("fullDiagnosticsPolicy", fullDiagnosticsAvailability);
+            json.put("renderSettingsRequested", renderSettingsJson());
+            json.put("actualState", renderActualStateJson());
+            json.put("diagnostics", renderDiagnosticsJson());
+            json.put("ownershipMap", ownershipMapJson());
+            json.put("featureDescriptors", featureDescriptorsJson());
+            json.put("fpsFrameTimingSummary", frameTimingJson());
+            json.put("performanceCostSummary", costDiagnosticsJson());
+            json.put("sceneRegistrySummary", sceneRegistryJson());
+            json.put("activeModelInfo", activeModelJson());
+            json.put("not_verified_not_exposed", notVerifiedJson());
+            json.put("app", appBuildJson());
+        } catch (Throwable ignored) { }
+        return json;
+    }
+
+    private JSONObject renderSettingsJson() throws Exception {
+        JSONObject json = buildConfigJson();
+        if (renderControlApi != null) {
+            json.put("renderApiShortReport", renderControlApi.buildShortReport());
+        }
+        return json;
+    }
+
+    private JSONObject renderActualStateJson() throws Exception {
+        JSONObject json = new JSONObject();
+        RenderActualState state = renderControlApi == null ? null : renderControlApi.getActualState();
+        json.put("activityActualMSAA", actualSampleCount);
+        json.put("activityActualTAA", actualTaa);
+        json.put("activityActualDynamicResolution", actualDynamicResolution);
+        json.put("activityFogStatus", fogStatus);
+        json.put("activityColorGradingStatus", colorGradingStatus);
+        if (state != null) {
+            json.put("apiActualMSAA", state.getActualMsaa());
+            json.put("apiActualTAA", state.isActualTaa());
+            json.put("apiMsaaApplyStatus", state.getMsaaApplyStatus());
+            json.put("apiTaaApplyStatus", state.getTaaApplyStatus());
+            json.put("apiDynamicResolutionApplyStatus", state.getDynamicResolutionApplyStatus());
+            json.put("apiFogApplyStatus", state.getFogApplyStatus());
+            json.put("apiFogVisibilityConfidence", state.getFogVisibilityConfidence());
+            json.put("apiFogWarning", state.getFogWarning());
+            json.put("apiLightingApplyStatus", state.getLightingApplyStatus());
+            json.put("apiIblApplyStatus", state.getIblApplyStatus());
+            json.put("apiModelTransformApplyStatus", state.getModelTransformApplyStatus());
+        }
+        return json;
+    }
+
+    private JSONObject renderDiagnosticsJson() throws Exception {
+        JSONObject json = new JSONObject();
+        if (renderControlApi == null) {
+            json.put("status", "render_api_missing");
+            return json;
+        }
+        json.put("renderTruthText", renderControlApi.getDiagnostics().getRenderTruthText());
+        json.put("ownershipSummary", renderControlApi.getDiagnostics().getOwnershipSummary());
+        json.put("costCauseSummary", renderControlApi.getDiagnostics().getCostCauseSummary());
+        json.put("mobileSafetyStatus", renderControlApi.getDiagnostics().getMobileSafetyStatus());
+        json.put("fogRequested", renderControlApi.getDiagnostics().getFogRequested());
+        json.put("fogAppliedStatus", renderControlApi.getDiagnostics().getFogAppliedStatus());
+        json.put("fogVisibilityConfidence", renderControlApi.getDiagnostics().getFogVisibilityConfidence());
+        json.put("fogWarning", renderControlApi.getDiagnostics().getFogWarning());
+        return json;
+    }
+
+    private JSONArray ownershipMapJson() throws Exception {
+        JSONArray array = new JSONArray();
+        if (renderControlApi == null) return array;
+        for (RenderOwnershipMap.Entry entry : renderControlApi.getOwnershipMap().getEntries()) {
+            JSONObject json = new JSONObject();
+            json.put("featureName", entry.getFeatureName());
+            json.put("category", entry.getCategory());
+            json.put("requestedOwner", entry.getRequestedOwner());
+            json.put("applyOwner", entry.getApplyOwner());
+            json.put("actualStateOwner", entry.getActualStateOwner());
+            json.put("status", entry.getStatus());
+            array.put(json);
+        }
+        return array;
+    }
+
+    private JSONArray featureDescriptorsJson() throws Exception {
+        JSONArray array = new JSONArray();
+        if (renderControlApi == null) return array;
+        for (RenderFeatureDescriptor descriptor : renderControlApi.getFeatureDescriptors()) {
+            JSONObject json = new JSONObject();
+            json.put("id", descriptor.getId());
+            json.put("label", descriptor.getLabel());
+            json.put("category", descriptor.getCategory());
+            json.put("mobileCost", descriptor.getMobileCost());
+            json.put("mobileSafe", descriptor.getMobileSafe());
+            json.put("status", descriptor.getStatus());
+            json.put("userWarning", descriptor.getUserWarning());
+            array.put(json);
+        }
+        return array;
+    }
+
+    private JSONObject frameTimingJson() throws Exception {
+        JSONObject json = new JSONObject();
+        json.put("primaryFrameMs", primaryFrameMs());
+        json.put("primaryFps", primaryFpsValue());
+        json.put("primaryFpsSource", primaryFpsSource);
+        json.put("javaCallbackFps", rollingFps);
+        json.put("javaCallbackFpsUse", "debug_only");
+        json.put("frameMetricsTotalMs", frameMetricsTotalMs);
+        json.put("frameMetricsGpuMs", frameMetricsGpuMs > 0.0f ? frameMetricsGpuMs : JSONObject.NULL);
+        json.put("frameMetricsGpuStatus", frameMetricsGpuMs > 0.0f ? "available" : "gpu_timing_unavailable_frame_metrics_only");
+        json.put("frameMetricsDrawMs", frameMetricsDrawMs);
+        json.put("frameMetricsSwapMs", frameMetricsSwapMs);
+        json.put("p50FrameMs", p50FrameMs);
+        json.put("p95FrameMs", p95FrameMs);
+        json.put("worstFrameMs", worstFrameMs);
+        json.put("jitterMs", jitterMs);
+        json.put("jitterScore", jitterScore);
+        json.put("fpsStability", fpsStability);
+        json.put("fpsConfidence", fpsConfidence);
+        json.put("timingDisagreement", timingDisagreement);
+        json.put("timingDisagreementReason", timingDisagreementStatus);
+        json.put("beginFrameStatus", beginFrameStatus);
+        return json;
+    }
+
+    private JSONObject costDiagnosticsJson() throws Exception {
+        RenderCostDiagnostics cost = RenderCostDiagnostics.fromSettings(renderControlApi == null ? null : renderControlApi.getSettings());
+        JSONObject json = new JSONObject();
+        json.put("costCauseSummary", cost.getCostCauseSummary());
+        json.put("enabledExpensiveFeatures", new JSONArray(cost.getEnabledExpensiveFeatures()));
+        json.put("recommendedActions", new JSONArray(cost.getRecommendedActions()));
+        json.put("mobileSafetyStatus", cost.getMobileSafetyStatus());
+        json.put("runtimeMeasurementStatus", "estimated_cost_not_runtime_measured_needs_cost_probe_later");
+        return json;
+    }
+
+    private JSONObject sceneRegistryJson() throws Exception {
+        JSONObject json = new JSONObject();
+        json.put("summary", sceneRegistry.summary());
+        json.put("selectedObjectId", sceneRegistry.getSelectedObjectId());
+        json.put("objectCount", sceneRegistry.getObjects().size());
+        return json;
+    }
+
+    private JSONObject activeModelJson() throws Exception {
+        JSONObject json = new JSONObject();
+        json.put("name", modelName == null || modelName.isEmpty() ? "none" : modelName);
+        json.put("sourcePath", modelSourcePath);
+        json.put("copiedPath", modelCopiedPath);
+        json.put("loadStatus", loadStatus);
+        json.put("materialInspectorStatus", materialInspectorStatus);
+        json.put("materialCount", materialCount);
+        json.put("alphaTransparentCostStatus", "unknown_until_material_scan");
+        json.put("heavyModelCostStatus", "unknown_until_mesh_scan");
+        return json;
+    }
+
+    private JSONArray notVerifiedJson() {
+        if (renderControlApi == null) return new JSONArray();
+        return new JSONArray(renderControlApi.getOwnershipMap().notVerifiedOrNotExposedSummary());
+    }
+
+    private JSONObject appBuildJson() throws Exception {
+        JSONObject json = new JSONObject();
+        json.put("package", getPackageName());
+        json.put("build", "unknown_local_debug");
+        json.put("commit", "unknown");
+        return json;
+    }
+
+    private static String reportTimestamp() {
+        return new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
     }
 
     private String capabilityStatusTable() {

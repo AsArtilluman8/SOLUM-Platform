@@ -1,6 +1,6 @@
 # SOLUM Render API Foundation
 
-Status: P48 foundation.
+Status: P49 contract foundation.
 
 ## Purpose
 
@@ -15,13 +15,16 @@ Future Labs and panels should call the Render API instead of copying Activity-lo
 - `RenderDiagnostics` = short truth report and not-exposed/not-verified list.
 - `RenderControlApi` = stable control interface for UI/tools.
 - `FilamentRenderController` = first concrete Filament implementation.
+- `RenderOwnershipMap` = who owns requested/apply/actual state for each render feature.
+- `RenderFeatureDescriptor` = small metadata card for future Render Control Center.
+- `RenderCostDiagnostics` = honest estimated mobile cost diagnostics.
 - `SceneRegistry` = list of objects currently known to the editor/engine.
 
 ## Current Boundary
 
 P48 is intentionally not a visual-feature patch.
 
-Routed through `RenderControlApi`:
+Contract-covered by `RenderControlApi`:
 
 - quality profile;
 - render scale;
@@ -36,19 +39,47 @@ Routed through `RenderControlApi`:
 - bloom mode;
 - bloom strength;
 - bloom highlight;
-- color exposure/contrast/saturation/temperature as requested settings.
+- shadows;
+- fog mode/density/start/end/height/color;
+- color exposure/contrast/saturation/temperature/tint as requested settings;
+- sun, ambient, fill, background, preset, light rig;
+- IBL intensity/rotation and skybox;
+- sun glare;
+- model transform and camera preset;
+- diagnostics, ownership map, feature descriptors, short report, full report export.
 
-Still Activity-local in P48:
+Still Activity-local or partial in P49:
 
 - Android UI layout and labels;
 - ColorGrading object lifecycle;
 - fog apply details;
 - lighting and shadow caster entity updates;
-- performance/FPS timing;
+- performance/FPS timing collection;
 - config import/export;
 - model import/load lifecycle.
 
-These remain Activity-local because moving them safely needs smaller follow-up patches with build/runtime proof.
+These are not faked as controller-owned. They are marked `activity_local`, `partial`,
+`not_exposed`, `not_verified`, or `planned` in diagnostics and ownership map.
+
+## Diagnostics Policy
+
+Live HUD stays lightweight:
+
+- FPS;
+- primary frame ms;
+- p95 frame ms;
+- health label;
+- confidence;
+- short likely cost cause.
+
+Full diagnostics are generated only on demand:
+
+- Copy Short Report = compact text for developer/user sharing.
+- Export Full Report JSON = richer state for Codex/AI/debug.
+
+Frame ms is the primary truth. FPS is derived as `1000 / frame_ms`.
+This is still not perfect GPU timing. If GPU timing is unavailable, reports must say
+`gpu_timing_unavailable_frame_metrics_only`.
 
 ## Scene Registry Stub
 

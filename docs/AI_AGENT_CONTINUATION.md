@@ -24,13 +24,13 @@ Do not claim planned systems are implemented.
 
 ## Current priority order
 
-1. P48 Render API Foundation + Scene Registry Stub + Agent Brief.
-2. Full Render Control Center.
-3. Scene Workspace / multi-model scene.
-4. Asset Shelf.
-5. Transform Gizmo.
-6. Animation Preview.
-7. Scene Save/Load.
+1. P49 Render API Contract + Diagnostics On Demand + FPS Confidence.
+2. P50 Full Render Control Center.
+3. P51 Scene Workspace / multi-model scene.
+4. P52 Asset Shelf.
+5. P53 Transform Gizmo.
+6. P54 Animation Preview.
+7. P55 Scene Save/Load.
 8. Labs and package/agent systems later.
 
 ## Active near-term patch
@@ -38,13 +38,13 @@ Do not claim planned systems are implemented.
 Current near-term work:
 
 ```text
-P48 — Render API Foundation + Scene Registry Stub + Agent Brief
+P49 — Render API Contract + Diagnostics On Demand + FPS Confidence
 ```
 
 Main goal:
 
 ```text
-Future Labs and panels must use a reusable Render API foundation instead of copying Activity-local renderer code.
+Render API must cover current render-related controls, diagnostics must be on-demand, and FPS must report frame ms, confidence, stability, and disagreement honestly.
 ```
 
 ## Important rules
@@ -52,8 +52,12 @@ Future Labs and panels must use a reusable Render API foundation instead of copy
 - Read repo files before editing.
 - Do not add new visual features before fixing current control truth.
 - Do not add a huge API UI until existing controls work.
+- Do not add a full Render Control Center before P50.
+- Keep live HUD lightweight; full diagnostics run by button/copy/export only.
 - Do not use Java callback FPS as primary FPS.
+- Frame ms is primary truth. FPS is derived from frame ms.
 - Do not fake applied state if a setting is requested-only or requires recreate.
+- Cost diagnostics are estimated until a future cost probe/profiler exists.
 - Keep public docs free of private user/device/account details.
 
 ## Key files
@@ -79,6 +83,8 @@ Future Labs and panels must use a reusable Render API foundation instead of copy
 - `tools/agent_render_api_static_check.py`
 - `apps/engine/src/main/java/com/solum/engine/render/`
 - `apps/engine/src/main/java/com/solum/engine/scene/`
+- `docs/design/SOLUM_DIAGNOSTICS_ON_DEMAND.md`
+- `docs/design/SOLUM_MALI_RENDER_OPTIMIZATION_RULES.md`
 
 ## Build command shape
 

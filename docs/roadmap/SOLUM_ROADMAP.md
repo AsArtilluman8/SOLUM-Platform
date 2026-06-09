@@ -49,7 +49,21 @@ Required outcomes:
 - add a minimal `SceneRegistry` with the active model as selected object;
 - add `tools/agent_brief.sh` so agents can start from a short index and open exact files only when needed.
 
-### P49 — Full Render Control Center
+### P49 — Render API Contract + Diagnostics On Demand + FPS Confidence
+
+Goal: make the Render API contract cover current render-related controls and make diagnostics useful without heavy live UI.
+
+Required outcomes:
+
+- Render API covers quality, postfx, AO, bloom, shadows, fog, color, lighting, IBL/sky, sun glare, camera/model, and diagnostics groups;
+- ownership map reports controller-owned, Activity-local, partial, not-exposed, not-verified, and planned states;
+- feature descriptors prepare the future Render Control Center;
+- Copy Short Report and Export Full Report run on demand;
+- live HUD remains lightweight;
+- FPS reports frame ms, p50/p95/worst, jitter, confidence, stability, and timing disagreement;
+- cost diagnostics are estimated and say `not_runtime_measured`.
+
+### P50 — Full Render Control Center
 
 Goal: expose the verified render API surface in a structured UI.
 
@@ -62,7 +76,7 @@ Required sections:
 
 Rule: do not expose controls as production features unless the API is available, the state can be applied, and the UI reports truthfully whether it works live or requires recreation/restart.
 
-### P50 — Scene Workspace
+### P51 — Scene Workspace
 
 Goal: move beyond a single model preview.
 
@@ -75,7 +89,7 @@ Required outcomes:
 - transform values;
 - object lifecycle and unload/release rules.
 
-### P51 — Asset Shelf v1
+### P52 — Asset Shelf v1
 
 Goal: create the local asset browser and registry foundation.
 
@@ -88,7 +102,7 @@ Required outcomes:
 - unload/release assets safely;
 - prepare the structure for future cloud/community packages.
 
-### P52 — Transform Gizmo v1
+### P53 — Transform Gizmo v1
 
 Goal: add touch-first object transform tools.
 
@@ -102,7 +116,7 @@ Required outcomes:
 
 Reference existing good solutions before implementation, such as common transform-control patterns in professional editors and open-source libraries. Reuse ideas where license-compatible and technically practical.
 
-### P53 — Animation Preview v1
+### P54 — Animation Preview v1
 
 Goal: inspect and play glTF/GLB animations.
 
@@ -115,7 +129,7 @@ Required outcomes:
 - timeline/scrub;
 - diagnostics for skeleton, morph targets, and unsupported states.
 
-### P54 — Scene Save/Load v1
+### P55 — Scene Save/Load v1
 
 Goal: persist scene state separately from temporary render preview settings.
 

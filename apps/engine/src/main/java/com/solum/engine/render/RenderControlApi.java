@@ -1,9 +1,16 @@
 package com.solum.engine.render;
 
+import java.io.File;
+import java.util.List;
+
 public interface RenderControlApi {
     RenderSettings getSettings();
     RenderActualState getActualState();
     RenderDiagnostics getDiagnostics();
+    List<RenderFeatureDescriptor> getFeatureDescriptors();
+    RenderOwnershipMap getOwnershipMap();
+    String buildShortReport();
+    File exportFullReport(File targetFile) throws Exception;
     void apply();
     void setQualityProfile(String profileName);
     void setRenderScale(float scale);
@@ -18,8 +25,33 @@ public interface RenderControlApi {
     void setBloomMode(String mode);
     void setBloomStrength(float strength);
     void setBloomHighlight(float highlight);
+    void setShadowMode(String mode);
+    void setFogMode(String mode);
+    void setFogDensity(float density);
+    void setFogHeight(float height);
+    void setFogStart(float start);
+    void setFogEnd(float end);
+    void setFogColorRgb(float red, float green, float blue);
     void setColorExposure(float exposure);
     void setColorContrast(float contrast);
     void setColorSaturation(float saturation);
     void setColorTemperature(float temperature);
+    void setColorTint(float tint);
+    void setSunIntensity(float intensity);
+    void setAmbientIntensity(float intensity);
+    void setFillIntensity(float intensity);
+    void setBackgroundIntensity(float intensity);
+    void setSunDirection(float x, float y, float z);
+    void setLightingPreset(String preset);
+    void setLightRig(String rig);
+    void setIblIntensity(float intensity);
+    void setIblRotation(float degrees);
+    void setSkyboxEnabled(boolean enabled);
+    void setSunGlareEnabled(boolean enabled);
+    void setSunGlareStrength(float strength);
+    void setSunGlareSize(float size);
+    void setModelScale(float scale);
+    void setModelOffset(float x, float y, float z);
+    void setModelRotation(float x, float y, float z);
+    void setCameraPreset(String preset);
 }

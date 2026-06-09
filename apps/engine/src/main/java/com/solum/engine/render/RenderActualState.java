@@ -27,6 +27,14 @@ public class RenderActualState {
     private String renderScaleApplyStatus = NOT_VERIFIED;
     private String colorApplyStatus = "activity_local";
     private String fogApplyStatus = "activity_local";
+    private String lightingApplyStatus = "activity_local";
+    private String iblApplyStatus = "activity_local";
+    private String skyboxApplyStatus = "activity_local";
+    private String sunGlareApplyStatus = "activity_local";
+    private String modelTransformApplyStatus = "activity_local";
+    private String cameraApplyStatus = "activity_local";
+    private String fogVisibilityConfidence = "not_verified";
+    private String fogWarning = "not_verified";
     private float actualBloomStrength = 0.0f;
     private float actualBloomHighlight = 1000.0f;
     private float dynamicMinScale = 0.72f;
@@ -70,6 +78,22 @@ public class RenderActualState {
     public void setColorApplyStatus(String value) { colorApplyStatus = value; }
     public String getFogApplyStatus() { return fogApplyStatus; }
     public void setFogApplyStatus(String value) { fogApplyStatus = value; }
+    public String getLightingApplyStatus() { return lightingApplyStatus; }
+    public void setLightingApplyStatus(String value) { lightingApplyStatus = value; }
+    public String getIblApplyStatus() { return iblApplyStatus; }
+    public void setIblApplyStatus(String value) { iblApplyStatus = value; }
+    public String getSkyboxApplyStatus() { return skyboxApplyStatus; }
+    public void setSkyboxApplyStatus(String value) { skyboxApplyStatus = value; }
+    public String getSunGlareApplyStatus() { return sunGlareApplyStatus; }
+    public void setSunGlareApplyStatus(String value) { sunGlareApplyStatus = value; }
+    public String getModelTransformApplyStatus() { return modelTransformApplyStatus; }
+    public void setModelTransformApplyStatus(String value) { modelTransformApplyStatus = value; }
+    public String getCameraApplyStatus() { return cameraApplyStatus; }
+    public void setCameraApplyStatus(String value) { cameraApplyStatus = value; }
+    public String getFogVisibilityConfidence() { return fogVisibilityConfidence; }
+    public void setFogVisibilityConfidence(String value) { fogVisibilityConfidence = value; }
+    public String getFogWarning() { return fogWarning; }
+    public void setFogWarning(String value) { fogWarning = value; }
     public float getActualBloomStrength() { return actualBloomStrength; }
     public void setActualBloomStrength(float value) { actualBloomStrength = value; }
     public float getActualBloomHighlight() { return actualBloomHighlight; }

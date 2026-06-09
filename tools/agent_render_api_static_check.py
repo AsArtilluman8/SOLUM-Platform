@@ -27,6 +27,9 @@ for name in [
     "RenderDiagnostics",
     "RenderControlApi",
     "FilamentRenderController",
+    "RenderOwnershipMap",
+    "RenderFeatureDescriptor",
+    "RenderCostDiagnostics",
 ]:
     require_file(name, RENDER / f"{name}.java")
 
@@ -34,6 +37,9 @@ require_file("SceneObject", SCENE / "SceneObject.java")
 require_file("SceneRegistry", SCENE / "SceneRegistry.java")
 
 activity_text = ACTIVITY.read_text(encoding="utf-8") if ACTIVITY.is_file() else ""
+api_text = (RENDER / "RenderControlApi.java").read_text(encoding="utf-8") if (RENDER / "RenderControlApi.java").is_file() else ""
+diagnostics_text = (RENDER / "RenderDiagnostics.java").read_text(encoding="utf-8") if (RENDER / "RenderDiagnostics.java").is_file() else ""
+controller_text = (RENDER / "FilamentRenderController.java").read_text(encoding="utf-8") if (RENDER / "FilamentRenderController.java").is_file() else ""
 activity_refs = ["RenderControlApi", "FilamentRenderController"]
 checks["activity_references_render_api"] = {
     "status": "present" if any(ref in activity_text for ref in activity_refs) else "missing",
@@ -41,6 +47,39 @@ checks["activity_references_render_api"] = {
 }
 if checks["activity_references_render_api"]["status"] != "present":
     missing.append("activity_references_render_api")
+
+api_methods = [
+    "setQualityProfile", "setRenderScale", "setDynamicResolution", "setMsaa", "setFxaa", "setTaa",
+    "setDithering", "setSsr", "setRefraction", "setAoMode", "setBloomMode", "setBloomStrength",
+    "setBloomHighlight", "setShadowMode", "setFogMode", "setFogDensity", "setFogHeight",
+    "setFogStart", "setFogEnd", "setFogColorRgb", "setColorExposure", "setColorContrast",
+    "setColorSaturation", "setColorTemperature", "setColorTint", "setSunIntensity",
+    "setAmbientIntensity", "setFillIntensity", "setBackgroundIntensity", "setSunDirection",
+    "setLightingPreset", "setLightRig", "setIblIntensity", "setIblRotation", "setSkyboxEnabled",
+    "setSunGlareEnabled", "setSunGlareStrength", "setSunGlareSize", "setModelScale",
+    "setModelOffset", "setModelRotation", "setCameraPreset", "getDiagnostics", "getActualState",
+    "getSettings", "getFeatureDescriptors", "getOwnershipMap", "buildShortReport", "exportFullReport",
+]
+missing_methods = [method for method in api_methods if method not in api_text]
+checks["render_api_contract_methods"] = {
+    "status": "present" if not missing_methods else "missing",
+    "missing_methods": missing_methods,
+}
+if missing_methods:
+    missing.append("render_api_contract_methods")
+
+for key, haystack, terms in [
+    ("diagnostics_on_demand_activity", activity_text, ["Copy Short Report", "Export Full Report", "buildShortDiagnosticsReport", "buildFullDiagnosticsReportJson", "SOLUM_REPORTS"]),
+    ("fps_confidence_terms", activity_text + diagnostics_text, ["primaryFrameMs", "primaryFps", "primaryFpsSource", "javaCallbackFps", "p50FrameMs", "p95FrameMs", "worstFrameMs", "jitterMs", "fpsStability", "fpsConfidence", "timingDisagreement"]),
+    ("ownership_terms", controller_text + diagnostics_text, ["RenderOwnershipMap", "ownershipSummary", "getOwnershipMap"]),
+    ("feature_descriptor_terms", controller_text, ["RenderFeatureDescriptor", "mobileCost", "mobileSafe"]),
+    ("cost_diagnostics_terms", controller_text + activity_text, ["RenderCostDiagnostics", "estimated_cost", "not_runtime_measured", "needs_cost_probe_later"]),
+    ("fog_visibility_terms", controller_text + activity_text, ["fogVisibilityConfidence", "may_be_hidden_by_skybox_or_exposure", "fogWarning"]),
+]:
+    missing_terms = [term for term in terms if term not in haystack]
+    checks[key] = {"status": "present" if not missing_terms else "missing", "missing_terms": missing_terms}
+    if missing_terms:
+        missing.append(key)
 
 for term in [
     "requestedSampleCount",

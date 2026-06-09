@@ -36,7 +36,7 @@ Performance risk: `cheap`, `medium`, `expensive`, `screenshot_only`, `unknown_ne
 | Camera | Projection/orbit target | exposed | not_needed_for_basic | wired | user_ui | partially_works | cheap | Scene Workspace | Separate camera controller. |
 | Surface/SwapChain | Android surface connection through ModelViewer/UiHelper | partially_exposed | likely_needed_for_full_control | partially_wired | hidden | partially_works | medium | Render Core | Hide behind render surface lifecycle. |
 | Render loop | Choreographer callback plus ModelViewer render | exposed | likely_needed_for_full_control | wired | debug_only | partially_works | cheap | Render Core | Split callback timing from visible smoothness. |
-| Dynamic resolution | Adjusts internal render scale under load | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | Render Control Center | Add runtime measurement later. |
+| Dynamic resolution | Adjusts internal render scale under load | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | Render Control Center | P47 forces On for presets; requested/applied via View options; actual GPU scaling is not_device_verified. |
 | Render scale | User-facing quality/cost knob | partially_exposed | likely_needed_for_full_control | wired | user_ui | partially_works | medium | Render Control Center | Keep diagnostics explicit. |
 | Viewport | Where scene is displayed | exposed | not_needed_for_basic | wired | user_ui | partially_works | cheap | Scene Workspace | Keep viewport clear of debug noise. |
 | Clear color/background | Procedural fallback scene background | exposed | not_needed_for_basic | wired | user_ui | partially_works | cheap | Render Control Center | Retain as basic control. |
@@ -54,11 +54,11 @@ Performance risk: `cheap`, `medium`, `expensive`, `screenshot_only`, `unknown_ne
 | Per-pass GPU timing | Identifies expensive pass | not_exposed | required | docs_only | not_present | deferred | unknown_needs_measurement | Performance Profiler | Needs native/profiler integration. |
 | CPU render submit timing | Java wall timing around render submit | exposed | not_needed_for_basic | wired | debug_only | partially_works | cheap | Performance Profiler | Keep approximate label. |
 | Jank/slow-frame counters | User-visible smoothness signal | exposed | not_needed_for_basic | wired | debug_only | works | cheap | Performance Profiler | Keep main HUD status derived from p95/jank. |
-| MSAA | Hardware multisampling | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | Render Control Center | Cap high samples on Mali. |
+| MSAA | Hardware multisampling | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | Render Control Center | P47 separates requestedMSAA/actualMSAA; live update requested via View.setSampleCount; device verification still needed, recreate not proven required. |
 | FXAA | Low-cost post AA | exposed | not_needed_for_basic | wired | user_ui | partially_works | cheap | Render Control Center | Keep basic toggle. |
-| TAA | Temporal anti-aliasing | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | Render Control Center | Mark cost in diagnostics. |
+| TAA | Temporal anti-aliasing | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | Render Control Center | P47 presets force Off unless future runtime proof says stable; manual expensive state is not silently kept. |
 | Dithering | Reduces banding | exposed | not_needed_for_basic | wired | user_ui | partially_works | cheap | Render Control Center | Keep status. |
-| Sample count | Controls MSAA samples | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | Render Control Center | Validate actual sample cost. |
+| Sample count | Controls MSAA samples | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | Render Control Center | Requested/applied/not_verified; Debug reports requested vs actual instead of fake certainty. |
 | Guard band | Reduces edge artifacts for post/AA path | partially_exposed | unknown_needs_verification | partially_wired | debug_only | not_verified_on_device | unknown_needs_measurement | Render Control Center | Verify Java API behavior. |
 | Dynamic resolution quality | Quality levels/min/max scale | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | Render Control Center | Profile scaling on device. |
 | ColorGrading | Tone/color output pipeline | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | PostProcess Studio | Move presets into module later. |
@@ -73,7 +73,7 @@ Performance risk: `cheap`, `medium`, `expensive`, `screenshot_only`, `unknown_ne
 | Sharpen | Post-process detail sharpening | unknown_needs_verification | likely_needed_for_full_control | not_wired | not_present | deferred | medium | PostProcess Studio | Verify API and cost. |
 | Film grain | Adds noise texture look | unknown_needs_verification | likely_needed_for_full_control | not_wired | not_present | deferred | cheap | PostProcess Studio | Verify before UI. |
 | Chromatic aberration | Lens color fringe effect | not_exposed | likely_needed_for_full_control | not_wired | not_present | deferred | medium | PostProcess Studio | Defer/custom post only. |
-| Bloom | Bright highlight glow | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | PostProcess Studio | Keep cost warning for high. |
+| Bloom | Bright highlight glow | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | PostProcess Studio | P47 presets clamp Low Off, Medium Soft, High/Ultra Medium max; Bloom High is not kept silently. |
 | Bloom strength | Bloom intensity | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | PostProcess Studio | Wired; sliders enable Bloom Soft. |
 | Bloom threshold/highlight | Controls highlight pickup | partially_exposed | likely_needed_for_full_control | wired | user_ui | partially_works | medium | PostProcess Studio | Verify exact threshold semantics. |
 | Bloom dirt/softness | Lens dirt/softness controls | partially_exposed | likely_needed_for_full_control | not_wired | debug_only | deferred | medium | PostProcess Studio | Do not claim exposed until verified. |
@@ -81,6 +81,7 @@ Performance risk: `cheap`, `medium`, `expensive`, `screenshot_only`, `unknown_ne
 | Lens flare | Optical flare pipeline | not_exposed | likely_needed_for_full_control | not_wired | not_present | deferred | expensive | PostProcess Studio | Defer. |
 | God rays / light shafts | Volumetric/screen-space light shafts | not_exposed | required | docs_only | not_present | deferred | expensive | VFX Lab later | Do not add before profiler. |
 | Screen-space overlays | 2D diagnostic/visual overlay | exposed | not_needed_for_basic | wired | user_ui | partially_works | screenshot_only | Render Control Center | Keep separate from render truth. |
+| AO | Screen-space ambient occlusion | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | Render Control Center | P47 presets clamp Low Off, Medium Soft, High/Ultra Medium max; AO Debug Max is not kept silently. |
 | Fog | Distance/height atmosphere | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | Light Studio | Keep as simple atmosphere control. |
 | Haze | Artistic fog preset | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | Light Studio | Keep preset-based. |
 | Density | Fog thickness | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | Light Studio | Keep advanced numeric. |
@@ -101,8 +102,8 @@ Performance risk: `cheap`, `medium`, `expensive`, `screenshot_only`, `unknown_ne
 | IBL intensity | Environment light strength | exposed | not_needed_for_basic | wired | user_ui | partially_works | medium | Light Studio | Keep status. |
 | IBL rotation | Rotates environment | partially_exposed | likely_needed_for_full_control | partially_wired | user_ui | partially_works | medium | Light Studio | Verify exact transform path. |
 | Skybox visibility | Show/hide background skybox | exposed | not_needed_for_basic | wired | user_ui | partially_works | cheap | Light Studio | Keep. |
-| Shadows on/off | Enables shadowing path | exposed | not_needed_for_basic | wired | user_ui | partially_works | expensive | Shadow Studio | Needs profiler before expanding. |
-| Shadow type | PCF/DPCF style selection | exposed | not_needed_for_basic | wired | user_ui | partially_works | expensive | Shadow Studio | Keep status explicit. |
+| Shadows on/off | Enables shadowing path | exposed | not_needed_for_basic | wired | user_ui | partially_works | expensive | Shadow Studio | P47 presets clamp Low Off, Medium Soft, High/Ultra Medium; actual map/cascade details remain not exposed. |
+| Shadow type | PCF/DPCF style selection | exposed | not_needed_for_basic | wired | user_ui | partially_works | expensive | Shadow Studio | Requested/applied through View shadow type; full runtime quality still not_verified_on_device. |
 | Shadow quality | Overall shadow quality | partially_exposed | likely_needed_for_full_control | partially_wired | user_ui | not_verified_on_device | expensive | Shadow Studio | Verify actual map/quality control. |
 | Shadow bias | Acne/peter-panning control | unknown_needs_verification | likely_needed_for_full_control | docs_only | debug_only | deferred | medium | Shadow Studio | Verify API before UI. |
 | Shadow map size | Resolution/cost | unknown_needs_verification | likely_needed_for_full_control | docs_only | debug_only | deferred | expensive | Shadow Studio | Needs API/profiler proof. |
@@ -113,7 +114,7 @@ Performance risk: `cheap`, `medium`, `expensive`, `screenshot_only`, `unknown_ne
 | Cascade splits | CSM distribution | not_exposed | required | docs_only | not_present | deferred | expensive | Shadow Studio | Defer. |
 | Per-light shadow support | Shadows for specific lights | partially_exposed | likely_needed_for_full_control | partially_wired | debug_only | not_verified_on_device | expensive | Shadow Studio | Audit per light type. |
 | Shadow debug | Visualize shadow maps/cascades | not_exposed | required | docs_only | not_present | deferred | screenshot_only | Shadow Studio | Add after Shadow Studio. |
-| SSR | Screen-space reflections | exposed | not_needed_for_basic | wired | user_ui | partially_works | expensive | PostProcess Studio | Keep heavy warning, needs profiler. |
+| SSR | Screen-space reflections | exposed | not_needed_for_basic | wired | user_ui | partially_works | expensive | PostProcess Studio | P47 presets force Off by default; enabling remains expensive/manual and needs profiler proof. |
 | Screen-space refraction | Refraction from screen data | exposed | not_needed_for_basic | wired | user_ui | partially_works | expensive | Glass Studio | Keep truth text. |
 | Transmission | Glass material light transmission | partially_exposed | likely_needed_for_full_control | partially_wired | debug_only | not_verified_on_device | expensive | Glass Studio | Verify glTF/material support. |
 | Alpha blending | Transparent materials | exposed | not_needed_for_basic | partially_wired | debug_only | partially_works | medium | Glass Studio | Needs material editor ownership. |

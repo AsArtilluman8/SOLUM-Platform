@@ -120,4 +120,34 @@ adb shell dumpsys gfxinfo com.solum.engine framestats
 - GPU timing: `unavailable` unless measured by FrameMetrics/profiler/native path.
 - SSR: marked expensive and not trusted by callback FPS alone.
 
+## Render Control Truth Problem
+
+FPS can only be interpreted correctly if render settings are truthful. A Low profile that still keeps AO Debug Max, Bloom High, MSAA 4x, SSR, TAA, or Dynamic Resolution Off is not really Low, even if the HUD reports an estimated FPS value.
+
+P47 locks these rules:
+
+- Low/Medium/High presets must force their expected render state instead of inheriting old expensive config values.
+- Debug must show requested vs actual state for sensitive controls.
+- The main HUD may show `preset_mismatch` if selected profile, requested state, and actual reported state diverge.
+- MSAA is requested through Filament Java `View.setSampleCount`, but device-level verification is not available from this path. Debug must mark it as `live_update_requested_not_device_verified` unless a deeper profiler or runtime proof is added.
+- Dynamic Resolution is requested through Filament Java `View.setDynamicResolutionOptions`, but the real GPU scaling behavior is still `not_device_verified`.
+
+Expected preset truth:
+
+```text
+Low:
+  SSR Off, TAA Off, AO Off, Bloom Off, MSAA 1x, Dynamic Resolution On, Shadows Off, Sun Glare Off.
+
+Medium:
+  SSR Off, TAA Off, AO Soft, Bloom Low, MSAA 2x, Dynamic Resolution On, Shadows Soft, Sun Glare Subtle.
+
+High Preview:
+  SSR Off, TAA Off, AO Medium max, Bloom Medium max, MSAA 2x, Dynamic Resolution On, Shadows Medium, Sun Glare Subtle.
+
+Ultra Preview:
+  SSR Off by default, TAA Off by default, AO Medium, Bloom Medium, MSAA 4x, Dynamic Resolution On, warnings for expensive state.
+```
+
+Old saved config must not silently restore expensive state into Low/Medium/High. Loading config should pass through preset enforcement and then save the hardened state.
+
 Until profiler evidence exists, GPU timing remains `not_exposed/deferred`.

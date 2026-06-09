@@ -334,12 +334,17 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String bloomActualStatus = "not_applied";
     private String refractionActualStatus = "not_applied";
     private String refractionActuallyApplied = "false";
+    private String msaaActualStatus = "not_applied";
+    private String dynamicResolutionActualStatus = "not_applied";
+    private String presetTruthStatus = "not_evaluated";
     private String materialInspectorStatus = "not_loaded";
     private int materialCount = 0;
     private int selectedMaterialIndex = 0;
+    private int requestedSampleCount = 2;
     private int actualSampleCount = 2;
     private float dynamicMinScale = 0.72f;
     private float dynamicMaxScale = 0.95f;
+    private boolean actualDynamicResolutionEnabled = true;
     private boolean aoEnabled = false;
     private boolean bloomEnabled = false;
     private boolean shadowsEnabled = false;
@@ -777,10 +782,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         qualityButton = button("Quality: " + qualityProfile.label);
         qualityButton.setOnClickListener(v -> {
             qualityProfile = qualityProfile.next();
-            ssrEnabled = false;
             persistWorkspaceSettings();
             applyQualityProfile();
-            setLastAction("quality_" + qualityProfile.name().toLowerCase(Locale.US) + "_ssr_forced_off");
+            setLastAction("quality_" + qualityProfile.name().toLowerCase(Locale.US) + "_preset_forced");
             refreshUiNow();
         });
         lightingButton = button("Lighting: " + lightingPreset.label);
@@ -886,7 +890,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         advancedBackgroundField = addAdvancedField(advancedValuesPanel, "Background", 0.0f, 1.0f, v -> backgroundBrightness = v);
         lightingPanel.addView(advancedValuesPanel);
 
-        qualitySummaryView = overlayText(10.0f, 12);
+        qualitySummaryView = overlayText(10.0f, 42);
         qualitySummaryView.setBackgroundColor(Color.TRANSPARENT);
         renderPanel.addView(qualityButton);
         dynamicResolutionButton = button("", v -> {
@@ -897,9 +901,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         });
         renderPanel.addView(dynamicResolutionButton);
         msaaButton = button("", v -> {
-            actualSampleCount = actualSampleCount == 1 ? 2 : (actualSampleCount == 2 ? 4 : 1);
+            requestedSampleCount = requestedSampleCount == 1 ? 2 : (requestedSampleCount == 2 ? 4 : 1);
             applyQualityProfile();
-            setLastAction("msaa_" + actualSampleCount + "x");
+            setLastAction("msaa_requested_" + requestedSampleCount + "x_actual_" + actualSampleCount + "x");
             refreshUiNow();
         });
         renderPanel.addView(msaaButton);
@@ -2097,19 +2101,20 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void applyQualityProfile() {
         if (modelViewer == null) return;
         try {
+            enforceQualityProfileState();
             com.google.android.filament.View view = modelViewer.getView();
             com.google.android.filament.View.AmbientOcclusionOptions ao = view.getAmbientOcclusionOptions();
             com.google.android.filament.View.BloomOptions bloom = view.getBloomOptions();
             com.google.android.filament.View.DynamicResolutionOptions dynamic = view.getDynamicResolutionOptions();
             com.google.android.filament.View.RenderQuality renderQuality = view.getRenderQuality();
-            actualSampleCount = sanitizeMsaa(actualSampleCount);
+            requestedSampleCount = sanitizeMsaa(requestedSampleCount);
             aoEnabled = aoMode != AoMode.OFF;
             bloomEnabled = bloomMode != BloomMode.OFF;
             shadowsEnabled = shadowMode != ShadowMode.OFF;
             refractionEnabled = refractionMode != RefractionMode.OFF;
             if (qualityProfile == FilamentQualityProfile.LOW) {
                 view.setAntiAliasing(AntiAliasing.NONE);
-                view.setSampleCount(actualSampleCount);
+                view.setSampleCount(requestedSampleCount);
                 view.setAmbientOcclusion(aoEnabled ? AmbientOcclusion.SSAO : AmbientOcclusion.NONE);
                 view.setShadowingEnabled(shadowsEnabled);
                 view.setScreenSpaceRefractionEnabled(refractionEnabled);
@@ -2122,11 +2127,10 @@ public class FilamentGlbPreviewActivity extends Activity {
                 dynamic.maxScale = Math.max(dynamic.minScale, Math.min(0.82f, renderScale));
                 dynamic.quality = QualityLevel.LOW;
                 renderQuality.hdrColorBuffer = QualityLevel.LOW;
-                setActualQualityStatus("NONE", actualSampleCount, 0.58f, dynamic.maxScale, "low_quality_only_dynamic_safe");
+                setActualQualityStatus("NONE", requestedSampleCount, 0.58f, dynamic.maxScale, dynamic.enabled, "low_quality_only_dynamic_safe");
             } else if (qualityProfile == FilamentQualityProfile.HIGH_PREVIEW || qualityProfile == FilamentQualityProfile.ULTRA_PREVIEW) {
                 view.setAntiAliasing(fxaaEnabled ? AntiAliasing.FXAA : AntiAliasing.NONE);
-                if (qualityProfile == FilamentQualityProfile.ULTRA_PREVIEW && actualSampleCount < 4) actualSampleCount = 4;
-                view.setSampleCount(actualSampleCount);
+                view.setSampleCount(requestedSampleCount);
                 view.setAmbientOcclusion(aoEnabled ? AmbientOcclusion.SSAO : AmbientOcclusion.NONE);
                 view.setShadowingEnabled(shadowsEnabled);
                 view.setScreenSpaceRefractionEnabled(refractionEnabled);
@@ -2139,10 +2143,10 @@ public class FilamentGlbPreviewActivity extends Activity {
                 dynamic.maxScale = qualityProfile == FilamentQualityProfile.ULTRA_PREVIEW ? 1.00f : Math.max(dynamic.minScale, renderScale);
                 dynamic.quality = QualityLevel.MEDIUM;
                 renderQuality.hdrColorBuffer = QualityLevel.HIGH;
-                setActualQualityStatus(fxaaEnabled ? "FXAA" : "NONE", actualSampleCount, dynamic.minScale, dynamic.maxScale, qualityProfile.name().toLowerCase(Locale.US) + "_quality_only");
+                setActualQualityStatus(fxaaEnabled ? "FXAA" : "NONE", requestedSampleCount, dynamic.minScale, dynamic.maxScale, dynamic.enabled, qualityProfile.name().toLowerCase(Locale.US) + "_quality_only");
             } else {
                 view.setAntiAliasing(fxaaEnabled ? AntiAliasing.FXAA : AntiAliasing.NONE);
-                view.setSampleCount(actualSampleCount);
+                view.setSampleCount(requestedSampleCount);
                 view.setAmbientOcclusion(aoEnabled ? AmbientOcclusion.SSAO : AmbientOcclusion.NONE);
                 view.setShadowingEnabled(shadowsEnabled);
                 view.setScreenSpaceRefractionEnabled(refractionEnabled);
@@ -2155,7 +2159,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 dynamic.maxScale = Math.max(dynamic.minScale, renderScale);
                 dynamic.quality = QualityLevel.MEDIUM;
                 renderQuality.hdrColorBuffer = QualityLevel.MEDIUM;
-                setActualQualityStatus(fxaaEnabled ? "FXAA" : "NONE", actualSampleCount, 0.72f, dynamic.maxScale, "medium_quality_only_dynamic_safe");
+                setActualQualityStatus(fxaaEnabled ? "FXAA" : "NONE", requestedSampleCount, 0.72f, dynamic.maxScale, dynamic.enabled, "medium_quality_only_dynamic_safe");
             }
             view.setAmbientOcclusionOptions(ao);
             view.setBloomOptions(bloom);
@@ -2170,6 +2174,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             applyFogOptions();
             applyColorGrading();
             applyLightingValues();
+            updatePresetTruthStatus();
             persistWorkspaceSettings();
         } catch (Throwable t) {
             lastLifecycleError = shortMessage(t);
@@ -2178,6 +2183,104 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (qualityButton != null) qualityButton.setText("Quality: " + qualityProfile.label);
         updateAllSliderLabels();
         updateToggleLabels();
+    }
+
+    private void enforceQualityProfileState() {
+        requestedSampleCount = expectedMsaaForProfile();
+        dynamicResolutionEnabled = expectedDynamicResolutionForProfile();
+        ssrEnabled = expectedSsrForProfile();
+        taaEnabled = expectedTaaForProfile();
+        aoMode = expectedAoForProfile();
+        bloomMode = expectedBloomForProfile();
+        shadowMode = expectedShadowForProfile();
+        sunGlareMode = expectedSunGlareForProfile();
+        if (bloomMode == BloomMode.OFF || bloomMode == BloomMode.SOFT || bloomMode == BloomMode.MEDIUM) {
+            bloomStrength = defaultBloomStrength(bloomMode);
+            bloomHighlight = defaultBloomHighlight(bloomMode);
+        }
+        if (!ssrEnabled) resetSsrPerformanceBaseline();
+    }
+
+    private AoMode expectedAoForProfile() {
+        if (qualityProfile == FilamentQualityProfile.LOW) return AoMode.OFF;
+        if (qualityProfile == FilamentQualityProfile.MEDIUM) return AoMode.SOFT;
+        return AoMode.MEDIUM;
+    }
+
+    private BloomMode expectedBloomForProfile() {
+        if (qualityProfile == FilamentQualityProfile.LOW) return BloomMode.OFF;
+        if (qualityProfile == FilamentQualityProfile.MEDIUM) return BloomMode.SOFT;
+        return BloomMode.MEDIUM;
+    }
+
+    private ShadowMode expectedShadowForProfile() {
+        if (qualityProfile == FilamentQualityProfile.LOW) return ShadowMode.OFF;
+        if (qualityProfile == FilamentQualityProfile.MEDIUM) return ShadowMode.SOFT;
+        if (qualityProfile == FilamentQualityProfile.HIGH_PREVIEW) return ShadowMode.MEDIUM;
+        return ShadowMode.MEDIUM;
+    }
+
+    private SunGlareMode expectedSunGlareForProfile() {
+        if (qualityProfile == FilamentQualityProfile.LOW) return SunGlareMode.OFF;
+        if (qualityProfile == FilamentQualityProfile.MEDIUM) return SunGlareMode.SUBTLE;
+        return SunGlareMode.SUBTLE;
+    }
+
+    private int expectedMsaaForProfile() {
+        if (qualityProfile == FilamentQualityProfile.LOW) return 1;
+        if (qualityProfile == FilamentQualityProfile.MEDIUM) return 2;
+        if (qualityProfile == FilamentQualityProfile.HIGH_PREVIEW) return 2;
+        return 4;
+    }
+
+    private boolean expectedDynamicResolutionForProfile() {
+        return true;
+    }
+
+    private boolean expectedSsrForProfile() {
+        return false;
+    }
+
+    private boolean expectedTaaForProfile() {
+        return false;
+    }
+
+    private boolean presetMismatch() {
+        return aoMode != expectedAoForProfile()
+            || bloomMode != expectedBloomForProfile()
+            || shadowMode != expectedShadowForProfile()
+            || sunGlareMode != expectedSunGlareForProfile()
+            || requestedSampleCount != expectedMsaaForProfile()
+            || actualSampleCount != expectedMsaaForProfile()
+            || dynamicResolutionEnabled != expectedDynamicResolutionForProfile()
+            || actualDynamicResolutionEnabled != expectedDynamicResolutionForProfile()
+            || ssrEnabled != expectedSsrForProfile()
+            || taaEnabled != expectedTaaForProfile();
+    }
+
+    private void updatePresetTruthStatus() {
+        presetTruthStatus = "Selected profile: " + qualityProfile.label
+            + "\nExpected:"
+            + "\nExpected AO: " + expectedAoForProfile().name()
+            + "\nExpected Bloom: " + expectedBloomForProfile().name()
+            + "\nExpected MSAA: " + expectedMsaaForProfile() + "x"
+            + "\nExpected Dynamic Resolution: " + expectedDynamicResolutionForProfile()
+            + "\nExpected SSR: " + expectedSsrForProfile()
+            + "\nExpected TAA: " + expectedTaaForProfile()
+            + "\nExpected Shadows: " + expectedShadowForProfile().name()
+            + "\nExpected Sun Glare: " + expectedSunGlareForProfile().name()
+            + "\nActual:"
+            + "\nActual AO: " + aoMode.name()
+            + "\nActual Bloom: " + bloomMode.name()
+            + "\nRequested MSAA: " + requestedSampleCount + "x"
+            + "\nActual MSAA: " + actualSampleCount + "x (" + msaaActualStatus + ")"
+            + "\nRequested Dynamic Resolution: " + dynamicResolutionEnabled
+            + "\nActual Dynamic Resolution: " + actualDynamicResolutionEnabled + " (" + dynamicResolutionActualStatus + ")"
+            + "\nActual SSR: " + ssrEnabled
+            + "\nActual TAA: " + taaEnabled
+            + "\nActual Shadows: " + shadowMode.name()
+            + "\nActual Sun Glare: " + sunGlareMode.name()
+            + "\nPreset mismatch: " + presetMismatch();
     }
 
     private void applyAoOptions(com.google.android.filament.View.AmbientOcclusionOptions ao, QualityLevel quality) {
@@ -2284,12 +2387,17 @@ public class FilamentGlbPreviewActivity extends Activity {
         refractionActuallyApplied = refractionEnabled ? "true_view_screen_space_refraction_enabled" : "false_disabled";
     }
 
-    private void setActualQualityStatus(String aa, int sampleCount, float minScale, float maxScale, String status) {
+    private void setActualQualityStatus(String aa, int sampleCount, float minScale, float maxScale, boolean actualDynamic, String status) {
         actualAA = aa;
         actualSampleCount = sampleCount;
         dynamicMinScale = minScale;
         dynamicMaxScale = maxScale;
-        qualityFeatureStatus = status + "_aoMode_" + aoMode.name() + "_bloomMode_" + bloomMode.name() + "_shadowsMode_" + shadowMode.name() + "_refractionMode_" + refractionMode.name();
+        actualDynamicResolutionEnabled = actualDynamic;
+        msaaActualStatus = "requested_" + requestedSampleCount + "x actual_" + actualSampleCount + "x live_update_requested_not_device_verified";
+        dynamicResolutionActualStatus = "requested_" + dynamicResolutionEnabled + " actual_" + actualDynamicResolutionEnabled + "_view_options_set_not_device_verified"
+            + " scale_" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale);
+        qualityFeatureStatus = status + "_aoMode_" + aoMode.name() + "_bloomMode_" + bloomMode.name() + "_shadowsMode_" + shadowMode.name() + "_refractionMode_" + refractionMode.name()
+            + "_msaa_" + msaaActualStatus + "_dynamic_" + dynamicResolutionActualStatus;
     }
 
     private void applyTemporalAaOptions(com.google.android.filament.View view) {
@@ -2558,7 +2666,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         bloomStrength = prefs.getFloat(PREF_FILAMENT_BLOOM_STRENGTH, defaultBloomStrength(bloomMode));
         bloomHighlight = prefs.getFloat(PREF_FILAMENT_BLOOM_HIGHLIGHT, defaultBloomHighlight(bloomMode));
         dynamicResolutionEnabled = prefs.getBoolean(PREF_FILAMENT_DYNAMIC_RESOLUTION, true);
-        actualSampleCount = prefs.getInt(PREF_FILAMENT_MSAA_SAMPLES, 2);
+        requestedSampleCount = sanitizeMsaa(prefs.getInt(PREF_FILAMENT_MSAA_SAMPLES, 2));
+        actualSampleCount = requestedSampleCount;
         fxaaEnabled = prefs.getBoolean(PREF_FILAMENT_FXAA_ENABLED, true);
         taaEnabled = prefs.getBoolean(PREF_FILAMENT_TAA_ENABLED, false);
         ssrEnabled = prefs.getBoolean(PREF_FILAMENT_SSR_ENABLED, false);
@@ -2612,7 +2721,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             .putFloat(PREF_FILAMENT_BLOOM_STRENGTH, bloomStrength)
             .putFloat(PREF_FILAMENT_BLOOM_HIGHLIGHT, bloomHighlight)
             .putBoolean(PREF_FILAMENT_DYNAMIC_RESOLUTION, dynamicResolutionEnabled)
-            .putInt(PREF_FILAMENT_MSAA_SAMPLES, actualSampleCount)
+            .putInt(PREF_FILAMENT_MSAA_SAMPLES, requestedSampleCount)
             .putBoolean(PREF_FILAMENT_FXAA_ENABLED, fxaaEnabled)
             .putBoolean(PREF_FILAMENT_TAA_ENABLED, taaEnabled)
             .putBoolean(PREF_FILAMENT_SSR_ENABLED, ssrEnabled)
@@ -3064,6 +3173,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         sunGlareMode = SunGlareMode.OFF;
         dynamicResolutionEnabled = true;
         renderScale = 0.95f;
+        requestedSampleCount = 2;
         actualSampleCount = 2;
         fxaaEnabled = true;
         taaEnabled = false;
@@ -3177,7 +3287,13 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("dynamicMinScale", dynamicMinScale);
             json.put("dynamicMaxScale", dynamicMaxScale);
             json.put("aaMode", actualAA);
-            json.put("msaaSamples", actualSampleCount);
+            json.put("requestedMsaaSamples", requestedSampleCount);
+            json.put("actualMsaaSamples", actualSampleCount);
+            json.put("msaaStatus", msaaActualStatus);
+            json.put("dynamicResolutionActual", actualDynamicResolutionEnabled);
+            json.put("dynamicResolutionStatus", dynamicResolutionActualStatus);
+            json.put("presetTruth", presetTruthStatus);
+            json.put("presetMismatch", presetMismatch());
             json.put("taaSupported", true);
             json.put("taaEnabled", taaEnabled);
             json.put("taaStatus", taaStatus);
@@ -3260,7 +3376,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         bloomStrength = (float) json.optDouble("bloomStrength", bloomStrength);
         bloomHighlight = (float) json.optDouble("bloomHighlight", bloomHighlight);
         dynamicResolutionEnabled = json.optBoolean("dynamicResolutionEnabled", dynamicResolutionEnabled);
-        actualSampleCount = sanitizeMsaa(json.optInt("msaaSamples", actualSampleCount));
+        requestedSampleCount = sanitizeMsaa(json.optInt("requestedMsaaSamples", json.optInt("msaaSamples", requestedSampleCount)));
+        actualSampleCount = requestedSampleCount;
         fxaaEnabled = json.optBoolean("fxaaEnabled", fxaaEnabled);
         taaEnabled = json.optBoolean("taaEnabled", taaEnabled);
         ssrEnabled = json.optBoolean("ssrEnabled", ssrEnabled);
@@ -3346,6 +3463,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + " | p95 " + oneDecimal(p95FrameMs) + " ms"
                 + " | " + renderHealthLabel()
                 + " | " + qualityProfile.label
+                + (presetMismatch() ? " | preset_mismatch" : "")
                 + mainHudExpensiveFeatureLabel());
         }
         if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
@@ -3358,8 +3476,11 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nCopy/import: " + importCopyStatus);
         }
         if (qualitySummaryView != null) {
-            qualitySummaryView.setText("actualAA=" + actualAA + " sampleCount=" + actualSampleCount
-                + "\ndynamicResolutionEnabled=" + dynamicResolutionEnabled
+            qualitySummaryView.setText("actualAA=" + actualAA + " requestedMSAA=" + requestedSampleCount + "x actualMSAA=" + actualSampleCount + "x"
+                + "\nrequestedDynamicResolution=" + dynamicResolutionEnabled + " actualDynamicResolution=" + actualDynamicResolutionEnabled
+                + "\nmsaaStatus=" + msaaActualStatus
+                + "\ndynamicResolutionStatus=" + dynamicResolutionActualStatus
+                + "\n" + presetTruthStatus
                 + "\nrenderScale=" + twoDecimal(renderScale) + " dynamicScale=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
                 + "\ntaaSupported=true taaEnabled=" + taaEnabled + " taaStatus=" + taaStatus
                 + "\nssrSupported=true ssrEnabled=" + ssrEnabled + " ssrStatus=" + ssrStatus + (ssrEnabled ? " WARNING_manual_heavy_mobile" : "")
@@ -3481,6 +3602,8 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nPerfetto/AGI status: external_deferred"
                 + "\n\nExpensive feature warnings:"
                 + expensiveFeatureWarningsDebug()
+                + "\n\nPreset truth:"
+                + "\n" + presetTruthStatus
                 + "\n\nRuntime state:"
                 + "\nModel: " + (modelName == null || modelName.isEmpty() ? "none" : modelName)
                 + "\nRenderer: Filament"
@@ -3499,7 +3622,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nfallbackReason=" + fallbackReason
                 + "\nenvironmentMode=" + environmentMode + " activeIbl=" + shorten(futureIblAssetPath, 72)
                 + "\nQuality: " + qualityFeatureStatus
-                + "\nactualAA=" + actualAA + " actualMSAA=" + actualSampleCount + "x actualDynamicResolution=" + dynamicResolutionEnabled + " actualRenderScale=" + twoDecimal(renderScale) + " dynamicScale=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
+                + "\nactualAA=" + actualAA + " requestedMSAA=" + requestedSampleCount + "x actualMSAA=" + actualSampleCount + "x requestedDynamicResolution=" + dynamicResolutionEnabled + " actualDynamicResolution=" + actualDynamicResolutionEnabled + " actualRenderScale=" + twoDecimal(renderScale) + " dynamicScale=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
                 + "\ntaaSupported=true taaEnabled=" + taaEnabled + " taaStatus=" + taaStatus
                 + "\nssrSupported=true ssrEnabled=" + ssrEnabled + " ssrStatus=" + ssrStatus + (ssrEnabled ? " WARNING_manual_heavy_mobile" : "")
                 + "\nssrPerformanceWarning=" + ssrPerformanceWarning
@@ -3614,6 +3737,8 @@ public class FilamentGlbPreviewActivity extends Activity {
             + "\nBloom High: " + (bloomMode == BloomMode.HIGH ? "enabled_expensive" : "off")
             + "\nTAA: " + (taaEnabled ? "enabled_medium_to_expensive" : "off")
             + "\nHigh MSAA: " + (actualSampleCount >= 4 ? actualSampleCount + "x_enabled_medium_to_expensive" : "off")
+            + "\nMSAA status: " + msaaActualStatus
+            + "\nDynamic Resolution status: " + dynamicResolutionActualStatus
             + "\nFuture volumetric/god rays: deferred";
     }
 
@@ -3650,8 +3775,8 @@ public class FilamentGlbPreviewActivity extends Activity {
             + "\nTAA: " + (taaEnabled ? statusKind(taaStatus) : "off")
             + "\nSSR: " + (ssrEnabled ? "applied_manual_warning" : "off")
             + "\nDithering: " + ("NONE".equals(ditheringStatus) ? "off" : "applied")
-            + "\nDynamic Resolution: " + (dynamicResolutionEnabled ? "applied" : "off")
-            + "\nMSAA: applied_" + actualSampleCount + "x"
+            + "\nDynamic Resolution: " + (actualDynamicResolutionEnabled ? "actual_on_not_verified" : "off")
+            + "\nMSAA: requested_" + requestedSampleCount + "x_actual_" + actualSampleCount + "x_not_verified"
             + "\nLight Rig: " + (lightRig == LightRig.OFF ? "off" : statusKind(lightRigStatus))
             + "\nSun glare: " + statusKind(sunGlareStatus)
             + "\nMaterial Inspector: " + statusKind(materialInspectorStatus)
@@ -3754,8 +3879,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (bloomButton != null) bloomButton.setText(bloomMode.label);
         if (shadowsButton != null) shadowsButton.setText(shadowMode.label);
         if (refractionButton != null) refractionButton.setText(refractionMode.label);
-        if (dynamicResolutionButton != null) dynamicResolutionButton.setText("Dynamic Resolution: " + (dynamicResolutionEnabled ? "On" : "Off"));
-        if (msaaButton != null) msaaButton.setText("MSAA: " + actualSampleCount + "x");
+        if (dynamicResolutionButton != null) dynamicResolutionButton.setText("Dynamic Resolution: " + (dynamicResolutionEnabled ? "On" : "Off") + " (profile)");
+        if (msaaButton != null) msaaButton.setText("MSAA: req " + requestedSampleCount + "x / actual " + actualSampleCount + "x (profile)");
         if (fxaaButton != null) fxaaButton.setText("FXAA: " + (fxaaEnabled ? "On" : "Off"));
         if (ditheringButton != null) ditheringButton.setText("Dithering: " + (ditheringEnabled ? "On" : "Off"));
         if (taaButton != null) taaButton.setText("TAA: " + (taaEnabled ? "On" : "Off"));

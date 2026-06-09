@@ -1,51 +1,42 @@
-# OpenAI Codex for OSS Application Notes
+# AI Maintenance Notes
 
-This file contains concise text blocks for the Codex for Open Source application form.
+Status: public, repository-safe AI maintenance notes.
 
-## Repository
+This document intentionally avoids private application text, personal account details, API credit requests, and private workflow notes.
 
-```text
-https://github.com/AsArtilluman8/SOLUM-Platform
-```
+## Purpose
 
-## Role
+SOLUM can use AI/code agents as optional developer tools for:
 
-```text
-Primary maintainer
-```
+- code review;
+- refactoring;
+- documentation checks;
+- build diagnostics;
+- roadmap consistency checks;
+- issue triage;
+- release notes;
+- render/performance audit assistance.
 
-## Project positioning
+AI assistance must not replace explicit repository truth. Agents should read the current repo state, report uncertainty, and avoid claiming planned features as implemented.
 
-SOLUM Platform is an early-stage open-source mobile-first game engine and creative toolchain. The project asks a simple product question: what if an Unreal-like creative workflow could be built and maintained directly from Android devices?
+## Public safety rules
 
-The current repository is a foundation, not a finished engine. Its value is the public direction: Android/Termux development, Filament-based rendering, GLB/IBL tooling, material inspection, procedural asset economy, physical material simulation, VFX planning, and performance-aware mobile architecture.
+AI-related public docs must not include:
 
-## Why this repository is a good fit
+- private application text;
+- API keys or tokens;
+- private account details;
+- funding requests addressed to a specific provider;
+- personal device details;
+- private chat context;
+- promises that planned systems already exist.
 
-```text
-SOLUM is an early-stage OSS mobile-first game engine/toolchain that makes advanced 3D creation possible directly on Android. It targets creators without powerful PCs and documents a real Termux/Android workflow with Filament rendering, GLB/IBL tools, material inspection, procedural assets, physical materials, VFX, and world reaction systems. I am the primary maintainer.
-```
+## Agent continuation pointer
 
-## How API credits would be used
+For active task continuation, use:
 
-```text
-I will use API credits for OSS maintenance: Codex-assisted code review, refactoring, security checks, Android/Termux build diagnostics, issue triage, roadmap/task generation, release notes, documentation, and automated analysis of rendering, asset pipeline, VFX, and performance changes. Credits would help keep SOLUM public, maintained, and technically coherent.
-```
-
-## Additional note
-
-```text
-SOLUM is developed primarily from an Android phone, making it a proof of mobile-first software creation. The project explores an Unreal-like workflow for creators without workstations. ChatGPT Pro/Codex would directly improve review quality, architecture decisions, documentation, and development velocity while the project is still small enough to shape correctly.
-```
-
-## Strong short summary
-
-```text
-Open-source mobile-first game engine/toolchain for Android creators without powerful PCs.
-```
-
-## Honest status sentence
-
-```text
-The project is early-stage, but public, licensed, actively maintained, and structured around a clear roadmap toward mobile rendering, asset tooling, procedural generation, physical materials, VFX, and reactive world systems.
-```
+- `docs/AI_AGENT_CONTINUATION.md`
+- `docs/roadmap/SOLUM_ROADMAP.md`
+- `docs/design/SOLUM_RENDER_FOUNDATION_PLAN.md`
+- `docs/audits/FILAMENT_API_SURFACE_AUDIT.md`
+- `docs/audits/FILAMENT_RUNTIME_FORENSICS.md`

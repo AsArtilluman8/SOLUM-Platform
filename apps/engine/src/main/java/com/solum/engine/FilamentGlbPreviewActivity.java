@@ -1088,7 +1088,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         configPanel.addView(button("Import Config", v -> loadConfig(configFile(), "import_config")));
         configPanel.addView(configSummaryView);
 
-        statusView = overlayText(10.0f, 28);
+        statusView = overlayText(10.0f, 220);
         debugSummaryView = statusView;
         Button closeButton = button("Close Preview");
         closeButton.setOnClickListener(v -> closePreview());
@@ -1389,7 +1389,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         else if (p95FrameMs <= 33.3f) frameBudgetStatus = "within_30fps_budget_33.3ms";
         else frameBudgetStatus = "over_30fps_budget_jank_risk";
         updateSsrPerformanceWarning();
-        smoothnessStatus = "target=" + presetTargetFps() + "fps actualWall=" + oneDecimal(rollingFps) + "fps visibleP95=" + oneDecimal(visibleSmoothFps) + "fps p95=" + oneDecimal(p95FrameMs) + "ms";
+        smoothnessStatus = "target=" + presetTargetFps() + "fps javaCallback=" + oneDecimal(rollingFps) + "fps estimatedVisible=" + oneDecimal(visibleSmoothFps) + "fps p95=" + oneDecimal(p95FrameMs) + "ms";
     }
 
     private void updateSsrPerformanceWarning() {
@@ -3341,12 +3341,12 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private void updateHud() {
         if (hudView != null) {
-            hudView.setText("Renderer: Filament | GLB loader: gltfio | wall FPS " + oneDecimal(rollingFps) + " | visual " + visualSmoothnessLabel()
-                + " | target " + presetTargetFps() + " | frame " + oneDecimal(rollingFrameMs)
-                + " ms | avg " + oneDecimal(avgFrameMs) + " p95 " + oneDecimal(p95FrameMs)
-                + " | jank " + jankFrameCounter + " slow " + slowFrameCounter
-                + " | CPU " + oneDecimal(rollingRenderCpuMs) + " ms | " + frameBudgetStatus
-                + " | frame " + liveFrameCounter + " | " + qualityProfile.label + " | " + gpuTimingWarningShort());
+            hudView.setText("Renderer: Filament | GLB: gltfio | FPS " + estimatedVisibleFpsHud()
+                + " | frame " + oneDecimal(estimatedVisibleFrameMs()) + " ms"
+                + " | p95 " + oneDecimal(p95FrameMs) + " ms"
+                + " | " + renderHealthLabel()
+                + " | " + qualityProfile.label
+                + mainHudExpensiveFeatureLabel());
         }
         if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
         if (assetsSummaryView != null) {
@@ -3369,10 +3369,9 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nfxaaSupported=true fxaaToggle=" + fxaaEnabled + " fxaaActuallyActive=" + "FXAA".equals(actualAA)
                 + "\nditheringStatus=" + ditheringStatus + " guardBandStatus=" + guardBandStatus
                 + "\nsunGlareMode=" + sunGlareMode.name() + " sunGlareStatus=" + sunGlareStatus
-                + "\nframeStats wallFps=" + oneDecimal(rollingFps) + " visualSmoothness=" + visualSmoothnessLabel() + " targetFps=" + presetTargetFps() + " timingSource=" + timingSourceStatus
+                + "\nvisibleEstimate=" + visualSmoothnessLabel() + " targetFps=" + presetTargetFps()
                 + "\nframeMs current=" + oneDecimal(rollingFrameMs) + " avg=" + oneDecimal(avgFrameMs) + " min=" + oneDecimal(minFrameMs) + " max=" + oneDecimal(maxFrameMs) + " p95=" + oneDecimal(p95FrameMs) + " worst=" + oneDecimal(worstFrameMs)
-                + "\nframeBudget=" + frameBudgetStatus + " smoothness=" + smoothnessStatus + " slow=" + slowFrameCounter + " jank=" + jankFrameCounter
-                + "\ngfxinfoCommand=" + GFXINFO_FRAMESTATS_COMMAND
+                + "\nframeStatus=" + renderHealthLabel() + " frameBudget=" + frameBudgetStatus + " slow=" + slowFrameCounter + " jank=" + jankFrameCounter
                 + "\nanisotropicFiltering=not_exposed textureLodBias=not_exposed"
                 + "\naoMode=" + aoMode.name() + " aoApplied=" + aoActuallyApplied
                 + "\nshadowsMode=" + shadowMode.name() + " shadowsApplied=" + shadowsActuallyApplied
@@ -3461,7 +3460,29 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
         if (statusView != null) {
             statusView.setText(capabilityStatusTable()
-                + "\n\nModel: " + (modelName == null || modelName.isEmpty() ? "none" : modelName)
+                + "\n\nPerformance:"
+                + "\nEstimated visible FPS: " + estimatedVisibleFpsHud()
+                + "\nJava callback FPS: " + oneDecimal(rollingFps)
+                + "\nCurrent frame ms: " + oneDecimal(rollingFrameMs)
+                + "\nAvg frame ms: " + oneDecimal(avgFrameMs)
+                + "\np95 frame ms: " + oneDecimal(p95FrameMs)
+                + "\nWorst frame ms: " + oneDecimal(worstFrameMs)
+                + "\nJank count: " + jankFrameCounter
+                + "\nSlow count: " + slowFrameCounter
+                + "\nRender status: " + renderHealthLabel()
+                + "\nCurrent quality profile: " + qualityProfile.label
+                + "\nRender CPU submit approx ms: " + oneDecimal(rollingRenderCpuMs)
+                + "\n\nTiming sources:"
+                + "\nChoreographer/wall interval: " + timingSourceStatus
+                + "\nAndroid FrameMetrics status: " + frameMetricsStatus + " samples=" + frameMetricsSampleCount
+                + "\nFrameMetrics total/draw/swap/GPU ms: " + oneDecimal(frameMetricsTotalMs) + "/" + oneDecimal(frameMetricsDrawMs) + "/" + oneDecimal(frameMetricsSwapMs) + "/" + gpuMetricLabel()
+                + "\nGPU timing status: " + gpuTimingStatus()
+                + "\ngfxinfo command: " + GFXINFO_FRAMESTATS_COMMAND
+                + "\nPerfetto/AGI status: external_deferred"
+                + "\n\nExpensive feature warnings:"
+                + expensiveFeatureWarningsDebug()
+                + "\n\nRuntime state:"
+                + "\nModel: " + (modelName == null || modelName.isEmpty() ? "none" : modelName)
                 + "\nRenderer: Filament"
                 + "\nGLB loader: gltfio loaded=" + gltfioLoaded
                 + "\nLoad: " + loadStatus
@@ -3479,15 +3500,9 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nenvironmentMode=" + environmentMode + " activeIbl=" + shorten(futureIblAssetPath, 72)
                 + "\nQuality: " + qualityFeatureStatus
                 + "\nactualAA=" + actualAA + " actualMSAA=" + actualSampleCount + "x actualDynamicResolution=" + dynamicResolutionEnabled + " actualRenderScale=" + twoDecimal(renderScale) + " dynamicScale=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
-                + "\nframeStats wallFps=" + oneDecimal(rollingFps) + " visualSmoothness=" + visualSmoothnessLabel() + " targetFps=" + presetTargetFps() + " timingSource=" + timingSourceStatus
-                + "\nframeMs current=" + oneDecimal(rollingFrameMs) + "ms avg=" + oneDecimal(avgFrameMs) + " min=" + oneDecimal(minFrameMs) + " max=" + oneDecimal(maxFrameMs) + " p95=" + oneDecimal(p95FrameMs) + " worst=" + oneDecimal(worstFrameMs)
-                + "\nframeBudgetStatus=" + frameBudgetStatus + " slowFrames=" + slowFrameCounter + " jankFrames=" + jankFrameCounter + " renderCpuApproxMs=" + oneDecimal(rollingRenderCpuMs)
                 + "\ntaaSupported=true taaEnabled=" + taaEnabled + " taaStatus=" + taaStatus
                 + "\nssrSupported=true ssrEnabled=" + ssrEnabled + " ssrStatus=" + ssrStatus + (ssrEnabled ? " WARNING_manual_heavy_mobile" : "")
                 + "\nssrPerformanceWarning=" + ssrPerformanceWarning
-                + "\ngpuTimingStatus=" + gpuTimingStatus()
-                + "\nandroidFrameMetricsStatus=" + frameMetricsStatus + " samples=" + frameMetricsSampleCount + " totalMs=" + oneDecimal(frameMetricsTotalMs) + " gpuMs=" + gpuMetricLabel() + " swapMs=" + oneDecimal(frameMetricsSwapMs) + " drawMs=" + oneDecimal(frameMetricsDrawMs)
-                + "\ngfxinfoFramestatsCommand=" + GFXINFO_FRAMESTATS_COMMAND
                 + "\nditheringStatus=" + ditheringStatus + " guardBandStatus=" + guardBandStatus + " fxaaSupported=true"
                 + "\ncolorGradingSupported=true colorMode=" + colorMode.name() + " toneMapper=" + toneMapperStatus + " colorGradingStatus=" + colorGradingStatus
                 + "\nfogSupported=true fogMode=" + fogMode.name() + " fogStatus=" + fogStatus
@@ -3538,26 +3553,78 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private String visualSmoothnessLabel() {
-        if (frameWindowCount <= 0) return "waiting_for_samples";
+        if (frameWindowCount <= 0) return "Estimated visible FPS: waiting_for_samples";
         if (ssrEnabled && p95FrameMs <= 22.2f) {
-            return "gpu_not_measured_ssr_manual_heavy_wallP95=" + oneDecimal(visibleSmoothFps) + "fps";
+            return "Estimated visible FPS: " + oneDecimal(visibleSmoothFps) + " (SSR enabled; GPU not measured)";
         }
-        return oneDecimal(visibleSmoothFps) + "fps_p95_wall";
+        return "Estimated visible FPS: " + oneDecimal(visibleSmoothFps);
     }
 
     private String gpuTimingStatus() {
         if (frameMetricsGpuMs > 0.0f) return "android_frame_metrics_gpu_duration_estimate_ms=" + oneDecimal(frameMetricsGpuMs);
-        return "FPS/wall timing is estimated; GPU timing is not exposed by Filament Java; use FrameMetrics/gfxinfo/Perfetto/AGI";
+        return "GPU timing unavailable in current Filament Java path; use FrameMetrics validation, gfxinfo, Perfetto, AGI, or native hooks";
     }
 
     private String gpuTimingWarningShort() {
-        if (ssrEnabled && frameMetricsGpuMs <= 0.0f) return "wall FPS estimated; GPU timing not exposed; SSR may feel lower";
-        if (frameMetricsGpuMs <= 0.0f) return "wall FPS estimated; GPU timing not exposed";
+        if (ssrEnabled && frameMetricsGpuMs <= 0.0f) return "estimated FPS; GPU timing not exposed; SSR may feel lower";
+        if (frameMetricsGpuMs <= 0.0f) return "estimated FPS; GPU timing not exposed";
         return "GPU " + oneDecimal(frameMetricsGpuMs) + "ms";
     }
 
     private String gpuMetricLabel() {
         return frameMetricsGpuMs > 0.0f ? oneDecimal(frameMetricsGpuMs) : "unavailable";
+    }
+
+    private String estimatedVisibleFpsHud() {
+        if (frameWindowCount <= 0) return "sampling";
+        return String.valueOf(Math.max(1, Math.round(visibleSmoothFps)));
+    }
+
+    private float estimatedVisibleFrameMs() {
+        if (frameWindowCount > 0 && p95FrameMs > 0.0f) return p95FrameMs;
+        return rollingFrameMs;
+    }
+
+    private String renderHealthLabel() {
+        if (frameWindowCount <= 0) return "SAMPLING";
+        if (p95FrameMs > 33.3f || worstFrameMs > 66.6f) return "BAD";
+        if (p95FrameMs > 22.2f || jankFrameCounter > 0L) return "JANK";
+        if (p95FrameMs > 16.6f || slowFrameCounter > 0L) return "OK";
+        return "GOOD";
+    }
+
+    private String mainHudExpensiveFeatureLabel() {
+        String warnings = expensiveFeatureWarningsCsv();
+        return warnings.isEmpty() ? "" : " | costly: " + warnings;
+    }
+
+    private String expensiveFeatureWarningsCsv() {
+        List<String> warnings = new ArrayList<>();
+        if (ssrEnabled) warnings.add("SSR");
+        if (aoMode == AoMode.DEBUG_MAX) warnings.add("AO Debug Max");
+        if (bloomMode == BloomMode.HIGH) warnings.add("Bloom High");
+        if (taaEnabled) warnings.add("TAA");
+        if (actualSampleCount >= 4) warnings.add("MSAA " + actualSampleCount + "x");
+        return joinLabels(warnings, ", ");
+    }
+
+    private String expensiveFeatureWarningsDebug() {
+        return "\nSSR: " + (ssrEnabled ? ssrPerformanceWarning : "off")
+            + "\nAO Debug Max: " + (aoMode == AoMode.DEBUG_MAX ? "enabled_expensive" : "off")
+            + "\nBloom High: " + (bloomMode == BloomMode.HIGH ? "enabled_expensive" : "off")
+            + "\nTAA: " + (taaEnabled ? "enabled_medium_to_expensive" : "off")
+            + "\nHigh MSAA: " + (actualSampleCount >= 4 ? actualSampleCount + "x_enabled_medium_to_expensive" : "off")
+            + "\nFuture volumetric/god rays: deferred";
+    }
+
+    private static String joinLabels(List<String> labels, String separator) {
+        if (labels == null || labels.isEmpty()) return "";
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < labels.size(); i++) {
+            if (i > 0) builder.append(separator);
+            builder.append(labels.get(i));
+        }
+        return builder.toString();
     }
 
     private boolean currentConfigDiffersFromSaved() {

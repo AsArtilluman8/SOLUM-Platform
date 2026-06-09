@@ -1,74 +1,123 @@
-# Filament Runtime Forensics — P45C
+# Filament Runtime Forensics - P46
 
-Status: audit/forensics patch, not a visual feature patch.
+Status: render diagnostics and runtime truth lock.
+
+## Main Conclusion
+
+- Main HUD must not call callback FPS the real FPS.
+- Callback FPS is a timing source, not the final smoothness truth.
+- Estimated visible FPS should be the primary user-facing value until real GPU timing/profiler evidence exists.
+- Real GPU truth needs FrameMetrics validation, `dumpsys gfxinfo`, Perfetto, Android GPU Inspector, or native hooks.
+
+The user-facing HUD should prioritize:
+
+```text
+FPS 24 | frame 41.6 ms | p95 41.6 ms | JANK
+```
+
+or:
+
+```text
+FPS 44 | frame 22.4 ms | p95 22.4 ms | OK
+```
+
+Java callback FPS belongs in Debug/Diagnostics as `Java callback FPS`, not as the main FPS claim.
 
 ## Current FPS Measurement
 
-`FilamentGlbPreviewActivity` currently measures runtime frame pacing from Java-side frame callbacks and wall-clock deltas:
+`FilamentGlbPreviewActivity` currently measures frame pacing from Java-side callbacks and wall-clock deltas:
 
 - `Choreographer` drives frame callbacks.
 - Each callback records elapsed wall time between Java frames.
-- HUD FPS is derived from rolling frame interval samples.
+- Rolling callback FPS is derived from callback interval samples.
+- Estimated visible FPS is derived from p95 frame interval, so stutters reduce the number shown to the user.
 - Render CPU submit time is approximate Java-side wall timing around render work.
-- Android `Window.OnFrameMetricsAvailableListener` is now sampled when available and reported separately.
+- Android `Window.OnFrameMetricsAvailableListener` is sampled when available and reported in Debug.
 
-This means the HUD is useful for trend detection, but it is not a full GPU profiler.
+These values are useful diagnostics signals, but they are not a full GPU profiler.
 
-## Why HUD Can Show 60 While Visual Smoothness Feels 8-12 FPS
+## Why Callback FPS Can Show 60 While Visual Smoothness Feels 8-12 FPS
 
-Java/Choreographer timing can still report near 60 FPS when the app keeps receiving regular callbacks, while the visible output feels much slower. Common reasons:
+Java/Choreographer timing can still report near 60 FPS when the app receives regular callbacks while the visible output feels much slower. Common reasons:
 
 - GPU work can stall after Java submits the frame.
 - The display compositor may repeat frames even if Java keeps ticking.
 - Filament Java APIs do not expose authoritative per-pass GPU timing here.
-- Screen-space effects such as SSR can become GPU-bound without showing as a matching Java frame-time spike.
-- Android may batch, queue, or smooth frame delivery in ways that hide GPU pressure from a simple wall-clock HUD.
-- Thermal throttling and tile-based Mali bandwidth pressure can reduce visual smoothness before Java logic clearly shows it.
+- SSR and other screen-space effects can become GPU-bound without a matching Java frame-time spike.
+- Android can batch, queue, or smooth frame delivery in ways that hide GPU pressure from a simple callback FPS counter.
+- Thermal throttling and Mali tile/bandwidth pressure can reduce visible smoothness before Java logic clearly shows it.
 
-Therefore P45C must not claim the HUD FPS is fully truthful. The correct runtime truth is:
+Therefore P46 locks the wording:
 
 ```text
 FPS/wall timing is estimated.
-GPU timing is not exposed by the current Filament Java path.
-SSR can visually feel much lower than HUD FPS if GPU stalls.
+Java callback FPS is a timing source.
+GPU timing is unavailable unless FrameMetrics/profiler/native hooks expose it.
+SSR can visually feel much lower than HUD callback FPS if GPU stalls.
 ```
 
 ## What Java Can Measure Now
 
 Current Java-side evidence can measure or report:
 
-- Choreographer/wall-clock frame interval.
-- Rolling FPS, average frame ms, min/max/p95, slow-frame and jank counters.
+- Choreographer callback cadence.
+- Wall-clock frame interval.
+- Estimated visible FPS from p95 frame interval.
+- Current/average/min/max/p95/worst frame milliseconds.
+- Slow-frame and jank counters.
 - Approximate Java render/submit CPU timing.
-- Current quality settings and feature state.
+- Current quality settings and active expensive effects.
 - Android `FrameMetrics` total/draw/swap durations when the platform provides them.
 - `FrameMetrics.GPU_DURATION` only if Android reports a non-zero value on this device/path.
-
-These values are diagnostics signals, not final GPU truth.
 
 ## What Needs Deeper Profiling Later
 
 Real frame truth requires one or more of:
 
-- Android `FrameMetrics` integration with device validation and captured samples.
+- Android `FrameMetrics` validation with captured samples on the target device.
 - `dumpsys gfxinfo com.solum.engine framestats` from an attached ADB environment.
-- Perfetto trace with SurfaceFlinger, Choreographer, HWUI, sched, frequency, and GPU counters where available.
-- Android GPU Inspector (AGI) for GPU frame capture, queue stalls, counters, and render pass cost.
+- Perfetto trace with SurfaceFlinger, Choreographer, HWUI, scheduling, frequency, and GPU counters where available.
+- Android GPU Inspector for GPU frame capture, queue stalls, counters, and render pass cost.
 - Native/C++ or Filament lower-level hooks if per-frame GPU timestamp queries become available in the chosen runtime path.
 
-## Recommended Next Step
+## Recommended Profiler Roadmap
 
-Use Perfetto or AGI as the next real profiler step. For quick non-invasive checks, collect:
+1. HUD Light - always cheap:
+   - estimated visible FPS;
+   - p95 frame ms;
+   - status: GOOD / OK / JANK / BAD;
+   - active expensive effects such as SSR, AO Debug Max, Bloom High, TAA, high MSAA.
+
+2. FrameMetrics validation - current/next:
+   - total duration;
+   - draw duration;
+   - swap duration;
+   - GPU duration if Android exposes non-zero values;
+   - compare against HUD estimate and visible stutter.
+
+3. gfxinfo capture - external command:
 
 ```bash
 adb shell dumpsys gfxinfo com.solum.engine framestats
 ```
 
-Then compare:
+4. Perfetto / AGI - deeper profiling:
+   - GPU queue pressure;
+   - SurfaceFlinger/compositor behavior;
+   - CPU scheduling;
+   - render pass or frame capture cost where available.
 
-- HUD wall FPS;
-- FrameMetrics total/draw/swap/GPU if present;
-- gfxinfo janky frames;
-- Perfetto/AGI GPU queue and render pass timing.
+5. Native/C++ GPU timing hooks - later if needed:
+   - timestamp queries;
+   - per-pass timing;
+   - low-level render diagnostics;
+   - only after Render Core ownership exists.
 
-Until that evidence exists, GPU timing remains `not_exposed/deferred`.
+## Current Truth Labels
+
+- Main HUD: estimated visible FPS first.
+- Debug: Java callback FPS, timing sources, FrameMetrics, gfxinfo command, profiler status.
+- GPU timing: `unavailable` unless measured by FrameMetrics/profiler/native path.
+- SSR: marked expensive and not trusted by callback FPS alone.
+
+Until profiler evidence exists, GPU timing remains `not_exposed/deferred`.

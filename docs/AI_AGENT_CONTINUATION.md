@@ -10,9 +10,11 @@ Every agent task should start with:
 
 ```bash
 bash tools/agent_gate.sh
+bash tools/agent_brief.sh
 ```
 
 Manual bypass is allowed only if the tools are missing/broken or the task is explicitly about fixing the tools. If skipped, the final report must include `Tools skipped: reason`.
+If the generated brief is insufficient, open exact files and line ranges. Token optimization must not reduce code quality or verification.
 
 ## Current project truth
 
@@ -22,31 +24,27 @@ Do not claim planned systems are implemented.
 
 ## Current priority order
 
-1. FPS Truth + Control Truth.
-2. Mobile Performance Targets.
-3. Render API Extraction.
-4. Full Render Control Center.
-5. Scene Workspace / multi-model scene.
-6. Asset Shelf.
-7. Transform Gizmo.
-8. Animation Preview.
-9. Scene Save/Load.
-10. Labs and package/agent systems later.
+1. P48 Render API Foundation + Scene Registry Stub + Agent Brief.
+2. Full Render Control Center.
+3. Scene Workspace / multi-model scene.
+4. Asset Shelf.
+5. Transform Gizmo.
+6. Animation Preview.
+7. Scene Save/Load.
+8. Labs and package/agent systems later.
 
 ## Active near-term patch
 
 Current near-term work:
 
 ```text
-P47B — Control Interaction Audit + FPS Truth v2
+P48 — Render API Foundation + Scene Registry Stub + Agent Brief
 ```
 
 Main goal:
 
 ```text
-FPS must not mislead.
-Current buttons and sliders must work or report truth.
-Quality profiles must apply real render state.
+Future Labs and panels must use a reusable Render API foundation instead of copying Activity-local renderer code.
 ```
 
 ## Important rules
@@ -77,6 +75,10 @@ Quality profiles must apply real render state.
 - `tools/agent_repo_health.sh`
 - `tools/agent_control_truth_static_check.py`
 - `tools/agent_build_report.sh`
+- `tools/agent_brief.sh`
+- `tools/agent_render_api_static_check.py`
+- `apps/engine/src/main/java/com/solum/engine/render/`
+- `apps/engine/src/main/java/com/solum/engine/scene/`
 
 ## Build command shape
 

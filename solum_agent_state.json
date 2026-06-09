@@ -1,6 +1,6 @@
 {
-  "active_patch": "P47",
-  "priority": "control_truth_fps_truth_agent_tools",
+  "active_patch": "P48",
+  "priority": "render_api_foundation_scene_registry_agent_brief",
   "main_file": "apps/engine/src/main/java/com/solum/engine/FilamentGlbPreviewActivity.java",
   "key_docs": [
     "docs/AI_AGENT_CONTINUATION.md",
@@ -8,9 +8,12 @@
     "docs/TESTING.md",
     "BUILD.md",
     "docs/roadmap/SOLUM_ROADMAP.md",
+    "docs/design/SOLUM_RENDER_API_FOUNDATION.md",
     "docs/design/SOLUM_RENDER_FOUNDATION_PLAN.md",
     "docs/audits/FILAMENT_RUNTIME_FORENSICS.md",
-    "docs/audits/FILAMENT_API_SURFACE_AUDIT.md"
+    "docs/audits/FILAMENT_API_SURFACE_AUDIT.md",
+    "tools/agent_brief.sh",
+    "tools/agent_render_api_static_check.py"
   ],
   "build_command": [
     "bash",
@@ -41,6 +44,11 @@
     "commit SHA",
     "controls fixed",
     "controls requiring recreate",
+    "new Render API files",
+    "which controls route through RenderControlApi",
+    "which controls remain Activity-local",
+    "SceneRegistry status",
+    "static check results",
     "MSAA live switching result",
     "TAA result",
     "Color slider result",
@@ -50,7 +58,6 @@
     "next recommended patch"
   ],
   "current_near_term_order": [
-    "P47B",
     "P48",
     "P49",
     "P50",

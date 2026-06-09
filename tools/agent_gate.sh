@@ -21,6 +21,11 @@ else
 fi
 echo "ACTIVE_PATCH=${ACTIVE_PATCH:-unknown}"
 echo "MUST_USE_TOOLS=true"
+if [ -x tools/agent_brief.sh ]; then
+  echo "AGENT_BRIEF_AVAILABLE=run bash tools/agent_brief.sh"
+else
+  echo "AGENT_BRIEF_AVAILABLE=false_optional_tool_missing"
+fi
 
 STATUS=0
 

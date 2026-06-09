@@ -29,25 +29,22 @@ Immediate priorities:
 - Add human-readable performance causes.
 - Add runtime control truth table.
 
-### P48 — Mobile Performance Targets
+### P48 — Render API Foundation + Scene Registry Stub + Agent Brief
 
-- Add public device tier and FPS target documentation.
-- Define Low/Medium/High/Ultra/Screenshot expected state.
-- Make performance goals visible to developers and contributors.
+Start extracting reusable renderer control state:
 
-### P49 — Render API Extraction
+- `RenderSettings`;
+- `RenderActualState`;
+- `RenderDiagnostics`;
+- `RenderControlApi`;
+- `FilamentRenderController`;
+- `SceneRegistry`.
 
-Extract reusable renderer modules:
-
-- `SolumRenderSettings`
-- `SolumRenderDiagnostics`
-- `SolumRenderStatus`
-- `SolumRenderPreset`
-- `SolumRenderController`
+Also add `tools/agent_brief.sh` so future agent work starts from a short generated index before opening exact files.
 
 Goal: future tools and Labs must use the same render/settings/diagnostics system.
 
-### P50 — Render Control Center
+### P49 — Render Control Center
 
 Use the audited API surface to build a structured UI:
 
@@ -58,7 +55,7 @@ Use the audited API surface to build a structured UI:
 
 Do not expose controls as production features if they are not wired, not verified, or require recreation without explaining it.
 
-### P51 — Scene Workspace
+### P50 — Scene Workspace
 
 - multiple models/assets in scene;
 - object list;
@@ -67,7 +64,7 @@ Do not expose controls as production features if they are not wired, not verifie
 - object lifecycle;
 - delete/duplicate/unload.
 
-### P52 — Asset Shelf v1
+### P51 — Asset Shelf v1
 
 - local asset registry;
 - preview;
@@ -76,7 +73,7 @@ Do not expose controls as production features if they are not wired, not verifie
 - unload/release;
 - package metadata preparation.
 
-### P53 — Transform Gizmo v1
+### P52 — Transform Gizmo v1
 
 - move / rotate / scale;
 - world/local modes;
@@ -84,7 +81,7 @@ Do not expose controls as production features if they are not wired, not verifie
 - touch-first controls;
 - numeric precision controls.
 
-### P54 — Animation Preview v1
+### P53 — Animation Preview v1
 
 - list glTF/GLB clips;
 - play/pause/stop;
@@ -93,7 +90,7 @@ Do not expose controls as production features if they are not wired, not verifie
 - loop;
 - skeleton/morph diagnostics.
 
-### P55 — Scene Save/Load v1
+### P54 — Scene Save/Load v1
 
 - save/load scene graph;
 - asset references;

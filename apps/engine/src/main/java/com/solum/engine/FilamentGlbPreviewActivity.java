@@ -61,6 +61,10 @@ import com.google.android.filament.utils.KTX1Loader;
 import com.google.android.filament.utils.Manipulator;
 import com.google.android.filament.utils.ModelViewer;
 import com.google.android.filament.utils.Utils;
+import com.solum.engine.render.FilamentRenderController;
+import com.solum.engine.render.RenderActualState;
+import com.solum.engine.render.RenderControlApi;
+import com.solum.engine.scene.SceneRegistry;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -150,6 +154,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     private SurfaceView surfaceView;
     private SunGlareOverlayView sunGlareOverlayView;
     private ModelViewer modelViewer;
+    private RenderControlApi renderControlApi;
+    private final SceneRegistry sceneRegistry = new SceneRegistry();
     private IndirectLight indirectLight;
     private Skybox skybox;
     private ColorGrading colorGrading;
@@ -1253,6 +1259,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 .zoomSpeed(0.010f)
                 .build(Manipulator.Mode.ORBIT);
             modelViewer = new ModelViewer(surfaceView, Engine.create(), uiHelper, manipulator);
+            renderControlApi = new FilamentRenderController(modelViewer.getView());
             surfaceView.setOnTouchListener((view, event) -> {
                 if (destroying || destroyed || modelViewer == null) return true;
                 modelViewer.onTouchEvent(event);
@@ -1737,6 +1744,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             if (modelPath == null || modelPath.isEmpty()) {
                 loadStatus = "no_active_glb_or_gltf";
                 gltfioLoaded = "false";
+                sceneRegistry.clear();
                 refreshUiNow();
                 return;
             }
@@ -1744,6 +1752,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             if (!file.isFile()) {
                 loadStatus = "file_missing: " + modelPath;
                 gltfioLoaded = "false";
+                sceneRegistry.clear();
                 refreshUiNow();
                 return;
             }
@@ -1768,14 +1777,31 @@ public class FilamentGlbPreviewActivity extends Activity {
             cameraStatus = "orbit_drag_pinch_zoom_unit_cube_autofit_with_ui_pan";
             loadStatus = "ok_loaded_with_gltfio";
             gltfioLoaded = "true";
+            syncSceneRegistryForActiveModel("loaded");
             updateMaterialInspector();
             applyRenderableShadowMode();
         } catch (Throwable t) {
             loadStatus = "load_error: " + shortMessage(t);
             gltfioLoaded = "false";
             materialInspectorStatus = "not_available_model_load_failed";
+            sceneRegistry.clear();
         }
         refreshUiNow();
+    }
+
+    private void syncSceneRegistryForActiveModel(String status) {
+        sceneRegistry.registerLoadedModel(
+            modelName == null || modelName.isEmpty() ? "active_model" : modelName,
+            modelCopiedPath == null || modelCopiedPath.isEmpty() ? modelPath : modelCopiedPath,
+            modelRotationX,
+            modelRotationY,
+            modelRotationZ,
+            modelScale,
+            modelOffsetX,
+            modelOffsetY,
+            modelOffsetZ,
+            status
+        );
     }
 
     private void applyRenderableShadowMode() {
@@ -2181,6 +2207,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void applyQualityProfile() {
         if (modelViewer == null) return;
         try {
+            syncRenderApiRequestedState();
             com.google.android.filament.View view = modelViewer.getView();
             com.google.android.filament.View.AmbientOcclusionOptions ao = view.getAmbientOcclusionOptions();
             com.google.android.filament.View.BloomOptions bloom = view.getBloomOptions();
@@ -2228,6 +2255,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             applyFogOptions();
             applyColorGrading();
             applyLightingValues();
+            applyRenderControlApi();
             updatePresetMismatchStatus();
             persistWorkspaceSettings();
         } catch (Throwable t) {
@@ -2238,6 +2266,58 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (qualityButton != null) qualityButton.setText("Quality: " + qualityProfile.label);
         updateAllSliderLabels();
         updateToggleLabels();
+    }
+
+    private void syncRenderApiRequestedState() {
+        if (renderControlApi == null && modelViewer != null) {
+            renderControlApi = new FilamentRenderController(modelViewer.getView());
+        }
+        if (renderControlApi == null) return;
+        renderControlApi.setQualityProfile(qualityProfile.name());
+        renderControlApi.setRenderScale(renderScale);
+        renderControlApi.setDynamicResolution(dynamicResolutionEnabled);
+        renderControlApi.setMsaa(requestedSampleCount);
+        renderControlApi.setFxaa(fxaaEnabled);
+        renderControlApi.setTaa(taaEnabled);
+        renderControlApi.setDithering(ditheringEnabled);
+        renderControlApi.setSsr(ssrEnabled);
+        renderControlApi.setRefraction(refractionMode != RefractionMode.OFF);
+        renderControlApi.setAoMode(aoMode.name());
+        renderControlApi.setBloomMode(bloomMode.name());
+        renderControlApi.setBloomStrength(bloomStrength);
+        renderControlApi.setBloomHighlight(bloomHighlight);
+        renderControlApi.setColorExposure(colorExposure);
+        renderControlApi.setColorContrast(colorContrast);
+        renderControlApi.setColorSaturation(colorSaturation);
+        renderControlApi.setColorTemperature(colorTemperature);
+    }
+
+    private void applyRenderControlApi() {
+        if (renderControlApi == null) return;
+        renderControlApi.apply();
+        syncActivityFromRenderActualState(renderControlApi.getActualState());
+    }
+
+    private void syncActivityFromRenderActualState(RenderActualState state) {
+        if (state == null) return;
+        actualSampleCount = state.getActualMsaa();
+        actualDynamicResolution = state.isActualDynamicResolution();
+        actualTaa = state.isActualTaa();
+        dynamicMinScale = state.getDynamicMinScale();
+        dynamicMaxScale = state.getDynamicMaxScale();
+        actualAoMode = state.getActualAo();
+        actualBloomMode = state.getActualBloom();
+        actualBloomStrength = state.getActualBloomStrength();
+        actualBloomHighlight = state.getActualBloomHighlight();
+        if (state.getMsaaApplyStatus() != null) msaaApplyStatus = state.getMsaaApplyStatus();
+        if (state.getTaaApplyStatus() != null) taaApplyStatus = state.getTaaApplyStatus();
+        if (state.getDynamicResolutionApplyStatus() != null) dynamicResolutionApplyStatus = state.getDynamicResolutionApplyStatus();
+        if (state.getAoApplyStatus() != null && !state.getAoApplyStatus().isEmpty()) {
+            aoApplyStatus = "api_" + state.getAoApplyStatus();
+        }
+        if (state.getBloomApplyStatus() != null && !state.getBloomApplyStatus().isEmpty()) {
+            bloomApplyStatus = "api_" + state.getBloomApplyStatus();
+        }
     }
 
     private void applyQualityProfileDefaults(String reason) {
@@ -3571,6 +3651,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             assetsSummaryView.setText("Active model: " + (modelName == null || modelName.isEmpty() ? "none" : modelName)
                 + "\nActive IBL: " + iblFile
                 + "\nLoad: " + loadStatus
+                + "\nSceneRegistry: " + sceneRegistry.summary()
                 + "\nIBL: " + iblLoadStatus
                 + "\nScan: " + scanDownloadStatus
                 + "\nCopy/import: " + importCopyStatus);
@@ -3598,7 +3679,9 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\naoRequested=" + requestedAoMode + " aoActual=" + actualAoMode + " aoApplyStatus=" + aoApplyStatus + " aoApplied=" + aoActuallyApplied
                 + "\nshadowsMode=" + shadowMode.name() + " shadowsApplied=" + shadowsActuallyApplied
                 + "\nbloom=" + bloomActualStatus
-                + "\nrefraction=" + refractionActualStatus);
+                + "\nrefraction=" + refractionActualStatus
+                + "\nrenderApi=" + (renderControlApi == null ? "missing" : renderControlApi.getDiagnostics().getRenderTruthText())
+                + "\nrenderApiNotVerified=" + (renderControlApi == null ? "none" : renderControlApi.getDiagnostics().getNotExposedOrNotVerifiedItems()));
         }
         if (colorSummaryView != null) {
             colorSummaryView.setText("colorGradingSupported=true"
@@ -3914,6 +3997,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             + "\nDithering: " + ("NONE".equals(ditheringStatus) ? "off" : "applied")
             + "\nDynamic Resolution: requested_" + requestedDynamicResolution + "_actual_" + actualDynamicResolution + "_" + dynamicResolutionApplyStatus
             + "\nMSAA: requested_" + requestedSampleCount + "x_actual_" + actualSampleCount + "x_" + msaaApplyStatus
+            + "\nRender API: " + (renderControlApi == null ? "missing" : renderControlApi.getDiagnostics().getRenderTruthText())
             + "\nLight Rig: " + (lightRig == LightRig.OFF ? "off" : statusKind(lightRigStatus))
             + "\nSun glare: " + statusKind(sunGlareStatus)
             + "\nMaterial Inspector: " + statusKind(materialInspectorStatus)

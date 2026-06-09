@@ -33,6 +33,8 @@ CHECKS = {
     "render_control_center_sections": ["Render Control Center: Basic", "Render Control Center: Lighting", "Render Control Center: Sky / IBL", "Render Control Center: PostFX", "Render Control Center: Color / Fog", "WorkspaceTab.POSTFX"],
     "render_control_center_preserves_debug_on_demand": ["debugPanel.getVisibility() == View.VISIBLE", "Copy Short Report", "Export Full Report", "Reset FPS/Jank Counters"],
     "render_control_center_api_terms": ["RenderControlApi", "RenderFeatureDescriptor", "RenderCostDiagnostics", "featureLine", "compactCostSummary"],
+    "crash_report_fallback": ["installCrashReporter", "SOLUM_CRASHES", "solum_crashes", "crash_", "writeCrashReport", "startupMilestone"],
+    "startup_milestones": ["onCreate_start", "crash_handler_installed", "before_build_ui", "after_build_ui", "before_create_viewer", "after_create_viewer", "before_load_model", "after_load_model", "onCreate_done"],
 }
 
 def status_for(text, needles):

@@ -78,6 +78,8 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
@@ -157,6 +159,9 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final int CONFIG_SCHEMA_VERSION = 6;
     private static final int REQUEST_IMPORT_MODEL = 4101;
     private static final int REQUEST_IMPORT_IBL = 4102;
+    private static final String P50_BRANCH_NAME = "patch/P50-full-render-control-center-mobile-ux";
+    private static final String P50_RUNTIME_COMMIT = "unknown_runtime_build";
+    private static final String CRASH_DIR_DOWNLOAD = "/storage/emulated/0/Download/SOLUM_CRASHES";
     private static final long HUD_UPDATE_NS = 250_000_000L;
     private static final String GFXINFO_FRAMESTATS_COMMAND = "adb shell dumpsys gfxinfo com.solum.engine framestats";
 
@@ -327,6 +332,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String lastDiagnosticsCopyStatus = "not_run";
     private String lastDiagnosticsReportPath = "none";
     private String fullDiagnosticsAvailability = "on_demand_only";
+    private String startupMilestone = "not_started";
+    private Thread.UncaughtExceptionHandler previousCrashHandler;
     private String ssrPerformanceWarning = "off";
     private String modelPath = "";
     private String modelName = "";
@@ -711,6 +718,9 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        setStartupMilestone("onCreate_start");
+        installCrashReporter();
+        setStartupMilestone("crash_handler_installed");
         super.onCreate(savedInstanceState);
         lifecycleStatus = "created";
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -718,6 +728,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         modelName = getIntent().getStringExtra(EXTRA_MODEL_NAME);
         if (modelName == null || modelName.isEmpty()) modelName = modelPath.isEmpty() ? "none" : new File(modelPath).getName();
 
+        setStartupMilestone("before_build_ui");
         FrameLayout root = new FrameLayout(this);
         surfaceView = new SurfaceView(this);
         root.addView(surfaceView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -730,7 +741,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         hudParams.gravity = Gravity.TOP;
         root.addView(hudView, hudParams);
 
+        setStartupMilestone("before_restore_config");
         restoreWorkspaceSettings();
+        setStartupMilestone("after_restore_config");
 
         workspacePanel = new LinearLayout(this);
         workspacePanel.setOrientation(LinearLayout.VERTICAL);
@@ -1153,7 +1166,6 @@ public class FilamentGlbPreviewActivity extends Activity {
 
         shadowSummaryView = overlayText(10.0f, 12);
         shadowSummaryView.setBackgroundColor(Color.TRANSPARENT);
-        shadowsPanel.addView(shadowsButton);
         shadowsPanel.addView(shadowSummaryView);
 
         lightsSummaryView = overlayText(10.0f, 12);
@@ -1229,13 +1241,21 @@ public class FilamentGlbPreviewActivity extends Activity {
         controlParams.setMargins(dp(12), dp(12), dp(12), dp(28));
         root.addView(controlScroll, controlParams);
         setContentView(root);
+        setStartupMilestone("after_build_ui");
         startFrameMetricsDiagnostics();
         syncWorkspaceUi();
         scanDownloadForAssets("startup");
+        setStartupMilestone("before_create_viewer");
         createViewer();
+        setStartupMilestone("after_create_viewer");
+        setStartupMilestone("before_restore_ibl");
         restorePersistedIbl();
+        setStartupMilestone("after_restore_ibl");
+        setStartupMilestone("before_load_model");
         loadModel();
+        setStartupMilestone("after_load_model");
         refreshUiNow();
+        setStartupMilestone("onCreate_done");
     }
 
     @Override
@@ -1286,6 +1306,115 @@ public class FilamentGlbPreviewActivity extends Activity {
         stopFrameMetricsDiagnostics();
         releaseFilamentResources();
         super.onDestroy();
+    }
+
+    private void setStartupMilestone(String milestone) {
+        try {
+            startupMilestone = milestone == null || milestone.isEmpty() ? "unknown" : milestone;
+        } catch (Throwable ignored) { }
+    }
+
+    private void installCrashReporter() {
+        try {
+            if (previousCrashHandler != null) return;
+            previousCrashHandler = Thread.getDefaultUncaughtExceptionHandler();
+            Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+                try {
+                    writeCrashReport(thread, throwable);
+                } catch (Throwable ignored) { }
+                try {
+                    if (previousCrashHandler != null && previousCrashHandler != Thread.getDefaultUncaughtExceptionHandler()) {
+                        previousCrashHandler.uncaughtException(thread, throwable);
+                        return;
+                    }
+                } catch (Throwable ignored) { }
+                try {
+                    android.os.Process.killProcess(android.os.Process.myPid());
+                } catch (Throwable ignored) { }
+                try {
+                    System.exit(10);
+                } catch (Throwable ignored) { }
+            });
+        } catch (Throwable ignored) { }
+    }
+
+    private void writeCrashReport(Thread thread, Throwable throwable) {
+        String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+        String text = buildCrashReportText(timestamp, thread, throwable);
+        byte[] data;
+        try {
+            data = text.getBytes("UTF-8");
+        } catch (Throwable ignored) {
+            data = text.getBytes();
+        }
+        File out = crashReportFile(new File(CRASH_DIR_DOWNLOAD), timestamp);
+        if (!writeCrashBytes(out, data)) {
+            File fallbackRoot = new File(getFilesDir(), "solum_crashes");
+            writeCrashBytes(crashReportFile(fallbackRoot, timestamp), data);
+        }
+    }
+
+    private File crashReportFile(File root, String timestamp) {
+        return new File(root, "crash_" + timestamp + ".txt");
+    }
+
+    private boolean writeCrashBytes(File file, byte[] data) {
+        FileOutputStream stream = null;
+        try {
+            File parent = file.getParentFile();
+            if (parent != null && !parent.exists() && !parent.mkdirs()) return false;
+            stream = new FileOutputStream(file);
+            stream.write(data);
+            stream.flush();
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        } finally {
+            if (stream != null) {
+                try { stream.close(); } catch (Throwable ignored) { }
+            }
+        }
+    }
+
+    private String buildCrashReportText(String timestamp, Thread thread, Throwable throwable) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("timestamp=").append(timestamp).append('\n');
+        builder.append("thread=").append(thread == null ? "unknown" : thread.getName()).append('\n');
+        builder.append("exceptionClass=").append(throwable == null ? "unknown" : throwable.getClass().getName()).append('\n');
+        builder.append("message=").append(throwable == null ? "none" : String.valueOf(throwable.getMessage())).append('\n');
+        builder.append("package=").append(safeCrashValue(() -> getPackageName())).append('\n');
+        builder.append("startupMilestone=").append(safeCrashValue(() -> startupMilestone)).append('\n');
+        builder.append("lastSelectedTab=").append(safeCrashValue(() -> activeTab == null ? "null" : activeTab.name())).append('\n');
+        builder.append("renderControlApi=").append(safeCrashValue(() -> renderControlApi == null ? "null" : "not_null")).append('\n');
+        builder.append("modelViewer=").append(safeCrashValue(() -> modelViewer == null ? "null" : "not_null")).append('\n');
+        builder.append("branch=").append(P50_BRANCH_NAME).append('\n');
+        builder.append("commit=").append(P50_RUNTIME_COMMIT).append('\n');
+        builder.append("stacktrace=\n").append(stackTraceText(throwable));
+        return builder.toString();
+    }
+
+    private interface CrashValue {
+        String get() throws Exception;
+    }
+
+    private String safeCrashValue(CrashValue value) {
+        try {
+            String out = value.get();
+            return out == null ? "null" : out;
+        } catch (Throwable t) {
+            return "unavailable: " + t.getClass().getSimpleName();
+        }
+    }
+
+    private String stackTraceText(Throwable throwable) {
+        if (throwable == null) return "none";
+        try {
+            StringWriter writer = new StringWriter();
+            throwable.printStackTrace(new PrintWriter(writer));
+            return writer.toString();
+        } catch (Throwable t) {
+            return throwable.getClass().getName() + ": stacktrace_unavailable";
+        }
     }
 
     private void createViewer() {

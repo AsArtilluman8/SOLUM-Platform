@@ -78,6 +78,8 @@ for key, haystack, terms in [
     ("render_control_center_sections", activity_text, ["Render Control Center: Basic", "Render Control Center: Lighting", "Render Control Center: Sky / IBL", "Render Control Center: PostFX", "Render Control Center: Color / Fog", "Debug"]),
     ("render_control_center_api_driven_status", activity_text, ["featureLine", "compactOwnershipSummary", "compactCostSummary", "RenderFeatureDescriptor", "RenderCostDiagnostics"]),
     ("render_control_center_debug_on_demand", activity_text, ["debugPanel.getVisibility() == View.VISIBLE", "Copy Short Report", "Export Full Report"]),
+    ("startup_crash_report_fallback", activity_text, ["installCrashReporter", "writeCrashReport", "SOLUM_CRASHES", "solum_crashes", "startupMilestone"]),
+    ("startup_milestone_terms", activity_text, ["onCreate_start", "crash_handler_installed", "before_build_ui", "after_build_ui", "before_create_viewer", "after_create_viewer", "before_load_model", "after_load_model", "onCreate_done"]),
 ]:
     missing_terms = [term for term in terms if term not in haystack]
     checks[key] = {"status": "present" if not missing_terms else "missing", "missing_terms": missing_terms}

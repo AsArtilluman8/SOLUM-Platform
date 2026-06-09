@@ -63,20 +63,35 @@ Required outcomes:
 - FPS reports frame ms, p50/p95/worst, jitter, confidence, stability, and timing disagreement;
 - cost diagnostics are estimated and say `not_runtime_measured`.
 
-### P50 — Full Render Control Center
+### P50 — Full Render Control Center Mobile UX
 
-Goal: expose the verified render API surface in a structured UI.
+Goal: expose the existing render API surface in a structured, mobile-friendly UI without adding new renderer features.
 
 Required sections:
 
-- Basic: safe controls for normal users;
-- Advanced: deeper quality and rendering controls;
-- Debug: diagnostics, unsupported states, requested/actual state, profiler commands;
-- Screenshot/Experimental: expensive visual modes that are not gameplay targets.
+- Basic: quality, FPS/frame ms, render scale, dynamic resolution, MSAA, FXAA, TAA, dithering;
+- Lighting: lighting preset, sun/ambient/fill/background intensity, sun direction, light rig/status;
+- Sky / IBL: active IBL, intensity, rotation, skybox visibility, load/import/reload status;
+- PostFX: AO, Bloom, SSR, Refraction, Sun glare, Shadows, mobile cost warnings;
+- Color / Fog: color grading and fog controls with visibility confidence;
+- Debug: copy/export/reset and compact diagnostics status only.
 
-Rule: do not expose controls as production features unless the API is available, the state can be applied, and the UI reports truthfully whether it works live or requires recreation/restart.
+Rule: Render Control Center is UI over `RenderControlApi`, `RenderDiagnostics`, `RenderOwnershipMap`, `RenderFeatureDescriptor`, and `RenderCostDiagnostics`. Debug remains on-demand; no full JSON live wall. Sky / IBL is a foundation/status area only. Full Sky / Sun / Time of Day stays planned for P51.
 
-### P51 — Scene Workspace
+### P51 — Sky / IBL / Sun / Time of Day Foundation
+
+Goal: build the real sky/time system after the P50 UI foundation.
+
+Required outcomes:
+
+- explicit sky system ownership;
+- sun/time-of-day model;
+- IBL/skybox integration plan;
+- diagnostics for sky, sun, IBL, and exposure interactions;
+- mobile cost/safety status;
+- no fake day/night cycle without render/runtime proof.
+
+### P52 — Scene Workspace
 
 Goal: move beyond a single model preview.
 
@@ -89,7 +104,7 @@ Required outcomes:
 - transform values;
 - object lifecycle and unload/release rules.
 
-### P52 — Asset Shelf v1
+### P53 — Asset Shelf v1
 
 Goal: create the local asset browser and registry foundation.
 
@@ -102,7 +117,7 @@ Required outcomes:
 - unload/release assets safely;
 - prepare the structure for future cloud/community packages.
 
-### P53 — Transform Gizmo v1
+### P54 — Transform Gizmo v1
 
 Goal: add touch-first object transform tools.
 
@@ -116,7 +131,7 @@ Required outcomes:
 
 Reference existing good solutions before implementation, such as common transform-control patterns in professional editors and open-source libraries. Reuse ideas where license-compatible and technically practical.
 
-### P54 — Animation Preview v1
+### P55 — Animation Preview v1
 
 Goal: inspect and play glTF/GLB animations.
 
@@ -129,7 +144,7 @@ Required outcomes:
 - timeline/scrub;
 - diagnostics for skeleton, morph targets, and unsupported states.
 
-### P55 — Scene Save/Load v1
+### P56 — Scene Save/Load v1
 
 Goal: persist scene state separately from temporary render preview settings.
 

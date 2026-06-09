@@ -30,6 +30,9 @@ CHECKS = {
     "labels_after_manual_clicks": ["refreshUiNow", "updateToggleLabels", "updateAllSliderLabels", "setLastAction"],
     "preset_mismatch_status_exists": ["updatePresetMismatchStatus", "presetMismatchStatus", "presetMismatch"],
     "diagnostics_on_demand": ["Copy Short Report", "Export Full Report", "buildShortDiagnosticsReport", "buildFullDiagnosticsReportJson"],
+    "render_control_center_sections": ["Render Control Center: Basic", "Render Control Center: Lighting", "Render Control Center: Sky / IBL", "Render Control Center: PostFX", "Render Control Center: Color / Fog", "WorkspaceTab.POSTFX"],
+    "render_control_center_preserves_debug_on_demand": ["debugPanel.getVisibility() == View.VISIBLE", "Copy Short Report", "Export Full Report", "Reset FPS/Jank Counters"],
+    "render_control_center_api_terms": ["RenderControlApi", "RenderFeatureDescriptor", "RenderCostDiagnostics", "featureLine", "compactCostSummary"],
 }
 
 def status_for(text, needles):

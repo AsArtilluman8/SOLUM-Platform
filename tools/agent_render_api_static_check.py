@@ -75,6 +75,9 @@ for key, haystack, terms in [
     ("feature_descriptor_terms", controller_text, ["RenderFeatureDescriptor", "mobileCost", "mobileSafe"]),
     ("cost_diagnostics_terms", controller_text + activity_text, ["RenderCostDiagnostics", "estimated_cost", "not_runtime_measured", "needs_cost_probe_later"]),
     ("fog_visibility_terms", controller_text + activity_text, ["fogVisibilityConfidence", "may_be_hidden_by_skybox_or_exposure", "fogWarning"]),
+    ("render_control_center_sections", activity_text, ["Render Control Center: Basic", "Render Control Center: Lighting", "Render Control Center: Sky / IBL", "Render Control Center: PostFX", "Render Control Center: Color / Fog", "Debug"]),
+    ("render_control_center_api_driven_status", activity_text, ["featureLine", "compactOwnershipSummary", "compactCostSummary", "RenderFeatureDescriptor", "RenderCostDiagnostics"]),
+    ("render_control_center_debug_on_demand", activity_text, ["debugPanel.getVisibility() == View.VISIBLE", "Copy Short Report", "Export Full Report"]),
 ]:
     missing_terms = [term for term in terms if term not in haystack]
     checks[key] = {"status": "present" if not missing_terms else "missing", "missing_terms": missing_terms}

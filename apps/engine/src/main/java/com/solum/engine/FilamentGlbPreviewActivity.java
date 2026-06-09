@@ -198,6 +198,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private Button assetsTabButton;
     private Button lightingTabButton;
     private Button renderTabButton;
+    private Button postFxTabButton;
     private Button iblTabButton;
     private Button shadowsTabButton;
     private Button cameraTabButton;
@@ -214,6 +215,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private LinearLayout assetsPanel;
     private LinearLayout lightingPanel;
     private LinearLayout renderPanel;
+    private LinearLayout postFxPanel;
     private LinearLayout iblPanel;
     private LinearLayout shadowsPanel;
     private LinearLayout cameraPanel;
@@ -230,6 +232,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private TextView assetsSummaryView;
     private TextView materialSummaryView;
     private TextView qualitySummaryView;
+    private TextView postFxSummaryView;
     private TextView iblSummaryView;
     private TextView shadowSummaryView;
     private TextView cameraSummaryView;
@@ -483,12 +486,13 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private enum WorkspaceTab {
         ASSETS("Assets"),
-        RENDER("Render"),
-        COLOR("Color"),
+        RENDER("Basic"),
+        POSTFX("PostFX"),
+        COLOR("Color / Fog"),
         FOG("Fog"),
         LIGHTING("Lighting"),
         LIGHTS("Lights"),
-        IBL("IBL"),
+        IBL("Sky / IBL"),
         SHADOWS("Shadows"),
         CAMERA("Camera"),
         MODEL("Model"),
@@ -743,12 +747,13 @@ public class FilamentGlbPreviewActivity extends Activity {
         tabRow = new LinearLayout(this);
         tabRow.setOrientation(LinearLayout.HORIZONTAL);
         assetsTabButton = tabButton("Assets", WorkspaceTab.ASSETS);
-        renderTabButton = tabButton("Render", WorkspaceTab.RENDER);
-        colorTabButton = tabButton("Color", WorkspaceTab.COLOR);
+        renderTabButton = tabButton("Basic", WorkspaceTab.RENDER);
+        postFxTabButton = tabButton("PostFX", WorkspaceTab.POSTFX);
+        colorTabButton = tabButton("Color / Fog", WorkspaceTab.COLOR);
         fogTabButton = tabButton("Fog", WorkspaceTab.FOG);
         lightingTabButton = tabButton("Lighting", WorkspaceTab.LIGHTING);
         lightsTabButton = tabButton("Lights", WorkspaceTab.LIGHTS);
-        iblTabButton = tabButton("IBL", WorkspaceTab.IBL);
+        iblTabButton = tabButton("Sky / IBL", WorkspaceTab.IBL);
         shadowsTabButton = tabButton("Shadows", WorkspaceTab.SHADOWS);
         cameraTabButton = tabButton("Camera", WorkspaceTab.CAMERA);
         modelTabButton = tabButton("Model", WorkspaceTab.MODEL);
@@ -758,12 +763,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT);
         tabRow.addView(assetsTabButton, tabParams);
         tabRow.addView(renderTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
-        tabRow.addView(colorTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
-        tabRow.addView(fogTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(lightingTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
-        tabRow.addView(lightsTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
-        tabRow.addView(iblTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
-        tabRow.addView(shadowsTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
+        tabRow.addView(iblTabButton, new LinearLayout.LayoutParams(dp(100), LinearLayout.LayoutParams.WRAP_CONTENT));
+        tabRow.addView(postFxTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
+        tabRow.addView(colorTabButton, new LinearLayout.LayoutParams(dp(112), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(cameraTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(modelTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(materialTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -783,6 +786,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         assetsPanel.setOrientation(LinearLayout.VERTICAL);
         renderPanel = new LinearLayout(this);
         renderPanel.setOrientation(LinearLayout.VERTICAL);
+        postFxPanel = new LinearLayout(this);
+        postFxPanel.setOrientation(LinearLayout.VERTICAL);
         colorPanel = new LinearLayout(this);
         colorPanel.setOrientation(LinearLayout.VERTICAL);
         fogPanel = new LinearLayout(this);
@@ -892,6 +897,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             setLastAction("refraction_" + refractionMode.name().toLowerCase(Locale.US));
             refreshUiNow();
         });
+        lightingPanel.addView(sectionHeader("Render Control Center: Lighting"));
         lightingPanel.addView(lightingButton);
         lightingPanel.addView(resetButton);
         sunSlider = addLightingSlider(lightingPanel, "Sun", 0.0f, 20.0f, 0.5f, sunLightIntensity, v -> {
@@ -951,8 +957,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         advancedBackgroundField = addAdvancedField(advancedValuesPanel, "Background", 0.0f, 1.0f, v -> backgroundBrightness = v);
         lightingPanel.addView(advancedValuesPanel);
 
-        qualitySummaryView = overlayText(10.0f, 12);
+        qualitySummaryView = overlayText(10.0f, 10);
         qualitySummaryView.setBackgroundColor(Color.TRANSPARENT);
+        renderPanel.addView(sectionHeader("Render Control Center: Basic"));
         renderPanel.addView(qualityButton);
         dynamicResolutionButton = button("", v -> {
             dynamicResolutionEnabled = !dynamicResolutionEnabled;
@@ -1002,7 +1009,6 @@ public class FilamentGlbPreviewActivity extends Activity {
             setLastAction("ssr_" + (ssrEnabled ? "on" : "off"));
             refreshUiNow();
         });
-        renderPanel.addView(ssrButton);
         sunGlareButton = button("", v -> {
             sunGlareMode = sunGlareMode.next();
             applySunGlareOverlay();
@@ -1010,31 +1016,39 @@ public class FilamentGlbPreviewActivity extends Activity {
             setLastAction("sun_glare_" + sunGlareMode.name().toLowerCase(Locale.US));
             refreshUiNow();
         });
-        renderPanel.addView(sunGlareButton);
         addLightingSlider(renderPanel, "Render Scale", 0.50f, 1.00f, 0.01f, renderScale, v -> {
             renderScale = v;
             markManualOverride("render_scale");
             applyQualityProfile();
         });
-        renderPanel.addView(aoButton);
-        renderPanel.addView(bloomButton);
-        addLightingSlider(renderPanel, "Bloom Strength", 0.0f, 0.25f, 0.005f, bloomStrength, v -> {
+        renderPanel.addView(qualitySummaryView);
+
+        postFxSummaryView = overlayText(10.0f, 10);
+        postFxSummaryView.setBackgroundColor(Color.TRANSPARENT);
+        postFxPanel.addView(sectionHeader("Render Control Center: PostFX"));
+        postFxPanel.addView(aoButton);
+        postFxPanel.addView(bloomButton);
+        addLightingSlider(postFxPanel, "Bloom Strength", 0.0f, 0.25f, 0.005f, bloomStrength, v -> {
             bloomStrength = v;
             markManualOverride("bloom_strength");
             applyQualityProfile();
             refreshUiNow();
         });
-        addLightingSlider(renderPanel, "Bloom Highlight", 100.0f, 1200.0f, 10.0f, bloomHighlight, v -> {
+        addLightingSlider(postFxPanel, "Bloom Highlight", 100.0f, 1200.0f, 10.0f, bloomHighlight, v -> {
             bloomHighlight = v;
             markManualOverride("bloom_highlight");
             applyQualityProfile();
             refreshUiNow();
         });
-        renderPanel.addView(refractionButton);
-        renderPanel.addView(qualitySummaryView);
+        postFxPanel.addView(ssrButton);
+        postFxPanel.addView(refractionButton);
+        postFxPanel.addView(sunGlareButton);
+        postFxPanel.addView(shadowsButton);
+        postFxPanel.addView(postFxSummaryView);
 
         colorSummaryView = overlayText(10.0f, 12);
         colorSummaryView.setBackgroundColor(Color.TRANSPARENT);
+        colorPanel.addView(sectionHeader("Render Control Center: Color / Fog"));
         colorModeButton = button("", v -> {
             colorMode = colorMode.next();
             applyColorModeDefaults();
@@ -1081,9 +1095,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             persistWorkspaceSettings();
             refreshUiNow();
         });
-        colorPanel.addView(colorSummaryView);
-
-        fogSummaryView = overlayText(10.0f, 12);
+        fogSummaryView = overlayText(10.0f, 10);
         fogSummaryView.setBackgroundColor(Color.TRANSPARENT);
         fogButton = button("", v -> {
             fogMode = fogMode.next();
@@ -1096,26 +1108,28 @@ public class FilamentGlbPreviewActivity extends Activity {
             setLastAction("fog_" + fogMode.name().toLowerCase(Locale.US));
             refreshUiNow();
         });
-        fogPanel.addView(fogButton);
-        addLightingSlider(fogPanel, "Fog Density", 0.0f, 0.08f, 0.001f, fogDensity, v -> {
+        colorPanel.addView(fogButton);
+        addLightingSlider(colorPanel, "Fog Density", 0.0f, 0.08f, 0.001f, fogDensity, v -> {
             fogDensity = v;
             markManualOverride("fog_density");
             applyFogOptions();
         });
-        addLightingSlider(fogPanel, "Fog Distance", 10.0f, 160.0f, 1.0f, fogDistance, v -> {
+        addLightingSlider(colorPanel, "Fog Distance", 10.0f, 160.0f, 1.0f, fogDistance, v -> {
             fogDistance = v;
             markManualOverride("fog_distance");
             applyFogOptions();
         });
-        addLightingSlider(fogPanel, "Fog Height", -5.0f, 5.0f, 0.1f, fogHeight, v -> {
+        addLightingSlider(colorPanel, "Fog Height", -5.0f, 5.0f, 0.1f, fogHeight, v -> {
             fogHeight = v;
             markManualOverride("fog_height");
             applyFogOptions();
         });
-        fogPanel.addView(fogSummaryView);
+        colorPanel.addView(colorSummaryView);
+        colorPanel.addView(fogSummaryView);
 
         iblSummaryView = overlayText(10.0f, 12);
         iblSummaryView.setBackgroundColor(Color.TRANSPARENT);
+        iblPanel.addView(sectionHeader("Render Control Center: Sky / IBL"));
         iblPanel.addView(iblButton);
         skyboxButton = button("", v -> {
             skyboxVisible = !skyboxVisible;
@@ -1151,8 +1165,8 @@ public class FilamentGlbPreviewActivity extends Activity {
             setLastAction("light_rig_" + lightRig.name().toLowerCase(Locale.US));
             refreshUiNow();
         });
-        lightsPanel.addView(lightRigButton);
-        lightsPanel.addView(lightsSummaryView);
+        lightingPanel.addView(lightRigButton);
+        lightingPanel.addView(lightsSummaryView);
 
         buildCameraPanel();
         buildModelPanel();
@@ -1193,6 +1207,7 @@ public class FilamentGlbPreviewActivity extends Activity {
 
         workspacePanel.addView(assetsPanel);
         workspacePanel.addView(renderPanel);
+        workspacePanel.addView(postFxPanel);
         workspacePanel.addView(colorPanel);
         workspacePanel.addView(fogPanel);
         workspacePanel.addView(lightingPanel);
@@ -1615,17 +1630,33 @@ public class FilamentGlbPreviewActivity extends Activity {
         return button;
     }
 
+    private TextView sectionHeader(String text) {
+        TextView view = overlayText(11.0f, 2);
+        view.setText(text);
+        view.setBackgroundColor(Color.argb(160, 8, 36, 44));
+        view.setPadding(dp(8), dp(6), dp(8), dp(6));
+        return view;
+    }
+
+    private WorkspaceTab migratedRenderControlCenterTab(WorkspaceTab tab) {
+        if (tab == WorkspaceTab.FOG) return WorkspaceTab.COLOR;
+        if (tab == WorkspaceTab.LIGHTS) return WorkspaceTab.LIGHTING;
+        if (tab == WorkspaceTab.SHADOWS) return WorkspaceTab.POSTFX;
+        return tab == null ? WorkspaceTab.ASSETS : tab;
+    }
+
     private void syncWorkspaceUi() {
         if (collapseButton != null) collapseButton.setText(panelCollapsed ? "Expand" : "Collapse");
         if (tabRow != null) tabRow.setVisibility(panelCollapsed ? View.GONE : View.VISIBLE);
         setPanelVisible(assetsPanel, activeTab == WorkspaceTab.ASSETS && !panelCollapsed);
         setPanelVisible(renderPanel, activeTab == WorkspaceTab.RENDER && !panelCollapsed);
+        setPanelVisible(postFxPanel, activeTab == WorkspaceTab.POSTFX && !panelCollapsed);
         setPanelVisible(colorPanel, activeTab == WorkspaceTab.COLOR && !panelCollapsed);
-        setPanelVisible(fogPanel, activeTab == WorkspaceTab.FOG && !panelCollapsed);
+        setPanelVisible(fogPanel, false);
         setPanelVisible(lightingPanel, activeTab == WorkspaceTab.LIGHTING && !panelCollapsed);
-        setPanelVisible(lightsPanel, activeTab == WorkspaceTab.LIGHTS && !panelCollapsed);
+        setPanelVisible(lightsPanel, false);
         setPanelVisible(iblPanel, activeTab == WorkspaceTab.IBL && !panelCollapsed);
-        setPanelVisible(shadowsPanel, activeTab == WorkspaceTab.SHADOWS && !panelCollapsed);
+        setPanelVisible(shadowsPanel, false);
         setPanelVisible(cameraPanel, activeTab == WorkspaceTab.CAMERA && !panelCollapsed);
         setPanelVisible(modelPanel, activeTab == WorkspaceTab.MODEL && !panelCollapsed);
         setPanelVisible(qualityPanel, false);
@@ -1634,6 +1665,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         setPanelVisible(debugPanel, activeTab == WorkspaceTab.DEBUG && !panelCollapsed);
         updateTabState(assetsTabButton, WorkspaceTab.ASSETS);
         updateTabState(renderTabButton, WorkspaceTab.RENDER);
+        updateTabState(postFxTabButton, WorkspaceTab.POSTFX);
         updateTabState(colorTabButton, WorkspaceTab.COLOR);
         updateTabState(fogTabButton, WorkspaceTab.FOG);
         updateTabState(lightingTabButton, WorkspaceTab.LIGHTING);
@@ -2890,6 +2922,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         qualityProfile = enumPref(prefs, PREF_FILAMENT_QUALITY_PROFILE, FilamentQualityProfile.MEDIUM);
         lightingPreset = enumPref(prefs, PREF_FILAMENT_LIGHTING_PRESET, LightingPreset.SAFE_STUDIO);
         activeTab = enumPref(prefs, PREF_FILAMENT_ACTIVE_TAB, WorkspaceTab.ASSETS);
+        activeTab = migratedRenderControlCenterTab(activeTab);
         aoMode = enumPref(prefs, PREF_FILAMENT_AO_MODE, AoMode.OFF);
         bloomMode = enumPref(prefs, PREF_FILAMENT_BLOOM_MODE, BloomMode.OFF);
         shadowMode = enumPref(prefs, PREF_FILAMENT_SHADOW_MODE, ShadowMode.OFF);
@@ -3715,7 +3748,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         modelOffsetY = (float) json.optDouble("modelOffsetY", modelOffsetY);
         modelOffsetZ = (float) json.optDouble("modelOffsetZ", modelOffsetZ);
         panelCollapsed = json.optBoolean("panelCollapsed", panelCollapsed);
-        activeTab = enumValue(WorkspaceTab.class, json.optString("lastSelectedTab"), activeTab);
+        activeTab = migratedRenderControlCenterTab(enumValue(WorkspaceTab.class, json.optString("lastSelectedTab"), activeTab));
         normalizeLoadedSettingsForProfile("config_load_schema_" + loadedConfigVersion);
         String loadedModel = json.optString("activeModelPath", "");
         if (!loadedModel.isEmpty() && new File(loadedModel).isFile()) {
@@ -3782,33 +3815,26 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nCopy/import: " + importCopyStatus);
         }
         if (qualitySummaryView != null) {
-            qualitySummaryView.setText("actualAA=" + actualAA + " requestedMSAA=" + requestedSampleCount + "x actualMSAA=" + actualSampleCount + "x"
-                + "\nmsaaApplyStatus=" + msaaApplyStatus
-                + "\nrequestedDynamicResolution=" + requestedDynamicResolution + " actualDynamicResolution=" + actualDynamicResolution + " status=" + dynamicResolutionApplyStatus
-                + "\nrenderScale=" + twoDecimal(renderScale) + " dynamicScale=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
-                + "\nrequestedTAA=" + requestedTaa + " actualTAA=" + actualTaa + " taaApplyStatus=" + taaApplyStatus
-                + "\ntaaSupported=true taaEnabled=" + taaEnabled + " taaStatus=" + taaStatus
-                + "\nssrSupported=true ssrEnabled=" + ssrEnabled + " ssrStatus=" + ssrStatus + (ssrEnabled ? " WARNING_manual_heavy_mobile" : "")
-                + "\nssrPerformanceWarning=" + ssrPerformanceWarning
-                + "\ngpuTimingStatus=" + gpuTimingStatus()
-                + "\nandroidFrameMetrics=" + frameMetricsStatus + " samples=" + frameMetricsSampleCount + " totalMs=" + oneDecimal(frameMetricsTotalMs) + " gpuMs=" + gpuMetricLabel()
-                + "\nfxaaSupported=true fxaaToggle=" + fxaaEnabled + " fxaaActuallyActive=" + "FXAA".equals(actualAA)
-                + "\nditheringStatus=" + ditheringStatus + " guardBandStatus=" + guardBandStatus
-                + "\nsunGlareMode=" + sunGlareMode.name() + " sunGlareStatus=" + sunGlareStatus
-                + "\nmanualOverrideStatus=" + manualOverrideStatus
-                + "\nvisibleEstimate=" + visualSmoothnessLabel() + " targetFps=" + presetTargetFps()
-                + "\nprimaryFpsSource=" + primaryFpsSource + " timing_disagreement=" + timingDisagreement
-                + "\nframeMs current=" + oneDecimal(rollingFrameMs) + " avg=" + oneDecimal(avgFrameMs) + " min=" + oneDecimal(minFrameMs) + " max=" + oneDecimal(maxFrameMs) + " p50=" + oneDecimal(p50FrameMs) + " p95=" + oneDecimal(p95FrameMs) + " worst=" + oneDecimal(worstFrameMs)
-                + "\nfpsConfidence=" + fpsConfidence + " fpsStability=" + fpsStability + " jitterMs=" + oneDecimal(jitterMs) + " jitterScore=" + jitterScore
-                + "\nframeStatus=" + renderHealthLabel() + " frameBudget=" + frameBudgetStatus + " slow=" + slowFrameCounter + " jank=" + jankFrameCounter
-                + "\nanisotropicFiltering=not_exposed textureLodBias=not_exposed"
-                + "\naoRequested=" + requestedAoMode + " aoActual=" + actualAoMode + " aoApplyStatus=" + aoApplyStatus + " aoApplied=" + aoActuallyApplied
-                + "\nshadowsMode=" + shadowMode.name() + " shadowsApplied=" + shadowsActuallyApplied
-                + "\nbloom=" + bloomActualStatus
-                + "\nrefraction=" + refractionActualStatus
-                + "\nrenderApi=" + (renderControlApi == null ? "missing" : renderControlApi.getDiagnostics().getRenderTruthText())
-                + "\nownershipSummary=" + (renderControlApi == null ? "missing" : renderControlApi.getOwnershipMap().shortSummary())
-                + "\nrenderApiNotVerified=" + (renderControlApi == null ? "none" : renderControlApi.getDiagnostics().getNotExposedOrNotVerifiedItems()));
+            qualitySummaryView.setText("FPS " + primaryFpsHud() + " / " + oneDecimal(primaryFrameMs()) + " ms / " + fpsConfidence
+                + "\nQuality requested=" + qualityProfile.name() + " status=" + qualityFeatureStatus
+                + "\nRender Scale " + twoDecimal(renderScale) + " dynamic=" + requestedDynamicResolution + "/" + actualDynamicResolution + " " + dynamicResolutionApplyStatus
+                + "\nMSAA req/actual " + requestedSampleCount + "x/" + actualSampleCount + "x " + msaaApplyStatus
+                + "\nFXAA=" + fxaaEnabled + " actualAA=" + actualAA + " TAA req/actual=" + requestedTaa + "/" + actualTaa + " " + taaApplyStatus
+                + "\nDithering=" + ditheringStatus + " manual=" + manualOverrideStatus
+                + "\n" + featureLine("msaa")
+                + "\n" + featureLine("taa")
+                + "\nCost: " + compactCostSummary());
+        }
+        if (postFxSummaryView != null) {
+            postFxSummaryView.setText("AO req/actual=" + requestedAoMode + "/" + actualAoMode + " " + aoApplyStatus
+                + "\nBloom req/actual=" + requestedBloomMode + "/" + actualBloomMode + " strength=" + twoDecimal(actualBloomStrength)
+                + "\nSSR=" + ssrEnabled + " " + ssrPerformanceWarning
+                + "\nRefraction=" + refractionActualStatus
+                + "\nSun glare=" + sunGlareMode.name() + " " + sunGlareStatus
+                + "\nShadow mode=" + shadowMode.name() + " applied=" + shadowsActuallyApplied
+                + "\n" + featureLine("ssr")
+                + "\n" + featureLine("bloom")
+                + "\n" + featureLine("ao"));
         }
         if (colorSummaryView != null) {
             colorSummaryView.setText("colorGradingSupported=true"
@@ -3830,8 +3856,10 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nfogHeight=" + oneDecimal(fogHeight)
                 + "\nfogFromIbl=" + realIblReady
                 + "\nfogStatus=" + fogStatus
+                + "\nfogVisibility=" + fogVisibilityLabel()
                 + "\nfogVisibilityConfidence=" + (renderControlApi == null ? "not_verified" : renderControlApi.getDiagnostics().getFogVisibilityConfidence())
-                + "\nfogWarning=" + (renderControlApi == null ? "not_verified" : renderControlApi.getDiagnostics().getFogWarning()));
+                + "\nfogWarning=" + (renderControlApi == null ? "not_verified" : renderControlApi.getDiagnostics().getFogWarning())
+                + "\n" + featureLine("fog"));
         }
         if (lightsSummaryView != null) {
             lightsSummaryView.setText("pointLightSupported=true"
@@ -3839,9 +3867,13 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nadditionalLightsEnabled=" + (lightRig != LightRig.OFF)
                 + "\nactiveLightRig=" + lightRig.label
                 + "\nlightCount=" + activeLightCount()
+                + "\nlightTypeStatus=sun_directional fill_directional rig_point_or_spot"
+                + "\nsunColor=warm_fixed activity_local fillColor=cool_fixed activity_local ambientColor=IBL_or_procedural_not_rgb_exposed"
+                + "\nlightRangeRadiusStatus=activity_local_for_rig_lights_not_renderer_contract_verified"
                 + "\nfalloffSupported=true spotConeSupported=true"
                 + "\nadditionalLightShadows=false_mobile_safe"
-                + "\nlightRigStatus=" + lightRigStatus);
+                + "\nlightRigStatus=" + lightRigStatus
+                + "\n" + featureLine("lighting_core"));
         }
         if (iblSummaryView != null) {
             iblSummaryView.setText("activeIblName=" + iblFile
@@ -3851,7 +3883,10 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\niblIntensityUser=" + twoDecimal(ambientUserIntensity) + " iblIntensityInternal=" + twoDecimal(ambientFallbackIntensity)
                 + "\niblRotation=" + oneDecimal(iblRotation) + " skyboxVisible=" + skyboxVisible
                 + "\nskyboxBlur=not_exposed backgroundBrightness=" + twoDecimal(backgroundBrightness)
-                + "\nstatus=" + iblLoadStatus);
+                + "\nstatus=" + iblLoadStatus
+                + "\nP51 Sky/Sun/Time of Day planned, not implemented in P50"
+                + "\n" + featureLine("ibl")
+                + "\n" + featureLine("skybox"));
         }
         if (shadowSummaryView != null) {
             shadowSummaryView.setText("shadowsSupported=true"
@@ -3892,7 +3927,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nmissing paths on load=skip_no_crash"
                 + "\nlastSelectedTab=" + activeTab.name() + " panelCollapsed=" + panelCollapsed);
         }
-        if (statusView != null) {
+        if (statusView != null && debugPanel != null && debugPanel.getVisibility() == View.VISIBLE) {
             statusView.setText(capabilityStatusTable()
                 + "\n\nPerformance:"
                 + "\nPrimary HUD FPS: " + primaryFpsHud()
@@ -3929,7 +3964,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nCopy Short Report status: " + lastDiagnosticsCopyStatus
                 + "\nExport Full Report status: " + lastDiagnosticsExportStatus
                 + "\nFull report path: " + lastDiagnosticsReportPath
-                + "\nOwnership summary: " + (renderControlApi == null ? "missing" : renderControlApi.getOwnershipMap().shortSummary())
+                + "\nOwnership summary: " + compactOwnershipSummary()
                 + "\nCost diagnostics: " + (renderControlApi == null ? "missing" : renderControlApi.getDiagnostics().getCostCauseSummary())
                 + "\n\nRuntime state:"
                 + "\nModel: " + (modelName == null || modelName.isEmpty() ? "none" : modelName)
@@ -4100,6 +4135,47 @@ public class FilamentGlbPreviewActivity extends Activity {
             + "\nFuture volumetric/god rays: deferred";
     }
 
+    private String featureLine(String id) {
+        RenderFeatureDescriptor descriptor = featureDescriptor(id);
+        if (descriptor == null) return id + ": not_exposed";
+        String warning = descriptor.getUserWarning();
+        return descriptor.getLabel()
+            + ": " + descriptor.getStatus()
+            + " cost=" + descriptor.getMobileCost()
+            + " safe=" + descriptor.getMobileSafe()
+            + (warning.isEmpty() ? "" : " warn=" + warning);
+    }
+
+    private RenderFeatureDescriptor featureDescriptor(String id) {
+        if (renderControlApi == null || id == null) return null;
+        for (RenderFeatureDescriptor descriptor : renderControlApi.getFeatureDescriptors()) {
+            if (id.equals(descriptor.getId())) return descriptor;
+        }
+        return null;
+    }
+
+    private String compactOwnershipSummary() {
+        return renderControlApi == null ? "render_api_missing" : renderControlApi.getOwnershipMap().shortSummary();
+    }
+
+    private String compactCostSummary() {
+        if (renderControlApi == null) return "render_api_missing";
+        RenderCostDiagnostics cost = RenderCostDiagnostics.fromSettings(renderControlApi.getSettings());
+        String expensive = joinLabels(cost.getEnabledExpensiveFeatures(), ", ");
+        return cost.getCostCauseSummary()
+            + " safety=" + cost.getMobileSafetyStatus()
+            + (expensive.isEmpty() ? "" : " expensive=" + expensive);
+    }
+
+    private String fogVisibilityLabel() {
+        if (fogMode == FogMode.OFF || fogDensity <= 0.0f) return "fog off";
+        if (renderControlApi == null) return "not verified";
+        String confidence = renderControlApi.getDiagnostics().getFogVisibilityConfidence();
+        if ("likely_visible".equals(confidence)) return "visible likely";
+        if ("may_be_hidden_by_skybox_or_exposure".equals(confidence)) return "may be hidden by skybox/exposure";
+        return confidence == null || confidence.isEmpty() ? "not verified" : confidence;
+    }
+
     private static String joinLabels(List<String> labels, String separator) {
         if (labels == null || labels.isEmpty()) return "";
         StringBuilder builder = new StringBuilder();
@@ -4157,7 +4233,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String buildShortDiagnosticsReport() {
         syncRenderApiRequestedState();
         RenderCostDiagnostics cost = RenderCostDiagnostics.fromSettings(renderControlApi == null ? null : renderControlApi.getSettings());
-        String ownership = renderControlApi == null ? "render_api_missing" : renderControlApi.getOwnershipMap().shortSummary();
+        String ownership = compactOwnershipSummary();
         String notReady = renderControlApi == null ? "render_api_missing" : joinLabels(renderControlApi.getOwnershipMap().notVerifiedOrNotExposedSummary(), ", ");
         return "SOLUM Render Short Report"
             + "\ntimestamp=" + nowTimestamp()

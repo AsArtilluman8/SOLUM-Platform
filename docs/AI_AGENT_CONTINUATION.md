@@ -24,13 +24,13 @@ Do not claim planned systems are implemented.
 
 ## Current priority order
 
-1. P49 Render API Contract + Diagnostics On Demand + FPS Confidence.
-2. P50 Full Render Control Center.
-3. P51 Scene Workspace / multi-model scene.
-4. P52 Asset Shelf.
-5. P53 Transform Gizmo.
-6. P54 Animation Preview.
-7. P55 Scene Save/Load.
+1. P50 Full Render Control Center mobile UX.
+2. P51 Sky / IBL / Sun / Time of Day foundation.
+3. P52 Scene Workspace / multi-model scene.
+4. P53 Asset Shelf.
+5. P54 Transform Gizmo.
+6. P55 Animation Preview.
+7. P56 Scene Save/Load.
 8. Labs and package/agent systems later.
 
 ## Active near-term patch
@@ -38,13 +38,13 @@ Do not claim planned systems are implemented.
 Current near-term work:
 
 ```text
-P49 — Render API Contract + Diagnostics On Demand + FPS Confidence
+P50 — Full Render Control Center mobile UX
 ```
 
 Main goal:
 
 ```text
-Render API must cover current render-related controls, diagnostics must be on-demand, and FPS must report frame ms, confidence, stability, and disagreement honestly.
+Render Control Center must organize existing render controls into Basic / Lighting / Sky-IBL / PostFX / Color-Fog / Debug, using Render API truth, descriptors, ownership, diagnostics, and cost warnings.
 ```
 
 ## Important rules
@@ -52,7 +52,8 @@ Render API must cover current render-related controls, diagnostics must be on-de
 - Read repo files before editing.
 - Do not add new visual features before fixing current control truth.
 - Do not add a huge API UI until existing controls work.
-- Do not add a full Render Control Center before P50.
+- Render Control Center is UI over the existing Render API; do not add new visual renderer features in P50.
+- Sky / IBL is status/control foundation only; full Sky / Sun / Time of Day remains planned for P51.
 - Keep live HUD lightweight; full diagnostics run by button/copy/export only.
 - Do not use Java callback FPS as primary FPS.
 - Frame ms is primary truth. FPS is derived from frame ms.
@@ -85,6 +86,7 @@ Render API must cover current render-related controls, diagnostics must be on-de
 - `apps/engine/src/main/java/com/solum/engine/scene/`
 - `docs/design/SOLUM_DIAGNOSTICS_ON_DEMAND.md`
 - `docs/design/SOLUM_MALI_RENDER_OPTIMIZATION_RULES.md`
+- `docs/design/SOLUM_RENDER_CONTROL_CENTER.md`
 
 ## Build command shape
 

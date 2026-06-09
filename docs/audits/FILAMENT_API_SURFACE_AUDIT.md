@@ -189,3 +189,29 @@ Deferred:
 - Perfetto/AGI workflow integration.
 - Native profiler hooks.
 - VFX Lab, Water Lab, Physics Reaction Lab.
+
+## P47B Control Truth Update
+
+Current Activity-level control status after P47B:
+
+| Control | Current status | Notes |
+|---|---|---|
+| MSAA | applied_live_not_runtime_profiling_verified | UI tracks `requestedMSAA`, `actualMSAA`, and `msaaApplyStatus`. Java API `View.setSampleCount()` is called live. Runtime/device visual proof is still required. |
+| Dynamic Resolution | applied_live_not_runtime_profiling_verified | UI tracks `requestedDynamicResolution`, `actualDynamicResolution`, and apply status after `View.setDynamicResolutionOptions()`. |
+| AO | applied_live_not_visual_verified | `AmbientOcclusionOptions` are applied; visual strength depends on scene depth/contact areas. |
+| Bloom | applied_live_not_visual_verified | `BloomOptions` are rebuilt/applied; high mode marked expensive. |
+| SSR | applied_live_expensive_not_gpu_verified | `ScreenSpaceReflectionsOptions` are applied; GPU cost requires FrameMetrics/profiler proof. |
+| TAA | applied_live_or_failed_truthful | UI tracks `requestedTAA`, `actualTAA`, `taaApplyStatus`; failures are reported without flipping requested state. |
+| Shadows | partially_applied_not_full_shadow_system | View shadowing and shadow type are applied; map size, CSM, contact shadows, bias and distance remain not exposed. |
+| Color | applied_live_rebuilds_colorgrading | Color sliders update requested values and rebuild `ColorGrading`; preset changes set defaults only when the preset button is used. |
+| Render scale | applied_to_dynamic_resolution_range | Controls Dynamic Resolution max scale; exact internal scaler behavior still requires runtime measurement. |
+| FXAA | applied_live | Uses `View.setAntiAliasing(FXAA/NONE)`. |
+| Dithering | applied_live | Uses `View.setDithering(TEMPORAL/NONE)`. |
+| Fog | applied_live_not_visual_verified | `FogOptions` are applied; runtime scene proof still required. |
+| Sun/Ambient/Fill/Background | applied_live | Light, IBL intensity, camera exposure, and clear color are updated live. |
+| IBL controls | partially_applied | Intensity/skybox visibility apply; rotation path remains partially verified by current Java path. |
+| Light rig | applied_live_scene_lights | Point/spot lights are recreated as Activity-owned preview lights; not a reusable scene system yet. |
+| Sun glare | overlay_only_not_filament_lens_flare | Explicitly screen-space overlay, not a Filament lens flare feature. |
+| Material inspector | requested/current_partial | Existing material parameter inspection remains Activity-local and not a full Material Studio. |
+| Picking/select | partially_applied | Pick requests and selected renderable diagnostics exist; full scene selection model deferred. |
+| Config save/load | applied_with_safety_normalization | Schema v6 stores requested/actual truth fields; Low/Medium profile loads normalize stale expensive values. |

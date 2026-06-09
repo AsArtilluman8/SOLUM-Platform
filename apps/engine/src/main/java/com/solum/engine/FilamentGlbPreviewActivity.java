@@ -141,7 +141,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String PREF_FILAMENT_CONFIG_JSON = "filament_config_json";
     private static final String PREF_FILAMENT_DEFAULT_CONFIG_JSON = "filament_default_config_json";
     private static final String CONFIG_FILE_NAME = "filament_render_config.json";
-    private static final int CONFIG_SCHEMA_VERSION = 5;
+    private static final int CONFIG_SCHEMA_VERSION = 6;
     private static final int REQUEST_IMPORT_MODEL = 4101;
     private static final int REQUEST_IMPORT_IBL = 4102;
     private static final long HUD_UPDATE_NS = 250_000_000L;
@@ -290,6 +290,14 @@ public class FilamentGlbPreviewActivity extends Activity {
     private float frameMetricsDrawMs = 0.0f;
     private long frameMetricsSlowCount = 0L;
     private long frameMetricsJankCount = 0L;
+    private String primaryFpsSource = "estimated_visible_p95_until_framemetrics_total";
+    private boolean timingDisagreement = false;
+    private String timingDisagreementStatus = "waiting_for_samples";
+    private String beginFrameStatus = "not_accessible_modelviewer_render_path_without_render_loop_refactor";
+    private long beginFrameAllowedCount = -1L;
+    private long beginFrameSkippedCount = -1L;
+    private long renderedFrameCount = -1L;
+    private float renderedFps = 0.0f;
     private String frameBudgetStatus = "waiting_for_samples";
     private String smoothnessStatus = "waiting_for_samples";
     private String ssrPerformanceWarning = "off";
@@ -337,7 +345,16 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String materialInspectorStatus = "not_loaded";
     private int materialCount = 0;
     private int selectedMaterialIndex = 0;
+    private int requestedSampleCount = 2;
     private int actualSampleCount = 2;
+    private String msaaApplyStatus = "not_applied";
+    private boolean requestedDynamicResolution = true;
+    private boolean actualDynamicResolution = true;
+    private String dynamicResolutionApplyStatus = "not_applied";
+    private boolean requestedTaa = false;
+    private boolean actualTaa = false;
+    private String taaApplyStatus = "not_applied";
+    private String presetMismatchStatus = "not_checked";
     private float dynamicMinScale = 0.72f;
     private float dynamicMaxScale = 0.95f;
     private boolean aoEnabled = false;
@@ -777,10 +794,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         qualityButton = button("Quality: " + qualityProfile.label);
         qualityButton.setOnClickListener(v -> {
             qualityProfile = qualityProfile.next();
-            ssrEnabled = false;
+            applyQualityProfileDefaults("manual_profile_button");
             persistWorkspaceSettings();
             applyQualityProfile();
-            setLastAction("quality_" + qualityProfile.name().toLowerCase(Locale.US) + "_ssr_forced_off");
+            setLastAction("quality_" + qualityProfile.name().toLowerCase(Locale.US) + "_requested_defaults_applied");
             refreshUiNow();
         });
         lightingButton = button("Lighting: " + lightingPreset.label);
@@ -897,9 +914,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         });
         renderPanel.addView(dynamicResolutionButton);
         msaaButton = button("", v -> {
-            actualSampleCount = actualSampleCount == 1 ? 2 : (actualSampleCount == 2 ? 4 : 1);
+            requestedSampleCount = requestedSampleCount == 1 ? 2 : (requestedSampleCount == 2 ? 4 : 1);
             applyQualityProfile();
-            setLastAction("msaa_" + actualSampleCount + "x");
+            setLastAction("msaa_requested_" + requestedSampleCount + "x_actual_" + actualSampleCount + "x");
             refreshUiNow();
         });
         renderPanel.addView(msaaButton);
@@ -1339,6 +1356,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (drawMs > 0.0f && drawMs < 1000.0f) frameMetricsDrawMs = smoothMetric(frameMetricsDrawMs, drawMs, 0.25f);
         frameMetricsSampleCount++;
         frameMetricsStatus = gpuMs > 0.0f ? "android_frame_metrics_gpu_duration_available" : "android_frame_metrics_gpu_duration_unavailable";
+        updateTimingTruthStatus();
     }
 
     private static float nanosToMs(long nanos) {
@@ -1390,6 +1408,28 @@ public class FilamentGlbPreviewActivity extends Activity {
         else frameBudgetStatus = "over_30fps_budget_jank_risk";
         updateSsrPerformanceWarning();
         smoothnessStatus = "target=" + presetTargetFps() + "fps javaCallback=" + oneDecimal(rollingFps) + "fps estimatedVisible=" + oneDecimal(visibleSmoothFps) + "fps p95=" + oneDecimal(p95FrameMs) + "ms";
+        updateTimingTruthStatus();
+    }
+
+    private void updateTimingTruthStatus() {
+        float primaryFrameMs = primaryFrameMs();
+        float primaryFps = primaryFpsValue();
+        if (frameMetricsSampleCount >= 6L && frameMetricsTotalMs > 0.0f) {
+            primaryFpsSource = "android_framemetrics_total_duration";
+        } else if (p95FrameMs > 0.0f) {
+            primaryFpsSource = "estimated_visible_p95_frame_interval";
+        } else {
+            primaryFpsSource = "sampling_no_primary_fps_yet";
+        }
+        boolean disagreesWithJava = rollingFps > 0.0f && primaryFps > 0.0f && Math.abs(rollingFps - primaryFps) >= Math.max(12.0f, primaryFps * 0.35f);
+        boolean disagreesWithFrameMetrics = frameMetricsTotalMs > 0.0f && p95FrameMs > 0.0f && Math.abs(frameMetricsTotalMs - p95FrameMs) >= Math.max(8.0f, p95FrameMs * 0.35f);
+        timingDisagreement = disagreesWithJava || disagreesWithFrameMetrics;
+        timingDisagreementStatus = "timing_disagreement=" + timingDisagreement
+            + " primarySource=" + primaryFpsSource
+            + " primaryFps=" + oneDecimal(primaryFps)
+            + " primaryFrameMs=" + oneDecimal(primaryFrameMs)
+            + " javaCallbackFps=" + oneDecimal(rollingFps)
+            + " frameMetricsTotalMs=" + oneDecimal(frameMetricsTotalMs);
     }
 
     private void updateSsrPerformanceWarning() {
@@ -1428,6 +1468,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         ssrPerformanceWarning = ssrEnabled ? "enabled_after_counter_reset" : "off";
         frameBudgetStatus = "reset_waiting_for_samples";
         smoothnessStatus = "reset_waiting_for_samples";
+        timingDisagreement = false;
+        timingDisagreementStatus = "reset_waiting_for_samples";
     }
 
     private int presetTargetFps() {
@@ -2102,14 +2144,16 @@ public class FilamentGlbPreviewActivity extends Activity {
             com.google.android.filament.View.BloomOptions bloom = view.getBloomOptions();
             com.google.android.filament.View.DynamicResolutionOptions dynamic = view.getDynamicResolutionOptions();
             com.google.android.filament.View.RenderQuality renderQuality = view.getRenderQuality();
-            actualSampleCount = sanitizeMsaa(actualSampleCount);
+            requestedSampleCount = sanitizeMsaa(requestedSampleCount);
+            requestedDynamicResolution = dynamicResolutionEnabled;
+            requestedTaa = taaEnabled;
             aoEnabled = aoMode != AoMode.OFF;
             bloomEnabled = bloomMode != BloomMode.OFF;
             shadowsEnabled = shadowMode != ShadowMode.OFF;
             refractionEnabled = refractionMode != RefractionMode.OFF;
             if (qualityProfile == FilamentQualityProfile.LOW) {
                 view.setAntiAliasing(AntiAliasing.NONE);
-                view.setSampleCount(actualSampleCount);
+                view.setSampleCount(requestedSampleCount);
                 view.setAmbientOcclusion(aoEnabled ? AmbientOcclusion.SSAO : AmbientOcclusion.NONE);
                 view.setShadowingEnabled(shadowsEnabled);
                 view.setScreenSpaceRefractionEnabled(refractionEnabled);
@@ -2122,11 +2166,10 @@ public class FilamentGlbPreviewActivity extends Activity {
                 dynamic.maxScale = Math.max(dynamic.minScale, Math.min(0.82f, renderScale));
                 dynamic.quality = QualityLevel.LOW;
                 renderQuality.hdrColorBuffer = QualityLevel.LOW;
-                setActualQualityStatus("NONE", actualSampleCount, 0.58f, dynamic.maxScale, "low_quality_only_dynamic_safe");
+                setActualQualityStatus("NONE", requestedSampleCount, 0.58f, dynamic.maxScale, "low_quality_only_dynamic_safe");
             } else if (qualityProfile == FilamentQualityProfile.HIGH_PREVIEW || qualityProfile == FilamentQualityProfile.ULTRA_PREVIEW) {
                 view.setAntiAliasing(fxaaEnabled ? AntiAliasing.FXAA : AntiAliasing.NONE);
-                if (qualityProfile == FilamentQualityProfile.ULTRA_PREVIEW && actualSampleCount < 4) actualSampleCount = 4;
-                view.setSampleCount(actualSampleCount);
+                view.setSampleCount(requestedSampleCount);
                 view.setAmbientOcclusion(aoEnabled ? AmbientOcclusion.SSAO : AmbientOcclusion.NONE);
                 view.setShadowingEnabled(shadowsEnabled);
                 view.setScreenSpaceRefractionEnabled(refractionEnabled);
@@ -2139,10 +2182,10 @@ public class FilamentGlbPreviewActivity extends Activity {
                 dynamic.maxScale = qualityProfile == FilamentQualityProfile.ULTRA_PREVIEW ? 1.00f : Math.max(dynamic.minScale, renderScale);
                 dynamic.quality = QualityLevel.MEDIUM;
                 renderQuality.hdrColorBuffer = QualityLevel.HIGH;
-                setActualQualityStatus(fxaaEnabled ? "FXAA" : "NONE", actualSampleCount, dynamic.minScale, dynamic.maxScale, qualityProfile.name().toLowerCase(Locale.US) + "_quality_only");
+                setActualQualityStatus(fxaaEnabled ? "FXAA" : "NONE", requestedSampleCount, dynamic.minScale, dynamic.maxScale, qualityProfile.name().toLowerCase(Locale.US) + "_quality_only");
             } else {
                 view.setAntiAliasing(fxaaEnabled ? AntiAliasing.FXAA : AntiAliasing.NONE);
-                view.setSampleCount(actualSampleCount);
+                view.setSampleCount(requestedSampleCount);
                 view.setAmbientOcclusion(aoEnabled ? AmbientOcclusion.SSAO : AmbientOcclusion.NONE);
                 view.setShadowingEnabled(shadowsEnabled);
                 view.setScreenSpaceRefractionEnabled(refractionEnabled);
@@ -2155,11 +2198,13 @@ public class FilamentGlbPreviewActivity extends Activity {
                 dynamic.maxScale = Math.max(dynamic.minScale, renderScale);
                 dynamic.quality = QualityLevel.MEDIUM;
                 renderQuality.hdrColorBuffer = QualityLevel.MEDIUM;
-                setActualQualityStatus(fxaaEnabled ? "FXAA" : "NONE", actualSampleCount, 0.72f, dynamic.maxScale, "medium_quality_only_dynamic_safe");
+                setActualQualityStatus(fxaaEnabled ? "FXAA" : "NONE", requestedSampleCount, 0.72f, dynamic.maxScale, "medium_quality_only_dynamic_safe");
             }
             view.setAmbientOcclusionOptions(ao);
             view.setBloomOptions(bloom);
             view.setDynamicResolutionOptions(dynamic);
+            actualDynamicResolution = dynamic.enabled;
+            dynamicResolutionApplyStatus = requestedDynamicResolution == actualDynamicResolution ? "applied_live" : "requested_" + requestedDynamicResolution + "_actual_" + actualDynamicResolution;
             view.setRenderQuality(renderQuality);
             view.setDithering(ditheringEnabled ? Dithering.TEMPORAL : Dithering.NONE);
             ditheringStatus = ditheringEnabled ? "TEMPORAL" : "NONE";
@@ -2170,14 +2215,70 @@ public class FilamentGlbPreviewActivity extends Activity {
             applyFogOptions();
             applyColorGrading();
             applyLightingValues();
+            updatePresetMismatchStatus();
             persistWorkspaceSettings();
         } catch (Throwable t) {
             lastLifecycleError = shortMessage(t);
             qualityFeatureStatus = "apply_failed";
+            msaaApplyStatus = "apply_failed: " + shortMessage(t);
         }
         if (qualityButton != null) qualityButton.setText("Quality: " + qualityProfile.label);
         updateAllSliderLabels();
         updateToggleLabels();
+    }
+
+    private void applyQualityProfileDefaults(String reason) {
+        if (qualityProfile == FilamentQualityProfile.LOW) {
+            requestedSampleCount = 1;
+            dynamicResolutionEnabled = true;
+            renderScale = Math.min(renderScale, 0.82f);
+            fxaaEnabled = false;
+            taaEnabled = false;
+            ssrEnabled = false;
+            ditheringEnabled = true;
+            aoMode = AoMode.OFF;
+            bloomMode = BloomMode.OFF;
+            shadowMode = ShadowMode.OFF;
+        } else if (qualityProfile == FilamentQualityProfile.MEDIUM) {
+            requestedSampleCount = Math.min(sanitizeMsaa(requestedSampleCount), 2);
+            dynamicResolutionEnabled = true;
+            renderScale = Math.min(Math.max(renderScale, 0.72f), 0.95f);
+            fxaaEnabled = true;
+            taaEnabled = false;
+            ssrEnabled = false;
+            ditheringEnabled = true;
+            if (aoMode == AoMode.DEBUG_MAX) aoMode = AoMode.MEDIUM;
+            if (bloomMode == BloomMode.HIGH) bloomMode = BloomMode.MEDIUM;
+        } else if (qualityProfile == FilamentQualityProfile.HIGH_PREVIEW) {
+            requestedSampleCount = Math.max(2, sanitizeMsaa(requestedSampleCount));
+            dynamicResolutionEnabled = true;
+            renderScale = Math.max(renderScale, 0.90f);
+            fxaaEnabled = true;
+            ditheringEnabled = true;
+            ssrEnabled = false;
+        } else {
+            requestedSampleCount = 4;
+            dynamicResolutionEnabled = false;
+            renderScale = 1.0f;
+            fxaaEnabled = true;
+            ditheringEnabled = true;
+        }
+        bloomStrength = defaultBloomStrength(bloomMode);
+        bloomHighlight = defaultBloomHighlight(bloomMode);
+        resetSsrPerformanceBaseline();
+        qualityFeatureStatus = "profile_defaults_requested_" + reason;
+    }
+
+    private void updatePresetMismatchStatus() {
+        boolean mismatch = false;
+        if (qualityProfile == FilamentQualityProfile.LOW) {
+            mismatch = requestedSampleCount != 1 || ssrEnabled || taaEnabled || aoMode != AoMode.OFF || bloomMode != BloomMode.OFF || shadowMode != ShadowMode.OFF || renderScale > 0.82f;
+        } else if (qualityProfile == FilamentQualityProfile.MEDIUM) {
+            mismatch = requestedSampleCount > 2 || ssrEnabled || aoMode == AoMode.DEBUG_MAX || bloomMode == BloomMode.HIGH;
+        } else if (qualityProfile == FilamentQualityProfile.ULTRA_PREVIEW) {
+            mismatch = requestedSampleCount < 4 || renderScale < 1.0f || dynamicResolutionEnabled;
+        }
+        presetMismatchStatus = String.valueOf(mismatch);
     }
 
     private void applyAoOptions(com.google.android.filament.View.AmbientOcclusionOptions ao, QualityLevel quality) {
@@ -2287,6 +2388,9 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void setActualQualityStatus(String aa, int sampleCount, float minScale, float maxScale, String status) {
         actualAA = aa;
         actualSampleCount = sampleCount;
+        msaaApplyStatus = requestedSampleCount == actualSampleCount
+            ? "applied_live_requested_" + requestedSampleCount + "x_actual_" + actualSampleCount + "x"
+            : "requested_" + requestedSampleCount + "x_actual_" + actualSampleCount + "x_requires_recreate_or_api_verification";
         dynamicMinScale = minScale;
         dynamicMaxScale = maxScale;
         qualityFeatureStatus = status + "_aoMode_" + aoMode.name() + "_bloomMode_" + bloomMode.name() + "_shadowsMode_" + shadowMode.name() + "_refractionMode_" + refractionMode.name();
@@ -2306,11 +2410,14 @@ public class FilamentGlbPreviewActivity extends Activity {
             taa.preventFlickering = true;
             taa.historyReprojection = true;
             view.setTemporalAntiAliasingOptions(taa);
+            actualTaa = taa.enabled;
+            taaApplyStatus = requestedTaa == actualTaa ? "applied_live" : "requested_" + requestedTaa + "_actual_" + actualTaa;
             taaStatus = taaEnabled
                 ? "enabled feedback=" + twoDecimal(taa.feedback) + " filterWidth=" + twoDecimal(taa.filterWidth)
                 : "off_mobile_safe_default";
         } catch (Throwable t) {
-            taaEnabled = false;
+            actualTaa = false;
+            taaApplyStatus = "not_exposed_or_failed: " + shortMessage(t);
             taaStatus = "not_exposed_or_failed: " + shortMessage(t);
         }
     }
@@ -2375,9 +2482,6 @@ public class FilamentGlbPreviewActivity extends Activity {
             engine.destroyColorGrading(colorGrading);
             colorGrading = null;
         }
-        colorContrast = colorMode.contrast;
-        colorSaturation = colorMode.saturation;
-        colorTemperature = colorMode.temperature;
         float tint = 0.0f;
         colorGrading = new ColorGrading.Builder()
             .quality(qualityProfile == FilamentQualityProfile.HIGH_PREVIEW ? ColorGrading.QualityLevel.MEDIUM : ColorGrading.QualityLevel.LOW)
@@ -2558,7 +2662,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         bloomStrength = prefs.getFloat(PREF_FILAMENT_BLOOM_STRENGTH, defaultBloomStrength(bloomMode));
         bloomHighlight = prefs.getFloat(PREF_FILAMENT_BLOOM_HIGHLIGHT, defaultBloomHighlight(bloomMode));
         dynamicResolutionEnabled = prefs.getBoolean(PREF_FILAMENT_DYNAMIC_RESOLUTION, true);
-        actualSampleCount = prefs.getInt(PREF_FILAMENT_MSAA_SAMPLES, 2);
+        requestedSampleCount = sanitizeMsaa(prefs.getInt(PREF_FILAMENT_MSAA_SAMPLES, 2));
+        actualSampleCount = requestedSampleCount;
         fxaaEnabled = prefs.getBoolean(PREF_FILAMENT_FXAA_ENABLED, true);
         taaEnabled = prefs.getBoolean(PREF_FILAMENT_TAA_ENABLED, false);
         ssrEnabled = prefs.getBoolean(PREF_FILAMENT_SSR_ENABLED, false);
@@ -2587,6 +2692,33 @@ public class FilamentGlbPreviewActivity extends Activity {
         colorSaturation = prefs.getFloat(PREF_FILAMENT_COLOR_SATURATION, colorMode.saturation);
         colorTemperature = prefs.getFloat(PREF_FILAMENT_COLOR_TEMPERATURE, colorMode.temperature);
         ambientFallbackIntensity = ambientToInternal(ambientUserIntensity);
+        normalizeLoadedSettingsForProfile("prefs_restore");
+    }
+
+    private void normalizeLoadedSettingsForProfile(String reason) {
+        requestedSampleCount = sanitizeMsaa(requestedSampleCount);
+        if (qualityProfile == FilamentQualityProfile.LOW) {
+            requestedSampleCount = 1;
+            ssrEnabled = false;
+            taaEnabled = false;
+            aoMode = AoMode.OFF;
+            bloomMode = BloomMode.OFF;
+            shadowMode = ShadowMode.OFF;
+            renderScale = Math.min(renderScale, 0.82f);
+            dynamicResolutionEnabled = true;
+            qualityFeatureStatus = "loaded_low_profile_safety_normalized_" + reason;
+        } else if (qualityProfile == FilamentQualityProfile.MEDIUM) {
+            requestedSampleCount = Math.min(requestedSampleCount, 2);
+            ssrEnabled = false;
+            if (aoMode == AoMode.DEBUG_MAX) aoMode = AoMode.MEDIUM;
+            if (bloomMode == BloomMode.HIGH) bloomMode = BloomMode.MEDIUM;
+            renderScale = Math.min(renderScale, 0.95f);
+            dynamicResolutionEnabled = true;
+            qualityFeatureStatus = "loaded_medium_profile_safety_normalized_" + reason;
+        }
+        actualSampleCount = requestedSampleCount;
+        requestedDynamicResolution = dynamicResolutionEnabled;
+        requestedTaa = taaEnabled;
     }
 
     private void persistWorkspaceSettings() {
@@ -2612,7 +2744,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             .putFloat(PREF_FILAMENT_BLOOM_STRENGTH, bloomStrength)
             .putFloat(PREF_FILAMENT_BLOOM_HIGHLIGHT, bloomHighlight)
             .putBoolean(PREF_FILAMENT_DYNAMIC_RESOLUTION, dynamicResolutionEnabled)
-            .putInt(PREF_FILAMENT_MSAA_SAMPLES, actualSampleCount)
+            .putInt(PREF_FILAMENT_MSAA_SAMPLES, requestedSampleCount)
             .putBoolean(PREF_FILAMENT_FXAA_ENABLED, fxaaEnabled)
             .putBoolean(PREF_FILAMENT_TAA_ENABLED, taaEnabled)
             .putBoolean(PREF_FILAMENT_SSR_ENABLED, ssrEnabled)
@@ -3064,6 +3196,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         sunGlareMode = SunGlareMode.OFF;
         dynamicResolutionEnabled = true;
         renderScale = 0.95f;
+        requestedSampleCount = 2;
         actualSampleCount = 2;
         fxaaEnabled = true;
         taaEnabled = false;
@@ -3173,13 +3306,22 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("schemaVersion", CONFIG_SCHEMA_VERSION);
             json.put("qualityProfile", qualityProfile.name());
             json.put("renderScale", renderScale);
+            json.put("requestedDynamicResolution", requestedDynamicResolution);
+            json.put("actualDynamicResolution", actualDynamicResolution);
+            json.put("dynamicResolutionApplyStatus", dynamicResolutionApplyStatus);
             json.put("dynamicResolutionEnabled", dynamicResolutionEnabled);
             json.put("dynamicMinScale", dynamicMinScale);
             json.put("dynamicMaxScale", dynamicMaxScale);
             json.put("aaMode", actualAA);
-            json.put("msaaSamples", actualSampleCount);
+            json.put("requestedMSAA", requestedSampleCount);
+            json.put("actualMSAA", actualSampleCount);
+            json.put("msaaApplyStatus", msaaApplyStatus);
+            json.put("msaaSamples", requestedSampleCount);
             json.put("taaSupported", true);
+            json.put("requestedTAA", requestedTaa);
+            json.put("actualTAA", actualTaa);
             json.put("taaEnabled", taaEnabled);
+            json.put("taaApplyStatus", taaApplyStatus);
             json.put("taaStatus", taaStatus);
             json.put("ssrSupported", true);
             json.put("ssrEnabled", ssrEnabled);
@@ -3240,6 +3382,20 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("activeIblName", iblFile);
             json.put("activeModelPath", modelCopiedPath);
             json.put("activeModelName", modelName);
+            json.put("presetMismatch", presetMismatchStatus);
+            json.put("javaCallbackFps", rollingFps);
+            json.put("estimatedVisibleFps", visibleSmoothFps);
+            json.put("frameMetricsTotalMs", frameMetricsTotalMs);
+            json.put("frameMetricsGpuMs", frameMetricsGpuMs);
+            json.put("frameMetricsSwapMs", frameMetricsSwapMs);
+            json.put("frameMetricsDrawMs", frameMetricsDrawMs);
+            json.put("worstMs", worstFrameMs);
+            json.put("p95Ms", p95FrameMs);
+            json.put("jankCount", jankFrameCounter);
+            json.put("slowCount", slowFrameCounter);
+            json.put("timing_disagreement", timingDisagreement);
+            json.put("primaryFpsSource", primaryFpsSource);
+            json.put("beginFrameStatus", beginFrameStatus);
         } catch (Throwable ignored) { }
         return json;
     }
@@ -3260,7 +3416,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         bloomStrength = (float) json.optDouble("bloomStrength", bloomStrength);
         bloomHighlight = (float) json.optDouble("bloomHighlight", bloomHighlight);
         dynamicResolutionEnabled = json.optBoolean("dynamicResolutionEnabled", dynamicResolutionEnabled);
-        actualSampleCount = sanitizeMsaa(json.optInt("msaaSamples", actualSampleCount));
+        requestedSampleCount = sanitizeMsaa(json.optInt("requestedMSAA", json.optInt("msaaSamples", requestedSampleCount)));
+        actualSampleCount = requestedSampleCount;
         fxaaEnabled = json.optBoolean("fxaaEnabled", fxaaEnabled);
         taaEnabled = json.optBoolean("taaEnabled", taaEnabled);
         ssrEnabled = json.optBoolean("ssrEnabled", ssrEnabled);
@@ -3295,6 +3452,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         modelOffsetZ = (float) json.optDouble("modelOffsetZ", modelOffsetZ);
         panelCollapsed = json.optBoolean("panelCollapsed", panelCollapsed);
         activeTab = enumValue(WorkspaceTab.class, json.optString("lastSelectedTab"), activeTab);
+        normalizeLoadedSettingsForProfile("config_load_schema_" + loadedConfigVersion);
         String loadedModel = json.optString("activeModelPath", "");
         if (!loadedModel.isEmpty() && new File(loadedModel).isFile()) {
             modelPath = loadedModel;
@@ -3341,12 +3499,12 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private void updateHud() {
         if (hudView != null) {
-            hudView.setText("Renderer: Filament | GLB: gltfio | FPS " + estimatedVisibleFpsHud()
-                + " | frame " + oneDecimal(estimatedVisibleFrameMs()) + " ms"
+            hudView.setText("FPS " + primaryFpsHud()
+                + " | frame " + oneDecimal(primaryFrameMs()) + " ms"
                 + " | p95 " + oneDecimal(p95FrameMs) + " ms"
                 + " | " + renderHealthLabel()
                 + " | " + qualityProfile.label
-                + mainHudExpensiveFeatureLabel());
+                + " | cause: " + performanceDoctorCause());
         }
         if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
         if (assetsSummaryView != null) {
@@ -3358,9 +3516,11 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nCopy/import: " + importCopyStatus);
         }
         if (qualitySummaryView != null) {
-            qualitySummaryView.setText("actualAA=" + actualAA + " sampleCount=" + actualSampleCount
-                + "\ndynamicResolutionEnabled=" + dynamicResolutionEnabled
+            qualitySummaryView.setText("actualAA=" + actualAA + " requestedMSAA=" + requestedSampleCount + "x actualMSAA=" + actualSampleCount + "x"
+                + "\nmsaaApplyStatus=" + msaaApplyStatus
+                + "\nrequestedDynamicResolution=" + requestedDynamicResolution + " actualDynamicResolution=" + actualDynamicResolution + " status=" + dynamicResolutionApplyStatus
                 + "\nrenderScale=" + twoDecimal(renderScale) + " dynamicScale=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
+                + "\nrequestedTAA=" + requestedTaa + " actualTAA=" + actualTaa + " taaApplyStatus=" + taaApplyStatus
                 + "\ntaaSupported=true taaEnabled=" + taaEnabled + " taaStatus=" + taaStatus
                 + "\nssrSupported=true ssrEnabled=" + ssrEnabled + " ssrStatus=" + ssrStatus + (ssrEnabled ? " WARNING_manual_heavy_mobile" : "")
                 + "\nssrPerformanceWarning=" + ssrPerformanceWarning
@@ -3370,6 +3530,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nditheringStatus=" + ditheringStatus + " guardBandStatus=" + guardBandStatus
                 + "\nsunGlareMode=" + sunGlareMode.name() + " sunGlareStatus=" + sunGlareStatus
                 + "\nvisibleEstimate=" + visualSmoothnessLabel() + " targetFps=" + presetTargetFps()
+                + "\nprimaryFpsSource=" + primaryFpsSource + " timing_disagreement=" + timingDisagreement
                 + "\nframeMs current=" + oneDecimal(rollingFrameMs) + " avg=" + oneDecimal(avgFrameMs) + " min=" + oneDecimal(minFrameMs) + " max=" + oneDecimal(maxFrameMs) + " p95=" + oneDecimal(p95FrameMs) + " worst=" + oneDecimal(worstFrameMs)
                 + "\nframeStatus=" + renderHealthLabel() + " frameBudget=" + frameBudgetStatus + " slow=" + slowFrameCounter + " jank=" + jankFrameCounter
                 + "\nanisotropicFiltering=not_exposed textureLodBias=not_exposed"
@@ -3461,14 +3622,19 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (statusView != null) {
             statusView.setText(capabilityStatusTable()
                 + "\n\nPerformance:"
+                + "\nPrimary HUD FPS: " + primaryFpsHud()
+                + "\nPrimary FPS source: " + primaryFpsSource
                 + "\nEstimated visible FPS: " + estimatedVisibleFpsHud()
-                + "\nJava callback FPS: " + oneDecimal(rollingFps)
+                + "\nJava callback FPS debug-only: " + oneDecimal(rollingFps)
                 + "\nCurrent frame ms: " + oneDecimal(rollingFrameMs)
                 + "\nAvg frame ms: " + oneDecimal(avgFrameMs)
                 + "\np95 frame ms: " + oneDecimal(p95FrameMs)
                 + "\nWorst frame ms: " + oneDecimal(worstFrameMs)
                 + "\nJank count: " + jankFrameCounter
                 + "\nSlow count: " + slowFrameCounter
+                + "\nFrameMetrics slow/jank count: " + frameMetricsSlowCount + "/" + frameMetricsJankCount
+                + "\ntiming_disagreement: " + timingDisagreement
+                + "\ntiming_disagreement_status: " + timingDisagreementStatus
                 + "\nRender status: " + renderHealthLabel()
                 + "\nCurrent quality profile: " + qualityProfile.label
                 + "\nRender CPU submit approx ms: " + oneDecimal(rollingRenderCpuMs)
@@ -3477,6 +3643,8 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nAndroid FrameMetrics status: " + frameMetricsStatus + " samples=" + frameMetricsSampleCount
                 + "\nFrameMetrics total/draw/swap/GPU ms: " + oneDecimal(frameMetricsTotalMs) + "/" + oneDecimal(frameMetricsDrawMs) + "/" + oneDecimal(frameMetricsSwapMs) + "/" + gpuMetricLabel()
                 + "\nGPU timing status: " + gpuTimingStatus()
+                + "\nbeginFrame status: " + beginFrameStatus
+                + "\nbeginFrame allowed/skipped/rendered/renderedFps: " + beginFrameAllowedCount + "/" + beginFrameSkippedCount + "/" + renderedFrameCount + "/" + oneDecimal(renderedFps)
                 + "\ngfxinfo command: " + GFXINFO_FRAMESTATS_COMMAND
                 + "\nPerfetto/AGI status: external_deferred"
                 + "\n\nExpensive feature warnings:"
@@ -3499,7 +3667,9 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nfallbackReason=" + fallbackReason
                 + "\nenvironmentMode=" + environmentMode + " activeIbl=" + shorten(futureIblAssetPath, 72)
                 + "\nQuality: " + qualityFeatureStatus
-                + "\nactualAA=" + actualAA + " actualMSAA=" + actualSampleCount + "x actualDynamicResolution=" + dynamicResolutionEnabled + " actualRenderScale=" + twoDecimal(renderScale) + " dynamicScale=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
+                + "\nrequestedMSAA=" + requestedSampleCount + "x actualMSAA=" + actualSampleCount + "x msaaApplyStatus=" + msaaApplyStatus
+                + "\nrequestedDynamicResolution=" + requestedDynamicResolution + " actualDynamicResolution=" + actualDynamicResolution + " dynamicResolutionApplyStatus=" + dynamicResolutionApplyStatus + " actualRenderScale=" + twoDecimal(renderScale) + " dynamicScale=" + twoDecimal(dynamicMinScale) + "-" + twoDecimal(dynamicMaxScale)
+                + "\nrequestedTAA=" + requestedTaa + " actualTAA=" + actualTaa + " taaApplyStatus=" + taaApplyStatus
                 + "\ntaaSupported=true taaEnabled=" + taaEnabled + " taaStatus=" + taaStatus
                 + "\nssrSupported=true ssrEnabled=" + ssrEnabled + " ssrStatus=" + ssrStatus + (ssrEnabled ? " WARNING_manual_heavy_mobile" : "")
                 + "\nssrPerformanceWarning=" + ssrPerformanceWarning
@@ -3523,6 +3693,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nconfigPrivateSaved=" + configPrivateSaved + " configExportSaved=" + configExportSaved + " lastConfigError=" + lastConfigError
                 + "\nlastConfigLoadSource=" + lastConfigLoadSource + " lastConfigSaveTimestamp=" + lastConfigSaveTimestamp + " loadedConfigVersion=" + loadedConfigVersion
                 + "\nconfigStatus=" + configStatus + " lastActionStatus=" + lastActionStatus
+                + "\npresetMismatch=" + presetMismatchStatus
                 + "\nmaterialInspectorStatus=" + materialInspectorStatus + " materialCount=" + materialCount
                 + "\nimportCopyStatus=" + importCopyStatus
                 + "\nscanDownloadStatus=" + scanDownloadStatus + " copied/skipped/failed=" + scanCopiedCount + "/" + scanSkippedCount + "/" + scanFailedCount
@@ -3575,6 +3746,23 @@ public class FilamentGlbPreviewActivity extends Activity {
         return frameMetricsGpuMs > 0.0f ? oneDecimal(frameMetricsGpuMs) : "unavailable";
     }
 
+    private float primaryFrameMs() {
+        if (frameMetricsSampleCount >= 6L && frameMetricsTotalMs > 0.0f) return frameMetricsTotalMs;
+        if (frameWindowCount > 0 && p95FrameMs > 0.0f) return p95FrameMs;
+        return rollingFrameMs;
+    }
+
+    private float primaryFpsValue() {
+        float frameMs = primaryFrameMs();
+        return frameMs > 0.0f ? 1000.0f / Math.max(1.0f, frameMs) : 0.0f;
+    }
+
+    private String primaryFpsHud() {
+        float fps = primaryFpsValue();
+        if (fps <= 0.0f) return "sampling";
+        return String.valueOf(Math.max(1, Math.round(fps)));
+    }
+
     private String estimatedVisibleFpsHud() {
         if (frameWindowCount <= 0) return "sampling";
         return String.valueOf(Math.max(1, Math.round(visibleSmoothFps)));
@@ -3593,11 +3781,6 @@ public class FilamentGlbPreviewActivity extends Activity {
         return "GOOD";
     }
 
-    private String mainHudExpensiveFeatureLabel() {
-        String warnings = expensiveFeatureWarningsCsv();
-        return warnings.isEmpty() ? "" : " | costly: " + warnings;
-    }
-
     private String expensiveFeatureWarningsCsv() {
         List<String> warnings = new ArrayList<>();
         if (ssrEnabled) warnings.add("SSR");
@@ -3606,6 +3789,18 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (taaEnabled) warnings.add("TAA");
         if (actualSampleCount >= 4) warnings.add("MSAA " + actualSampleCount + "x");
         return joinLabels(warnings, ", ");
+    }
+
+    private String performanceDoctorCause() {
+        String warnings = expensiveFeatureWarningsCsv();
+        String health = renderHealthLabel();
+        if (!warnings.isEmpty()) return warnings;
+        if (("BAD".equals(health) || "JANK".equals(health)) && qualityProfile == FilamentQualityProfile.LOW) {
+            if (frameMetricsGpuMs > 0.0f || frameMetricsSwapMs > 22.2f) return "GPU timing / heavy model / high resolution / unknown needs profiling";
+            return "heavy model / high resolution / GPU timing / unknown needs profiling";
+        }
+        if (timingDisagreement) return "timing_disagreement needs profiling";
+        return "none";
     }
 
     private String expensiveFeatureWarningsDebug() {
@@ -3650,8 +3845,8 @@ public class FilamentGlbPreviewActivity extends Activity {
             + "\nTAA: " + (taaEnabled ? statusKind(taaStatus) : "off")
             + "\nSSR: " + (ssrEnabled ? "applied_manual_warning" : "off")
             + "\nDithering: " + ("NONE".equals(ditheringStatus) ? "off" : "applied")
-            + "\nDynamic Resolution: " + (dynamicResolutionEnabled ? "applied" : "off")
-            + "\nMSAA: applied_" + actualSampleCount + "x"
+            + "\nDynamic Resolution: requested_" + requestedDynamicResolution + "_actual_" + actualDynamicResolution + "_" + dynamicResolutionApplyStatus
+            + "\nMSAA: requested_" + requestedSampleCount + "x_actual_" + actualSampleCount + "x_" + msaaApplyStatus
             + "\nLight Rig: " + (lightRig == LightRig.OFF ? "off" : statusKind(lightRigStatus))
             + "\nSun glare: " + statusKind(sunGlareStatus)
             + "\nMaterial Inspector: " + statusKind(materialInspectorStatus)
@@ -3691,6 +3886,17 @@ public class FilamentGlbPreviewActivity extends Activity {
         slider.setProgress(valueToProgress(value, min, max, step));
         SliderBinding binding = new SliderBinding(text, slider, label, min, max, step);
         sliderBindings.add(binding);
+        slider.setOnTouchListener((view, event) -> {
+            if (view.getParent() != null) {
+                boolean dragging = event.getActionMasked() == MotionEvent.ACTION_DOWN || event.getActionMasked() == MotionEvent.ACTION_MOVE;
+                view.getParent().requestDisallowInterceptTouchEvent(dragging);
+            }
+            if (workspaceScroll != null) {
+                boolean dragging = event.getActionMasked() == MotionEvent.ACTION_DOWN || event.getActionMasked() == MotionEvent.ACTION_MOVE;
+                workspaceScroll.requestDisallowInterceptTouchEvent(dragging);
+            }
+            return false;
+        });
         slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -3698,14 +3904,19 @@ public class FilamentGlbPreviewActivity extends Activity {
                 float newValue = progressToValue(progress, min, max, step);
                 setSliderLabel(text, label, newValue);
                 callback.onValue(newValue);
+                refreshUiNow();
             }
 
             @Override
             public void onStartTrackingTouch(SeekBar seekBar) {
+                if (workspaceScroll != null) workspaceScroll.requestDisallowInterceptTouchEvent(true);
             }
 
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
+                if (workspaceScroll != null) workspaceScroll.requestDisallowInterceptTouchEvent(false);
+                persistWorkspaceSettings();
+                refreshUiNow();
             }
         });
         if ("Sun".equals(label)) sunSliderLabel = text;
@@ -3755,10 +3966,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (shadowsButton != null) shadowsButton.setText(shadowMode.label);
         if (refractionButton != null) refractionButton.setText(refractionMode.label);
         if (dynamicResolutionButton != null) dynamicResolutionButton.setText("Dynamic Resolution: " + (dynamicResolutionEnabled ? "On" : "Off"));
-        if (msaaButton != null) msaaButton.setText("MSAA: " + actualSampleCount + "x");
+        if (msaaButton != null) msaaButton.setText("MSAA: req " + requestedSampleCount + "x / actual " + actualSampleCount + "x");
         if (fxaaButton != null) fxaaButton.setText("FXAA: " + (fxaaEnabled ? "On" : "Off"));
         if (ditheringButton != null) ditheringButton.setText("Dithering: " + (ditheringEnabled ? "On" : "Off"));
-        if (taaButton != null) taaButton.setText("TAA: " + (taaEnabled ? "On" : "Off"));
+        if (taaButton != null) taaButton.setText("TAA: req " + (taaEnabled ? "On" : "Off") + " / actual " + (actualTaa ? "On" : "Off"));
         if (ssrButton != null) ssrButton.setText("SSR: " + (ssrEnabled ? "On" : "Off"));
         if (sunGlareButton != null) sunGlareButton.setText(sunGlareMode.label);
         if (colorModeButton != null) colorModeButton.setText("Color Mode: " + colorMode.label);

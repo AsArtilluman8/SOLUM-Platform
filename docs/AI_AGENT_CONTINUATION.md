@@ -4,6 +4,16 @@ Status: public continuation guide for Codex and other code agents.
 
 This file is the first stop for AI/code agents continuing work on SOLUM.
 
+## Mandatory local gate
+
+Every agent task should start with:
+
+```bash
+bash tools/agent_gate.sh
+```
+
+Manual bypass is allowed only if the tools are missing/broken or the task is explicitly about fixing the tools. If skipped, the final report must include `Tools skipped: reason`.
+
 ## Current project truth
 
 SOLUM is an early-stage mobile-first game engine and creative toolchain. The current active foundation is Android + Filament renderer/editor work.
@@ -60,6 +70,13 @@ Quality profiles must apply real render state.
 - `docs/roadmap/SOLUM_ROADMAP.md`
 - `BUILD.md`
 - `docs/TESTING.md`
+- `AGENTS.md`
+- `solum_agent_state.json`
+- `tools/agent_gate.sh`
+- `tools/agent_context.sh`
+- `tools/agent_repo_health.sh`
+- `tools/agent_control_truth_static_check.py`
+- `tools/agent_build_report.sh`
 
 ## Build command shape
 

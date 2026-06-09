@@ -10,6 +10,28 @@
 - кратко;
 - без воды.
 
+## Mandatory agent tools
+
+Каждая agent-задача должна начинаться с:
+
+```bash
+bash tools/agent_gate.sh
+```
+
+Manual bypass разрешён только если tools отсутствуют/сломаны или задача явно про исправление этих tools.
+
+Если tools пропущены, финальный отчёт обязан включать:
+
+```text
+Tools skipped: reason.
+```
+
+Постоянные напоминания:
+- не использовать Java callback FPS как primary FPS;
+- не заявлять planned systems как implemented;
+- не добавлять visual features до control truth;
+- не раскрывать private user/device/account details.
+
 ## Low-Chatter Mode
 
 Если пользователь включает LOW-CHATTER MODE:

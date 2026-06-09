@@ -1,6 +1,7 @@
 tools/vulkan_caps/vulkan_caps
 
 _work/
+_build/
 
 __pycache__/
 *.pyc

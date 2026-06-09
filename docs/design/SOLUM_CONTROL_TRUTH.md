@@ -50,6 +50,12 @@ actualColorValue
 
 The same pattern should apply to Bloom, AO, SSR, shadows, fog, render scale, tone/color, and other user-facing controls.
 
+## Static support check
+
+`tools/agent_control_truth_static_check.py` is a lightweight static support tool for agents. It checks whether key requested/actual diagnostics terms exist in `FilamentGlbPreviewActivity.java`.
+
+This is not runtime proof. APK testing is still required for touch behavior, visible rendering changes, FrameMetrics availability, and device-specific Filament behavior.
+
 ## Quality profile truth
 
 A quality profile is not just a label.

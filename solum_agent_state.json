@@ -1,0 +1,63 @@
+{
+  "active_patch": "P47",
+  "priority": "control_truth_fps_truth_agent_tools",
+  "main_file": "apps/engine/src/main/java/com/solum/engine/FilamentGlbPreviewActivity.java",
+  "key_docs": [
+    "docs/AI_AGENT_CONTINUATION.md",
+    "docs/design/SOLUM_CONTROL_TRUTH.md",
+    "docs/TESTING.md",
+    "BUILD.md",
+    "docs/roadmap/SOLUM_ROADMAP.md",
+    "docs/design/SOLUM_RENDER_FOUNDATION_PLAN.md",
+    "docs/audits/FILAMENT_RUNTIME_FORENSICS.md",
+    "docs/audits/FILAMENT_API_SURFACE_AUDIT.md"
+  ],
+  "build_command": [
+    "bash",
+    "tools/build_native_engine.sh",
+    "gradle",
+    "--no-daemon",
+    "-p",
+    "$PWD",
+    "clean",
+    "assembleDebug"
+  ],
+  "expected_apk": "apps/engine/build/outputs/apk/debug/engine-debug.apk",
+  "do_not": [
+    "do not use Java callback FPS as primary FPS",
+    "do not claim planned systems as implemented",
+    "do not add visual features before control truth",
+    "do not expose private user/device/account details",
+    "do not add external agent frameworks or heavy dependencies",
+    "do not integrate an agent into the Android APK"
+  ],
+  "required_report": [
+    "tools used yes/no",
+    "tools skipped reason if skipped",
+    "changed files",
+    "build result",
+    "build_summary.json path",
+    "APK path",
+    "commit SHA",
+    "controls fixed",
+    "controls requiring recreate",
+    "MSAA live switching result",
+    "TAA result",
+    "Color slider result",
+    "FPS primary source used",
+    "beginFrame/renderedFps accessibility",
+    "remaining limitations",
+    "next recommended patch"
+  ],
+  "current_near_term_order": [
+    "P47B",
+    "P48",
+    "P49",
+    "P50",
+    "P51",
+    "P52",
+    "P53",
+    "P54",
+    "P55"
+  ]
+}

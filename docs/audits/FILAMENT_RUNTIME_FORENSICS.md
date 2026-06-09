@@ -121,3 +121,39 @@ adb shell dumpsys gfxinfo com.solum.engine framestats
 - SSR: marked expensive and not trusted by callback FPS alone.
 
 Until profiler evidence exists, GPU timing remains `not_exposed/deferred`.
+
+## P47B FPS Truth v2
+
+Primary HUD FPS must be conservative and game-facing:
+
+- prefer Android `FrameMetrics.TOTAL_DURATION` when enough valid samples exist;
+- otherwise use p95-based estimated visible FPS;
+- never use Java callback FPS as primary FPS.
+
+Debug diagnostics must keep Java callback FPS visible as `debug-only`, alongside:
+
+- `estimatedVisibleFps`;
+- `frameMetricsTotalMs`;
+- `frameMetricsGpuMs` when Android exposes non-zero GPU duration;
+- `frameMetricsSwapMs`;
+- `frameMetricsDrawMs`;
+- `worstMs`;
+- `p95Ms`;
+- `jankCount`;
+- `slowCount`;
+- `timing_disagreement`.
+
+`timing_disagreement=true` means Java callback FPS, p95 estimate, or FrameMetrics total disagree strongly enough that the HUD should not be treated as profiler-grade proof.
+
+### beginFrame / renderedFps status
+
+Current SOLUM uses `ModelViewer.render(frameTimeNanos)` from the Java Activity path. In this path, explicit Filament `Renderer.beginFrame()` allowed/skipped counters and rendered frame count are not accessible without replacing or refactoring the render loop.
+
+Current status:
+
+```text
+beginFrame not accessible in current ModelViewer path without render loop refactor.
+renderedFps not available without render loop refactor.
+```
+
+Do not fake beginFrame or renderedFps data.

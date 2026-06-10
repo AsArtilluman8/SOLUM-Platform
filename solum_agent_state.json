@@ -1,6 +1,6 @@
 {
-  "active_patch": "P52",
-  "priority": "environment_asset_pipeline_starter_pack",
+  "active_patch": "P54A",
+  "priority": "private_asset_safety_gate",
   "main_file": "apps/engine/src/main/java/com/solum/engine/FilamentGlbPreviewActivity.java",
   "key_docs": [
     "docs/AI_AGENT_CONTINUATION.md",
@@ -16,6 +16,9 @@
     "docs/assets/SOLUM_ENVIRONMENT_ASSETS.md",
     "assets/env/ENVIRONMENT_ASSETS_MANIFEST.json",
     "tools/env_asset_manifest_check.py",
+    "tools/check_no_paid_assets.py",
+    "docs/legal/ASSET_POLICY.md",
+    "docs/research/ULTRA_DYNAMIC_SKY_AUDIT.md",
     "docs/design/SOLUM_MALI_RENDER_OPTIMIZATION_RULES.md",
     "docs/design/SOLUM_RENDER_FOUNDATION_PLAN.md",
     "docs/audits/FILAMENT_RUNTIME_FORENSICS.md",
@@ -39,6 +42,9 @@
     "do not claim planned systems as implemented",
     "do not add visual features before control truth",
     "do not expose private user/device/account details",
+    "never commit purchased Unreal/Fab/Marketplace assets",
+    "use private asset pipeline for local paid assets",
+    "no Gradle/APK build required for P54A",
     "do not add external agent frameworks or heavy dependencies",
     "do not integrate an agent into the Android APK"
   ],
@@ -84,6 +90,7 @@
     "quality must not be reduced to save tokens"
   ],
   "current_near_term_order": [
+    "P54A",
     "P52",
     "P53",
     "P54",

@@ -3,6 +3,19 @@ tools/vulkan_caps/vulkan_caps
 _work/
 _build/
 
+/private_assets/*
+!private_assets/README.md
+/_private_assets/
+/local_assets/
+/apps/engine/src/main/assets/private_env/
+/apps/engine/src/main/assets/private_weather/
+/apps/engine/src/main/assets/private_premium/
+*.uasset
+*.umap
+*.uexp
+*.ubulk
+*.uplugin
+
 __pycache__/
 *.pyc
 

@@ -24,26 +24,27 @@ Do not claim planned systems are implemented.
 
 ## Current priority order
 
-1. P52 Environment Asset Pipeline + HDRI/IBL/Skybox Starter Pack.
-2. P53 Scene Workspace / multi-model scene.
-3. P54 Asset Shelf.
-4. P55 Transform Gizmo.
-5. P56 Animation Preview.
-6. P57 Scene Save/Load.
-7. Labs and package/agent systems later.
+1. P54A Private Asset Safety Gate.
+2. P52 Environment Asset Pipeline + HDRI/IBL/Skybox Starter Pack.
+3. P53 Scene Workspace / multi-model scene.
+4. P54 Asset Shelf.
+5. P55 Transform Gizmo.
+6. P56 Animation Preview.
+7. P57 Scene Save/Load.
+8. Labs and package/agent systems later.
 
 ## Active near-term patch
 
 Current near-term work:
 
 ```text
-P52 — Environment Asset Pipeline + HDRI/IBL/Skybox Starter Pack
+P54A — Private Asset Safety Gate
 ```
 
 Main goal:
 
 ```text
-P51 created `EnvironmentApi`, time of day, sun/moon intent, IBL/skybox slots, stars placeholder state, fallback, and diagnostics. P52 adds source/license manifest, asset paths, validation tooling, and safe loader slots. Actual KTX assets remain P52B if `cmgen`/`toktx` are unavailable.
+Add repo safety infrastructure so purchased Unreal/Fab/Marketplace assets can be used locally without being committed to public GitHub.
 ```
 
 ## Important rules
@@ -59,6 +60,9 @@ P51 created `EnvironmentApi`, time of day, sun/moon intent, IBL/skybox slots, st
 - Do not fake applied state if a setting is requested-only or requires recreate.
 - Cost diagnostics are estimated until a future cost probe/profiler exists.
 - Keep public docs free of private user/device/account details.
+- Never commit purchased Unreal, Fab, or Marketplace assets.
+- Use the private asset pipeline for local paid assets.
+- P54A requires no Gradle/APK build; use only lightweight repo checks.
 
 ## Key files
 
@@ -91,6 +95,9 @@ P51 created `EnvironmentApi`, time of day, sun/moon intent, IBL/skybox slots, st
 - `docs/assets/SOLUM_ENVIRONMENT_ASSETS.md`
 - `assets/env/ENVIRONMENT_ASSETS_MANIFEST.json`
 - `tools/env_asset_manifest_check.py`
+- `tools/check_no_paid_assets.py`
+- `docs/legal/ASSET_POLICY.md`
+- `docs/research/ULTRA_DYNAMIC_SKY_AUDIT.md`
 
 ## Build command shape
 

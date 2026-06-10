@@ -87,6 +87,7 @@ import com.solum.engine.skyweather.WeatherController;
 import com.solum.engine.skyweather.WeatherDiagnostics;
 import com.solum.engine.skyweather.WeatherPreset;
 import com.solum.engine.skyweather.WeatherSettings;
+import com.solum.engine.skyweather.SkyWeatherVisualLayer;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -160,6 +161,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String PREF_FILAMENT_SNOW_INTENSITY = "filament_snow_intensity";
     private static final String PREF_FILAMENT_WIND_INTENSITY = "filament_wind_intensity";
     private static final String PREF_FILAMENT_AURORA_INTENSITY = "filament_aurora_intensity";
+    private static final String PREF_FILAMENT_WEATHER_SOUND_VOLUME = "filament_weather_sound_volume";
     private static final String PREF_FILAMENT_IBL_ROTATION = "filament_ibl_rotation";
     private static final String PREF_FILAMENT_SUN_AZIMUTH = "filament_sun_azimuth";
     private static final String PREF_FILAMENT_SUN_ELEVATION = "filament_sun_elevation";
@@ -179,7 +181,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String PREF_FILAMENT_DEFAULT_CONFIG_JSON = "filament_default_config_json";
     private static final String CONFIG_FILE_NAME = "filament_render_config.json";
     private static final String RENDER_REPORT_DIR = "/storage/emulated/0/Download/SOLUM_REPORTS";
-    private static final int CONFIG_SCHEMA_VERSION = 6;
+    private static final int CONFIG_SCHEMA_VERSION = 7;
     private static final int REQUEST_IMPORT_MODEL = 4101;
     private static final int REQUEST_IMPORT_IBL = 4102;
     private static final String P50_BRANCH_NAME = "patch/P50-full-render-control-center-mobile-ux";
@@ -197,6 +199,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private EnvironmentApi environmentApi;
     private SkyController skyController;
     private WeatherController weatherController;
+    private SkyWeatherVisualLayer skyWeatherVisualLayer;
     private final SceneRegistry sceneRegistry = new SceneRegistry();
     private IndirectLight indirectLight;
     private Skybox skybox;
@@ -483,6 +486,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private float snowIntensity = 0.0f;
     private float windIntensity = 0.1f;
     private float auroraIntensity = 0.0f;
+    private float weatherSoundVolume = 0.18f;
     private String skyWeatherApplyStatus = "not_applied";
     private float modelRotationX = 0.0f;
     private float modelRotationY = 0.0f;
@@ -1328,6 +1332,10 @@ public class FilamentGlbPreviewActivity extends Activity {
             auroraIntensity = v;
             weatherController.getSettings().setAuroraIntensity(v);
             applySkyWeatherStateToActivity("aurora_placeholder");
+        });
+        addLightingSlider(iblPanel, "Weather Sound", 0.0f, 1.0f, 0.05f, weatherSoundVolume, v -> {
+            weatherSoundVolume = v;
+            applySkyWeatherStateToActivity("weather_sound_volume");
         });
         iblPanel.addView(environmentSummaryView);
         iblPanel.addView(iblButton);
@@ -2824,10 +2832,22 @@ public class FilamentGlbPreviewActivity extends Activity {
         applyFogOptions();
         applySkyboxVisibility();
         if (renderControlApi != null) renderControlApi.apply();
+        applySkyWeatherVisualLayer(sky, weather);
         skyWeatherApplyStatus = "activity_local_applied_reason_" + reason;
         persistWorkspaceSettings();
         updateEnvironmentControlLabels();
         setLastAction("sky_weather_" + reason);
+    }
+
+    private void applySkyWeatherVisualLayer(SkyActualState sky, WeatherActualState weather) {
+        if (modelViewer == null || modelViewer.getScene() == null) return;
+        try {
+            if (skyWeatherVisualLayer == null) skyWeatherVisualLayer = new SkyWeatherVisualLayer();
+            skyWeatherVisualLayer.apply(modelViewer.getEngine(), modelViewer.getScene(), sky, weather);
+            skyWeatherVisualLayer.applyWeatherAudio(weather, weatherSoundVolume);
+        } catch (Throwable t) {
+            skyWeatherApplyStatus = "visual_layer_failed: " + shortMessage(t);
+        }
     }
 
     private void setEnvironmentPreset(String preset) {
@@ -2901,6 +2921,11 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\ncloudSunOcclusion=" + (weather == null ? "0.00" : twoDecimal(weather.getSunOcclusionByClouds()))
                 + "\nskyStatus=" + (skyDiagnostics == null ? "missing" : skyDiagnostics.getSkySystemStatus())
                 + "\nweatherStatus=" + (weatherDiagnostics == null ? "missing" : weatherDiagnostics.getWeatherSystemStatus())
+                + "\nvisual=" + skyWeatherVisualStatus()
+                + "\nsunDisk=" + skyWeatherSunDiskStatus() + " moonDisk=" + skyWeatherMoonDiskStatus()
+                + "\nstars=" + skyWeatherStarsStatus() + " clouds=" + skyWeatherCloudLayerStatus()
+                + "\nrainVisual=" + skyWeatherRainStatus() + " snowVisual=" + skyWeatherSnowStatus()
+                + "\naudio=" + skyWeatherAudioStatus() + " genBytes=" + generatedSkyWeatherAssetBytes()
                 + "\niblPreset=" + actual.getActiveIblPreset() + " skyboxPreset=" + actual.getActiveSkyboxPreset()
                 + "\nassetSlot=" + activeEnvironmentAssetSlot + " ibl=" + activeIblAssetStatus + " sky=" + activeSkyboxAssetStatus
                 + "\nlicense=" + environmentAssetLicenseStatus + " sizeEst=" + totalEnvironmentAssetSizeEstimate
@@ -3498,6 +3523,10 @@ public class FilamentGlbPreviewActivity extends Activity {
                 if (modelViewer.getScene() != null) {
                     if (fillLightEntity != 0) modelViewer.getScene().removeEntity(fillLightEntity);
                 }
+                if (skyWeatherVisualLayer != null) {
+                    skyWeatherVisualLayer.release(engine, modelViewer.getScene());
+                    skyWeatherVisualLayer = null;
+                }
                 if (colorGrading != null) {
                     modelViewer.getView().setColorGrading(null);
                     engine.destroyColorGrading(colorGrading);
@@ -3587,6 +3616,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         snowIntensity = prefs.getFloat(PREF_FILAMENT_SNOW_INTENSITY, 0.0f);
         windIntensity = prefs.getFloat(PREF_FILAMENT_WIND_INTENSITY, 0.1f);
         auroraIntensity = prefs.getFloat(PREF_FILAMENT_AURORA_INTENSITY, 0.0f);
+        weatherSoundVolume = prefs.getFloat(PREF_FILAMENT_WEATHER_SOUND_VOLUME, 0.18f);
         iblRotation = prefs.getFloat(PREF_FILAMENT_IBL_ROTATION, 0.0f);
         sunAzimuth = prefs.getFloat(PREF_FILAMENT_SUN_AZIMUTH, -145.0f);
         sunElevation = prefs.getFloat(PREF_FILAMENT_SUN_ELEVATION, 45.0f);
@@ -3657,6 +3687,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             .putFloat(PREF_FILAMENT_SNOW_INTENSITY, snowIntensity)
             .putFloat(PREF_FILAMENT_WIND_INTENSITY, windIntensity)
             .putFloat(PREF_FILAMENT_AURORA_INTENSITY, auroraIntensity)
+            .putFloat(PREF_FILAMENT_WEATHER_SOUND_VOLUME, weatherSoundVolume)
             .putFloat(PREF_FILAMENT_IBL_ROTATION, iblRotation)
             .putFloat(PREF_FILAMENT_SUN_AZIMUTH, sunAzimuth)
             .putFloat(PREF_FILAMENT_SUN_ELEVATION, sunElevation)
@@ -4281,6 +4312,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("snowIntensity", snowIntensity);
             json.put("windIntensity", windIntensity);
             json.put("auroraIntensity", auroraIntensity);
+            json.put("weatherSoundVolume", weatherSoundVolume);
             json.put("skyWeatherApplyStatus", skyWeatherApplyStatus);
             json.put("aoMode", aoMode.name());
             json.put("requestedAoMode", requestedAoMode);
@@ -4393,6 +4425,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         snowIntensity = (float) json.optDouble("snowIntensity", snowIntensity);
         windIntensity = (float) json.optDouble("windIntensity", windIntensity);
         auroraIntensity = (float) json.optDouble("auroraIntensity", auroraIntensity);
+        weatherSoundVolume = (float) json.optDouble("weatherSoundVolume", weatherSoundVolume);
         cameraDistance = (float) json.optDouble("cameraDistance", cameraDistance);
         cameraTargetX = (float) json.optDouble("cameraTargetX", cameraTargetX);
         cameraTargetY = (float) json.optDouble("cameraTargetY", cameraTargetY);
@@ -5130,22 +5163,75 @@ public class FilamentGlbPreviewActivity extends Activity {
         return "skySystemStatus=" + skyController.getDiagnostics().getSkySystemStatus()
             + " weatherSystemStatus=" + weatherController.getDiagnostics().getWeatherSystemStatus()
             + " phase=" + sky.getDayNightPhase()
-            + " sunVisual=" + skyController.getDiagnostics().getSunVisualStatus()
-            + " moonVisual=" + skyController.getDiagnostics().getMoonVisualStatus()
-            + " stars=" + skyController.getDiagnostics().getStarsStatus()
-            + " cloudVisual=" + skyController.getDiagnostics().getCloudVisualStatus()
-            + " rain=" + weatherController.getDiagnostics().getRainStatus()
-            + " snow=" + weatherController.getDiagnostics().getSnowStatus()
+            + " visualLayer=" + skyWeatherVisualStatus()
+            + " sunDiskStatus=" + skyWeatherSunDiskStatus()
+            + " moonDiskStatus=" + skyWeatherMoonDiskStatus()
+            + " starsStatus=" + skyWeatherStarsStatus()
+            + " cloudLayerStatus=" + skyWeatherCloudLayerStatus()
+            + " rainStatus=" + skyWeatherRainStatus()
+            + " snowStatus=" + skyWeatherSnowStatus()
+            + " weatherAudioStatus=" + skyWeatherAudioStatus()
             + " privateAssetsEnabled=false"
             + " paidAssetsTracked=false"
             + " fallback=" + skyController.getDiagnostics().getFallbackStatus()
-            + " generatedAssetSizes=none"
+            + " generatedSkyWeatherAssetBytes=" + generatedSkyWeatherAssetBytes()
+            + " publicSkyWeatherAssetCount=" + publicSkyWeatherAssetCount()
             + " weatherPreset=" + weather.getPreset().name()
             + " cloudCoverage=" + twoDecimal(weather.getCloudCoverage())
             + " cloudDensity=" + twoDecimal(weather.getCloudDensity())
+            + " cloudCoverageActual=" + twoDecimal(skyWeatherCloudCoverageActual())
+            + " cloudDensityActual=" + twoDecimal(skyWeatherCloudDensityActual())
             + " sunOcclusion=" + twoDecimal(weather.getSunOcclusionByClouds())
             + " wetness=" + twoDecimal(weather.getWetnessAmount())
             + " snowAmount=" + twoDecimal(weather.getSnowAmount());
+    }
+
+    private String skyWeatherVisualStatus() {
+        return skyWeatherVisualLayer == null ? "not_created" : skyWeatherVisualLayer.getVisualLayerStatus();
+    }
+
+    private String skyWeatherSunDiskStatus() {
+        return skyWeatherVisualLayer == null ? "not_created" : skyWeatherVisualLayer.getSunDiskStatus();
+    }
+
+    private String skyWeatherMoonDiskStatus() {
+        return skyWeatherVisualLayer == null ? "not_created" : skyWeatherVisualLayer.getMoonDiskStatus();
+    }
+
+    private String skyWeatherStarsStatus() {
+        return skyWeatherVisualLayer == null ? "not_created" : skyWeatherVisualLayer.getStarsStatus();
+    }
+
+    private String skyWeatherCloudLayerStatus() {
+        return skyWeatherVisualLayer == null ? "not_created" : skyWeatherVisualLayer.getCloudLayerStatus();
+    }
+
+    private String skyWeatherRainStatus() {
+        return skyWeatherVisualLayer == null ? "disabled" : skyWeatherVisualLayer.getRainStatus();
+    }
+
+    private String skyWeatherSnowStatus() {
+        return skyWeatherVisualLayer == null ? "disabled" : skyWeatherVisualLayer.getSnowStatus();
+    }
+
+    private String skyWeatherAudioStatus() {
+        return skyWeatherVisualLayer == null ? "placeholder_only_not_started" : skyWeatherVisualLayer.getWeatherAudioStatus();
+    }
+
+    private int generatedSkyWeatherAssetBytes() {
+        return skyWeatherVisualLayer == null ? 0 : skyWeatherVisualLayer.getGeneratedSkyWeatherAssetBytes();
+    }
+
+    private int publicSkyWeatherAssetCount() {
+        return skyWeatherVisualLayer == null ? 0 : skyWeatherVisualLayer.getPublicSkyWeatherAssetCount();
+    }
+
+    private float skyWeatherCloudCoverageActual() {
+        return skyWeatherVisualLayer == null ? cloudCoverage : skyWeatherVisualLayer.getCloudCoverageActual();
+    }
+
+    private float skyWeatherCloudDensityActual() {
+        return skyWeatherVisualLayer == null ? cloudDensity : skyWeatherVisualLayer.getCloudDensityActual();
     }
 
     private JSONObject environmentSettingsJson() throws Exception {
@@ -5262,10 +5348,18 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("weatherSystemStatus", weather.getWeatherSystemStatus());
         json.put("sunVisualStatus", sky.getSunVisualStatus());
         json.put("moonVisualStatus", sky.getMoonVisualStatus());
+        json.put("visualLayerStatus", skyWeatherVisualStatus());
+        json.put("sunDiskStatus", skyWeatherSunDiskStatus());
+        json.put("moonDiskStatus", skyWeatherMoonDiskStatus());
+        json.put("starsLayerStatus", skyWeatherStarsStatus());
+        json.put("cloudLayerStatus", skyWeatherCloudLayerStatus());
         json.put("starsStatus", sky.getStarsStatus());
         json.put("cloudVisualStatus", sky.getCloudVisualStatus());
-        json.put("rainStatus", weather.getRainStatus());
-        json.put("snowStatus", weather.getSnowStatus());
+        json.put("cloudCoverageActual", skyWeatherCloudCoverageActual());
+        json.put("cloudDensityActual", skyWeatherCloudDensityActual());
+        json.put("rainStatus", skyWeatherRainStatus());
+        json.put("snowStatus", skyWeatherSnowStatus());
+        json.put("weatherAudioStatus", skyWeatherAudioStatus());
         json.put("fogHazeStatus", weather.getFogHazeStatus());
         json.put("cloudShadowMaskStatus", weather.getCloudShadowMaskStatus());
         json.put("wetnessStatus", weather.getWetnessStatus());
@@ -5274,7 +5368,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("paidAssetsTracked", false);
         json.put("paidAssetsTrackedStatus", sky.getPaidAssetsTrackedStatus());
         json.put("fallbackStatus", sky.getFallbackStatus());
-        json.put("generatedAssetSizes", "none");
+        json.put("generatedSkyWeatherAssetBytes", generatedSkyWeatherAssetBytes());
+        json.put("publicSkyWeatherAssetCount", publicSkyWeatherAssetCount());
+        json.put("generatedAssetSizes", "runtime_glb_bytes=" + generatedSkyWeatherAssetBytes());
         json.put("generatedAssetStatus", sky.getGeneratedAssetStatus());
         json.put("ultraDynamicSkyUsage", "local_reference_audit_only_no_public_assets");
         json.put("sunMoonOverlayStatus", "disabled_no_screen_space_sun_or_moon");
@@ -5584,7 +5680,8 @@ public class FilamentGlbPreviewActivity extends Activity {
             || name.startsWith("Color ") || "Bloom Strength".equals(name) || "Time".equals(name)
             || "Moon Lux".equals(name) || "Moon Phase".equals(name) || "Stars".equals(name)
             || "Cloud Cover".equals(name) || "Cloud Density".equals(name) || "Rain".equals(name)
-            || "Snow".equals(name) || "Wind".equals(name) || "Aurora".equals(name)) {
+            || "Snow".equals(name) || "Wind".equals(name) || "Aurora".equals(name)
+            || "Weather Sound".equals(name)) {
             label.setText(name + " " + twoDecimal(value));
         } else if ("Bloom Highlight".equals(name)) {
             label.setText(name + " " + oneDecimal(value));
@@ -5617,6 +5714,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         if ("Snow".equals(label)) return snowIntensity;
         if ("Wind".equals(label)) return windIntensity;
         if ("Aurora".equals(label)) return auroraIntensity;
+        if ("Weather Sound".equals(label)) return weatherSoundVolume;
         if ("Render Scale".equals(label)) return renderScale;
         if ("Bloom Strength".equals(label)) return bloomStrength;
         if ("Bloom Highlight".equals(label)) return bloomHighlight;

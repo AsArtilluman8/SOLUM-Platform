@@ -1,6 +1,6 @@
 {
   "active_patch": "P55",
-  "priority": "sky_weather_core_pack",
+  "priority": "visible_sky_weather_core_pack",
   "main_file": "apps/engine/src/main/java/com/solum/engine/FilamentGlbPreviewActivity.java",
   "key_docs": [
     "docs/AI_AGENT_CONTINUATION.md",
@@ -84,7 +84,14 @@
     "sun/moon visual status",
     "private assets enabled",
     "paid assets tracked",
-    "generated asset sizes",
+    "generated sky/weather asset bytes",
+    "public sky/weather asset count",
+    "sun disk status",
+    "moon disk status",
+    "stars layer status",
+    "cloud layer status",
+    "rain/snow visual status",
+    "weather audio status",
     "Debug on-demand status",
     "SceneRegistry status",
     "static check results",

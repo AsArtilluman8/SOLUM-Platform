@@ -43,6 +43,7 @@ CHECKS = {
     "p52_environment_asset_terms": ["ENVIRONMENT_ASSETS_MANIFEST", "activeIblAssetStatus", "activeSkyboxAssetStatus", "activeStarsAssetStatus", "assetLicenseStatus", "totalEnvAssetSizeEstimate"],
     "p55_sky_weather_core_terms": ["SkySettings", "SkyActualState", "SkyDiagnostics", "SkyController", "WeatherSettings", "WeatherActualState", "WeatherDiagnostics", "WeatherController", "WeatherPreset"],
     "p55_sky_weather_truth_terms": ["skyWeatherDiagnostics", "sunVisualStatus", "moonVisualStatus", "cloudVisualStatus", "rainStatus", "snowStatus", "privateAssetsEnabled", "paidAssetsTracked", "generatedAssetSizes"],
+    "p55b_visible_sky_weather_terms": ["SkyWeatherVisualLayer", "sunDiskStatus", "moonDiskStatus", "starsLayerStatus", "cloudLayerStatus", "generated_particles_visible", "weatherAudioStatus", "generatedSkyWeatherAssetBytes", "publicSkyWeatherAssetCount"],
     "crash_report_fallback": ["installCrashReporter", "SOLUM_CRASHES", "solum_crashes", "crash_", "writeCrashReport", "startupMilestone"],
     "startup_milestones": ["onCreate_start", "crash_handler_installed", "before_build_ui", "after_build_ui", "before_create_viewer", "after_create_viewer", "before_load_model", "after_load_model", "onCreate_done"],
 }

@@ -70,3 +70,18 @@ What was not used:
 - any paid Unreal native asset files.
 
 These concepts must be reimplemented as original SOLUM systems and data models. Local UDS files may remain outside Git for private reference only.
+
+## P55B Adaptation
+
+P55B keeps the same legal boundary. The local Ultra Dynamic Sky archive remains reference/audit only and was not extracted into the repository.
+
+SOLUM-owned implementation added:
+
+- runtime-generated world-space sun disk;
+- runtime-generated world-space moon disk with simple phase scaling;
+- generated night star quads;
+- generated cheap cloud quads driven by cloud coverage/density;
+- generated rain/snow quads for visible weather presets;
+- generated basic PCM weather audio loop for rain/wind/storm cues.
+
+No UDS textures, sounds, Niagara files, particles, meshes, materials, blueprints, maps, or Unreal native asset files are copied or committed.

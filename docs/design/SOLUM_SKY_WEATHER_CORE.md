@@ -1,17 +1,19 @@
 # SOLUM Sky / Weather Core
 
-Status: P55 first owned implementation.
+Status: P55B visible core implementation.
 
 ## Goal
 
-P55 adds the first SOLUM-owned sky/weather core without importing Ultra Dynamic Sky assets.
+P55 added the first SOLUM-owned sky/weather core without importing Ultra Dynamic Sky assets. P55B adds the first real renderer-owned visible layer.
 
 The implementation is intentionally lightweight:
 
 - Java data/controller layer for sky and weather truth;
 - smooth time-of-day curves;
 - renderer-owned procedural sky clear color / skybox fallback;
+- renderer-owned runtime-generated glTF layer for sun, moon, stars, clouds, rain, and snow;
 - sun directional light attenuation by cloud coverage/density;
+- generated low-volume weather audio loop when weather is active;
 - weather parameters for future materials and particles;
 - truthful diagnostics for every real vs placeholder visual feature.
 
@@ -47,6 +49,7 @@ Classes:
 - `WeatherDiagnostics`
 - `WeatherController`
 - `WeatherPreset`
+- `SkyWeatherVisualLayer`
 
 ## Required state covered
 
@@ -73,24 +76,26 @@ Weather:
 
 ## Visual implementation
 
-Real in P55:
+Real in P55/P55B:
 
 - renderer-owned procedural sky/background color driven by time and weather;
 - sun directional light remains renderer light, not UI overlay;
 - cloud sun-occlusion attenuates sun light;
 - fog/haze can drive existing Filament fog parameters;
+- world-space sun disk generated at runtime from SOLUM geometry;
+- world-space moon disk generated at runtime with simple phase scaling;
+- runtime-generated star quads visible at night;
+- runtime-generated cheap cloud quads driven by coverage/density;
+- runtime-generated rain/snow quads for Rain, Snow, and Storm presets;
+- generated PCM weather audio loop for rain/wind/storm when volume is above zero;
 - diagnostics and reports expose sky/weather truth.
 
-Placeholder in P55:
+Placeholder after P55B:
 
-- sun visual disk;
-- moon visual disk;
-- stars texture/points;
-- cloud texture/noise layer;
-- rain/snow particles;
 - cloud shadow mask;
 - wetness/snow material response;
 - aurora rendering.
+- weather sound design beyond generated placeholder loop.
 
 Important: sun/moon screen-space overlays are disabled. P55 must not draw UI sun/moon over the model.
 
@@ -123,6 +128,13 @@ Short and full reports include:
 
 ## Generated assets
 
-P55 does not add generated public image assets.
+P55B does not add generated public image assets to Git. The visible layer is generated at runtime as a small GLB byte buffer owned by SOLUM code.
+
+Report fields:
+
+- `generatedSkyWeatherAssetBytes`;
+- `publicSkyWeatherAssetCount`;
+- `paidAssetsTracked=false`;
+- `privateAssetsEnabled=false`.
 
 Future public assets may include tiny SOLUM-generated noise/star textures if provenance and size are documented in a manifest.

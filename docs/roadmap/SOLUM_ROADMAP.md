@@ -125,6 +125,21 @@ Required outcomes:
 
 P55 is not final AAA sky polish. Volumetric clouds, world-space sun/moon disks, stars texture layer, rain/snow particles, cloud shadows, wetness materials, and aurora rendering remain future work unless implemented with runtime proof.
 
+### P55B — Real Visible Sky / Weather Pack
+
+Goal: finish P55 visually with original, mobile-safe SOLUM visuals.
+
+Required outcomes:
+
+- renderer-owned world-space sun disk and moon disk, never Android UI overlays;
+- generated night stars and cheap cloud layer;
+- cloud coverage/density visibly affect cloud output;
+- generated rain/snow particles for weather presets;
+- generated/public-safe weather audio placeholders or truthful diagnostics;
+- reports include generated asset bytes, public asset count, paid asset status, private asset status, and real-vs-placeholder feature status.
+
+Still out of scope: volumetric clouds, Niagara, paid Ultra Dynamic Sky assets, cloud shadow masks, wetness/snow material response, aurora rendering, and final weather sound design.
+
 ### P53 — Scene Workspace
 
 Goal: move beyond a single model preview.

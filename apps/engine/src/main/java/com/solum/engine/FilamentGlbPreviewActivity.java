@@ -82,6 +82,7 @@ import com.solum.engine.scene.SceneRegistry;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
@@ -170,6 +171,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String CRASH_DIR_DOWNLOAD = "/storage/emulated/0/Download/SOLUM_CRASHES";
     private static final long HUD_UPDATE_NS = 250_000_000L;
     private static final String GFXINFO_FRAMESTATS_COMMAND = "adb shell dumpsys gfxinfo com.solum.engine framestats";
+    private static final String ENV_ASSET_MANIFEST_PATH = "env/ENVIRONMENT_ASSETS_MANIFEST.json";
+    private static final long ENV_ASSET_BUNDLE_LIMIT_BYTES = 10L * 1024L * 1024L;
 
     private SurfaceView surfaceView;
     private SunGlareOverlayView sunGlareOverlayView;
@@ -361,6 +364,20 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String skyboxReady = "true_procedural";
     private String indirectLightReady = "true_procedural";
     private String futureIblAssetPath = "none";
+    private String activeEnvironmentAssetSlot = "studio_debug";
+    private String activeIblAssetStatus = "missing_fallback";
+    private String activeSkyboxAssetStatus = "missing_fallback";
+    private String activeStarsAssetStatus = "missing_fallback";
+    private String activeIblAssetPath = "env/studio_debug_ibl.ktx";
+    private String activeSkyboxAssetPath = "env/studio_debug_skybox.ktx";
+    private String activeStarsAssetPath = "none";
+    private String environmentAssetManifestStatus = "not_checked";
+    private String environmentAssetLicenseStatus = "not_checked";
+    private String environmentAssetFallbackActive = "true";
+    private String lastEnvironmentAssetLoadError = "none";
+    private long totalEnvironmentAssetSizeEstimate = 0L;
+    private int missingEnvironmentAssetCount = 0;
+    private String missingEnvironmentAssetsSummary = "not_checked";
     private String modelSourcePath = "none";
     private String modelCopiedPath = "none";
     private String gltfioLoaded = "false";
@@ -527,6 +544,28 @@ public class FilamentGlbPreviewActivity extends Activity {
 
         WorkspaceTab(String label) {
             this.label = label;
+        }
+    }
+
+    private static final class EnvironmentAssetSlot {
+        final String id;
+        final String iblPath;
+        final String skyboxPath;
+        final String starsPath;
+        final String license;
+        final String status;
+        final long estimatedSizeBytes;
+        final boolean bundled;
+
+        EnvironmentAssetSlot(String id, String iblPath, String skyboxPath, String starsPath, String license, String status, long estimatedSizeBytes, boolean bundled) {
+            this.id = id;
+            this.iblPath = iblPath;
+            this.skyboxPath = skyboxPath;
+            this.starsPath = starsPath;
+            this.license = license;
+            this.status = status;
+            this.estimatedSizeBytes = estimatedSizeBytes;
+            this.bundled = bundled;
         }
     }
 
@@ -2314,6 +2353,168 @@ public class FilamentGlbPreviewActivity extends Activity {
         applyIblRotation();
     }
 
+    private void applyEnvironmentAssetSlotForPreset(String reason) {
+        EnvironmentAssetSlot slot = environmentAssetSlotForPreset(environmentApi == null ? "CURRENT" : environmentApi.getActualState().getActiveEnvironmentPreset());
+        activeEnvironmentAssetSlot = slot.id;
+        activeIblAssetPath = slot.iblPath;
+        activeSkyboxAssetPath = slot.skyboxPath;
+        activeStarsAssetPath = slot.starsPath == null || slot.starsPath.isEmpty() ? "none" : slot.starsPath;
+        updateEnvironmentAssetManifestSummary();
+        boolean iblExists = appAssetExists(slot.iblPath);
+        boolean skyboxExists = appAssetExists(slot.skyboxPath);
+        boolean starsExists = slot.starsPath != null && !slot.starsPath.isEmpty() && appAssetExists(slot.starsPath);
+        activeStarsAssetStatus = (slot.starsPath == null || slot.starsPath.isEmpty())
+            ? "not_applicable"
+            : (starsExists ? "bundled_not_rendered_p52_stars_slot_only" : "missing_fallback");
+        if (!iblExists) {
+            activeIblAssetStatus = "missing_asset_fallback";
+            activeSkyboxAssetStatus = skyboxExists ? "bundled_skybox_waiting_for_ibl_loader_path" : "missing_asset_fallback";
+            environmentAssetFallbackActive = "true";
+            lastEnvironmentAssetLoadError = "missing_asset:" + slot.iblPath;
+            fallbackReason = "missing_asset_fallback";
+            if (!"true".equals(realIblReady) && modelViewer != null && (indirectLight == null || skybox == null || !"procedural_fallback".equals(iblMode))) {
+                createEnvironmentFallback();
+            }
+            syncEnvironmentAssetDiagnostics();
+            return;
+        }
+        try {
+            File cached = copyAssetToCacheFile(slot.iblPath);
+            loadKtxIbl(cached, "p52_asset_slot_" + slot.id + "_" + reason);
+            activeIblAssetStatus = "bundled_loaded";
+            activeSkyboxAssetStatus = skyboxExists ? "bundled_loaded_or_ibl_bundle" : "skybox_specific_asset_missing_ibl_bundle_used";
+            environmentAssetFallbackActive = "false";
+            lastEnvironmentAssetLoadError = "none";
+            iblFile = slot.iblPath;
+            futureIblAssetPath = "asset://" + slot.iblPath;
+        } catch (Throwable t) {
+            activeIblAssetStatus = "load_failed_fallback";
+            activeSkyboxAssetStatus = "load_failed_fallback";
+            environmentAssetFallbackActive = "true";
+            lastEnvironmentAssetLoadError = shortMessage(t);
+            fallbackReason = "environment_asset_load_failed";
+            createEnvironmentFallback();
+        }
+        syncEnvironmentAssetDiagnostics();
+    }
+
+    private EnvironmentAssetSlot environmentAssetSlotForPreset(String preset) {
+        String p = preset == null ? "CURRENT" : preset.toUpperCase(Locale.US);
+        if ("DAWN".equals(p) || "NOON".equals(p) || "DAY".equals(p)) return manifestSlotOrFallback("day");
+        if ("SUNSET".equals(p)) return manifestSlotOrFallback("sunset");
+        if ("NIGHT".equals(p) || "MIDNIGHT".equals(p)) return manifestSlotOrFallback("night");
+        if ("CLOUDY".equals(p)) return manifestSlotOrFallback("cloudy");
+        return manifestSlotOrFallback("studio_debug");
+    }
+
+    private EnvironmentAssetSlot manifestSlotOrFallback(String id) {
+        for (EnvironmentAssetSlot slot : loadEnvironmentAssetSlots()) {
+            if (slot.id.equals(id)) return slot;
+        }
+        if ("day".equals(id)) return new EnvironmentAssetSlot("day", "env/day_ibl.ktx", "env/day_skybox.ktx", "", "CC0-1.0", "conversion_required", 0L, false);
+        if ("sunset".equals(id)) return new EnvironmentAssetSlot("sunset", "env/sunset_ibl.ktx", "env/sunset_skybox.ktx", "", "CC0-1.0", "conversion_required", 0L, false);
+        if ("night".equals(id)) return new EnvironmentAssetSlot("night", "env/night_ibl.ktx", "env/night_skybox.ktx", "env/stars_milkyway.ktx", "CC0-1.0", "conversion_required", 0L, false);
+        if ("cloudy".equals(id)) return new EnvironmentAssetSlot("cloudy", "env/cloudy_ibl.ktx", "env/cloudy_skybox.ktx", "", "CC0-1.0", "planned", 0L, false);
+        return new EnvironmentAssetSlot("studio_debug", "env/studio_debug_ibl.ktx", "env/studio_debug_skybox.ktx", "", "project-generated-fallback", "missing_fallback", 0L, false);
+    }
+
+    private List<EnvironmentAssetSlot> loadEnvironmentAssetSlots() {
+        List<EnvironmentAssetSlot> slots = new ArrayList<>();
+        totalEnvironmentAssetSizeEstimate = 0L;
+        missingEnvironmentAssetCount = 0;
+        try {
+            JSONObject manifest = new JSONObject(readAssetText(ENV_ASSET_MANIFEST_PATH));
+            JSONArray array = manifest.optJSONArray("slots");
+            if (array == null) throw new IllegalStateException("slots_missing");
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject item = array.optJSONObject(i);
+                if (item == null) continue;
+                EnvironmentAssetSlot slot = new EnvironmentAssetSlot(
+                    item.optString("id", ""),
+                    item.optString("localIblPath", ""),
+                    item.optString("localSkyboxPath", ""),
+                    item.optString("localStarsPath", ""),
+                    item.optString("license", ""),
+                    item.optString("status", ""),
+                    item.optLong("estimatedSizeBytes", 0L),
+                    item.optBoolean("bundled", false));
+                if (!slot.id.isEmpty()) {
+                    slots.add(slot);
+                    totalEnvironmentAssetSizeEstimate += Math.max(0L, slot.estimatedSizeBytes);
+                    if (!slot.iblPath.isEmpty() && !appAssetExists(slot.iblPath)) missingEnvironmentAssetCount++;
+                    if (!slot.skyboxPath.isEmpty() && !appAssetExists(slot.skyboxPath)) missingEnvironmentAssetCount++;
+                    if (!slot.starsPath.isEmpty() && !appAssetExists(slot.starsPath)) missingEnvironmentAssetCount++;
+                }
+            }
+            environmentAssetManifestStatus = "bundled_manifest_ok slots=" + slots.size();
+            environmentAssetLicenseStatus = validateEnvironmentAssetLicenses(slots);
+            missingEnvironmentAssetsSummary = "missing_planned_asset_files=" + missingEnvironmentAssetCount;
+        } catch (Throwable t) {
+            environmentAssetManifestStatus = "manifest_unavailable_fallback: " + shortMessage(t);
+            environmentAssetLicenseStatus = "not_verified_manifest_unavailable";
+            missingEnvironmentAssetsSummary = "manifest_unavailable";
+        }
+        return slots;
+    }
+
+    private String validateEnvironmentAssetLicenses(List<EnvironmentAssetSlot> slots) {
+        for (EnvironmentAssetSlot slot : slots) {
+            String license = slot.license == null ? "" : slot.license.toLowerCase(Locale.US);
+            if (license.isEmpty() || license.contains("unknown") || license.contains("royalty-free") || license.contains("non-commercial")
+                || license.contains("personal use") || license.contains("unity asset store") || license.contains("sketchfab")) {
+                return "unsafe_or_missing_license slot=" + slot.id;
+            }
+        }
+        return "safe_manifest_licenses_checked";
+    }
+
+    private void updateEnvironmentAssetManifestSummary() {
+        loadEnvironmentAssetSlots();
+        if (totalEnvironmentAssetSizeEstimate > ENV_ASSET_BUNDLE_LIMIT_BYTES) {
+            environmentAssetManifestStatus = "manifest_bundle_estimate_too_large";
+        }
+    }
+
+    private void syncEnvironmentAssetDiagnostics() {
+        if (environmentApi == null) return;
+        EnvironmentDiagnostics diagnostics = environmentApi.getDiagnostics();
+        diagnostics.setIblSlotStatus(activeIblAssetStatus + " active=" + activeEnvironmentAssetSlot + " path=" + activeIblAssetPath);
+        diagnostics.setSkyboxSlotStatus(activeSkyboxAssetStatus + " active=" + activeEnvironmentAssetSlot + " path=" + activeSkyboxAssetPath);
+        diagnostics.setStarsStatus(activeStarsAssetStatus + " intensity=" + twoDecimal(starsIntensity) + " path=" + activeStarsAssetPath);
+        diagnostics.setFallbackStatus("true".equals(environmentAssetFallbackActive) ? "missing_asset_fallback" : "asset_backed_environment");
+        diagnostics.setLastApplyStatus(environmentApi.getDiagnostics().getLastApplyStatus() + " p52_assets=" + activeIblAssetStatus);
+    }
+
+    private boolean appAssetExists(String path) {
+        if (path == null || path.isEmpty()) return false;
+        try (InputStream ignored = getAssets().open(path)) {
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private String readAssetText(String path) throws Exception {
+        try (InputStream input = getAssets().open(path); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] chunk = new byte[8192];
+            int read;
+            while ((read = input.read(chunk)) != -1) output.write(chunk, 0, read);
+            return new String(output.toByteArray(), "UTF-8");
+        }
+    }
+
+    private File copyAssetToCacheFile(String path) throws Exception {
+        File dir = new File(getCacheDir(), "env_assets");
+        if (!dir.isDirectory() && !dir.mkdirs()) throw new IllegalStateException("env_asset_cache_unavailable");
+        File out = new File(dir, safeFileName(path.replace('/', '_')));
+        try (InputStream input = getAssets().open(path); OutputStream output = new FileOutputStream(out, false)) {
+            byte[] chunk = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(chunk)) != -1) output.write(chunk, 0, read);
+        }
+        return out;
+    }
+
     private void loadHdrIbl(File file, String reason) throws Exception {
         Engine engine = modelViewer.getEngine();
         HDRLoader.Options options = new HDRLoader.Options();
@@ -2529,6 +2730,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         environmentMode = "environment_api_" + actual.getActiveEnvironmentPreset().toLowerCase(Locale.US);
         fallbackReason = actual.isFallbackActive() ? "missing_asset_fallback" : fallbackReason;
         iblStatus = environmentApi.getDiagnostics().getIblSlotStatus();
+        applyEnvironmentAssetSlotForPreset(reason);
         environmentApplyStatus = "activity_local_applied_reason_" + reason;
         applyLightingValues();
         applySkyboxVisibility();
@@ -2551,6 +2753,8 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nsun lux/elev=" + oneDecimal(sun.getIntensityLux()) + "/" + oneDecimal(sun.getElevationDeg()) + " K=" + oneDecimal(sun.getColorTemperatureKelvin())
                 + "\nmoon lux/elev=" + oneDecimal(moon.getIntensityLux()) + "/" + oneDecimal(moon.getElevationDeg()) + " phase=" + twoDecimal(moon.getPhase())
                 + "\niblPreset=" + actual.getActiveIblPreset() + " skyboxPreset=" + actual.getActiveSkyboxPreset()
+                + "\nassetSlot=" + activeEnvironmentAssetSlot + " ibl=" + activeIblAssetStatus + " sky=" + activeSkyboxAssetStatus
+                + "\nlicense=" + environmentAssetLicenseStatus + " sizeEst=" + totalEnvironmentAssetSizeEstimate
                 + "\nstarsVisibility=" + twoDecimal(actual.getStarsVisibility()) + " status=" + diagnostics.getStarsStatus()
                 + "\nfallback=" + diagnostics.getFallbackStatus()
                 + "\napply=" + environmentApplyStatus);
@@ -4168,6 +4372,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (iblSummaryView != null) {
             iblSummaryView.setText("activeIblName=" + iblFile
                 + "\nactiveIblPath=" + shorten(futureIblAssetPath, 72)
+                + "\nassetPreset=" + activeEnvironmentAssetSlot + " iblAsset=" + activeIblAssetStatus + " skyAsset=" + activeSkyboxAssetStatus
+                + "\nassetFallback=" + environmentAssetFallbackActive + " license=" + environmentAssetLicenseStatus
+                + "\nassetSizeEstimate=" + totalEnvironmentAssetSizeEstimate + " " + missingEnvironmentAssetsSummary
                 + "\nrealIblReady=" + realIblReady + " indirectLightReady=" + indirectLightReady + " skyboxReady=" + skyboxReady
                 + "\nhdrLoaded=" + iblMode.startsWith("hdr") + " ktxLoaded=" + iblMode.startsWith("ktx") + " exrUnsupported=" + "unsupported_exr".equals(iblMode)
                 + "\niblIntensityUser=" + twoDecimal(ambientUserIntensity) + " iblIntensityInternal=" + twoDecimal(ambientFallbackIntensity)
@@ -4268,6 +4475,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nLight preset: " + lightingPreset.label + " / " + lightingStatus
                 + "\nSun/Ambient/Fill/Exp/BG: " + oneDecimal(sunLightIntensity) + " / " + oneDecimal(ambientUserIntensity) + " / " + oneDecimal(fillLightIntensity) + " / " + twoDecimal(exposure) + " / " + twoDecimal(backgroundBrightness)
                 + "\nEnvironment: " + environmentShortStatus()
+                + "\nEnvironment assets: " + environmentAssetShortStatus()
                 + "\nambientUser=" + oneDecimal(ambientUserIntensity) + " ambientInternal=" + oneDecimal(ambientFallbackIntensity)
                 + "\niblMode=" + iblMode + " iblFile=" + iblFile
                 + "\niblLoadStatus=" + iblLoadStatus
@@ -4459,7 +4667,24 @@ public class FilamentGlbPreviewActivity extends Activity {
             + " sunLux=" + oneDecimal(actual.getSun().getIntensityLux())
             + " moon=" + diagnostics.getMoonStatus()
             + " stars=" + diagnostics.getStarsStatus()
-            + " fallback=" + diagnostics.getFallbackStatus();
+            + " fallback=" + diagnostics.getFallbackStatus()
+            + " assetSlot=" + activeEnvironmentAssetSlot
+            + " iblAsset=" + activeIblAssetStatus
+            + " skyAsset=" + activeSkyboxAssetStatus;
+    }
+
+    private String environmentAssetShortStatus() {
+        String preset = environmentApi == null ? "environment_api_missing" : environmentApi.getActualState().getActiveEnvironmentPreset();
+        return "manifest=" + environmentAssetManifestStatus
+            + " activeEnvironmentPreset=" + preset
+            + " activeEnvironmentAssetSlot=" + activeEnvironmentAssetSlot
+            + " activeIblAssetStatus=" + activeIblAssetStatus
+            + " activeSkyboxAssetStatus=" + activeSkyboxAssetStatus
+            + " activeStarsAssetStatus=" + activeStarsAssetStatus
+            + " fallbackActive=" + environmentAssetFallbackActive
+            + " assetLicenseStatus=" + environmentAssetLicenseStatus
+            + " totalEnvAssetSizeEstimate=" + totalEnvironmentAssetSizeEstimate
+            + " lastAssetLoadError=" + lastEnvironmentAssetLoadError;
     }
 
     private String compactCostSummary() {
@@ -4549,6 +4774,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             + "\ncostCauseSummary=" + cost.getCostCauseSummary()
             + "\nscene=" + sceneRegistry.summary() + " model=" + (modelName == null || modelName.isEmpty() ? "none" : modelName)
             + "\nenvironment=" + environmentShortReportSection()
+            + "\nenvironmentAssetManifest=" + environmentAssetShortStatus()
             + "\nownership=" + ownership
             + "\nnot_verified_or_not_exposed=" + notReady
             + "\nappBuild=unknown_local_debug";
@@ -4575,6 +4801,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("environmentSettings", environmentSettingsJson());
             json.put("environmentActualState", environmentActualStateJson());
             json.put("environmentDiagnostics", environmentDiagnosticsJson());
+            json.put("environmentAssetManifest", environmentAssetManifestJson());
             json.put("not_verified_not_exposed", notVerifiedJson());
             json.put("app", appBuildJson());
         } catch (Throwable ignored) { }
@@ -4717,6 +4944,10 @@ public class FilamentGlbPreviewActivity extends Activity {
             + " moonLuxElevation=" + oneDecimal(actual.getMoon().getIntensityLux()) + "/" + oneDecimal(actual.getMoon().getElevationDeg())
             + " iblPreset=" + actual.getActiveIblPreset()
             + " skyboxPreset=" + actual.getActiveSkyboxPreset()
+            + " activeIblAssetStatus=" + activeIblAssetStatus
+            + " activeSkyboxAssetStatus=" + activeSkyboxAssetStatus
+            + " fallbackActive=" + environmentAssetFallbackActive
+            + " assetLicenseStatus=" + environmentAssetLicenseStatus
             + " starsStatus=" + diagnostics.getStarsStatus()
             + " fallbackStatus=" + diagnostics.getFallbackStatus();
     }
@@ -4771,6 +5002,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("ambientIntensity", actual.getAmbientIntensity());
         json.put("exposureHint", actual.getExposureHint());
         json.put("fallbackActive", actual.isFallbackActive());
+        json.put("environmentAssetFallbackActive", "true".equals(environmentAssetFallbackActive));
         json.put("applyStatus", actual.getApplyStatus());
         return json;
     }
@@ -4806,11 +5038,41 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("iblSlotStatus", diagnostics.getIblSlotStatus());
         json.put("skyboxSlotStatus", diagnostics.getSkyboxSlotStatus());
         json.put("starsStatus", diagnostics.getStarsStatus());
+        json.put("activeEnvironmentPreset", activeEnvironmentAssetSlot);
+        json.put("activeIblAssetStatus", activeIblAssetStatus);
+        json.put("activeSkyboxAssetStatus", activeSkyboxAssetStatus);
+        json.put("activeStarsAssetStatus", activeStarsAssetStatus);
+        json.put("fallbackActive", "true".equals(environmentAssetFallbackActive));
+        json.put("lastAssetLoadError", lastEnvironmentAssetLoadError);
+        json.put("assetLicenseStatus", environmentAssetLicenseStatus);
         json.put("cloudStatus", diagnostics.getCloudStatus());
         json.put("fallbackStatus", diagnostics.getFallbackStatus());
         json.put("mobileSafetyStatus", diagnostics.getMobileSafetyStatus());
         json.put("lastApplyStatus", diagnostics.getLastApplyStatus());
         json.put("notImplementedYet", new JSONArray(diagnostics.getNotImplementedYet()));
+        return json;
+    }
+
+    private JSONObject environmentAssetManifestJson() throws Exception {
+        JSONObject json = new JSONObject();
+        String preset = environmentApi == null ? "environment_api_missing" : environmentApi.getActualState().getActiveEnvironmentPreset();
+        json.put("manifestPath", ENV_ASSET_MANIFEST_PATH);
+        json.put("manifestStatus", environmentAssetManifestStatus);
+        json.put("activeEnvironmentPreset", preset);
+        json.put("activeEnvironmentAssetSlot", activeEnvironmentAssetSlot);
+        json.put("activeIblPath", activeIblAssetPath);
+        json.put("activeSkyboxPath", activeSkyboxAssetPath);
+        json.put("activeStarsPath", activeStarsAssetPath);
+        json.put("activeIblAssetStatus", activeIblAssetStatus);
+        json.put("activeSkyboxAssetStatus", activeSkyboxAssetStatus);
+        json.put("activeStarsAssetStatus", activeStarsAssetStatus);
+        json.put("fallbackActive", "true".equals(environmentAssetFallbackActive));
+        json.put("lastAssetLoadError", lastEnvironmentAssetLoadError);
+        json.put("assetLicenseStatus", environmentAssetLicenseStatus);
+        json.put("totalBundledEnvAssetSizeEstimate", totalEnvironmentAssetSizeEstimate);
+        json.put("missingPlannedAssets", missingEnvironmentAssetsSummary);
+        json.put("apkEnvAssetSizeLimitBytes", ENV_ASSET_BUNDLE_LIMIT_BYTES);
+        json.put("p52Notes", "assets_not_bundled_fallback_active_p52b_add_verified_ktx_after_cmgen_toktx_available");
         return json;
     }
 

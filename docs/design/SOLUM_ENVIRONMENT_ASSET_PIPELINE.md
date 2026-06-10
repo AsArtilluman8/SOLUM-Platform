@@ -1,43 +1,84 @@
 # SOLUM Environment Asset Pipeline
 
-Status: P51 docs/backlog. P52 will add real assets.
+Status: P52 pipeline foundation.
 
-## Planned Sources
+P51 created the `EnvironmentApi`, time-of-day model, sun/moon/stars intent, IBL/skybox slots, and fallback diagnostics. P52 adds the asset manifest, directory convention, validation tools, and safe runtime loader slots. P52 does not add weather, volumetric clouds, Bruneton/Hosek runtime atmosphere, or a procedural sky shader.
 
-- Poly Haven CC0 for HDRI/IBL.
-- OpenHDRI CC0 for HDRI/IBL.
-- NASA SVS star maps public domain.
-- Filament `cmgen` for cubemap/IBL preprocessing.
-- Sky3D/Godot references only.
-- Stardroid reference later.
-- Bruneton / andrewwillmott sun-sky later, not P51.
+## Asset Sources
 
-## P51 Rule
+Preferred sources:
 
-Do not download or commit HDRI/star assets in P51.
+- Poly Haven CC0 HDRIs.
+- OpenHDRI CC0 HDRIs.
+- NASA SVS public-domain star maps.
+- ambientCG CC0 only when the selected asset license is explicit.
+- Filament sample environment assets only if source and license are clear.
 
-P51 only defines slots and fallback behavior:
+Do not use mixed-license or store-only packs. Do not commit large raw `.hdr` or `.exr` files. The APK target for all bundled environment assets is under 10 MB.
+
+## Directory Convention
+
+Source manifest:
 
 ```text
-assets/env/day_ibl.ktx
-assets/env/day_skybox.ktx
-assets/env/sunset_ibl.ktx
-assets/env/sunset_skybox.ktx
-assets/env/night_ibl.ktx
-assets/env/night_skybox.ktx
-assets/env/stars_milkyway.ktx
+assets/env/ENVIRONMENT_ASSETS_MANIFEST.json
 ```
 
-Missing assets must keep the current IBL or neutral background active.
+APK assets:
 
-## Future P52
+```text
+apps/engine/src/main/assets/env/
+```
 
-P52 should:
+Planned runtime paths:
 
-- pick CC0 source assets;
-- document license/source URL per asset;
-- run a reproducible Filament `cmgen` pipeline;
-- create mobile-size KTX outputs;
-- keep diagnostics honest about loaded vs fallback assets.
+```text
+env/day_ibl.ktx
+env/day_skybox.ktx
+env/sunset_ibl.ktx
+env/sunset_skybox.ktx
+env/night_ibl.ktx
+env/night_skybox.ktx
+env/stars_milkyway.ktx
+env/studio_debug_ibl.ktx
+env/studio_debug_skybox.ktx
+```
 
-Avoid fake blue sphere as the main sky system. A neutral clear color is only fallback.
+## Conversion
+
+Use a Filament `cmgen` version that matches the Android Filament runtime. Current runtime dependency is declared in `apps/engine/build.gradle`; P52 was built against Filament `1.71.4`.
+
+Example shape:
+
+```bash
+cmgen --format=ktx --size=256 --extract-blur=0.1 --deploy=apps/engine/src/main/assets/env source.hdr
+```
+
+If `toktx` is used for star textures, keep the texture small and mobile-friendly:
+
+```bash
+toktx --t2 --genmipmap apps/engine/src/main/assets/env/stars_milkyway.ktx source_star_map.png
+```
+
+Do not run download/conversion during normal build. Use:
+
+```bash
+python3 tools/env_asset_manifest_check.py
+```
+
+## Runtime Integration
+
+When an environment preset is selected, the Activity maps the P51 preset to a P52 slot and checks for matching KTX assets in Android assets. If the KTX exists, it reuses the existing Filament `KTX1Loader` path. If the KTX is missing or load fails, the app keeps the current P51 fallback.
+
+Diagnostics must report:
+
+- `activeEnvironmentPreset`
+- `activeIblAssetStatus`
+- `activeSkyboxAssetStatus`
+- `activeStarsAssetStatus`
+- `fallbackActive`
+- `lastAssetLoadError`
+- `assetLicenseStatus`
+- `totalEnvAssetSizeEstimate`
+
+P52B should add a tiny verified KTX bundle after `cmgen`/`toktx` availability and license provenance are proven.

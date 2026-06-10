@@ -24,27 +24,26 @@ Do not claim planned systems are implemented.
 
 ## Current priority order
 
-1. P51 Environment API + Time of Day + Sun/Moon Light Foundation.
-2. P52 Environment assets: HDRI/IBL/star slots.
-3. P53 Scene Workspace / multi-model scene.
-4. P54 Asset Shelf.
-5. P55 Transform Gizmo.
-6. P56 Animation Preview.
-7. P57 Scene Save/Load.
-8. Labs and package/agent systems later.
+1. P52 Environment Asset Pipeline + HDRI/IBL/Skybox Starter Pack.
+2. P53 Scene Workspace / multi-model scene.
+3. P54 Asset Shelf.
+4. P55 Transform Gizmo.
+5. P56 Animation Preview.
+6. P57 Scene Save/Load.
+7. Labs and package/agent systems later.
 
 ## Active near-term patch
 
 Current near-term work:
 
 ```text
-P51 — Environment API + Time of Day foundation
+P52 — Environment Asset Pipeline + HDRI/IBL/Skybox Starter Pack
 ```
 
 Main goal:
 
 ```text
-EnvironmentApi owns time of day, sun/moon intent, IBL/skybox slots, stars placeholder state, fallback, and diagnostics. Heavy HDRI/IBL/star assets are P52.
+P51 created `EnvironmentApi`, time of day, sun/moon intent, IBL/skybox slots, stars placeholder state, fallback, and diagnostics. P52 adds source/license manifest, asset paths, validation tooling, and safe loader slots. Actual KTX assets remain P52B if `cmgen`/`toktx` are unavailable.
 ```
 
 ## Important rules
@@ -53,7 +52,7 @@ EnvironmentApi owns time of day, sun/moon intent, IBL/skybox slots, stars placeh
 - Do not add new visual features before fixing current control truth.
 - Do not add a huge API UI until existing controls work.
 - Render Control Center is UI over the existing Render API; do not add new visual renderer features in P50.
-- Sky / IBL has P51 Environment API controls; real HDRI/star assets remain planned for P52.
+- Sky / IBL has P51 Environment API controls and P52 asset status; real HDRI/star KTX assets remain planned for P52B unless converted with verified tools/licenses.
 - Keep live HUD lightweight; full diagnostics run by button/copy/export only.
 - Do not use Java callback FPS as primary FPS.
 - Frame ms is primary truth. FPS is derived from frame ms.
@@ -89,6 +88,9 @@ EnvironmentApi owns time of day, sun/moon intent, IBL/skybox slots, stars placeh
 - `docs/design/SOLUM_RENDER_CONTROL_CENTER.md`
 - `docs/design/SOLUM_ENVIRONMENT_API.md`
 - `docs/design/SOLUM_ENVIRONMENT_ASSET_PIPELINE.md`
+- `docs/assets/SOLUM_ENVIRONMENT_ASSETS.md`
+- `assets/env/ENVIRONMENT_ASSETS_MANIFEST.json`
+- `tools/env_asset_manifest_check.py`
 
 ## Build command shape
 

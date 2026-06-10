@@ -5,6 +5,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "apps/engine/src/main/java/com/solum/engine/FilamentGlbPreviewActivity.java"
 ENVIRONMENT = ROOT / "apps/engine/src/main/java/com/solum/engine/environment"
+ENV_MANIFEST = ROOT / "assets/env/ENVIRONMENT_ASSETS_MANIFEST.json"
+ENV_DOC = ROOT / "docs/assets/SOLUM_ENVIRONMENT_ASSETS.md"
+ENV_PIPELINE_DOC = ROOT / "docs/design/SOLUM_ENVIRONMENT_ASSET_PIPELINE.md"
 
 CHECKS = {
     "requestedMSAA": ["requestedSampleCount", "requestedMSAA"],
@@ -36,6 +39,7 @@ CHECKS = {
     "render_control_center_api_terms": ["RenderControlApi", "RenderFeatureDescriptor", "RenderCostDiagnostics", "featureLine", "compactCostSummary"],
     "p51_environment_api_terms": ["EnvironmentApi", "EnvironmentController", "TimeOfDayController", "Environment / Time of Day", "setTimeOfDay", "environmentSettings", "environmentActualState", "environmentDiagnostics"],
     "p51_environment_truth_terms": ["placeholder_not_rendered", "slot_ready_asset_missing", "planned_p52_assets", "missing_asset_fallback", "activity_local"],
+    "p52_environment_asset_terms": ["ENVIRONMENT_ASSETS_MANIFEST", "activeIblAssetStatus", "activeSkyboxAssetStatus", "activeStarsAssetStatus", "assetLicenseStatus", "totalEnvAssetSizeEstimate"],
     "crash_report_fallback": ["installCrashReporter", "SOLUM_CRASHES", "solum_crashes", "crash_", "writeCrashReport", "startupMilestone"],
     "startup_milestones": ["onCreate_start", "crash_handler_installed", "before_build_ui", "after_build_ui", "before_create_viewer", "after_create_viewer", "before_load_model", "after_load_model", "onCreate_done"],
 }
@@ -88,6 +92,15 @@ def main():
         "checks": {name: status_for(text, needles) for name, needles in CHECKS.items()}
     }
     result["checks"]["profile_defaults_not_called_from_apply"] = separation_check(text)
+    result["checks"]["p52_environment_manifest_exists"] = {"status": "present" if ENV_MANIFEST.is_file() else "missing"}
+    result["checks"]["p52_environment_asset_docs_exist"] = {"status": "present" if ENV_DOC.is_file() and ENV_PIPELINE_DOC.is_file() else "missing"}
+    unsafe = []
+    if ENV_MANIFEST.is_file():
+        lower = ENV_MANIFEST.read_text(encoding="utf-8", errors="replace").lower()
+        for needle in ["royalty-free", "non-commercial", "personal use", "unknown license", "sketchfab", "unity asset store"]:
+            if needle in lower:
+                unsafe.append(f"{ENV_MANIFEST.relative_to(ROOT)}:{needle}")
+    result["checks"]["p52_environment_unsafe_license_strings"] = {"status": "present" if not unsafe else "missing", "matches": unsafe}
     missing = [name for name, item in result["checks"].items() if item["status"] != "present"]
     result["summary"] = "warning_missing_terms_static_only" if missing else "present_static_only_not_runtime_proof"
     result["warnings"] = missing

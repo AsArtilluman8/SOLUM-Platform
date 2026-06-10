@@ -1,6 +1,6 @@
 # SOLUM Environment API
 
-Status: P51 foundation.
+Status: P51 foundation, P52 asset slots connected.
 
 P51 is system/API first. It creates `EnvironmentApi` as the owner of time of day, sun/moon intent, ambient/background hints, IBL/skybox preset slots, stars placeholder state, fallback policy, and diagnostics.
 
@@ -31,6 +31,8 @@ The Activity may apply current Filament knobs, but it must not own the environme
 
 P51 does not add weather, volumetric clouds, heavy HDRI assets, star assets, Bruneton/Hosek runtime atmosphere, or a fake blue sphere sky.
 
+P52 keeps the same rule for advanced atmosphere: it adds manifest/tooling/loader slots only, not weather, volumetric clouds, Bruneton/Hosek runtime atmosphere, or a fake production sky.
+
 ## Runtime Truth
 
 Live:
@@ -45,12 +47,20 @@ On demand:
 - full JSON report with `environmentSettings`, `environmentActualState`, `environmentDiagnostics`;
 - copy short report environment section.
 
-Placeholder / P52:
+P52 asset pipeline:
+
+- manifest exists at `assets/env/ENVIRONMENT_ASSETS_MANIFEST.json`;
+- app-bundled manifest copy exists at `apps/engine/src/main/assets/env/ENVIRONMENT_ASSETS_MANIFEST.json`;
+- day/sunset/night/cloudy/studio_debug slots map to planned KTX paths;
+- the Activity checks Android assets and reuses the existing Filament `KTX1Loader` path if a KTX is present;
+- if KTX files are missing or load fails, P51 neutral/current fallback stays active and diagnostics report `missing_asset_fallback`.
+
+Placeholder / P52B:
 
 - moon second directional light;
-- real day/sunset/night IBL assets;
+- real day/sunset/night IBL assets generated with a Filament-version-matched `cmgen`;
 - real star texture;
-- asset pipeline/cooks.
+- actual converted starter KTX bundle.
 
 Fallback is allowed only as neutral placeholder. It is not the final visual sky system.
 
@@ -64,6 +74,8 @@ assets/env/sunset_skybox.ktx
 assets/env/night_ibl.ktx
 assets/env/night_skybox.ktx
 assets/env/stars_milkyway.ktx
+assets/env/studio_debug_ibl.ktx
+assets/env/studio_debug_skybox.ktx
 ```
 
 If missing, the app must not crash. Diagnostics must say `missing_asset_fallback`, `slot_ready_asset_missing`, or `planned_p52_assets`.

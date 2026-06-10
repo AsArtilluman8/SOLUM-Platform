@@ -91,17 +91,22 @@ Required outcomes:
 - reports include environment settings, actual state, and diagnostics;
 - no weather, volumetric clouds, heavy HDRI asset pack, fake main sky sphere, or runtime atmosphere model.
 
-### P52 — Environment Assets
+### P52 — Environment Asset Pipeline + Starter Slots
 
-Goal: add real environment assets and pipeline after the P51 API foundation.
+Goal: add a safe environment asset pipeline after the P51 API foundation without bloating the APK or adding unverified assets.
 
 Required outcomes:
 
 - CC0 HDRI/IBL/star source tracking;
-- Filament `cmgen` pipeline;
-- mobile-size KTX environment outputs;
-- day/sunset/night IBL and skybox slots load from assets;
-- diagnostics distinguish real loaded assets from fallback.
+- Filament `cmgen` pipeline documentation with version matching the Filament runtime;
+- manifest and mobile-size KTX path convention;
+- day/sunset/night/cloudy/studio_debug slots checked from Android assets;
+- diagnostics distinguish real loaded assets from fallback;
+- raw HDRI/EXR files are not bundled.
+
+P52 may ship with no external assets if conversion tools or license provenance are not available. In that case the fallback must stay active and P52B adds the actual verified KTX bundle.
+
+P53+ can add advanced atmosphere/procedural sky work later. P52 does not add weather or volumetric clouds.
 
 ### P53 — Scene Workspace
 

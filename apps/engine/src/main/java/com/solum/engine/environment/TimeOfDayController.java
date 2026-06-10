@@ -60,7 +60,7 @@ public class TimeOfDayController {
 
         diagnostics.setTimeOfDayStatus("computed_non_astronomical_" + preset.toLowerCase());
         diagnostics.setSunStatus(sun.getStatus() + "_activity_local_when_applied");
-        diagnostics.setMoonStatus(moon.isVisible() ? "moon_disk_placeholder_no_ephemeris directional_status=" + moon.getStatus() : moon.getStatus());
+        diagnostics.setMoonStatus(moon.isVisible() ? "moon_directional_state_computed_visual_world_space_not_implemented" : moon.getStatus());
         diagnostics.setStarsStatus(stars > 0.0f ? "stars_asset_missing_placeholder intensity_smooth" : "off_or_daytime_placeholder");
         diagnostics.setCloudStatus(settings.getCloudCoverage() > 0.0f || settings.getCloudDensity() > 0.0f
             ? "cheap_cloud_foundation_controls_only_no_volumetric cloudCoverage=" + settings.getCloudCoverage() + " cloudDensity=" + settings.getCloudDensity()

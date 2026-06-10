@@ -24,8 +24,9 @@ public class EnvironmentDiagnostics {
     private float starsCurveT = 0.0f;
     private String smoothBlendStatus = "skyboxBlendStatus=discrete_preset_switch_light_blend_smooth";
     private String skyboxBlendStatus = "discrete_preset_switch_light_blend_smooth";
-    private String sunDiskStatus = "not_applied";
-    private String moonDiskStatus = "placeholder_not_applied";
+    private String sunDiskStatus = "world_space_sky_disk_not_implemented";
+    private String moonDiskStatus = "world_space_sky_disk_not_implemented";
+    private String screenSpaceSunMoonOverlayStatus = "disabled_screen_space_overlay_rejected";
     private String fallbackStatus = "fallback_allowed_neutral";
     private String mobileSafetyStatus = "lightweight_state_based_no_heavy_diagnostics_per_frame";
     private String lastApplyStatus = "not_applied";
@@ -73,6 +74,8 @@ public class EnvironmentDiagnostics {
     public void setSunDiskStatus(String value) { sunDiskStatus = safe(value); }
     public String getMoonDiskStatus() { return moonDiskStatus; }
     public void setMoonDiskStatus(String value) { moonDiskStatus = safe(value); }
+    public String getScreenSpaceSunMoonOverlayStatus() { return screenSpaceSunMoonOverlayStatus; }
+    public void setScreenSpaceSunMoonOverlayStatus(String value) { screenSpaceSunMoonOverlayStatus = safe(value); }
     public String getFallbackStatus() { return fallbackStatus; }
     public void setFallbackStatus(String value) { fallbackStatus = safe(value); }
     public String getMobileSafetyStatus() { return mobileSafetyStatus; }

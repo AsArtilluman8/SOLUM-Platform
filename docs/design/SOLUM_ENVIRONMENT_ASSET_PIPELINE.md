@@ -71,12 +71,13 @@ python3 tools/env_asset_manifest_check.py
 Manual pipeline:
 
 ```bash
+python3 tools/env_asset_fetch_filament_tools.py --version 1.71.4
 python3 tools/env_asset_download.py --slot day --url <verified-cc0-hdri-url>
-python3 tools/env_asset_pack_build.py --slot day --size 256
+PATH="$PWD/_work/filament_tools/bin:$PATH" python3 tools/env_asset_pack_build.py --slot day --size 256
 python3 tools/env_asset_manifest_check.py
 ```
 
-`tools/env_asset_pack_build.py` refuses to proceed if `cmgen` is missing. `toktx` is required for optional star texture conversion. If either is unavailable, do not fake KTX files; leave fallback active and record the status.
+`tools/env_asset_fetch_filament_tools.py` is a manual helper for the Filament tool bundle. It is not part of Gradle and must not run during normal builds. `tools/env_asset_pack_build.py` refuses to proceed if `cmgen` is missing. `toktx` is required for optional star texture conversion. If either is unavailable, do not fake KTX files; leave fallback active and record the status.
 
 ## Runtime Integration
 
@@ -104,3 +105,10 @@ P53 may ship no real KTX assets if `cmgen`/`toktx` are unavailable. That is acce
 - status is `conversion_tool_unavailable` or `missing_fallback`;
 - reports include `cmgen`/`toktx` availability;
 - no raw HDR/EXR is bundled into `apps/engine/src/main/assets/env`.
+
+P53B also requires:
+
+- no Android View sun/moon disk overlay;
+- `screenSpaceSunMoonOverlayStatus=disabled_screen_space_overlay_rejected`;
+- `sunVisualStatus=world_space_sky_disk_not_implemented`;
+- `moonVisualStatus=world_space_sky_disk_not_implemented`.

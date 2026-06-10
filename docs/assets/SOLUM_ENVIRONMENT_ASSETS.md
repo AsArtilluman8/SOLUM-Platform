@@ -4,7 +4,7 @@ Status: P53 pipeline/starter manifest.
 
 P52 ships no external HDRI, EXR, star map, or large raw environment asset. It adds the manifest, paths, validation, and runtime loader slots so real KTX assets can be added later without changing the P51 Environment API.
 
-P53 attempts the real starter environment pack, but this local toolchain does not expose `cmgen` or `toktx`. P53 therefore does not bundle fake KTX files. The app keeps honest fallback and reports `conversion_tool_unavailable` / `missing_asset_fallback`.
+P53/P53B attempts the real starter environment pack, but this local toolchain does not expose `cmgen` or `toktx`. P53B therefore does not bundle fake KTX files. The app keeps honest fallback and reports `real_env_assets_blocked_by_missing_cmgen`, `conversion_tool_unavailable`, and `missing_asset_fallback`.
 
 ## Manifest
 
@@ -44,7 +44,7 @@ Rejected:
 
 ## P53 Starter Status
 
-No asset is bundled in P53 because `cmgen`/`toktx` are not available in this environment and no existing safe Filament sample KTX is present in the repo. The app keeps P51/P52 fallback active and reports `missing_asset_fallback` instead of crashing.
+No asset is bundled in P53B because `cmgen`/`toktx` are not available in this environment and no existing safe Filament sample KTX is present in the repo. The app keeps P51/P52 fallback active and reports `missing_asset_fallback` instead of crashing.
 
 Total bundled environment asset estimate: `0` bytes.
 
@@ -64,3 +64,15 @@ Not bundled:
 - true volumetric cloud assets.
 
 P54 next can add dedicated cloud shadows and rain/snow VFX/performance after the P53 foundation is verified on phone.
+
+One-command tool fetch attempt:
+
+```bash
+python3 tools/env_asset_fetch_filament_tools.py --version 1.71.4
+```
+
+If that succeeds, run:
+
+```bash
+PATH="$PWD/_work/filament_tools/bin:$PATH" python3 tools/env_asset_pack_build.py --slot day --slot sunset --slot night --size 256
+```

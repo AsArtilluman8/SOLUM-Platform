@@ -122,7 +122,7 @@ for key, haystack, terms in [
     ("p51_environment_runtime_terms", activity_text + environment_text, ["EnvironmentController", "TimeOfDayController", "setTimeOfDay", "setSunIntensityLux", "setMoonIntensityLux", "slot_ready_asset_missing", "placeholder_not_rendered", "planned_p52_assets"]),
     ("p52_environment_asset_pipeline_terms", activity_text, ["ENVIRONMENT_ASSETS_MANIFEST", "activeIblAssetStatus", "activeSkyboxAssetStatus", "activeStarsAssetStatus", "fallbackActive", "assetLicenseStatus", "totalEnvAssetSizeEstimate"]),
     ("p53_smooth_sky_terms", activity_text + environment_text, ["smoothBlendStatus", "skyboxBlendStatus", "timeBlendPhase", "sunCurveT", "nightCurveT", "starsCurveT", "discrete_preset_switch_light_blend_smooth"]),
-    ("p53_sky_visual_terms", activity_text + environment_text, ["sunDiskStatus", "moonDiskStatus", "stars_asset_missing_placeholder", "visible_overlay_billboard_lightweight", "visible_placeholder_overlay_no_ephemeris"]),
+    ("p53_sky_visual_terms", activity_text + environment_text, ["sunDiskStatus", "moonDiskStatus", "stars_asset_missing_placeholder", "disabled_screen_space_overlay_rejected", "world_space_sky_disk_not_implemented", "screenSpaceSunMoonOverlayStatus"]),
     ("p53_cloud_weather_terms", activity_text + environment_text, ["cloudCoverage", "cloudDensity", "sunOcclusion", "cloudShadowStatus", "precipitationStatus", "volumetricCloudsStatus", "not_implemented_mobile_future"]),
     ("render_control_center_api_driven_status", activity_text, ["featureLine", "compactOwnershipSummary", "compactCostSummary", "RenderFeatureDescriptor", "RenderCostDiagnostics"]),
     ("render_control_center_debug_on_demand", activity_text, ["debugPanel.getVisibility() == View.VISIBLE", "Copy Short Report", "Export Full Report"]),
@@ -159,6 +159,17 @@ checks["p52_environment_unsafe_license_strings"] = {
 }
 if unsafe_license_matches:
     missing.append("p52_environment_unsafe_license_strings")
+
+rejected_overlay_terms = []
+for needle in ["visible_overlay_billboard_lightweight", "visible_placeholder_overlay_no_ephemeris", "sun_disk_only_no_glare", "configureSky("]:
+    if needle in activity_text + environment_text:
+        rejected_overlay_terms.append(needle)
+checks["p53_rejected_screen_space_sun_moon_not_active"] = {
+    "status": "present" if not rejected_overlay_terms else "missing",
+    "matches": rejected_overlay_terms,
+}
+if rejected_overlay_terms:
+    missing.append("p53_rejected_screen_space_sun_moon_not_active")
 
 for term in [
     "requestedSampleCount",

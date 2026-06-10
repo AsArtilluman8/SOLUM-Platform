@@ -62,7 +62,7 @@ def main():
         "actions": [],
     }
     if not cmgen:
-        report["nextCommand"] = "Install or expose Filament cmgen matching the app Filament runtime, then run python3 tools/env_asset_pack_build.py"
+        report["nextCommand"] = "python3 tools/env_asset_fetch_filament_tools.py --version 1.71.4 && PATH=\"$PWD/_work/filament_tools/bin:$PATH\" python3 tools/env_asset_pack_build.py --slot day --slot sunset --slot night --size 256"
         print(json.dumps(report, indent=2, sort_keys=True))
         return 2
 

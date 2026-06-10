@@ -1,6 +1,6 @@
 # SOLUM Sky Weather Foundation
 
-Status: P53 foundation.
+Status: P53B honest foundation.
 
 ## Patch Boundaries
 
@@ -30,15 +30,25 @@ skyboxBlendStatus=discrete_preset_switch_light_blend_smooth
 
 This means the skybox preset may switch discretely, but sun/moon/ambient/exposure/stars curves remain smooth.
 
-## Sky Visual Layer
+## Sky Visual Layer Truth
 
-P53 uses a lightweight screen overlay for:
+P53B rejects the P53 screen-space sun/moon disk approach. Android View overlays are not acceptable sky objects because they attach to the camera/screen and can draw over scene objects.
 
-- sun disk, visible only when the computed sun is above the horizon;
-- moon disk placeholder, visible at night;
-- optional glare controlled by the existing Sun Glare setting.
+Current required statuses:
 
-The moon disk is a placeholder, not a real ephemeris. Stars remain `stars_asset_missing_placeholder` until a verified small star texture is converted.
+- `screenSpaceSunMoonOverlayStatus=disabled_screen_space_overlay_rejected`;
+- `sunVisualStatus=world_space_sky_disk_not_implemented`;
+- `moonVisualStatus=world_space_sky_disk_not_implemented`.
+
+The old Sun Glare Android overlay may remain only as optional/debug glare. It is not a sun disk, moon disk, skybox, atmosphere, or renderer-owned sky layer.
+
+Correct future implementation:
+
+- world-space sky disk renderables;
+- skybox content;
+- or a renderer-owned sky/atmosphere pass.
+
+Stars remain `stars_asset_missing_placeholder` until a verified small star texture is converted.
 
 ## Cheap Cloud / Weather Foundation
 

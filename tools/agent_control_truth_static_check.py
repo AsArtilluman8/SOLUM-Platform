@@ -41,7 +41,7 @@ CHECKS = {
     "p51_environment_truth_terms": ["placeholder_not_rendered", "slot_ready_asset_missing", "planned_p52_assets", "missing_asset_fallback", "activity_local"],
     "p52_environment_asset_terms": ["ENVIRONMENT_ASSETS_MANIFEST", "activeIblAssetStatus", "activeSkyboxAssetStatus", "activeStarsAssetStatus", "assetLicenseStatus", "totalEnvAssetSizeEstimate"],
     "p53_smooth_sky_terms": ["smoothBlendStatus", "skyboxBlendStatus", "timeBlendPhase", "sunCurveT", "nightCurveT", "starsCurveT", "discrete_preset_switch_light_blend_smooth"],
-    "p53_sky_visual_terms": ["sunDiskStatus", "moonDiskStatus", "stars_asset_missing_placeholder", "visible_overlay_billboard_lightweight", "visible_placeholder_overlay_no_ephemeris"],
+    "p53_sky_visual_terms": ["sunDiskStatus", "moonDiskStatus", "stars_asset_missing_placeholder", "disabled_screen_space_overlay_rejected", "world_space_sky_disk_not_implemented", "screenSpaceSunMoonOverlayStatus"],
     "p53_cloud_weather_terms": ["cloudCoverage", "cloudDensity", "sunOcclusion", "cloudShadowStatus", "precipitationStatus", "volumetricCloudsStatus", "not_implemented_mobile_future"],
     "crash_report_fallback": ["installCrashReporter", "SOLUM_CRASHES", "solum_crashes", "crash_", "writeCrashReport", "startupMilestone"],
     "startup_milestones": ["onCreate_start", "crash_handler_installed", "before_build_ui", "after_build_ui", "before_create_viewer", "after_create_viewer", "before_load_model", "after_load_model", "onCreate_done"],
@@ -98,6 +98,11 @@ def main():
     result["checks"]["p52_environment_manifest_exists"] = {"status": "present" if ENV_MANIFEST.is_file() else "missing"}
     result["checks"]["p52_environment_asset_docs_exist"] = {"status": "present" if ENV_DOC.is_file() and ENV_PIPELINE_DOC.is_file() else "missing"}
     result["checks"]["p53_env_pack_tool_exists"] = {"status": "present" if (ROOT / "tools/env_asset_pack_build.py").is_file() else "missing"}
+    rejected_overlay_terms = []
+    for needle in ["visible_overlay_billboard_lightweight", "visible_placeholder_overlay_no_ephemeris", "sun_disk_only_no_glare", "configureSky("]:
+        if needle in text:
+            rejected_overlay_terms.append(needle)
+    result["checks"]["p53_rejected_screen_space_sun_moon_not_active"] = {"status": "present" if not rejected_overlay_terms else "missing", "matches": rejected_overlay_terms}
     unsafe = []
     if ENV_MANIFEST.is_file():
         lower = ENV_MANIFEST.read_text(encoding="utf-8", errors="replace").lower()

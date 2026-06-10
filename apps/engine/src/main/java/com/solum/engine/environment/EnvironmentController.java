@@ -102,7 +102,7 @@ public class EnvironmentController implements EnvironmentApi {
         diagnostics.setFallbackStatus(settings.isFallbackAllowed() ? "missing_asset_fallback_allowed_current_or_neutral_background" : "fallback_disabled");
         diagnostics.addNotImplementedYet("p53_real_hdri_ibl_assets_blocked_if_cmgen_toktx_unavailable");
         diagnostics.addNotImplementedYet("stars_milkyway_asset_optional_missing_placeholder");
-        diagnostics.addNotImplementedYet("moon_disk_placeholder_no_ephemeris");
+        diagnostics.addNotImplementedYet("moon_visual_world_space_sky_disk_not_implemented");
         diagnostics.addNotImplementedYet("cloud_shadow_mask_projected_soft_mask_planned_p54");
         diagnostics.addNotImplementedYet("rain_snow_particles_vfx_planned_p54");
         diagnostics.addNotImplementedYet("true_volumetric_clouds_future_not_p53");

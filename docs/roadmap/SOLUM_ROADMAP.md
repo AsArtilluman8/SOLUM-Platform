@@ -108,6 +108,23 @@ P52 may ship with no external assets if conversion tools or license provenance a
 
 P53+ can add advanced atmosphere/procedural sky work later. P52 does not add weather or volumetric clouds.
 
+### P55 — SOLUM Sky / Weather Core Pack
+
+Goal: create the first SOLUM-owned sky/weather system while keeping paid Ultra Dynamic Sky content out of the public repo.
+
+Required outcomes:
+
+- `SkySettings`, `SkyActualState`, `SkyDiagnostics`, `SkyController`;
+- `WeatherSettings`, `WeatherActualState`, `WeatherDiagnostics`, `WeatherController`, `WeatherPreset`;
+- time-of-day, day/night phase, sun/moon/stars state, sky gradient colors;
+- cloud coverage/density/speed/direction, sun occlusion, rain/snow/fog/wind/wetness/snow amount, aurora placeholder;
+- renderer-owned procedural sky/background fallback;
+- no Android UI sun/moon overlay;
+- no paid UDS assets in Git;
+- reports include sky/weather status and paid/private asset safety fields.
+
+P55 is not final AAA sky polish. Volumetric clouds, world-space sun/moon disks, stars texture layer, rain/snow particles, cloud shadows, wetness materials, and aurora rendering remain future work unless implemented with runtime proof.
+
 ### P53 — Scene Workspace
 
 Goal: move beyond a single model preview.

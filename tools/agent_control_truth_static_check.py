@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "apps/engine/src/main/java/com/solum/engine/FilamentGlbPreviewActivity.java"
 ENVIRONMENT = ROOT / "apps/engine/src/main/java/com/solum/engine/environment"
+SKY_WEATHER = ROOT / "apps/engine/src/main/java/com/solum/engine/skyweather"
 ENV_MANIFEST = ROOT / "assets/env/ENVIRONMENT_ASSETS_MANIFEST.json"
 ENV_DOC = ROOT / "docs/assets/SOLUM_ENVIRONMENT_ASSETS.md"
 ENV_PIPELINE_DOC = ROOT / "docs/design/SOLUM_ENVIRONMENT_ASSET_PIPELINE.md"
@@ -40,6 +41,8 @@ CHECKS = {
     "p51_environment_api_terms": ["EnvironmentApi", "EnvironmentController", "TimeOfDayController", "Environment / Time of Day", "setTimeOfDay", "environmentSettings", "environmentActualState", "environmentDiagnostics"],
     "p51_environment_truth_terms": ["placeholder_not_rendered", "slot_ready_asset_missing", "planned_p52_assets", "missing_asset_fallback", "activity_local"],
     "p52_environment_asset_terms": ["ENVIRONMENT_ASSETS_MANIFEST", "activeIblAssetStatus", "activeSkyboxAssetStatus", "activeStarsAssetStatus", "assetLicenseStatus", "totalEnvAssetSizeEstimate"],
+    "p55_sky_weather_core_terms": ["SkySettings", "SkyActualState", "SkyDiagnostics", "SkyController", "WeatherSettings", "WeatherActualState", "WeatherDiagnostics", "WeatherController", "WeatherPreset"],
+    "p55_sky_weather_truth_terms": ["skyWeatherDiagnostics", "sunVisualStatus", "moonVisualStatus", "cloudVisualStatus", "rainStatus", "snowStatus", "privateAssetsEnabled", "paidAssetsTracked", "generatedAssetSizes"],
     "crash_report_fallback": ["installCrashReporter", "SOLUM_CRASHES", "solum_crashes", "crash_", "writeCrashReport", "startupMilestone"],
     "startup_milestones": ["onCreate_start", "crash_handler_installed", "before_build_ui", "after_build_ui", "before_create_viewer", "after_create_viewer", "before_load_model", "after_load_model", "onCreate_done"],
 }
@@ -86,6 +89,8 @@ def main():
     text = TARGET.read_text(encoding="utf-8", errors="replace")
     if ENVIRONMENT.is_dir():
         text += "\n" + "\n".join(path.read_text(encoding="utf-8", errors="replace") for path in ENVIRONMENT.glob("*.java"))
+    if SKY_WEATHER.is_dir():
+        text += "\n" + "\n".join(path.read_text(encoding="utf-8", errors="replace") for path in SKY_WEATHER.glob("*.java"))
     result = {
         "target": str(TARGET.relative_to(ROOT)),
         "status": "static_check_only_not_runtime_proof",

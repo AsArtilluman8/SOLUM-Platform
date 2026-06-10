@@ -18,6 +18,7 @@ SAFE_LICENSES = {
     "BSD-2-Clause",
     "BSD-3-Clause",
     "project-generated-fallback",
+    "filament_sample_asset_provenance_from_google_filament_release_needs_final_license_audit",
 }
 UNSAFE_LICENSE_FRAGMENTS = [
     "royalty-free",
@@ -68,6 +69,8 @@ def validate_manifest(manifest, label, errors, warnings):
             fail(f"{label}:{slot_id}:missing_license", errors)
         if license_value not in SAFE_LICENSES:
             fail(f"{label}:{slot_id}:unsafe_or_unapproved_license:{license_value}", errors)
+        if "needs_final_license_audit" in license_lower:
+            warnings.append(f"{label}:{slot_id}:license_provenance_needs_final_audit")
         for fragment in UNSAFE_LICENSE_FRAGMENTS:
             if fragment in license_lower:
                 fail(f"{label}:{slot_id}:unsafe_license_fragment:{fragment}", errors)

@@ -1,10 +1,10 @@
 # SOLUM Environment Assets
 
-Status: P53 pipeline/starter manifest.
+Status: P53C starter KTX manifest.
 
 P52 ships no external HDRI, EXR, star map, or large raw environment asset. It adds the manifest, paths, validation, and runtime loader slots so real KTX assets can be added later without changing the P51 Environment API.
 
-P53/P53B attempts the real starter environment pack, but this local toolchain does not expose `cmgen` or `toktx`. P53B therefore does not bundle fake KTX files. The app keeps honest fallback and reports `real_env_assets_blocked_by_missing_cmgen`, `conversion_tool_unavailable`, and `missing_asset_fallback`.
+P53C bundles a small starter Filament KTX set for `day` and `studio_debug`.
 
 ## Manifest
 
@@ -42,13 +42,24 @@ Rejected:
 - HDRI-Hub royalty-free samples without explicit public repo and commercial compatibility.
 - 4K/8K raw HDRI/EXR files in the APK.
 
-## P53 Starter Status
+## P53C Starter Status
 
-No asset is bundled in P53B because `cmgen`/`toktx` are not available in this environment and no existing safe Filament sample KTX is present in the repo. The app keeps P51/P52 fallback active and reports `missing_asset_fallback` instead of crashing.
+Bundled:
 
-Total bundled environment asset estimate: `0` bytes.
+- `env/day_ibl.ktx` — 2095456 bytes.
+- `env/day_skybox.ktx` — 1572932 bytes.
+- `env/studio_debug_ibl.ktx` — 2095456 bytes.
+- `env/studio_debug_skybox.ktx` — 1572932 bytes.
 
-Bundled asset list: none.
+Total bundled environment asset estimate: `7336776` bytes.
+
+Source/provenance:
+
+- Filament sample environment `lightroom_14b`.
+- Copied from local downloaded Filament tools package path `_work/filament_tools/filament/bin/assets/ibl/lightroom_14b`.
+- Conservative status: `filament_sample_asset_provenance_from_google_filament_release_needs_final_license_audit`.
+
+Do not call these assets CC0. Exact sample asset license must be audited before public/commercial claim.
 
 Safe source candidates remain:
 
@@ -62,6 +73,13 @@ Not bundled:
 - raw `.exr`;
 - unverified royalty-free samples;
 - true volumetric cloud assets.
+
+Fallback remains for:
+
+- `sunset`;
+- `night`;
+- optional `cloudy`;
+- optional stars.
 
 P54 next can add dedicated cloud shadows and rain/snow VFX/performance after the P53 foundation is verified on phone.
 

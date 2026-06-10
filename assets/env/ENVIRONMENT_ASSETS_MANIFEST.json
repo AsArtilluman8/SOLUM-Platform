@@ -18,19 +18,20 @@
     {
       "id": "day",
       "displayName": "Day",
-      "sourceName": "Poly Haven CC0 HDRI candidate - small outdoor daylight source for P53 starter conversion",
-      "sourceUrl": "https://polyhaven.com/hdris/skies",
-      "license": "CC0-1.0",
-      "author": "Poly Haven contributors",
-      "credit": "Credit optional under CC0; retain source URL in manifest.",
+      "sourceName": "Filament sample environment lightroom_14b",
+      "sourceUrl": "https://github.com/google/filament/releases",
+      "license": "filament_sample_asset_provenance_from_google_filament_release_needs_final_license_audit",
+      "licenseProvenanceStatus": "filament_sample_asset_provenance_from_google_filament_release_needs_final_license_audit",
+      "author": "Google Filament release package",
+      "credit": "Bundled from local Filament tools package path _work/filament_tools/filament/bin/assets/ibl/lightroom_14b; exact sample asset license needs final audit before public/commercial claim.",
       "localIblPath": "env/day_ibl.ktx",
       "localSkyboxPath": "env/day_skybox.ktx",
       "localStarsPath": "",
       "targetFormat": "Filament KTX1/KTX with prefiltered IBL cubemap",
       "targetResolution": "256px cubemap target, mobile starter",
-      "estimatedSizeBytes": 0,
-      "bundled": false,
-      "status": "conversion_tool_unavailable"
+      "estimatedSizeBytes": 3668388,
+      "bundled": true,
+      "status": "bundled"
     },
     {
       "id": "sunset",
@@ -86,19 +87,20 @@
     {
       "id": "studio_debug",
       "displayName": "Studio Debug",
-      "sourceName": "Current procedural fallback until a clear Filament sample or generated KTX is verified",
-      "sourceUrl": "local://procedural-neutral-fallback",
-      "license": "project-generated-fallback",
-      "author": "SOLUM",
-      "credit": "No external asset bundled.",
+      "sourceName": "Filament sample environment lightroom_14b",
+      "sourceUrl": "https://github.com/google/filament/releases",
+      "license": "filament_sample_asset_provenance_from_google_filament_release_needs_final_license_audit",
+      "licenseProvenanceStatus": "filament_sample_asset_provenance_from_google_filament_release_needs_final_license_audit",
+      "author": "Google Filament release package",
+      "credit": "Bundled from local Filament tools package path _work/filament_tools/filament/bin/assets/ibl/lightroom_14b; exact sample asset license needs final audit before public/commercial claim.",
       "localIblPath": "env/studio_debug_ibl.ktx",
       "localSkyboxPath": "env/studio_debug_skybox.ktx",
       "localStarsPath": "",
       "targetFormat": "Filament KTX1/KTX with prefiltered IBL cubemap",
       "targetResolution": "128-256px cubemap target, mobile starter",
-      "estimatedSizeBytes": 0,
-      "bundled": false,
-      "status": "missing_fallback"
+      "estimatedSizeBytes": 3668388,
+      "bundled": true,
+      "status": "bundled"
     }
   ]
 }

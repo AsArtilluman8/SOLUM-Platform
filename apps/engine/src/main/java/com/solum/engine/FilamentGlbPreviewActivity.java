@@ -2417,6 +2417,42 @@ public class FilamentGlbPreviewActivity extends Activity {
         applyIblRotation();
     }
 
+    private void loadKtxEnvironment(File iblFile, File skyboxFile, String reason) throws Exception {
+        Engine engine = modelViewer.getEngine();
+        KTX1Loader.Options options = new KTX1Loader.Options();
+        options.setSrgb(false);
+        ByteBuffer iblData = readFile(iblFile);
+        KTX1Loader.IndirectLightBundle indirectBundle = KTX1Loader.INSTANCE.createIndirectLight(engine, iblData, options);
+        if (indirectBundle == null || indirectBundle.getIndirectLight() == null) {
+            throw new IllegalStateException("ktx_indirect_light_missing_spherical_harmonics");
+        }
+        ByteBuffer skyboxData = readFile(skyboxFile);
+        KTX1Loader.SkyboxBundle skyboxBundle = KTX1Loader.INSTANCE.createSkybox(engine, skyboxData, options);
+        if (skyboxBundle == null || skyboxBundle.getSkybox() == null) {
+            throw new IllegalStateException("ktx_skybox_missing");
+        }
+        destroyEnvironmentResources(engine);
+        indirectLight = indirectBundle.getIndirectLight();
+        indirectLight.setIntensity(ambientFallbackIntensity);
+        skybox = skyboxBundle.getSkybox();
+        modelViewer.getScene().setIndirectLight(indirectLight);
+        modelViewer.getScene().setSkybox(skybox);
+        if (indirectBundle.getCubemap() != null) iblOwnedTextures.add(indirectBundle.getCubemap());
+        if (skyboxBundle.getCubemap() != null) iblOwnedTextures.add(skyboxBundle.getCubemap());
+        iblMode = "ktx1_real_ibl_plus_skybox";
+        this.iblFile = iblFile.getName();
+        iblLoadStatus = "ok_ktx1loader_separate_ibl_skybox_" + reason;
+        environmentMode = "real_ibl_skybox_ktx1";
+        iblStatus = "ok_real_ibl_skybox_ktx1loader";
+        realIblReady = "true";
+        skyboxReady = "true";
+        indirectLightReady = "true";
+        fallbackReason = "none";
+        futureIblAssetPath = iblFile.getAbsolutePath();
+        applySkyboxVisibility();
+        applyIblRotation();
+    }
+
     private void applyEnvironmentAssetSlotForPreset(String reason) {
         EnvironmentAssetSlot slot = environmentAssetSlotForPreset(environmentApi == null ? "CURRENT" : environmentApi.getActualState().getActiveEnvironmentPreset());
         activeEnvironmentAssetSlot = slot.id;
@@ -2430,11 +2466,11 @@ public class FilamentGlbPreviewActivity extends Activity {
         activeStarsAssetStatus = (slot.starsPath == null || slot.starsPath.isEmpty())
             ? "not_applicable"
             : (starsExists ? "bundled_stars_asset_slot_ready_layer_not_active" : "stars_asset_missing_placeholder");
-        if (!iblExists) {
-            activeIblAssetStatus = "missing_asset_fallback";
-            activeSkyboxAssetStatus = skyboxExists ? "bundled_skybox_waiting_for_ibl_loader_path" : "missing_asset_fallback";
+        if (!iblExists || !skyboxExists) {
+            activeIblAssetStatus = iblExists ? "bundled_ibl_waiting_for_skybox" : "missing_asset_fallback";
+            activeSkyboxAssetStatus = skyboxExists ? "bundled_skybox_waiting_for_ibl" : "missing_asset_fallback";
             environmentAssetFallbackActive = "true";
-            lastEnvironmentAssetLoadError = "missing_asset:" + slot.iblPath;
+            lastEnvironmentAssetLoadError = "missing_asset:" + (!iblExists ? slot.iblPath : slot.skyboxPath);
             realEnvAssetStatus = "real_env_assets_blocked_by_missing_cmgen";
             assetLoadStatus = "missing_asset_fallback";
             fallbackReason = "missing_asset_fallback";
@@ -2445,10 +2481,11 @@ public class FilamentGlbPreviewActivity extends Activity {
             return;
         }
         try {
-            File cached = copyAssetToCacheFile(slot.iblPath);
-            loadKtxIbl(cached, "p52_asset_slot_" + slot.id + "_" + reason);
+            File cachedIbl = copyAssetToCacheFile(slot.iblPath);
+            File cachedSkybox = copyAssetToCacheFile(slot.skyboxPath);
+            loadKtxEnvironment(cachedIbl, cachedSkybox, "p53_asset_slot_" + slot.id + "_" + reason);
             activeIblAssetStatus = "bundled_loaded";
-            activeSkyboxAssetStatus = skyboxExists ? "bundled_loaded_or_ibl_bundle" : "skybox_specific_asset_missing_ibl_bundle_used";
+            activeSkyboxAssetStatus = "bundled_loaded";
             environmentAssetFallbackActive = "false";
             lastEnvironmentAssetLoadError = "none";
             realEnvAssetStatus = "bundled_loaded";
@@ -2459,9 +2496,9 @@ public class FilamentGlbPreviewActivity extends Activity {
             activeIblAssetStatus = "load_failed_fallback";
             activeSkyboxAssetStatus = "load_failed_fallback";
             environmentAssetFallbackActive = "true";
-            lastEnvironmentAssetLoadError = shortMessage(t);
+            lastEnvironmentAssetLoadError = "asset_exists_loader_failed:" + shortMessage(t);
             realEnvAssetStatus = "asset_exists_loader_failed_fallback";
-            assetLoadStatus = "load_failed_fallback";
+            assetLoadStatus = lastEnvironmentAssetLoadError;
             fallbackReason = "environment_asset_load_failed";
             createEnvironmentFallback();
         }
@@ -2533,6 +2570,9 @@ public class FilamentGlbPreviewActivity extends Activity {
             if (license.isEmpty() || license.contains("unknown") || license.contains("royalty-free") || license.contains("non-commercial")
                 || license.contains("personal use") || license.contains("unity asset store") || license.contains("sketchfab")) {
                 return "unsafe_or_missing_license slot=" + slot.id;
+            }
+            if (license.contains("needs_final_license_audit")) {
+                return "filament_sample_asset_provenance_from_google_filament_release_needs_final_license_audit";
             }
         }
         return "safe_manifest_licenses_checked";

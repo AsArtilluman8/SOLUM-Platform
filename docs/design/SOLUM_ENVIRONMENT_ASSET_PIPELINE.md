@@ -1,8 +1,8 @@
 # SOLUM Environment Asset Pipeline
 
-Status: P53 pipeline foundation.
+Status: P53C pipeline foundation.
 
-P51 created the `EnvironmentApi`, time-of-day model, sun/moon/stars intent, IBL/skybox slots, and fallback diagnostics. P52 adds the asset manifest, directory convention, validation tools, and safe runtime loader slots. P53 attempts real starter assets and adds smooth sky/weather foundation. If conversion tools are unavailable, the runtime keeps fallback active and diagnostics report `conversion_tool_unavailable` / `missing_asset_fallback`.
+P51 created the `EnvironmentApi`, time-of-day model, sun/moon/stars intent, IBL/skybox slots, and fallback diagnostics. P52 adds the asset manifest, directory convention, validation tools, and safe runtime loader slots. P53 adds smooth sky/weather foundation. P53C bundles starter Filament KTX assets for `day` and `studio_debug`; `sunset` and `night` remain fallback until real assets are added.
 
 ## Asset Sources
 
@@ -83,6 +83,13 @@ python3 tools/env_asset_manifest_check.py
 
 When an environment preset is selected, the Activity maps the P51 preset to a P52 slot and checks for matching KTX assets in Android assets. If the KTX exists, it reuses the existing Filament `KTX1Loader` path. If the KTX is missing or load fails, the app keeps the current P51 fallback.
 
+P53C loads separate KTX files:
+
+- `*_ibl.ktx` through `KTX1Loader.createIndirectLight`;
+- `*_skybox.ktx` through `KTX1Loader.createSkybox`.
+
+If either file is missing, diagnostics report `missing_asset_fallback`. If both files exist but loading fails, diagnostics report `asset_exists_loader_failed:<error>`.
+
 Diagnostics must report:
 
 - `activeEnvironmentPreset`
@@ -105,6 +112,13 @@ P53 may ship no real KTX assets if `cmgen`/`toktx` are unavailable. That is acce
 - status is `conversion_tool_unavailable` or `missing_fallback`;
 - reports include `cmgen`/`toktx` availability;
 - no raw HDR/EXR is bundled into `apps/engine/src/main/assets/env`.
+
+P53C starter bundle:
+
+- `day`: bundled, 3668388 bytes.
+- `studio_debug`: bundled, 3668388 bytes.
+- provenance status: `filament_sample_asset_provenance_from_google_filament_release_needs_final_license_audit`.
+- `sunset` / `night`: fallback or `conversion_tool_unavailable`.
 
 P53B also requires:
 

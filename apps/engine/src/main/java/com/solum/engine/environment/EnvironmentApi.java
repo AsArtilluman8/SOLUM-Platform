@@ -25,6 +25,15 @@ public interface EnvironmentApi {
     void setStarsEnabled(boolean enabled);
     void setStarsIntensity(float value);
     void setCloudAmount(float value);
+    void setCloudCoverage(float value);
+    void setCloudDensity(float value);
+    void setCloudSpeed(float value);
+    void setCloudDirectionDeg(float degrees);
+    void setCloudShadowStrength(float value);
+    void setCloudShadowScale(float value);
+    void setCloudShadowSpeed(float value);
+    void setPrecipitationType(String type);
+    void setPrecipitationIntensity(float value);
     void apply();
     void update(float deltaSeconds);
 }

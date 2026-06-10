@@ -1,6 +1,6 @@
 {
-  "active_patch": "P52",
-  "priority": "environment_asset_pipeline_starter_pack",
+  "active_patch": "P53",
+  "priority": "real_environment_assets_sky_weather_foundation",
   "main_file": "apps/engine/src/main/java/com/solum/engine/FilamentGlbPreviewActivity.java",
   "key_docs": [
     "docs/AI_AGENT_CONTINUATION.md",
@@ -14,8 +14,10 @@
     "docs/design/SOLUM_ENVIRONMENT_API.md",
     "docs/design/SOLUM_ENVIRONMENT_ASSET_PIPELINE.md",
     "docs/assets/SOLUM_ENVIRONMENT_ASSETS.md",
+    "docs/design/SOLUM_SKY_WEATHER_FOUNDATION.md",
     "assets/env/ENVIRONMENT_ASSETS_MANIFEST.json",
     "tools/env_asset_manifest_check.py",
+    "tools/env_asset_pack_build.py",
     "docs/design/SOLUM_MALI_RENDER_OPTIMIZATION_RULES.md",
     "docs/design/SOLUM_RENDER_FOUNDATION_PLAN.md",
     "docs/audits/FILAMENT_RUNTIME_FORENSICS.md",
@@ -62,7 +64,10 @@
     "fallback status",
     "Filament integration status",
     "which parts are real applied",
-    "which parts are placeholder / planned P52B",
+    "smooth blend implementation details",
+    "sun disk/moon/stars visual status",
+    "cloud/weather foundation status",
+    "which parts are placeholder / planned P54",
     "diagnostics/report integration",
     "Render Control Center sections added",
     "controls preserved from P47B2",
@@ -84,11 +89,11 @@
     "quality must not be reduced to save tokens"
   ],
   "current_near_term_order": [
-    "P52",
-    "P53",
     "P54",
     "P55",
     "P56",
-    "P57"
+    "P57",
+    "P58",
+    "P59"
   ]
 }

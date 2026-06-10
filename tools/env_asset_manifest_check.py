@@ -29,7 +29,7 @@ UNSAFE_LICENSE_FRAGMENTS = [
     "unknown",
     "todo",
 ]
-ALLOWED_STATUS = {"bundled", "missing_fallback", "planned", "conversion_required"}
+ALLOWED_STATUS = {"bundled", "missing_fallback", "planned", "conversion_required", "conversion_tool_unavailable"}
 MAX_BUNDLED_BYTES = 10 * 1024 * 1024
 WARN_FILE_BYTES = 4 * 1024 * 1024
 
@@ -79,10 +79,18 @@ def validate_manifest(manifest, label, errors, warnings):
         if estimate < 0:
             fail(f"{label}:{slot_id}:negative_estimated_size", errors)
         total_estimate += estimate
+        if not str(slot.get("sourceUrl", "")).strip():
+            fail(f"{label}:{slot_id}:missing_source_url", errors)
+        if not str(slot.get("sourceName", "")).strip():
+            fail(f"{label}:{slot_id}:missing_source_name", errors)
+        if not str(slot.get("credit", "")).strip():
+            fail(f"{label}:{slot_id}:missing_credit", errors)
+        paths = []
         for key in ("localIblPath", "localSkyboxPath", "localStarsPath"):
             rel = str(slot.get(key, "") or "")
             if not rel:
                 continue
+            paths.append(rel)
             if rel.startswith("/") or ".." in Path(rel).parts:
                 fail(f"{label}:{slot_id}:{key}:unsafe_path:{rel}", errors)
                 continue
@@ -92,12 +100,16 @@ def validate_manifest(manifest, label, errors, warnings):
             if path.exists():
                 size = path.stat().st_size
                 total_existing += size
-                if estimate and estimate != size:
-                    fail(f"{label}:{slot_id}:{key}:estimated_size_mismatch:{estimate}!={size}", errors)
                 if size > WARN_FILE_BYTES:
                     warnings.append(f"{label}:{slot_id}:{key}:large_file:{size}")
             elif bundled:
                 fail(f"{label}:{slot_id}:{key}:bundled_file_missing:{rel}", errors)
+        if bundled:
+            existing_slot_size = sum((APP_ASSETS / rel).stat().st_size for rel in paths if (APP_ASSETS / rel).is_file())
+            if estimate != existing_slot_size:
+                fail(f"{label}:{slot_id}:estimated_size_mismatch:{estimate}!={existing_slot_size}", errors)
+        elif estimate != 0:
+            warnings.append(f"{label}:{slot_id}:nonbundled_estimated_size:{estimate}")
     if total_estimate > MAX_BUNDLED_BYTES:
         fail(f"{label}:estimated_bundle_too_large:{total_estimate}", errors)
     if total_existing > MAX_BUNDLED_BYTES:
@@ -117,6 +129,9 @@ def main():
     for raw in APP_ASSETS.glob("env/**/*"):
         if raw.is_file() and raw.suffix.lower() in {".hdr", ".exr"}:
             fail(f"raw_hdr_exr_file_in_app_assets:{raw.relative_to(ROOT)}", errors)
+    for raw in (ROOT / "assets/env").glob("**/*"):
+        if raw.is_file() and raw.suffix.lower() in {".hdr", ".exr"}:
+            fail(f"raw_hdr_exr_file_in_source_assets:{raw.relative_to(ROOT)}", errors)
     result = {
         "status": "ok" if not errors else "failed",
         "sourceManifest": str(SOURCE_MANIFEST.relative_to(ROOT)),

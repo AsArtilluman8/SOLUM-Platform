@@ -106,9 +106,37 @@ Required outcomes:
 
 P52 may ship with no external assets if conversion tools or license provenance are not available. In that case the fallback must stay active and P52B adds the actual verified KTX bundle.
 
-P53+ can add advanced atmosphere/procedural sky work later. P52 does not add weather or volumetric clouds.
+### P53 — Real Environment Assets + Sky Visual Layer + Smooth Weather Foundation
 
-### P53 — Scene Workspace
+Goal: turn the P51/P52 environment foundation into a visible, mobile-safe sky system.
+
+Required outcomes:
+
+- try a real day/sunset/night starter KTX set only from CC0/public-domain/permissive sources;
+- if `cmgen`/`toktx` are unavailable, keep fallback active and report `conversion_tool_unavailable`;
+- no raw HDR/EXR bundled in APK;
+- smoothstep/lerp day/night curves for sun, moon, ambient/IBL, background, exposure, and stars;
+- discrete skybox preset switching is allowed only with `skyboxBlendStatus=discrete_preset_switch_light_blend_smooth`;
+- lightweight sun disk and moon disk placeholder;
+- stars asset/status without pretending a missing star texture is visible;
+- cheap cloud/weather foundation: `cloudCoverage`, `cloudDensity`, sun attenuation, precipitation placeholder status;
+- no true volumetric clouds, no Bruneton/Hosek runtime atmosphere, no fake production sky.
+
+Skybox/IBL does not cast hard shadows. Sun/moon directional lights do. Cloud shadows are future soft projected masks, not real volumetric shadows.
+
+### P54 — Dedicated Cloud Shadows / Rain / Snow VFX / Performance
+
+Goal: finish the visual/weather pieces intentionally after P53.
+
+Required outcomes:
+
+- cheap scrolling cloud noise/layer if performance-safe;
+- projected soft cloud shadow mask;
+- rain/snow VFX placeholders upgraded to visible VFX only with performance budget;
+- diagnostics and phone performance verification;
+- true volumetric clouds remain future.
+
+### P55 — Scene Workspace
 
 Goal: move beyond a single model preview.
 
@@ -121,7 +149,7 @@ Required outcomes:
 - transform values;
 - object lifecycle and unload/release rules.
 
-### P54 — Asset Shelf v1
+### P56 — Asset Shelf v1
 
 Goal: create the local asset browser and registry foundation.
 
@@ -134,7 +162,7 @@ Required outcomes:
 - unload/release assets safely;
 - prepare the structure for future cloud/community packages.
 
-### P55 — Transform Gizmo v1
+### P57 — Transform Gizmo v1
 
 Goal: add touch-first object transform tools.
 
@@ -148,7 +176,7 @@ Required outcomes:
 
 Reference existing good solutions before implementation, such as common transform-control patterns in professional editors and open-source libraries. Reuse ideas where license-compatible and technically practical.
 
-### P56 — Animation Preview v1
+### P58 — Animation Preview v1
 
 Goal: inspect and play glTF/GLB animations.
 
@@ -161,7 +189,7 @@ Required outcomes:
 - timeline/scrub;
 - diagnostics for skeleton, morph targets, and unsupported states.
 
-### P57 — Scene Save/Load v1
+### P59 — Scene Save/Load v1
 
 Goal: persist scene state separately from temporary render preview settings.
 

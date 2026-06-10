@@ -97,6 +97,9 @@ environment_methods = [
     "setMoonAzimuth", "setMoonElevation", "setMoonIntensityLux", "setMoonPhase",
     "setIblPreset", "setIblStrength", "setIblRotation", "setSkyboxPreset",
     "setSkyboxVisible", "setStarsEnabled", "setStarsIntensity", "setCloudAmount",
+    "setCloudCoverage", "setCloudDensity", "setCloudSpeed", "setCloudDirectionDeg",
+    "setCloudShadowStrength", "setCloudShadowScale", "setCloudShadowSpeed",
+    "setPrecipitationType", "setPrecipitationIntensity",
     "apply", "update",
 ]
 missing_environment_methods = [method for method in environment_methods if method not in environment_api_text]
@@ -118,6 +121,9 @@ for key, haystack, terms in [
     ("p51_environment_ui_report_terms", activity_text, ["Environment / Time of Day", "Time", "Dawn", "Noon", "Sunset", "Night", "environmentSettings", "environmentActualState", "environmentDiagnostics", "environmentShortReportSection"]),
     ("p51_environment_runtime_terms", activity_text + environment_text, ["EnvironmentController", "TimeOfDayController", "setTimeOfDay", "setSunIntensityLux", "setMoonIntensityLux", "slot_ready_asset_missing", "placeholder_not_rendered", "planned_p52_assets"]),
     ("p52_environment_asset_pipeline_terms", activity_text, ["ENVIRONMENT_ASSETS_MANIFEST", "activeIblAssetStatus", "activeSkyboxAssetStatus", "activeStarsAssetStatus", "fallbackActive", "assetLicenseStatus", "totalEnvAssetSizeEstimate"]),
+    ("p53_smooth_sky_terms", activity_text + environment_text, ["smoothBlendStatus", "skyboxBlendStatus", "timeBlendPhase", "sunCurveT", "nightCurveT", "starsCurveT", "discrete_preset_switch_light_blend_smooth"]),
+    ("p53_sky_visual_terms", activity_text + environment_text, ["sunDiskStatus", "moonDiskStatus", "stars_asset_missing_placeholder", "visible_overlay_billboard_lightweight", "visible_placeholder_overlay_no_ephemeris"]),
+    ("p53_cloud_weather_terms", activity_text + environment_text, ["cloudCoverage", "cloudDensity", "sunOcclusion", "cloudShadowStatus", "precipitationStatus", "volumetricCloudsStatus", "not_implemented_mobile_future"]),
     ("render_control_center_api_driven_status", activity_text, ["featureLine", "compactOwnershipSummary", "compactCostSummary", "RenderFeatureDescriptor", "RenderCostDiagnostics"]),
     ("render_control_center_debug_on_demand", activity_text, ["debugPanel.getVisibility() == View.VISIBLE", "Copy Short Report", "Export Full Report"]),
     ("startup_crash_report_fallback", activity_text, ["installCrashReporter", "writeCrashReport", "SOLUM_CRASHES", "solum_crashes", "startupMilestone"]),
@@ -133,6 +139,8 @@ for key, path in [
     ("p52_environment_app_manifest", APP_ENV_MANIFEST),
     ("p52_environment_asset_doc", ENV_ASSET_DOC),
     ("p52_environment_pipeline_doc", ENV_PIPELINE_DOC),
+    ("p53_env_pack_tool", ROOT / "tools/env_asset_pack_build.py"),
+    ("p53_sky_weather_doc", ROOT / "docs/design/SOLUM_SKY_WEATHER_FOUNDATION.md"),
 ]:
     ok = path.is_file()
     checks[key] = {"status": "present" if ok else "missing", "path": str(path.relative_to(ROOT))}

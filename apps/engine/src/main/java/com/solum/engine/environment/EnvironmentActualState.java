@@ -11,6 +11,11 @@ public class EnvironmentActualState {
     private float backgroundBrightness = 0.16f;
     private float ambientIntensity = 1.2f;
     private float exposureHint = 1.0f;
+    private float cloudCoverage = 0.0f;
+    private float cloudDensity = 0.0f;
+    private float sunOcclusion = 1.0f;
+    private String cloudShadowStatus = "planned_projected_mask_not_active";
+    private String precipitationStatus = "none";
     private boolean fallbackActive = true;
     private String applyStatus = "not_applied";
 
@@ -32,6 +37,16 @@ public class EnvironmentActualState {
     public void setAmbientIntensity(float value) { ambientIntensity = EnvironmentSettings.clamp(value, 0.0f, 10.0f); }
     public float getExposureHint() { return exposureHint; }
     public void setExposureHint(float value) { exposureHint = EnvironmentSettings.clamp(value, 0.1f, 5.0f); }
+    public float getCloudCoverage() { return cloudCoverage; }
+    public void setCloudCoverage(float value) { cloudCoverage = EnvironmentSettings.clamp(value, 0.0f, 1.0f); }
+    public float getCloudDensity() { return cloudDensity; }
+    public void setCloudDensity(float value) { cloudDensity = EnvironmentSettings.clamp(value, 0.0f, 1.0f); }
+    public float getSunOcclusion() { return sunOcclusion; }
+    public void setSunOcclusion(float value) { sunOcclusion = EnvironmentSettings.clamp(value, 0.0f, 1.0f); }
+    public String getCloudShadowStatus() { return cloudShadowStatus; }
+    public void setCloudShadowStatus(String value) { cloudShadowStatus = value == null ? "" : value; }
+    public String getPrecipitationStatus() { return precipitationStatus; }
+    public void setPrecipitationStatus(String value) { precipitationStatus = value == null ? "" : value; }
     public boolean isFallbackActive() { return fallbackActive; }
     public void setFallbackActive(boolean value) { fallbackActive = value; }
     public String getApplyStatus() { return applyStatus; }

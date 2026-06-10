@@ -210,6 +210,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private Button lightRigButton;
     private Button skyboxButton;
     private Button moonButton;
+    private Button weatherButton;
     private Button collapseButton;
     private Button assetsTabButton;
     private Button lightingTabButton;
@@ -368,6 +369,12 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String activeIblAssetStatus = "missing_fallback";
     private String activeSkyboxAssetStatus = "missing_fallback";
     private String activeStarsAssetStatus = "missing_fallback";
+    private String sunDiskStatus = "not_applied";
+    private String moonDiskStatus = "placeholder_not_applied";
+    private String starsVisualStatus = "stars_asset_missing_placeholder";
+    private String cloudVisualStatus = "controls_only_no_cloud_layer";
+    private String cloudShadowMaskStatus = "cloud_shadow_mask=planned_not_active";
+    private String precipitationStatus = "none";
     private String activeIblAssetPath = "env/studio_debug_ibl.ktx";
     private String activeSkyboxAssetPath = "env/studio_debug_skybox.ktx";
     private String activeStarsAssetPath = "none";
@@ -456,6 +463,11 @@ public class FilamentGlbPreviewActivity extends Activity {
     private float moonIntensityLux = 0.3f;
     private float moonPhase = 0.5f;
     private float starsIntensity = 1.0f;
+    private float cloudCoverage = 0.0f;
+    private float cloudDensity = 0.0f;
+    private float cloudSpeed = 0.0f;
+    private float sunOcclusion = 1.0f;
+    private WeatherMode weatherMode = WeatherMode.CLEAR;
     private String environmentApplyStatus = "not_applied";
     private float modelRotationX = 0.0f;
     private float modelRotationY = 0.0f;
@@ -633,6 +645,31 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
 
         SunGlareMode next() {
+            return values()[(ordinal() + 1) % values().length];
+        }
+    }
+
+    private enum WeatherMode {
+        CLEAR("Weather: Clear", 0.0f, 0.0f, "NONE", 0.0f),
+        CLOUDY("Weather: Cloudy", 0.65f, 0.55f, "NONE", 0.0f),
+        RAIN_PLACEHOLDER("Weather: Rain placeholder", 0.85f, 0.75f, "RAIN", 0.45f),
+        SNOW_PLACEHOLDER("Weather: Snow placeholder", 0.75f, 0.60f, "SNOW", 0.35f);
+
+        final String label;
+        final float coverage;
+        final float density;
+        final String precipitationType;
+        final float precipitationIntensity;
+
+        WeatherMode(String label, float coverage, float density, String precipitationType, float precipitationIntensity) {
+            this.label = label;
+            this.coverage = coverage;
+            this.density = density;
+            this.precipitationType = precipitationType;
+            this.precipitationIntensity = precipitationIntensity;
+        }
+
+        WeatherMode next() {
             return values()[(ordinal() + 1) % values().length];
         }
     }
@@ -1257,6 +1294,29 @@ public class FilamentGlbPreviewActivity extends Activity {
             environmentApi.setStarsIntensity(v);
             applyEnvironmentStateToActivity("stars_intensity");
         });
+        addLightingSlider(iblPanel, "Cloud Coverage", 0.0f, 1.0f, 0.05f, cloudCoverage, v -> {
+            ensureEnvironmentApi();
+            cloudCoverage = v;
+            environmentApi.setCloudCoverage(v);
+            applyEnvironmentStateToActivity("cloud_coverage");
+        });
+        addLightingSlider(iblPanel, "Cloud Density", 0.0f, 1.0f, 0.05f, cloudDensity, v -> {
+            ensureEnvironmentApi();
+            cloudDensity = v;
+            environmentApi.setCloudDensity(v);
+            applyEnvironmentStateToActivity("cloud_density");
+        });
+        addLightingSlider(iblPanel, "Cloud Speed", 0.0f, 4.0f, 0.1f, cloudSpeed, v -> {
+            ensureEnvironmentApi();
+            cloudSpeed = v;
+            environmentApi.setCloudSpeed(v);
+            applyEnvironmentStateToActivity("cloud_speed");
+        });
+        weatherButton = button("", v -> {
+            weatherMode = weatherMode.next();
+            applyWeatherMode();
+        });
+        iblPanel.addView(weatherButton);
         iblPanel.addView(environmentSummaryView);
         iblPanel.addView(iblButton);
         skyboxButton = button("", v -> {
@@ -2365,7 +2425,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         boolean starsExists = slot.starsPath != null && !slot.starsPath.isEmpty() && appAssetExists(slot.starsPath);
         activeStarsAssetStatus = (slot.starsPath == null || slot.starsPath.isEmpty())
             ? "not_applicable"
-            : (starsExists ? "bundled_not_rendered_p52_stars_slot_only" : "missing_fallback");
+            : (starsExists ? "bundled_stars_asset_slot_ready_layer_not_active" : "stars_asset_missing_placeholder");
         if (!iblExists) {
             activeIblAssetStatus = "missing_asset_fallback";
             activeSkyboxAssetStatus = skyboxExists ? "bundled_skybox_waiting_for_ibl_loader_path" : "missing_asset_fallback";
@@ -2483,6 +2543,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         diagnostics.setStarsStatus(activeStarsAssetStatus + " intensity=" + twoDecimal(starsIntensity) + " path=" + activeStarsAssetPath);
         diagnostics.setFallbackStatus("true".equals(environmentAssetFallbackActive) ? "missing_asset_fallback" : "asset_backed_environment");
         diagnostics.setLastApplyStatus(environmentApi.getDiagnostics().getLastApplyStatus() + " p52_assets=" + activeIblAssetStatus);
+        diagnostics.setSunDiskStatus(sunDiskStatus);
+        diagnostics.setMoonDiskStatus(moonDiskStatus);
+        diagnostics.setCloudShadowStatus(cloudShadowMaskStatus);
+        diagnostics.setPrecipitationStatus(precipitationStatus);
     }
 
     private boolean appAssetExists(String path) {
@@ -2727,12 +2791,19 @@ public class FilamentGlbPreviewActivity extends Activity {
         moonIntensityLux = settings.getMoonIntensityLux();
         moonPhase = settings.getMoonPhase();
         starsIntensity = settings.getStarsIntensity();
+        cloudCoverage = actual.getCloudCoverage();
+        cloudDensity = actual.getCloudDensity();
+        cloudSpeed = settings.getCloudSpeed();
+        sunOcclusion = actual.getSunOcclusion();
+        cloudShadowMaskStatus = actual.getCloudShadowStatus();
+        precipitationStatus = actual.getPrecipitationStatus();
         environmentMode = "environment_api_" + actual.getActiveEnvironmentPreset().toLowerCase(Locale.US);
         fallbackReason = actual.isFallbackActive() ? "missing_asset_fallback" : fallbackReason;
         iblStatus = environmentApi.getDiagnostics().getIblSlotStatus();
         applyEnvironmentAssetSlotForPreset(reason);
         environmentApplyStatus = "activity_local_applied_reason_" + reason;
         applyLightingValues();
+        applySunGlareOverlay();
         applySkyboxVisibility();
         applyIblRotation();
         syncRenderApiRequestedState();
@@ -2755,7 +2826,11 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\niblPreset=" + actual.getActiveIblPreset() + " skyboxPreset=" + actual.getActiveSkyboxPreset()
                 + "\nassetSlot=" + activeEnvironmentAssetSlot + " ibl=" + activeIblAssetStatus + " sky=" + activeSkyboxAssetStatus
                 + "\nlicense=" + environmentAssetLicenseStatus + " sizeEst=" + totalEnvironmentAssetSizeEstimate
-                + "\nstarsVisibility=" + twoDecimal(actual.getStarsVisibility()) + " status=" + diagnostics.getStarsStatus()
+                + "\nsmooth=" + diagnostics.getSmoothBlendStatus()
+                + "\ncurves sun/night/stars=" + twoDecimal(diagnostics.getSunCurveT()) + "/" + twoDecimal(diagnostics.getNightCurveT()) + "/" + twoDecimal(diagnostics.getStarsCurveT())
+                + "\nsky visuals sun=" + sunDiskStatus + " moon=" + moonDiskStatus + " stars=" + diagnostics.getStarsStatus()
+                + "\ncloud coverage/density=" + twoDecimal(actual.getCloudCoverage()) + "/" + twoDecimal(actual.getCloudDensity()) + " sunOcclusion=" + twoDecimal(actual.getSunOcclusion())
+                + "\nweather=" + precipitationStatus + " cloudShadow=" + cloudShadowMaskStatus
                 + "\nfallback=" + diagnostics.getFallbackStatus()
                 + "\napply=" + environmentApplyStatus);
         }
@@ -2782,6 +2857,17 @@ public class FilamentGlbPreviewActivity extends Activity {
         sunElevation = clamp(elevation, -20.0f, 90.0f);
         applyLightingValues();
         setLastAction("sun_direction_" + label);
+    }
+
+    private void applyWeatherMode() {
+        ensureEnvironmentApi();
+        cloudCoverage = weatherMode.coverage;
+        cloudDensity = weatherMode.density;
+        environmentApi.setCloudCoverage(cloudCoverage);
+        environmentApi.setCloudDensity(cloudDensity);
+        environmentApi.setPrecipitationType(weatherMode.precipitationType);
+        environmentApi.setPrecipitationIntensity(weatherMode.precipitationIntensity);
+        applyEnvironmentStateToActivity("weather_" + weatherMode.name().toLowerCase(Locale.US));
     }
 
     private void applyQualityProfile() {
@@ -3208,22 +3294,57 @@ public class FilamentGlbPreviewActivity extends Activity {
             sunGlareStatus = "deferred_overlay_not_created";
             return;
         }
-        boolean enabled = sunGlareMode != SunGlareMode.OFF && qualityProfile != FilamentQualityProfile.LOW && sunElevation > 2.0f && sunLightIntensity > 0.1f;
-        if (!enabled) {
+        boolean sunDiskVisible = sunElevation > -1.0f && sunLightIntensity > 0.05f;
+        boolean glareEnabled = sunGlareMode != SunGlareMode.OFF && qualityProfile != FilamentQualityProfile.LOW && sunElevation > 2.0f && sunLightIntensity > 0.1f;
+        boolean moonDiskVisible = environmentApi != null && environmentApi.getActualState().getMoon().isVisible();
+        if (!sunDiskVisible && !moonDiskVisible) {
             sunGlareOverlayView.setVisibility(View.GONE);
             if (sunGlareMode == SunGlareMode.OFF) sunGlareStatus = "off_mobile_safe_default";
             else if (qualityProfile == FilamentQualityProfile.LOW) sunGlareStatus = "disabled_low_quality";
             else sunGlareStatus = "off_sun_below_horizon_or_zero_intensity";
+            sunDiskStatus = "not_visible_below_horizon_or_zero_intensity";
+            moonDiskStatus = "not_visible_or_disabled";
+            syncSkyVisualDiagnostics();
             return;
         }
         float az = normalizedAzimuth(sunAzimuth);
         float x = 0.5f + (float) Math.sin(Math.toRadians(az)) * 0.34f;
         float y = 0.58f - clamp(sunElevation, 0.0f, 90.0f) / 90.0f * 0.46f;
-        float alpha = sunGlareMode == SunGlareMode.SUBTLE ? 0.10f : 0.17f;
-        float radius = sunGlareMode == SunGlareMode.SUBTLE ? 0.18f : 0.25f;
-        sunGlareOverlayView.configure(clamp(x, 0.08f, 0.92f), clamp(y, 0.06f, 0.78f), radius, alpha);
+        float glareAlpha = glareEnabled ? (sunGlareMode == SunGlareMode.SUBTLE ? 0.10f : 0.17f) : 0.0f;
+        float radius = glareEnabled ? (sunGlareMode == SunGlareMode.SUBTLE ? 0.18f : 0.25f) : 0.09f;
+        float sunDiskAlpha = sunDiskVisible ? clamp(0.20f + sunElevation / 90.0f * 0.45f, 0.15f, 0.65f) : 0.0f;
+        float moonX = 0.5f;
+        float moonY = 0.20f;
+        float moonAlpha = 0.0f;
+        if (moonDiskVisible && environmentApi != null) {
+            CelestialBodyState moon = environmentApi.getActualState().getMoon();
+            moonX = 0.5f + (float) Math.sin(Math.toRadians(normalizedAzimuth(moon.getAzimuthDeg()))) * 0.28f;
+            moonY = 0.60f - clamp(moon.getElevationDeg(), 0.0f, 90.0f) / 90.0f * 0.40f;
+            moonAlpha = clamp(0.18f + moon.getPhase() * 0.30f, 0.16f, 0.48f);
+        }
+        sunGlareOverlayView.configureSky(
+            clamp(x, 0.08f, 0.92f),
+            clamp(y, 0.06f, 0.78f),
+            radius,
+            glareAlpha,
+            sunDiskAlpha,
+            clamp(moonX, 0.08f, 0.92f),
+            clamp(moonY, 0.06f, 0.78f),
+            moonAlpha);
         sunGlareOverlayView.setVisibility(View.VISIBLE);
-        sunGlareStatus = "applied_overlay_" + sunGlareMode.name().toLowerCase(Locale.US) + "_screen_space_no_ssr";
+        sunDiskStatus = sunDiskVisible ? "visible_overlay_billboard_lightweight" : "not_visible_below_horizon_or_zero_intensity";
+        moonDiskStatus = moonDiskVisible ? "visible_placeholder_overlay_no_ephemeris" : "not_visible_or_disabled";
+        starsVisualStatus = "stars_asset_missing_placeholder";
+        sunGlareStatus = glareEnabled ? "applied_overlay_" + sunGlareMode.name().toLowerCase(Locale.US) + "_screen_space_no_ssr" : "sun_disk_only_no_glare";
+        syncSkyVisualDiagnostics();
+    }
+
+    private void syncSkyVisualDiagnostics() {
+        if (environmentApi == null) return;
+        EnvironmentDiagnostics diagnostics = environmentApi.getDiagnostics();
+        diagnostics.setSunDiskStatus(sunDiskStatus);
+        diagnostics.setMoonDiskStatus(moonDiskStatus);
+        diagnostics.setStarsStatus(activeStarsAssetStatus + " visual=" + starsVisualStatus + " intensity=" + twoDecimal(environmentApi.getActualState().getStarsVisibility()));
     }
 
     private float sunGlareStrength() {
@@ -3975,6 +4096,11 @@ public class FilamentGlbPreviewActivity extends Activity {
         fogHeight = 0.0f;
         skyboxVisible = true;
         iblRotation = 0.0f;
+        cloudCoverage = 0.0f;
+        cloudDensity = 0.0f;
+        cloudSpeed = 0.0f;
+        sunOcclusion = 1.0f;
+        weatherMode = WeatherMode.CLEAR;
         sunLightIntensity = 2.5f;
         sunAzimuth = -145.0f;
         sunElevation = 45.0f;
@@ -4125,6 +4251,10 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("exposure", exposure);
             json.put("background", backgroundBrightness);
             json.put("skyboxVisible", skyboxVisible);
+            json.put("cloudCoverage", cloudCoverage);
+            json.put("cloudDensity", cloudDensity);
+            json.put("cloudSpeed", cloudSpeed);
+            json.put("weatherMode", weatherMode.name());
             json.put("aoMode", aoMode.name());
             json.put("requestedAoMode", requestedAoMode);
             json.put("actualAoMode", actualAoMode);
@@ -4229,6 +4359,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         exposure = (float) json.optDouble("exposure", exposure);
         backgroundBrightness = (float) json.optDouble("background", backgroundBrightness);
         skyboxVisible = json.optBoolean("skyboxVisible", skyboxVisible);
+        cloudCoverage = (float) json.optDouble("cloudCoverage", cloudCoverage);
+        cloudDensity = (float) json.optDouble("cloudDensity", cloudDensity);
+        cloudSpeed = (float) json.optDouble("cloudSpeed", cloudSpeed);
+        weatherMode = enumValue(WeatherMode.class, json.optString("weatherMode"), weatherMode);
         cameraDistance = (float) json.optDouble("cameraDistance", cameraDistance);
         cameraTargetX = (float) json.optDouble("cameraTargetX", cameraTargetX);
         cameraTargetY = (float) json.optDouble("cameraTargetY", cameraTargetY);
@@ -4373,8 +4507,12 @@ public class FilamentGlbPreviewActivity extends Activity {
             iblSummaryView.setText("activeIblName=" + iblFile
                 + "\nactiveIblPath=" + shorten(futureIblAssetPath, 72)
                 + "\nassetPreset=" + activeEnvironmentAssetSlot + " iblAsset=" + activeIblAssetStatus + " skyAsset=" + activeSkyboxAssetStatus
+                + "\nstarsAsset=" + activeStarsAssetStatus + " sunDisk=" + sunDiskStatus + " moonDisk=" + moonDiskStatus
                 + "\nassetFallback=" + environmentAssetFallbackActive + " license=" + environmentAssetLicenseStatus
                 + "\nassetSizeEstimate=" + totalEnvironmentAssetSizeEstimate + " " + missingEnvironmentAssetsSummary
+                + "\nsmoothBlendStatus=" + (environmentApi == null ? "environment_api_missing" : environmentApi.getDiagnostics().getSmoothBlendStatus())
+                + "\ncloudCoverage=" + twoDecimal(cloudCoverage) + " cloudDensity=" + twoDecimal(cloudDensity) + " sunOcclusion=" + twoDecimal(sunOcclusion)
+                + "\nprecipitation=" + precipitationStatus + " cloudShadow=" + cloudShadowMaskStatus
                 + "\nrealIblReady=" + realIblReady + " indirectLightReady=" + indirectLightReady + " skyboxReady=" + skyboxReady
                 + "\nhdrLoaded=" + iblMode.startsWith("hdr") + " ktxLoaded=" + iblMode.startsWith("ktx") + " exrUnsupported=" + "unsupported_exr".equals(iblMode)
                 + "\niblIntensityUser=" + twoDecimal(ambientUserIntensity) + " iblIntensityInternal=" + twoDecimal(ambientFallbackIntensity)
@@ -4668,6 +4806,11 @@ public class FilamentGlbPreviewActivity extends Activity {
             + " moon=" + diagnostics.getMoonStatus()
             + " stars=" + diagnostics.getStarsStatus()
             + " fallback=" + diagnostics.getFallbackStatus()
+            + " smoothBlendStatus=" + diagnostics.getSmoothBlendStatus()
+            + " timeBlendPhase=" + diagnostics.getTimeBlendPhase()
+            + " cloudCoverage=" + twoDecimal(actual.getCloudCoverage())
+            + " cloudDensity=" + twoDecimal(actual.getCloudDensity())
+            + " sunOcclusion=" + twoDecimal(actual.getSunOcclusion())
             + " assetSlot=" + activeEnvironmentAssetSlot
             + " iblAsset=" + activeIblAssetStatus
             + " skyAsset=" + activeSkyboxAssetStatus;
@@ -4684,7 +4827,16 @@ public class FilamentGlbPreviewActivity extends Activity {
             + " fallbackActive=" + environmentAssetFallbackActive
             + " assetLicenseStatus=" + environmentAssetLicenseStatus
             + " totalEnvAssetSizeEstimate=" + totalEnvironmentAssetSizeEstimate
+            + " bundledEnvAssets=" + bundledEnvironmentAssetsList()
             + " lastAssetLoadError=" + lastEnvironmentAssetLoadError;
+    }
+
+    private String bundledEnvironmentAssetsList() {
+        List<String> bundled = new ArrayList<>();
+        for (EnvironmentAssetSlot slot : loadEnvironmentAssetSlots()) {
+            if (slot.bundled) bundled.add(slot.id + ":" + slot.estimatedSizeBytes);
+        }
+        return bundled.isEmpty() ? "none" : joinLabels(bundled, ", ");
     }
 
     private String compactCostSummary() {
@@ -4949,6 +5101,18 @@ public class FilamentGlbPreviewActivity extends Activity {
             + " fallbackActive=" + environmentAssetFallbackActive
             + " assetLicenseStatus=" + environmentAssetLicenseStatus
             + " starsStatus=" + diagnostics.getStarsStatus()
+            + " smoothBlendStatus=" + diagnostics.getSmoothBlendStatus()
+            + " timeBlendPhase=" + diagnostics.getTimeBlendPhase()
+            + " sunCurveT=" + twoDecimal(diagnostics.getSunCurveT())
+            + " nightCurveT=" + twoDecimal(diagnostics.getNightCurveT())
+            + " starsCurveT=" + twoDecimal(diagnostics.getStarsCurveT())
+            + " sunDiskStatus=" + sunDiskStatus
+            + " moonDiskStatus=" + moonDiskStatus
+            + " cloudCoverage=" + twoDecimal(actual.getCloudCoverage())
+            + " cloudDensity=" + twoDecimal(actual.getCloudDensity())
+            + " sunOcclusion=" + twoDecimal(actual.getSunOcclusion())
+            + " cloudShadowStatus=" + diagnostics.getCloudShadowStatus()
+            + " precipitationStatus=" + diagnostics.getPrecipitationStatus()
             + " fallbackStatus=" + diagnostics.getFallbackStatus();
     }
 
@@ -4980,6 +5144,15 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("starsEnabled", settings.isStarsEnabled());
         json.put("starsIntensity", settings.getStarsIntensity());
         json.put("cloudAmount", settings.getCloudAmount());
+        json.put("cloudCoverage", settings.getCloudCoverage());
+        json.put("cloudDensity", settings.getCloudDensity());
+        json.put("cloudSpeed", settings.getCloudSpeed());
+        json.put("cloudDirectionDeg", settings.getCloudDirectionDeg());
+        json.put("cloudShadowStrength", settings.getCloudShadowStrength());
+        json.put("cloudShadowScale", settings.getCloudShadowScale());
+        json.put("cloudShadowSpeed", settings.getCloudShadowSpeed());
+        json.put("precipitationType", settings.getPrecipitationType().name());
+        json.put("precipitationIntensity", settings.getPrecipitationIntensity());
         json.put("fallbackAllowed", settings.isFallbackAllowed());
         return json;
     }
@@ -5001,6 +5174,11 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("backgroundBrightness", actual.getBackgroundBrightness());
         json.put("ambientIntensity", actual.getAmbientIntensity());
         json.put("exposureHint", actual.getExposureHint());
+        json.put("cloudCoverage", actual.getCloudCoverage());
+        json.put("cloudDensity", actual.getCloudDensity());
+        json.put("sunOcclusion", actual.getSunOcclusion());
+        json.put("cloudShadowStatus", actual.getCloudShadowStatus());
+        json.put("precipitationStatus", actual.getPrecipitationStatus());
         json.put("fallbackActive", actual.isFallbackActive());
         json.put("environmentAssetFallbackActive", "true".equals(environmentAssetFallbackActive));
         json.put("applyStatus", actual.getApplyStatus());
@@ -5038,6 +5216,14 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("iblSlotStatus", diagnostics.getIblSlotStatus());
         json.put("skyboxSlotStatus", diagnostics.getSkyboxSlotStatus());
         json.put("starsStatus", diagnostics.getStarsStatus());
+        json.put("timeBlendPhase", diagnostics.getTimeBlendPhase());
+        json.put("sunCurveT", diagnostics.getSunCurveT());
+        json.put("nightCurveT", diagnostics.getNightCurveT());
+        json.put("starsCurveT", diagnostics.getStarsCurveT());
+        json.put("smoothBlendStatus", diagnostics.getSmoothBlendStatus());
+        json.put("skyboxBlendStatus", diagnostics.getSkyboxBlendStatus());
+        json.put("sunDiskStatus", diagnostics.getSunDiskStatus());
+        json.put("moonDiskStatus", diagnostics.getMoonDiskStatus());
         json.put("activeEnvironmentPreset", activeEnvironmentAssetSlot);
         json.put("activeIblAssetStatus", activeIblAssetStatus);
         json.put("activeSkyboxAssetStatus", activeSkyboxAssetStatus);
@@ -5046,6 +5232,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("lastAssetLoadError", lastEnvironmentAssetLoadError);
         json.put("assetLicenseStatus", environmentAssetLicenseStatus);
         json.put("cloudStatus", diagnostics.getCloudStatus());
+        json.put("sunOcclusionStatus", diagnostics.getSunOcclusionStatus());
+        json.put("cloudShadowStatus", diagnostics.getCloudShadowStatus());
+        json.put("precipitationStatus", diagnostics.getPrecipitationStatus());
+        json.put("volumetricCloudsStatus", diagnostics.getVolumetricCloudsStatus());
         json.put("fallbackStatus", diagnostics.getFallbackStatus());
         json.put("mobileSafetyStatus", diagnostics.getMobileSafetyStatus());
         json.put("lastApplyStatus", diagnostics.getLastApplyStatus());
@@ -5070,9 +5260,13 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("lastAssetLoadError", lastEnvironmentAssetLoadError);
         json.put("assetLicenseStatus", environmentAssetLicenseStatus);
         json.put("totalBundledEnvAssetSizeEstimate", totalEnvironmentAssetSizeEstimate);
+        json.put("bundledEnvAssets", bundledEnvironmentAssetsList());
+        json.put("smoothDayNightCurveStatus", environmentApi == null ? "environment_api_missing" : environmentApi.getDiagnostics().getSmoothBlendStatus());
+        json.put("sunMoonStarsVisualStatus", "sun=" + sunDiskStatus + " moon=" + moonDiskStatus + " stars=" + starsVisualStatus);
+        json.put("cloudWeatherFoundationStatus", "cloud=" + cloudVisualStatus + " shadow=" + cloudShadowMaskStatus + " precipitation=" + precipitationStatus);
         json.put("missingPlannedAssets", missingEnvironmentAssetsSummary);
         json.put("apkEnvAssetSizeLimitBytes", ENV_ASSET_BUNDLE_LIMIT_BYTES);
-        json.put("p52Notes", "assets_not_bundled_fallback_active_p52b_add_verified_ktx_after_cmgen_toktx_available");
+        json.put("p53Notes", "real_ktx_assets_remain_fallback_when_cmgen_toktx_unavailable; true_volumetric_clouds_future_not_p53");
         return json;
     }
 
@@ -5252,6 +5446,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (fogButton != null) fogButton.setText(fogMode.label);
         if (lightRigButton != null) lightRigButton.setText("Light Rig: " + lightRig.label);
         if (skyboxButton != null) skyboxButton.setText("Skybox: " + (skyboxVisible ? "On" : "Off"));
+        if (weatherButton != null) weatherButton.setText(weatherMode.label);
         if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
         updateEnvironmentControlLabels();
     }
@@ -5272,7 +5467,8 @@ public class FilamentGlbPreviewActivity extends Activity {
             || "Exposure".equals(name) || "Background".equals(name) || name.contains("Scale") || name.contains("Offset")
             || name.startsWith("Pan") || name.startsWith("Target") || name.contains("Distance")
             || name.startsWith("Color ") || "Bloom Strength".equals(name) || "Time".equals(name)
-            || "Moon Lux".equals(name) || "Moon Phase".equals(name) || "Stars".equals(name)) {
+            || "Moon Lux".equals(name) || "Moon Phase".equals(name) || "Stars".equals(name)
+            || "Cloud Coverage".equals(name) || "Cloud Density".equals(name) || "Cloud Speed".equals(name)) {
             label.setText(name + " " + twoDecimal(value));
         } else if ("Bloom Highlight".equals(name)) {
             label.setText(name + " " + oneDecimal(value));
@@ -5299,6 +5495,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         if ("Moon Lux".equals(label)) return moonIntensityLux;
         if ("Moon Phase".equals(label)) return moonPhase;
         if ("Stars".equals(label)) return starsIntensity;
+        if ("Cloud Coverage".equals(label)) return cloudCoverage;
+        if ("Cloud Density".equals(label)) return cloudDensity;
+        if ("Cloud Speed".equals(label)) return cloudSpeed;
         if ("Render Scale".equals(label)) return renderScale;
         if ("Bloom Strength".equals(label)) return bloomStrength;
         if ("Bloom Highlight".equals(label)) return bloomHighlight;
@@ -5495,6 +5694,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         private float centerY = 0.18f;
         private float radius = 0.18f;
         private float alpha = 0.10f;
+        private float sunDiskAlpha = 0.0f;
+        private float moonX = 0.5f;
+        private float moonY = 0.20f;
+        private float moonAlpha = 0.0f;
 
         SunGlareOverlayView(android.content.Context context) {
             super(context);
@@ -5510,21 +5713,44 @@ public class FilamentGlbPreviewActivity extends Activity {
             invalidate();
         }
 
+        void configureSky(float sunX, float sunY, float glareRadius, float glareAlpha, float sunDiskAlpha,
+                          float moonX, float moonY, float moonAlpha) {
+            this.centerX = sunX;
+            this.centerY = sunY;
+            this.radius = glareRadius;
+            this.alpha = glareAlpha;
+            this.sunDiskAlpha = sunDiskAlpha;
+            this.moonX = moonX;
+            this.moonY = moonY;
+            this.moonAlpha = moonAlpha;
+            invalidate();
+        }
+
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
             int width = getWidth();
             int height = getHeight();
-            if (width <= 0 || height <= 0 || alpha <= 0.0f) return;
+            if (width <= 0 || height <= 0 || (alpha <= 0.0f && sunDiskAlpha <= 0.0f && moonAlpha <= 0.0f)) return;
             float px = width * centerX;
             float py = height * centerY;
-            float pr = Math.max(width, height) * radius;
-            int inner = Color.argb(Math.round(alpha * 255.0f), 255, 238, 184);
-            int mid = Color.argb(Math.round(alpha * 96.0f), 255, 210, 128);
-            int outer = Color.argb(0, 255, 210, 128);
-            paint.setShader(new RadialGradient(px, py, pr, new int[] {inner, mid, outer}, new float[] {0.0f, 0.32f, 1.0f}, Shader.TileMode.CLAMP));
-            canvas.drawCircle(px, py, pr, paint);
-            paint.setShader(null);
+            if (alpha > 0.0f) {
+                float pr = Math.max(width, height) * radius;
+                int inner = Color.argb(Math.round(alpha * 255.0f), 255, 238, 184);
+                int mid = Color.argb(Math.round(alpha * 96.0f), 255, 210, 128);
+                int outer = Color.argb(0, 255, 210, 128);
+                paint.setShader(new RadialGradient(px, py, pr, new int[] {inner, mid, outer}, new float[] {0.0f, 0.32f, 1.0f}, Shader.TileMode.CLAMP));
+                canvas.drawCircle(px, py, pr, paint);
+                paint.setShader(null);
+            }
+            if (sunDiskAlpha > 0.0f) {
+                paint.setColor(Color.argb(Math.round(sunDiskAlpha * 255.0f), 255, 235, 170));
+                canvas.drawCircle(px, py, Math.max(5.0f, Math.min(width, height) * 0.018f), paint);
+            }
+            if (moonAlpha > 0.0f) {
+                paint.setColor(Color.argb(Math.round(moonAlpha * 255.0f), 210, 226, 245));
+                canvas.drawCircle(width * moonX, height * moonY, Math.max(5.0f, Math.min(width, height) * 0.014f), paint);
+            }
         }
     }
 

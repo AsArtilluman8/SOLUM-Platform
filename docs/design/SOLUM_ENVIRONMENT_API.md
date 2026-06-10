@@ -1,8 +1,12 @@
 # SOLUM Environment API
 
-Status: P51 foundation, P52 asset slots connected.
+Status: P51 foundation, P52 asset slots connected, P53 smooth sky/weather foundation.
 
 P51 is system/API first. It creates `EnvironmentApi` as the owner of time of day, sun/moon intent, ambient/background hints, IBL/skybox preset slots, stars placeholder state, fallback policy, and diagnostics.
+
+P52 is manifest/asset slots/fallback. It adds source/license manifest, app asset paths, validation tools, and safe runtime loader slots.
+
+P53 is real starter assets attempt + smooth sky visual/weather foundation. If `cmgen`/`toktx` are unavailable, P53 keeps fallback active and reports `conversion_tool_unavailable` instead of faking KTX assets.
 
 ## Ownership
 
@@ -33,6 +37,18 @@ P51 does not add weather, volumetric clouds, heavy HDRI assets, star assets, Bru
 
 P52 keeps the same rule for advanced atmosphere: it adds manifest/tooling/loader slots only, not weather, volumetric clouds, Bruneton/Hosek runtime atmosphere, or a fake production sky.
 
+P53 adds smoothstep/lerp curves for sun, moon, ambient/IBL strength, background brightness, exposure hint, and stars intensity. True skybox blending between KTX assets is not implemented yet; diagnostics must say `skyboxBlendStatus=discrete_preset_switch_light_blend_smooth`.
+
+P53 weather is a cheap foundation only:
+
+- `cloudCoverage`, `cloudDensity`, `cloudSpeed`, `cloudDirectionDeg`;
+- cloud light attenuation through `sunOcclusion`;
+- cloud shadow mask slots/status only;
+- precipitation enum/status placeholder only;
+- `volumetricCloudsStatus=not_implemented_mobile_future`.
+
+True volumetric clouds are future, not P53. Cheap clouds use future scrolling noise/layer, sun attenuation, and a future projected cloud shadow mask. Cloud shadows are soft projected masks, not real volumetric shadows.
+
 ## Runtime Truth
 
 Live:
@@ -61,6 +77,14 @@ Placeholder / P52B:
 - real day/sunset/night IBL assets generated with a Filament-version-matched `cmgen`;
 - real star texture;
 - actual converted starter KTX bundle.
+
+P54 next, if not completed in P53:
+
+- dedicated cloud shadows;
+- rain/snow VFX;
+- cheap cloud visual layer performance validation.
+
+Skybox/IBL does not cast hard shadows. Sun/moon directional lights are the source for hard/soft shadows. Cloud shadows are a future soft projected mask, not volumetric shadows.
 
 Fallback is allowed only as neutral placeholder. It is not the final visual sky system.
 

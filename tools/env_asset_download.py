@@ -7,6 +7,7 @@ from urllib.request import Request, urlopen
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "assets/env/ENVIRONMENT_ASSETS_MANIFEST.json"
 OUT = ROOT / "_work/env_asset_downloads"
+METADATA = OUT / "download_manifest.json"
 SAFE_LICENSES = {"CC0-1.0", "public-domain", "NASA-public-domain", "Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause"}
 
 
@@ -40,6 +41,15 @@ def download(url, dest, max_bytes):
     return total
 
 
+def record_download(entry):
+    records = []
+    if METADATA.is_file():
+        records = json.loads(METADATA.read_text(encoding="utf-8"))
+    records = [item for item in records if not (item.get("slot") == entry.get("slot") and item.get("sourceUrl") == entry.get("sourceUrl"))]
+    records.append(entry)
+    METADATA.write_text(json.dumps(records, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Download selected SOLUM environment source assets only. Does not convert or commit files.")
     parser.add_argument("--slot", required=True, help="Manifest slot id: day, sunset, night, cloudy, studio_debug")
@@ -67,15 +77,18 @@ def main():
     suffix = Path(url.split("?", 1)[0]).suffix or ".bin"
     dest = OUT / f"{args.slot}_source{suffix}"
     actual = download(url, dest, max_bytes if not args.force else 1024 * 1024 * 1024)
-    print(json.dumps({
+    entry = {
         "status": "downloaded_source_only_not_converted_not_committed",
         "slot": args.slot,
         "path": str(dest.relative_to(ROOT)),
         "bytes": actual,
         "license": license_value,
+        "sourceName": str(slot.get("sourceName", "")),
         "sourceUrl": url,
         "manifest": str(MANIFEST.relative_to(ROOT)),
-    }, indent=2, sort_keys=True))
+    }
+    record_download(entry)
+    print(json.dumps(entry, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":

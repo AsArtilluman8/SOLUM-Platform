@@ -24,12 +24,12 @@ Do not claim planned systems are implemented.
 
 ## Current priority order
 
-1. P52 Environment Asset Pipeline + HDRI/IBL/Skybox Starter Pack.
-2. P53 Scene Workspace / multi-model scene.
-3. P54 Asset Shelf.
-4. P55 Transform Gizmo.
-5. P56 Animation Preview.
-6. P57 Scene Save/Load.
+1. P53 Real Environment Assets + Sky Visual Layer + Smooth Weather Foundation.
+2. P54 dedicated cloud shadows / rain / snow VFX / performance, if not completed in P53.
+3. P55 Scene Workspace / multi-model scene.
+4. P56 Asset Shelf.
+5. P57 Transform Gizmo.
+6. P58 Animation Preview.
 7. Labs and package/agent systems later.
 
 ## Active near-term patch
@@ -37,13 +37,13 @@ Do not claim planned systems are implemented.
 Current near-term work:
 
 ```text
-P52 — Environment Asset Pipeline + HDRI/IBL/Skybox Starter Pack
+P53 — Real Environment Assets + Sky Visual Layer + Smooth Weather Foundation
 ```
 
 Main goal:
 
 ```text
-P51 created `EnvironmentApi`, time of day, sun/moon intent, IBL/skybox slots, stars placeholder state, fallback, and diagnostics. P52 adds source/license manifest, asset paths, validation tooling, and safe loader slots. Actual KTX assets remain P52B if `cmgen`/`toktx` are unavailable.
+P51 = Environment API/time system. P52 = manifest/asset slots/fallback. P53 = real starter assets attempt, smooth sky visual layer, and cheap cloud/weather foundation. If `cmgen`/`toktx` are unavailable, do not fake KTX assets; keep fallback/status honest. P54 next = dedicated cloud shadows/rain/snow VFX/performance if not completed in P53.
 ```
 
 ## Important rules
@@ -52,7 +52,10 @@ P51 created `EnvironmentApi`, time of day, sun/moon intent, IBL/skybox slots, st
 - Do not add new visual features before fixing current control truth.
 - Do not add a huge API UI until existing controls work.
 - Render Control Center is UI over the existing Render API; do not add new visual renderer features in P50.
-- Sky / IBL has P51 Environment API controls and P52 asset status; real HDRI/star KTX assets remain planned for P52B unless converted with verified tools/licenses.
+- Sky / IBL has P51 Environment API controls, P52 asset status, and P53 smooth sky/weather foundation. Real HDRI/star KTX assets require verified conversion tools/licenses.
+- True volumetric clouds are future, not P53.
+- Cheap clouds use sun attenuation now and future scrolling noise/layer + projected soft cloud shadow masks.
+- Skybox/IBL does not cast hard shadows; sun/moon directional lights do.
 - Keep live HUD lightweight; full diagnostics run by button/copy/export only.
 - Do not use Java callback FPS as primary FPS.
 - Frame ms is primary truth. FPS is derived from frame ms.
@@ -91,6 +94,8 @@ P51 created `EnvironmentApi`, time of day, sun/moon intent, IBL/skybox slots, st
 - `docs/assets/SOLUM_ENVIRONMENT_ASSETS.md`
 - `assets/env/ENVIRONMENT_ASSETS_MANIFEST.json`
 - `tools/env_asset_manifest_check.py`
+- `tools/env_asset_pack_build.py`
+- `docs/design/SOLUM_SKY_WEATHER_FOUNDATION.md`
 
 ## Build command shape
 

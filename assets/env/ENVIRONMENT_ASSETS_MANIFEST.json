@@ -1,7 +1,7 @@
 {
   "schema": "solum_environment_assets_manifest",
   "schemaVersion": 1,
-  "patch": "P52",
+  "patch": "P53",
   "policy": {
     "maxBundledEnvironmentBytes": 10485760,
     "rawHdrOrExrBundled": false,
@@ -18,7 +18,7 @@
     {
       "id": "day",
       "displayName": "Day",
-      "sourceName": "Poly Haven HDRI candidate - small outdoor daylight source to be selected during P52B conversion",
+      "sourceName": "Poly Haven CC0 HDRI candidate - small outdoor daylight source for P53 starter conversion",
       "sourceUrl": "https://polyhaven.com/hdris/skies",
       "license": "CC0-1.0",
       "author": "Poly Haven contributors",
@@ -30,12 +30,12 @@
       "targetResolution": "256px cubemap target, mobile starter",
       "estimatedSizeBytes": 0,
       "bundled": false,
-      "status": "conversion_required"
+      "status": "conversion_tool_unavailable"
     },
     {
       "id": "sunset",
       "displayName": "Sunset",
-      "sourceName": "Poly Haven HDRI candidate - sunset/twilight source to be selected during P52B conversion",
+      "sourceName": "Poly Haven CC0 HDRI candidate - sunset/twilight source for P53 starter conversion",
       "sourceUrl": "https://polyhaven.com/hdris/skies",
       "license": "CC0-1.0",
       "author": "Poly Haven contributors",
@@ -47,12 +47,12 @@
       "targetResolution": "256px cubemap target, mobile starter",
       "estimatedSizeBytes": 0,
       "bundled": false,
-      "status": "conversion_required"
+      "status": "conversion_tool_unavailable"
     },
     {
       "id": "night",
       "displayName": "Night",
-      "sourceName": "OpenHDRI or Poly Haven night HDRI candidate plus optional NASA SVS star map",
+      "sourceName": "OpenHDRI CC0 or Poly Haven CC0 night HDRI candidate plus optional NASA SVS public-domain star map",
       "sourceUrl": "https://openhdri.org/",
       "license": "CC0-1.0",
       "author": "OpenHDRI or Poly Haven contributors; NASA SVS for optional stars",
@@ -64,7 +64,7 @@
       "targetResolution": "256px cubemap target, mobile starter; stars <=1024px long edge",
       "estimatedSizeBytes": 0,
       "bundled": false,
-      "status": "conversion_required"
+      "status": "conversion_tool_unavailable"
     },
     {
       "id": "cloudy",

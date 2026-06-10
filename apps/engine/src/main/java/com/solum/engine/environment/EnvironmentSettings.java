@@ -1,6 +1,12 @@
 package com.solum.engine.environment;
 
 public class EnvironmentSettings {
+    public enum PrecipitationType {
+        NONE,
+        RAIN,
+        SNOW
+    }
+
     private float timeOfDayHours = 12.0f;
     private float timeSpeed = 0.0f;
     private String environmentPreset = "NOON";
@@ -22,6 +28,15 @@ public class EnvironmentSettings {
     private boolean starsEnabled = true;
     private float starsIntensity = 0.0f;
     private float cloudAmount = 0.0f;
+    private float cloudCoverage = 0.0f;
+    private float cloudDensity = 0.0f;
+    private float cloudSpeed = 0.0f;
+    private float cloudDirectionDeg = 90.0f;
+    private float cloudShadowStrength = 0.0f;
+    private float cloudShadowScale = 1.0f;
+    private float cloudShadowSpeed = 0.0f;
+    private PrecipitationType precipitationType = PrecipitationType.NONE;
+    private float precipitationIntensity = 0.0f;
     private boolean fallbackAllowed = true;
 
     public float getTimeOfDayHours() { return timeOfDayHours; }
@@ -65,7 +80,38 @@ public class EnvironmentSettings {
     public float getStarsIntensity() { return starsIntensity; }
     public void setStarsIntensity(float value) { starsIntensity = clamp(value, 0.0f, 1.0f); }
     public float getCloudAmount() { return cloudAmount; }
-    public void setCloudAmount(float value) { cloudAmount = clamp(value, 0.0f, 1.0f); }
+    public void setCloudAmount(float value) {
+        cloudAmount = clamp(value, 0.0f, 1.0f);
+        cloudCoverage = cloudAmount;
+    }
+    public float getCloudCoverage() { return cloudCoverage; }
+    public void setCloudCoverage(float value) {
+        cloudCoverage = clamp(value, 0.0f, 1.0f);
+        cloudAmount = cloudCoverage;
+    }
+    public float getCloudDensity() { return cloudDensity; }
+    public void setCloudDensity(float value) { cloudDensity = clamp(value, 0.0f, 1.0f); }
+    public float getCloudSpeed() { return cloudSpeed; }
+    public void setCloudSpeed(float value) { cloudSpeed = clamp(value, 0.0f, 8.0f); }
+    public float getCloudDirectionDeg() { return cloudDirectionDeg; }
+    public void setCloudDirectionDeg(float value) { cloudDirectionDeg = normalizeDegrees(value); }
+    public float getCloudShadowStrength() { return cloudShadowStrength; }
+    public void setCloudShadowStrength(float value) { cloudShadowStrength = clamp(value, 0.0f, 1.0f); }
+    public float getCloudShadowScale() { return cloudShadowScale; }
+    public void setCloudShadowScale(float value) { cloudShadowScale = clamp(value, 0.1f, 20.0f); }
+    public float getCloudShadowSpeed() { return cloudShadowSpeed; }
+    public void setCloudShadowSpeed(float value) { cloudShadowSpeed = clamp(value, 0.0f, 8.0f); }
+    public PrecipitationType getPrecipitationType() { return precipitationType; }
+    public void setPrecipitationType(PrecipitationType value) { precipitationType = value == null ? PrecipitationType.NONE : value; }
+    public void setPrecipitationType(String value) {
+        try {
+            precipitationType = PrecipitationType.valueOf(safe(value, "NONE").toUpperCase());
+        } catch (Throwable ignored) {
+            precipitationType = PrecipitationType.NONE;
+        }
+    }
+    public float getPrecipitationIntensity() { return precipitationIntensity; }
+    public void setPrecipitationIntensity(float value) { precipitationIntensity = clamp(value, 0.0f, 1.0f); }
     public boolean isFallbackAllowed() { return fallbackAllowed; }
     public void setFallbackAllowed(boolean value) { fallbackAllowed = value; }
 

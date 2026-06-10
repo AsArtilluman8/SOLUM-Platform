@@ -55,6 +55,15 @@ public class EnvironmentController implements EnvironmentApi {
     @Override public void setStarsEnabled(boolean enabled) { settings.setStarsEnabled(enabled); apply(); }
     @Override public void setStarsIntensity(float value) { settings.setStarsIntensity(value); apply(); }
     @Override public void setCloudAmount(float value) { settings.setCloudAmount(value); apply(); }
+    @Override public void setCloudCoverage(float value) { settings.setCloudCoverage(value); apply(); }
+    @Override public void setCloudDensity(float value) { settings.setCloudDensity(value); apply(); }
+    @Override public void setCloudSpeed(float value) { settings.setCloudSpeed(value); apply(); }
+    @Override public void setCloudDirectionDeg(float degrees) { settings.setCloudDirectionDeg(degrees); apply(); }
+    @Override public void setCloudShadowStrength(float value) { settings.setCloudShadowStrength(value); apply(); }
+    @Override public void setCloudShadowScale(float value) { settings.setCloudShadowScale(value); apply(); }
+    @Override public void setCloudShadowSpeed(float value) { settings.setCloudShadowSpeed(value); apply(); }
+    @Override public void setPrecipitationType(String type) { settings.setPrecipitationType(type); apply(); }
+    @Override public void setPrecipitationIntensity(float value) { settings.setPrecipitationIntensity(value); apply(); }
 
     @Override
     public void update(float deltaSeconds) {
@@ -83,14 +92,20 @@ public class EnvironmentController implements EnvironmentApi {
         diagnostics.setEnvironmentTruthText("environment_api_live timeOfDay=" + actualState.getActiveTimeOfDayHours()
             + " preset=" + actualState.getActiveEnvironmentPreset()
             + " sun=" + actualState.getSun().getStatus()
-            + " moon=" + actualState.getMoon().getStatus());
+            + " moon=" + actualState.getMoon().getStatus()
+            + " smoothBlendStatus=" + diagnostics.getSmoothBlendStatus()
+            + " cloudCoverage=" + actualState.getCloudCoverage()
+            + " cloudDensity=" + actualState.getCloudDensity()
+            + " sunOcclusion=" + actualState.getSunOcclusion());
         diagnostics.setIblSlotStatus("slot_ready_asset_missing active=" + actualState.getActiveIblPreset() + " paths=assets/env/*_ibl.ktx planned_p52_assets");
         diagnostics.setSkyboxSlotStatus("slot_ready_asset_missing active=" + actualState.getActiveSkyboxPreset() + " paths=assets/env/*_skybox.ktx planned_p52_assets");
         diagnostics.setFallbackStatus(settings.isFallbackAllowed() ? "missing_asset_fallback_allowed_current_or_neutral_background" : "fallback_disabled");
-        diagnostics.addNotImplementedYet("p52_real_hdri_ibl_assets");
-        diagnostics.addNotImplementedYet("p52_stars_milkyway_asset");
-        diagnostics.addNotImplementedYet("moon_second_directional_light_optional_after_runtime_risk_check");
-        diagnostics.addNotImplementedYet("cloud_amount_placeholder_no_weather_no_volumetric_clouds");
+        diagnostics.addNotImplementedYet("p53_real_hdri_ibl_assets_blocked_if_cmgen_toktx_unavailable");
+        diagnostics.addNotImplementedYet("stars_milkyway_asset_optional_missing_placeholder");
+        diagnostics.addNotImplementedYet("moon_disk_placeholder_no_ephemeris");
+        diagnostics.addNotImplementedYet("cloud_shadow_mask_projected_soft_mask_planned_p54");
+        diagnostics.addNotImplementedYet("rain_snow_particles_vfx_planned_p54");
+        diagnostics.addNotImplementedYet("true_volumetric_clouds_future_not_p53");
         actualState.setApplyStatus(diagnostics.getLastApplyStatus());
     }
 }

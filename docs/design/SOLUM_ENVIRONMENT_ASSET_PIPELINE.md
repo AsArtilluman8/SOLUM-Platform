@@ -1,8 +1,8 @@
 # SOLUM Environment Asset Pipeline
 
-Status: P52 pipeline foundation.
+Status: P53 pipeline foundation.
 
-P51 created the `EnvironmentApi`, time-of-day model, sun/moon/stars intent, IBL/skybox slots, and fallback diagnostics. P52 adds the asset manifest, directory convention, validation tools, and safe runtime loader slots. P52 does not add weather, volumetric clouds, Bruneton/Hosek runtime atmosphere, or a procedural sky shader.
+P51 created the `EnvironmentApi`, time-of-day model, sun/moon/stars intent, IBL/skybox slots, and fallback diagnostics. P52 adds the asset manifest, directory convention, validation tools, and safe runtime loader slots. P53 attempts real starter assets and adds smooth sky/weather foundation. If conversion tools are unavailable, the runtime keeps fallback active and diagnostics report `conversion_tool_unavailable` / `missing_asset_fallback`.
 
 ## Asset Sources
 
@@ -15,6 +15,8 @@ Preferred sources:
 - Filament sample environment assets only if source and license are clear.
 
 Do not use mixed-license or store-only packs. Do not commit large raw `.hdr` or `.exr` files. The APK target for all bundled environment assets is under 10 MB.
+
+Normal Gradle builds must not require internet. Download and conversion scripts are manual/offline pipeline tools only.
 
 ## Directory Convention
 
@@ -66,6 +68,16 @@ Do not run download/conversion during normal build. Use:
 python3 tools/env_asset_manifest_check.py
 ```
 
+Manual pipeline:
+
+```bash
+python3 tools/env_asset_download.py --slot day --url <verified-cc0-hdri-url>
+python3 tools/env_asset_pack_build.py --slot day --size 256
+python3 tools/env_asset_manifest_check.py
+```
+
+`tools/env_asset_pack_build.py` refuses to proceed if `cmgen` is missing. `toktx` is required for optional star texture conversion. If either is unavailable, do not fake KTX files; leave fallback active and record the status.
+
 ## Runtime Integration
 
 When an environment preset is selected, the Activity maps the P51 preset to a P52 slot and checks for matching KTX assets in Android assets. If the KTX exists, it reuses the existing Filament `KTX1Loader` path. If the KTX is missing or load fails, the app keeps the current P51 fallback.
@@ -82,3 +94,13 @@ Diagnostics must report:
 - `totalEnvAssetSizeEstimate`
 
 P52B should add a tiny verified KTX bundle after `cmgen`/`toktx` availability and license provenance are proven.
+
+## P53 Result Contract
+
+P53 may ship no real KTX assets if `cmgen`/`toktx` are unavailable. That is acceptable only when:
+
+- manifest slots keep exact source/license fields;
+- `bundled=false`;
+- status is `conversion_tool_unavailable` or `missing_fallback`;
+- reports include `cmgen`/`toktx` availability;
+- no raw HDR/EXR is bundled into `apps/engine/src/main/assets/env`.

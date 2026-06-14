@@ -1,0 +1,70 @@
+{
+  "schema": "com.solum.reconstruction.status",
+  "schemaVersion": 1,
+  "patch": "P_Recon_Toolkit_Integration_Workspace_Fix_01",
+  "source": {
+    "status": "asset-derived",
+    "tool": "solum_ue_recon_toolkit_light_v1",
+    "manifest": "/storage/emulated/0/Download/SOLUM_RECON_TOOLKIT_KEEP/latest_light_output/manifest_light.json",
+    "inventory": "/storage/emulated/0/Download/SOLUM_RECON_TOOLKIT_KEEP/latest_light_output/10_ASSET_MAP/asset_inventory_light.json",
+    "nodeTables": "/storage/emulated/0/Download/SOLUM_RECON_TOOLKIT_KEEP/latest_light_output/21_BLUEPRINT_NODE_TABLES/all_node_tables_light.json",
+    "recipe": "/storage/emulated/0/Download/SOLUM_RECON_TOOLKIT_KEEP/latest_light_output/60_RECIPES/solum_recon_light_recipe.json",
+    "report": "/storage/emulated/0/Download/SOLUM_RECON_TOOLKIT_KEEP/latest_light_output/70_REPORTS/reconstruction_light_report.md",
+    "zipReference": "/storage/emulated/0/Download/SOLUM_RECON_TOOLKIT_KEEP/SOLUM_RECON_TOOLKIT_LIGHT_LATEST.zip"
+  },
+  "toolkitProof": {
+    "filesScanned": 300,
+    "readLimitPerFileBytes": 524288,
+    "blueprintCandidates": 10,
+    "jsonExports": 10,
+    "nodeTables": 4,
+    "blueprintScore": "+++"
+  },
+  "scores": {
+    "blueprint": "+++",
+    "texture": "+++",
+    "material": "++",
+    "vfx": "++",
+    "audio": "++",
+    "mesh": "HOLD",
+    "animation": "HOLD",
+    "weatherLogic": "++",
+    "cameraGizmo": "++"
+  },
+  "labels": {
+    "asset-derived": [
+      "UAssetAPI works on Termux with .NET 8",
+      "Blueprint .uasset JSON export works",
+      "K2 node metadata exists: FunctionGraphs, Nodes, K2Node_CallFunction, FunctionEntry/Result, IfThenElse, VariableGet, FunctionReference, MemberReference, NodeGuid, GraphGuid, NodePosX, NodePosY",
+      "UDS Rain scalar values: Cloud Coverage 7.5, Rain 7.0, Thunder/Lightning 4.0, Wind 3.0, Fog 3.0, Material Wetness 1.0, label Rain"
+    ],
+    "reconstructed": [
+      "SOLUM weather state/status model and proof channels",
+      "SOLUM editor diagnostics for camera, selection, grid, floor, gizmo"
+    ],
+    "procedural fill": [
+      "Workspace grid/floor/gizmo helper geometry only; not UDS weather visuals"
+    ],
+    "unknown": [
+      "Pins, LinkedTo, PinId, exact Blueprint execution-flow graph",
+      "Niagara graph topology, material graph topology",
+      "SoundWave decode to WAV/OGG, full texture decode, mesh/animation conversion"
+    ],
+    "blocked": [
+      "BLOCKED_UNREAL_REFERENCE_ACCESS: GitHub CLI is not authenticated, EpicGames/UnrealEngine is not accessible"
+    ],
+    "fake-risk": [
+      "Do not treat light toolkit output as full weather/VFX implementation",
+      "No ready AAA weather visuals are proven"
+    ]
+  },
+  "weatherChannels": [
+    {"channel": "rain", "value": 7.0, "sourceStatus": "asset-derived", "proofRef": "UDS Rain.uasset Rain", "confidenceScore": "+++"},
+    {"channel": "snow", "value": 0.0, "sourceStatus": "unknown", "proofRef": "not proven by Rain preset", "confidenceScore": "+"},
+    {"channel": "cloud_fog", "value": 7.5, "sourceStatus": "asset-derived", "proofRef": "UDS Rain.uasset Cloud Coverage; Fog=3.0", "confidenceScore": "+++"},
+    {"channel": "wind", "value": 3.0, "sourceStatus": "asset-derived", "proofRef": "UDS Rain.uasset Wind Intensity", "confidenceScore": "+++"},
+    {"channel": "wetness_puddle", "value": 1.0, "sourceStatus": "asset-derived", "proofRef": "UDS Rain.uasset Material Wetness", "confidenceScore": "+++"},
+    {"channel": "lightning_storm", "value": 4.0, "sourceStatus": "asset-derived", "proofRef": "UDS Rain.uasset Thunder/Lightning", "confidenceScore": "+++"},
+    {"channel": "audio", "value": 0.0, "sourceStatus": "blocked", "proofRef": "SoundWave decode to WAV/OGG not proven", "confidenceScore": "BLOCKED"}
+  ]
+}

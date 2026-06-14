@@ -55,6 +55,7 @@ public class EnvironmentController implements EnvironmentApi {
     @Override public void setStarsEnabled(boolean enabled) { settings.setStarsEnabled(enabled); apply(); }
     @Override public void setStarsIntensity(float value) { settings.setStarsIntensity(value); apply(); }
     @Override public void setCloudAmount(float value) { settings.setCloudAmount(value); apply(); }
+    @Override public void setWeatherPreset(String preset) { settings.setWeatherPreset(preset); apply(); }
 
     @Override
     public void update(float deltaSeconds) {
@@ -67,6 +68,17 @@ public class EnvironmentController implements EnvironmentApi {
     public void apply() {
         diagnostics.resetNotImplementedYet();
         timeOfDayController.compute(settings, actualState, diagnostics);
+        actualState.setWeatherFrom(settings.getWeather());
+        actualState.setIblMode(IblMode.PROCEDURAL_APPROX);
+        actualState.setSkyMode("PROCEDURAL_SKY_PASS");
+        actualState.setSunMode("PROCEDURAL_DIRECTIONAL_LIGHT");
+        actualState.setMoonMode(actualState.getMoon().isVisible()
+            ? "PROCEDURAL_DIRECTIONAL_FALLBACK_NOT_RENDERED"
+            : "OFF_OR_BELOW_HORIZON");
+        actualState.setStarsMode(actualState.getStarsVisibility() > 0.0f
+            ? "PROCEDURAL_FALLBACK_NOT_RENDERED"
+            : "OFF_OR_DAYTIME");
+        actualState.setFakeOverlayUsed(false);
         if (renderControlApi != null) {
             renderControlApi.setSunIntensity(actualState.getSun().isVisible() ? actualState.getSun().getIntensityLux() : 0.0f);
             renderControlApi.setSunDirection(actualState.getSun().getDirectionX(), actualState.getSun().getDirectionY(), actualState.getSun().getDirectionZ());
@@ -83,7 +95,20 @@ public class EnvironmentController implements EnvironmentApi {
         diagnostics.setEnvironmentTruthText("environment_api_live timeOfDay=" + actualState.getActiveTimeOfDayHours()
             + " preset=" + actualState.getActiveEnvironmentPreset()
             + " sun=" + actualState.getSun().getStatus()
-            + " moon=" + actualState.getMoon().getStatus());
+            + " moon=" + actualState.getMoon().getStatus()
+            + " weatherPreset=" + actualState.getWeather().getWeatherPreset());
+        diagnostics.setIblMode(actualState.getIblMode().name());
+        diagnostics.setSkyMode(actualState.getSkyMode());
+        diagnostics.setSunMode(actualState.getSunMode());
+        diagnostics.setMoonMode(actualState.getMoonMode());
+        diagnostics.setStarsMode(actualState.getStarsMode());
+        diagnostics.setWeatherPreset(actualState.getWeather().getWeatherPreset());
+        diagnostics.setFakeOverlayUsed(actualState.isFakeOverlayUsed());
+        diagnostics.setVfxStatus("native_recipe_state_only_no_niagara_graph_decoded");
+        diagnostics.setAudioMode("missing_assets");
+        diagnostics.setMaterialWetnessStatus(actualState.getWeather().getMaterialWetness() > 0.0f
+            ? "prepared_not_connected_to_native_roughness_darkening_specular_yet"
+            : "inactive");
         diagnostics.setIblSlotStatus("slot_ready_asset_missing active=" + actualState.getActiveIblPreset() + " paths=assets/env/*_ibl.ktx planned_p52_assets");
         diagnostics.setSkyboxSlotStatus("slot_ready_asset_missing active=" + actualState.getActiveSkyboxPreset() + " paths=assets/env/*_skybox.ktx planned_p52_assets");
         diagnostics.setFallbackStatus(settings.isFallbackAllowed() ? "missing_asset_fallback_allowed_current_or_neutral_background" : "fallback_disabled");
@@ -91,6 +116,9 @@ public class EnvironmentController implements EnvironmentApi {
         diagnostics.addNotImplementedYet("p52_stars_milkyway_asset");
         diagnostics.addNotImplementedYet("moon_second_directional_light_optional_after_runtime_risk_check");
         diagnostics.addNotImplementedYet("cloud_amount_placeholder_no_weather_no_volumetric_clouds");
+        diagnostics.addNotImplementedYet("material_wetness_native_shader_binding");
+        diagnostics.addNotImplementedYet("real_weather_particles_fog_wind_runtime");
+        diagnostics.addNotImplementedYet("weather_audio_real_wav_ogg_assets");
         actualState.setApplyStatus(diagnostics.getLastApplyStatus());
     }
 }

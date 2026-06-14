@@ -25,6 +25,7 @@ public interface EnvironmentApi {
     void setStarsEnabled(boolean enabled);
     void setStarsIntensity(float value);
     void setCloudAmount(float value);
+    void setWeatherPreset(String preset);
     void apply();
     void update(float deltaSeconds);
 }

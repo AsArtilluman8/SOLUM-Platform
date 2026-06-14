@@ -1,0 +1,17 @@
+{
+  "schema": "com.solum.weather.presets",
+  "schemaVersion": 1,
+  "source": "UDS Rain.uasset property values confirmed 2026-06-10; raw paid assets not copied",
+  "presets": [
+    {
+      "id": "rain",
+      "label": "Rain",
+      "cloudCoverage": 7.5,
+      "rainIntensity": 7.0,
+      "thunderIntensity": 4.0,
+      "windIntensity": 3.0,
+      "fogDensity": 3.0,
+      "materialWetness": 1.0
+    }
+  ]
+}

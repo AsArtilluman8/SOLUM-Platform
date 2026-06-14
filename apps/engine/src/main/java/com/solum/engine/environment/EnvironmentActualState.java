@@ -12,6 +12,14 @@ public class EnvironmentActualState {
     private float ambientIntensity = 1.2f;
     private float exposureHint = 1.0f;
     private boolean fallbackActive = true;
+    private IblMode iblMode = IblMode.PROCEDURAL_APPROX;
+    private String skyMode = "PROCEDURAL_SKY_PASS";
+    private String sunMode = "PROCEDURAL_DIRECTIONAL_LIGHT";
+    private String moonMode = "PROCEDURAL_DIRECTIONAL_FALLBACK_NOT_RENDERED";
+    private String starsMode = "PROCEDURAL_FALLBACK_NOT_RENDERED";
+    private boolean fakeOverlayUsed = false;
+    private final WeatherRuntimeParameters weather = new WeatherRuntimeParameters();
+    private WeatherVfxRecipe weatherVfxRecipe = WeatherVfxRecipe.rainFallback(weather);
     private String applyStatus = "not_applied";
 
     public float getActiveTimeOfDayHours() { return activeTimeOfDayHours; }
@@ -34,6 +42,25 @@ public class EnvironmentActualState {
     public void setExposureHint(float value) { exposureHint = EnvironmentSettings.clamp(value, 0.1f, 5.0f); }
     public boolean isFallbackActive() { return fallbackActive; }
     public void setFallbackActive(boolean value) { fallbackActive = value; }
+    public IblMode getIblMode() { return iblMode; }
+    public void setIblMode(IblMode value) { iblMode = value == null ? IblMode.NONE : value; }
+    public String getSkyMode() { return skyMode; }
+    public void setSkyMode(String value) { skyMode = value == null ? "" : value; }
+    public String getSunMode() { return sunMode; }
+    public void setSunMode(String value) { sunMode = value == null ? "" : value; }
+    public String getMoonMode() { return moonMode; }
+    public void setMoonMode(String value) { moonMode = value == null ? "" : value; }
+    public String getStarsMode() { return starsMode; }
+    public void setStarsMode(String value) { starsMode = value == null ? "" : value; }
+    public boolean isFakeOverlayUsed() { return fakeOverlayUsed; }
+    public void setFakeOverlayUsed(boolean value) { fakeOverlayUsed = value; }
+    public WeatherRuntimeParameters getWeather() { return weather; }
+    public void setWeatherFrom(WeatherRuntimeParameters value) {
+        if (value == null || "none".equals(value.getWeatherPreset())) weather.clear();
+        else if ("rain".equals(value.getWeatherPreset())) weather.applyPreset(WeatherPreset.RAIN);
+        weatherVfxRecipe = WeatherVfxRecipe.rainFallback(weather);
+    }
+    public WeatherVfxRecipe getWeatherVfxRecipe() { return weatherVfxRecipe; }
     public String getApplyStatus() { return applyStatus; }
     public void setApplyStatus(String value) { applyStatus = value == null ? "" : value; }
 }

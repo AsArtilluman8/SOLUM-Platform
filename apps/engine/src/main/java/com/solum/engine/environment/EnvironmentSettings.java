@@ -22,6 +22,8 @@ public class EnvironmentSettings {
     private boolean starsEnabled = true;
     private float starsIntensity = 0.0f;
     private float cloudAmount = 0.0f;
+    private String weatherPreset = "none";
+    private final WeatherRuntimeParameters weather = new WeatherRuntimeParameters();
     private boolean fallbackAllowed = true;
 
     public float getTimeOfDayHours() { return timeOfDayHours; }
@@ -66,6 +68,20 @@ public class EnvironmentSettings {
     public void setStarsIntensity(float value) { starsIntensity = clamp(value, 0.0f, 1.0f); }
     public float getCloudAmount() { return cloudAmount; }
     public void setCloudAmount(float value) { cloudAmount = clamp(value, 0.0f, 1.0f); }
+    public String getWeatherPreset() { return weatherPreset; }
+    public WeatherRuntimeParameters getWeather() { return weather; }
+    public void setWeatherPreset(String value) {
+        String id = safe(value, "none").toLowerCase();
+        if ("rain".equals(id)) {
+            weatherPreset = WeatherPreset.RAIN.getId();
+            weather.applyPreset(WeatherPreset.RAIN);
+            cloudAmount = clamp(weather.getCloudCoverage() / 10.0f, 0.0f, 1.0f);
+        } else {
+            weatherPreset = "none";
+            weather.clear();
+            cloudAmount = 0.0f;
+        }
+    }
     public boolean isFallbackAllowed() { return fallbackAllowed; }
     public void setFallbackAllowed(boolean value) { fallbackAllowed = value; }
 

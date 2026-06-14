@@ -40,8 +40,10 @@ import android.widget.Toast;
 import android.view.inputmethod.EditorInfo;
 
 import com.google.android.filament.ColorGrading;
+import com.google.android.filament.Box;
 import com.google.android.filament.Engine;
 import com.google.android.filament.EntityManager;
+import com.google.android.filament.IndexBuffer;
 import com.google.android.filament.IndirectLight;
 import com.google.android.filament.LightManager;
 import com.google.android.filament.Material;
@@ -51,6 +53,7 @@ import com.google.android.filament.Renderer;
 import com.google.android.filament.Skybox;
 import com.google.android.filament.Texture;
 import com.google.android.filament.TransformManager;
+import com.google.android.filament.VertexBuffer;
 import com.google.android.filament.View.AmbientOcclusion;
 import com.google.android.filament.View.AntiAliasing;
 import com.google.android.filament.View.Dithering;
@@ -71,6 +74,8 @@ import com.solum.engine.environment.EnvironmentApi;
 import com.solum.engine.environment.EnvironmentController;
 import com.solum.engine.environment.EnvironmentDiagnostics;
 import com.solum.engine.environment.EnvironmentSettings;
+import com.solum.engine.environment.WeatherRuntimeParameters;
+import com.solum.engine.environment.WeatherVfxRecipe;
 import com.solum.engine.render.FilamentRenderController;
 import com.solum.engine.render.RenderCostDiagnostics;
 import com.solum.engine.render.RenderActualState;
@@ -78,6 +83,7 @@ import com.solum.engine.render.RenderControlApi;
 import com.solum.engine.render.RenderFeatureDescriptor;
 import com.solum.engine.render.RenderOwnershipMap;
 import com.solum.engine.scene.SceneRegistry;
+import com.solum.engine.scene.SceneObject;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -89,6 +95,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -159,6 +166,11 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String PREF_FILAMENT_CAMERA_TARGET_Y = "filament_camera_target_y";
     private static final String PREF_FILAMENT_CAMERA_TARGET_Z = "filament_camera_target_z";
     private static final String PREF_FILAMENT_CAMERA_FOV = "filament_camera_fov";
+    private static final String PREF_FILAMENT_CAMERA_YAW = "filament_camera_yaw";
+    private static final String PREF_FILAMENT_CAMERA_PITCH = "filament_camera_pitch";
+    private static final String PREF_FILAMENT_CAMERA_MODE = "filament_camera_mode";
+    private static final String PREF_FILAMENT_GRID_VISIBLE = "filament_grid_visible";
+    private static final String PREF_FILAMENT_FLOOR_VISIBLE = "filament_floor_visible";
     private static final String PREF_FILAMENT_CONFIG_JSON = "filament_config_json";
     private static final String PREF_FILAMENT_DEFAULT_CONFIG_JSON = "filament_default_config_json";
     private static final String CONFIG_FILE_NAME = "filament_render_config.json";
@@ -173,6 +185,13 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String GFXINFO_FRAMESTATS_COMMAND = "adb shell dumpsys gfxinfo com.solum.engine framestats";
     private static final String ENV_ASSET_MANIFEST_PATH = "env/ENVIRONMENT_ASSETS_MANIFEST.json";
     private static final long ENV_ASSET_BUNDLE_LIMIT_BYTES = 10L * 1024L * 1024L;
+    private static final String OBJECT_ID_ACTIVE_MODEL = "active_model";
+    private static final String OBJECT_ID_FLOOR = "workspace_floor";
+    private static final String OBJECT_ID_GRID = "workspace_grid";
+    private static final String OBJECT_ID_GIZMO_X = "gizmo_axis_x";
+    private static final String OBJECT_ID_GIZMO_Y = "gizmo_axis_y";
+    private static final String OBJECT_ID_GIZMO_Z = "gizmo_axis_z";
+    private static final String HELPER_MATERIAL_ASSET_PATH = "materials/solum_helper_unlit.filamat";
 
     private SurfaceView surfaceView;
     private SunGlareOverlayView sunGlareOverlayView;
@@ -182,6 +201,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private final SceneRegistry sceneRegistry = new SceneRegistry();
     private IndirectLight indirectLight;
     private Skybox skybox;
+    private Material helperMaterial;
     private ColorGrading colorGrading;
     private final List<Texture> iblOwnedTextures = new ArrayList<>();
     private int fillLightEntity = 0;
@@ -226,6 +246,9 @@ public class FilamentGlbPreviewActivity extends Activity {
     private Button qualityTabButton;
     private Button materialTabButton;
     private Button debugTabButton;
+    private Button cameraModeButton;
+    private Button gridToggleButton;
+    private Button floorToggleButton;
     private LinearLayout workspacePanel;
     private LinearLayout tabRow;
     private LinearLayout assetsPanel;
@@ -281,6 +304,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private SeekBar backgroundSlider;
     private SeekBar timeOfDaySlider;
     private final Choreographer.FrameCallback frameCallback = this::doFrame;
+    private final List<WorkspaceRenderable> workspaceRenderables = new ArrayList<>();
 
     private FilamentQualityProfile qualityProfile = FilamentQualityProfile.MEDIUM;
     private LightingPreset lightingPreset = LightingPreset.SAFE_STUDIO;
@@ -292,6 +316,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private BloomMode bloomMode = BloomMode.OFF;
     private ShadowMode shadowMode = ShadowMode.OFF;
     private RefractionMode refractionMode = RefractionMode.ON;
+    private CameraInteractionMode cameraInteractionMode = CameraInteractionMode.CAMERA_ORBIT;
     private WorkspaceTab activeTab = WorkspaceTab.ASSETS;
     private boolean panelCollapsed = true;
     private boolean frameCallbackActive = false;
@@ -354,12 +379,12 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String lifecycleStatus = "created";
     private String lastLifecycleError = "none";
     private String qualityFeatureStatus = "medium_mobile_safe_quality_only";
-    private String environmentMode = "procedural_neutral_fallback";
-    private String iblMode = "procedural_fallback";
+    private String environmentMode = "procedural_sky_pass_fallback";
+    private String iblMode = "PROCEDURAL_APPROX";
     private String iblFile = "none";
-    private String iblLoadStatus = "fallback_procedural";
-    private String fallbackReason = "no_real_ibl_loaded";
-    private String iblStatus = "fallback_no_hdr_asset";
+    private String iblLoadStatus = "procedural_approx_no_ktx";
+    private String fallbackReason = "no_real_ktx_loaded";
+    private String iblStatus = "procedural_approx_no_hdr_ktx_asset";
     private String realIblReady = "false";
     private String skyboxReady = "true_procedural";
     private String indirectLightReady = "true_procedural";
@@ -465,6 +490,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     private float modelOffsetY = 0.0f;
     private float modelOffsetZ = 0.0f;
     private float cameraDistance = 4.4f;
+    private float cameraYaw = 0.0f;
+    private float cameraPitch = -18.0f;
     private float cameraTargetX = 0.0f;
     private float cameraTargetY = 0.0f;
     private float cameraTargetZ = 0.0f;
@@ -487,6 +514,31 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String modelTransformStatus = "not_applied";
     private String transformTargetStatus = "none";
     private String cameraApplyStatus = "not_applied";
+    private boolean gridVisible = true;
+    private boolean floorVisible = true;
+    private String gridMode = "world_space_pending";
+    private String floorMode = "world_space_pending";
+    private String gridStatus = "not_created";
+    private String floorStatus = "not_created";
+    private String objectTransformMode = "selected_object";
+    private String gizmoMode = "WORLD_SPACE_AXES";
+    private boolean gizmoVisible = true;
+    private boolean gizmoDragSupported = false;
+    private boolean fakeOverlayUsed = false;
+    private String gizmoStatus = "not_created";
+    private String gizmoAnchor = "none";
+    private String gizmoHitTestStatus = "foundation_only";
+    private String unrealReferenceStatus = "BLOCKED_UNREAL_REFERENCE_ACCESS";
+    private String helperGeometryStatus = "not_created";
+    private String gridMaterialStatus = "not_created";
+    private String floorMaterialStatus = "not_created";
+    private boolean realCameraApplied = false;
+    private String controlsRealityStatus = "pending";
+    private float lastTouchX = 0.0f;
+    private float lastTouchY = 0.0f;
+    private float lastPinchDistance = 0.0f;
+    private float lastPinchCenterX = 0.0f;
+    private float lastPinchCenterY = 0.0f;
     private String colorGradingStatus = "not_applied";
     private String colorGradingRequestKey = "";
     private String toneMapperStatus = "not_applied";
@@ -544,6 +596,38 @@ public class FilamentGlbPreviewActivity extends Activity {
 
         WorkspaceTab(String label) {
             this.label = label;
+        }
+    }
+
+    private enum CameraInteractionMode {
+        CAMERA_ORBIT("Camera Orbit"),
+        OBJECT_ROTATE("Object Rotate");
+
+        final String label;
+
+        CameraInteractionMode(String label) {
+            this.label = label;
+        }
+
+        CameraInteractionMode next() {
+            return this == CAMERA_ORBIT ? OBJECT_ROTATE : CAMERA_ORBIT;
+        }
+    }
+
+    private static final class WorkspaceRenderable {
+        final String objectId;
+        final int entity;
+        final VertexBuffer vertexBuffer;
+        final IndexBuffer indexBuffer;
+        final MaterialInstance materialInstance;
+
+        WorkspaceRenderable(String objectId, int entity, VertexBuffer vertexBuffer, IndexBuffer indexBuffer,
+                MaterialInstance materialInstance) {
+            this.objectId = objectId;
+            this.entity = entity;
+            this.vertexBuffer = vertexBuffer;
+            this.indexBuffer = indexBuffer;
+            this.materialInstance = materialInstance;
         }
     }
 
@@ -916,7 +1000,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             applyLightingPreset();
             refreshUiNow();
         });
-        iblButton = button("IBL: Procedural fallback");
+        iblButton = button("IBL: PROCEDURAL_APPROX");
         iblButton.setOnClickListener(v -> cycleIblPreset());
         Button resetButton = button("Reset Safe Lighting");
         resetButton.setOnClickListener(v -> resetSafeLighting());
@@ -1212,6 +1296,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         timePresetRow.addView(button("Sunset", v -> setEnvironmentPreset("SUNSET")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         timePresetRow.addView(button("Night", v -> setEnvironmentPreset("NIGHT")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         iblPanel.addView(timePresetRow);
+        LinearLayout weatherPresetRow = row();
+        weatherPresetRow.addView(button("Weather: None", v -> setWeatherPreset("none")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        weatherPresetRow.addView(button("Weather: Rain", v -> setWeatherPreset("rain")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        iblPanel.addView(weatherPresetRow);
         addLightingSlider(iblPanel, "Env Sun Az", 0.0f, 360.0f, 1.0f, normalizedAzimuth(sunAzimuth), v -> {
             ensureEnvironmentApi();
             environmentApi.setSunAzimuth(v);
@@ -1548,8 +1636,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             environmentApi = new EnvironmentController(renderControlApi);
             surfaceView.setOnTouchListener((view, event) -> {
                 if (destroying || destroyed || modelViewer == null) return true;
-                modelViewer.onTouchEvent(event);
-                if (event.getAction() == MotionEvent.ACTION_UP) requestPick(event);
+                handleWorkspaceTouch(event);
                 return true;
             });
             createEnvironmentFallback();
@@ -1557,6 +1644,8 @@ public class FilamentGlbPreviewActivity extends Activity {
             applyQualityProfile();
             applyLightingValues();
             applyCameraControls();
+            ensureHelperMaterial();
+            applyWorkspaceFoundation();
             updateAdvancedValuesVisibility();
             lifecycleStatus = "viewer_created";
         } catch (Throwable t) {
@@ -1573,6 +1662,109 @@ public class FilamentGlbPreviewActivity extends Activity {
         releaseFilamentResources();
         lifecycleStatus = "close_preview_finish";
         finish();
+    }
+
+    private void handleWorkspaceTouch(MotionEvent event) {
+        if (event == null) return;
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            lastTouchX = event.getX();
+            lastTouchY = event.getY();
+            lastPinchDistance = 0.0f;
+            return;
+        }
+        if (action == MotionEvent.ACTION_POINTER_DOWN && event.getPointerCount() >= 2) {
+            lastPinchDistance = pointerDistance(event);
+            lastPinchCenterX = pointerCenterX(event);
+            lastPinchCenterY = pointerCenterY(event);
+            return;
+        }
+        if (action == MotionEvent.ACTION_MOVE) {
+            if (event.getPointerCount() >= 2) {
+                handleCameraPinchPan(event);
+            } else if (cameraInteractionMode == CameraInteractionMode.OBJECT_ROTATE) {
+                handleObjectRotateDrag(event);
+            } else {
+                handleCameraOrbitDrag(event);
+            }
+            return;
+        }
+        if (action == MotionEvent.ACTION_UP) {
+            requestPick(event);
+            lastPinchDistance = 0.0f;
+            return;
+        }
+        if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_UP) {
+            lastPinchDistance = 0.0f;
+        }
+    }
+
+    private void handleCameraOrbitDrag(MotionEvent event) {
+        float dx = event.getX() - lastTouchX;
+        float dy = event.getY() - lastTouchY;
+        lastTouchX = event.getX();
+        lastTouchY = event.getY();
+        cameraYaw = wrapDegrees(cameraYaw - dx * 0.35f);
+        cameraPitch = clamp(cameraPitch + dy * 0.25f, -80.0f, 80.0f);
+        objectTransformMode = "camera_orbit_touch";
+        markManualOverride("camera_orbit_touch");
+        applyCameraControls();
+    }
+
+    private void handleCameraPinchPan(MotionEvent event) {
+        float distance = pointerDistance(event);
+        float centerX = pointerCenterX(event);
+        float centerY = pointerCenterY(event);
+        if (lastPinchDistance > 0.0f) {
+            float zoomDelta = (lastPinchDistance - distance) * 0.012f;
+            cameraDistance = clamp(cameraDistance + zoomDelta, 1.0f, 30.0f);
+            float panScale = cameraDistance * 0.0018f;
+            cameraTargetX -= (centerX - lastPinchCenterX) * panScale;
+            cameraTargetY += (centerY - lastPinchCenterY) * panScale;
+            objectTransformMode = "camera_pan_zoom_touch";
+            markManualOverride("camera_pan_zoom_touch");
+            applyCameraControls();
+        }
+        lastPinchDistance = distance;
+        lastPinchCenterX = centerX;
+        lastPinchCenterY = centerY;
+    }
+
+    private void handleObjectRotateDrag(MotionEvent event) {
+        float dx = event.getX() - lastTouchX;
+        float dy = event.getY() - lastTouchY;
+        lastTouchX = event.getX();
+        lastTouchY = event.getY();
+        SceneObject selected = sceneRegistry.getSelectedObject();
+        if (selected == null) {
+            objectTransformMode = "object_rotate_no_selection";
+            return;
+        }
+        setSelectedObjectTransform(
+            selected.getPositionX(),
+            selected.getPositionY(),
+            selected.getPositionZ(),
+            wrapDegrees(selected.getRotationX() + dy * 0.35f),
+            wrapDegrees(selected.getRotationY() + dx * 0.35f),
+            selected.getRotationZ(),
+            selected.getScale(),
+            "object_rotate_touch"
+        );
+    }
+
+    private float pointerDistance(MotionEvent event) {
+        if (event == null || event.getPointerCount() < 2) return 0.0f;
+        float dx = event.getX(0) - event.getX(1);
+        float dy = event.getY(0) - event.getY(1);
+        return (float) Math.sqrt(dx * dx + dy * dy);
+    }
+
+    private float pointerCenterX(MotionEvent event) {
+        return event == null || event.getPointerCount() < 2 ? 0.0f : (event.getX(0) + event.getX(1)) * 0.5f;
+    }
+
+    private float pointerCenterY(MotionEvent event) {
+        return event == null || event.getPointerCount() < 2 ? 0.0f : (event.getY(0) + event.getY(1)) * 0.5f;
     }
 
     private void startFrames() {
@@ -1857,6 +2049,15 @@ public class FilamentGlbPreviewActivity extends Activity {
                 pickDepth = result.depth;
                 selectedMaterialIndexStatus = selectedRenderable.equals("none") ? "none" : "deferred_material_slot_mapping_limited_by_gltfio_java_api";
                 pickingStatus = selectedRenderable.equals("none") ? "ok_no_renderable_at_tap" : "ok_renderable_selected";
+                if (!selectedRenderable.equals("none")) {
+                    SceneObject selected = sceneRegistry.selectObject(OBJECT_ID_ACTIVE_MODEL);
+                    if (selected != null) {
+                        syncFieldsFromSelectedObject(selected);
+                        objectTransformMode = "selected_active_model_from_pick_entity_mapping_limited";
+                        ensureWorkspaceGizmo();
+                        updateGizmoTransform();
+                    }
+                }
                 refreshUiNow();
             });
             pickingStatus = "pick_requested";
@@ -2050,7 +2251,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
         scanDownloadStatus = trigger + ": copied=" + scanCopiedCount + " skipped=" + scanSkippedCount + " failed=" + scanFailedCount;
         File preferred = findPreferredIbl();
-        if (preferred != null && "procedural_fallback".equals(iblMode)) {
+        if (preferred != null && "PROCEDURAL_APPROX".equals(iblMode)) {
             futureIblAssetPath = preferred.getAbsolutePath();
         }
     }
@@ -2113,6 +2314,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             loadStatus = "ok_loaded_with_gltfio";
             gltfioLoaded = "true";
             syncSceneRegistryForActiveModel("loaded");
+            applyWorkspaceFoundation();
             updateMaterialInspector();
             applyRenderableShadowMode();
         } catch (Throwable t) {
@@ -2125,7 +2327,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private void syncSceneRegistryForActiveModel(String status) {
-        sceneRegistry.registerLoadedModel(
+        SceneObject object = sceneRegistry.registerLoadedModel(
             modelName == null || modelName.isEmpty() ? "active_model" : modelName,
             modelCopiedPath == null || modelCopiedPath.isEmpty() ? modelPath : modelCopiedPath,
             modelRotationX,
@@ -2137,6 +2339,10 @@ public class FilamentGlbPreviewActivity extends Activity {
             modelOffsetZ,
             status
         );
+        try {
+            if (modelViewer != null && modelViewer.getAsset() != null) object.setRenderEntity(modelViewer.getAsset().getRoot());
+        } catch (Throwable ignored) { }
+        syncFieldsFromSelectedObject(object);
     }
 
     private void applyRenderableShadowMode() {
@@ -2230,15 +2436,15 @@ public class FilamentGlbPreviewActivity extends Activity {
             .build(engine);
         modelViewer.getScene().setIndirectLight(indirectLight);
         modelViewer.getScene().setSkybox(skybox);
-        iblMode = "procedural_fallback";
+        iblMode = "PROCEDURAL_APPROX";
         iblFile = "none";
-        iblLoadStatus = "fallback_procedural";
-        environmentMode = "procedural_neutral_fallback";
-        iblStatus = "fallback_procedural_indirect_light";
+        iblLoadStatus = "procedural_approx_no_ktx";
+        environmentMode = "procedural_sky_pass_fallback";
+        iblStatus = "procedural_approx_indirect_light";
         realIblReady = "false";
         skyboxReady = "true_procedural";
         indirectLightReady = "true_procedural";
-        fallbackReason = "no_real_ibl_loaded";
+        fallbackReason = "no_real_ktx_loaded";
         fillLightEntity = EntityManager.get().create();
         new LightManager.Builder(LightManager.Type.DIRECTIONAL)
             .castShadows(false)
@@ -2339,11 +2545,11 @@ public class FilamentGlbPreviewActivity extends Activity {
         modelViewer.getScene().setSkybox(skybox);
         if (indirectBundle.getCubemap() != null) iblOwnedTextures.add(indirectBundle.getCubemap());
         if (skyboxBundle.getCubemap() != null) iblOwnedTextures.add(skyboxBundle.getCubemap());
-        iblMode = "ktx1_real_ibl";
+        iblMode = "REAL_KTX";
         iblFile = file.getName();
         iblLoadStatus = "ok_ktx1loader_" + reason;
-        environmentMode = "real_ibl_ktx1";
-        iblStatus = "ok_real_ibl_ktx1loader";
+        environmentMode = "real_ktx_ibl";
+        iblStatus = "ok_real_ktx_ibl_ktx1loader";
         realIblReady = "true";
         skyboxReady = "true";
         indirectLightReady = "true";
@@ -2372,7 +2578,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             environmentAssetFallbackActive = "true";
             lastEnvironmentAssetLoadError = "missing_asset:" + slot.iblPath;
             fallbackReason = "missing_asset_fallback";
-            if (!"true".equals(realIblReady) && modelViewer != null && (indirectLight == null || skybox == null || !"procedural_fallback".equals(iblMode))) {
+            if (!"true".equals(realIblReady) && modelViewer != null && (indirectLight == null || skybox == null || !"PROCEDURAL_APPROX".equals(iblMode))) {
                 createEnvironmentFallback();
             }
             syncEnvironmentAssetDiagnostics();
@@ -2503,6 +2709,19 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
     }
 
+    private ByteBuffer readAssetBuffer(String path) throws Exception {
+        try (InputStream input = getAssets().open(path); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] chunk = new byte[8192];
+            int read;
+            while ((read = input.read(chunk)) != -1) output.write(chunk, 0, read);
+            byte[] bytes = output.toByteArray();
+            ByteBuffer buffer = ByteBuffer.allocateDirect(bytes.length).order(ByteOrder.nativeOrder());
+            buffer.put(bytes);
+            buffer.flip();
+            return buffer;
+        }
+    }
+
     private File copyAssetToCacheFile(String path) throws Exception {
         File dir = new File(getCacheDir(), "env_assets");
         if (!dir.isDirectory() && !dir.mkdirs()) throw new IllegalStateException("env_asset_cache_unavailable");
@@ -2547,11 +2766,11 @@ public class FilamentGlbPreviewActivity extends Activity {
             iblOwnedTextures.add(hdrTexture);
             iblOwnedTextures.add(cubemap);
             iblOwnedTextures.add(reflections);
-            iblMode = "hdr_runtime_prefilter_real_ibl";
+            iblMode = "KTX_READY";
             iblFile = file.getName();
             iblLoadStatus = "ok_hdrloader_runtime_prefilter_" + reason;
-            environmentMode = "real_ibl_hdr_runtime_prefilter";
-            iblStatus = "ok_real_ibl_hdrloader_prefilter";
+            environmentMode = "runtime_prefilter_ready_not_persisted_ktx";
+            iblStatus = "ok_hdr_runtime_prefilter_ktx_ready_candidate";
             realIblReady = "true";
             skyboxReady = "true";
             indirectLightReady = "true_reflections_only";
@@ -2676,7 +2895,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             modelViewer.getRenderer().setClearOptions(clear);
             applySunGlareOverlay();
             lightingStatus = advancedValuesEnabled ? "live_values_applied_advanced_ranges" : "live_values_applied_safe_slider_ranges";
-            if (realIblReady.equals("true")) iblStatus = "ok_real_ibl_intensity_controlled_by_ambient_slider";
+            if (realIblReady.equals("true")) iblStatus = "ok_real_ktx_or_runtime_prefilter_intensity_controlled_by_ambient_slider";
             persistWorkspaceSettings();
         } catch (Throwable t) {
             lastLifecycleError = shortMessage(t);
@@ -2698,6 +2917,12 @@ public class FilamentGlbPreviewActivity extends Activity {
         ensureEnvironmentApi();
         environmentApi.setEnvironmentPreset(preset);
         applyEnvironmentStateToActivity("preset_" + preset.toLowerCase(Locale.US));
+    }
+
+    private void setWeatherPreset(String preset) {
+        ensureEnvironmentApi();
+        environmentApi.setWeatherPreset(preset);
+        applyEnvironmentStateToActivity("weather_" + preset.toLowerCase(Locale.US));
     }
 
     private void updateEnvironmentClock() {
@@ -2730,6 +2955,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         environmentMode = "environment_api_" + actual.getActiveEnvironmentPreset().toLowerCase(Locale.US);
         fallbackReason = actual.isFallbackActive() ? "missing_asset_fallback" : fallbackReason;
         iblStatus = environmentApi.getDiagnostics().getIblSlotStatus();
+        if (actual.getWeather().getFogDensity() > 0.0f) {
+            fogDensity = clamp(actual.getWeather().getFogDensity() / 100.0f, 0.0f, 0.08f);
+            fogStatus = "weather_requested_activity_fog_approx";
+        }
         applyEnvironmentAssetSlotForPreset(reason);
         environmentApplyStatus = "activity_local_applied_reason_" + reason;
         applyLightingValues();
@@ -2756,6 +2985,13 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nassetSlot=" + activeEnvironmentAssetSlot + " ibl=" + activeIblAssetStatus + " sky=" + activeSkyboxAssetStatus
                 + "\nlicense=" + environmentAssetLicenseStatus + " sizeEst=" + totalEnvironmentAssetSizeEstimate
                 + "\nstarsVisibility=" + twoDecimal(actual.getStarsVisibility()) + " status=" + diagnostics.getStarsStatus()
+                + "\nweather=" + actual.getWeather().getWeatherPreset()
+                + " rain=" + oneDecimal(actual.getWeather().getRainIntensity())
+                + " cloud=" + oneDecimal(actual.getWeather().getCloudCoverage())
+                + " wetness=" + twoDecimal(actual.getWeather().getMaterialWetness())
+                + "\niblMode=" + diagnostics.getIblMode() + " skyMode=" + diagnostics.getSkyMode()
+                + " fakeOverlayUsed=" + diagnostics.isFakeOverlayUsed()
+                + "\naudioMode=" + diagnostics.getAudioMode() + " vfx=" + diagnostics.getVfxStatus()
                 + "\nfallback=" + diagnostics.getFallbackStatus()
                 + "\napply=" + environmentApplyStatus);
         }
@@ -3203,27 +3439,311 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
     }
 
+    private void applyWorkspaceFoundation() {
+        if (modelViewer == null || modelViewer.getScene() == null) return;
+        try {
+            ensureHelperMaterial();
+            if (floorVisible) ensureWorkspacePlane();
+            else removeWorkspaceRenderable(OBJECT_ID_FLOOR);
+            if (gridVisible) ensureWorkspaceGrid();
+            else removeWorkspaceRenderable(OBJECT_ID_GRID);
+            ensureWorkspaceGizmo();
+            updateGizmoTransform();
+            gridMode = gridVisible ? (gridStatus.startsWith("ok_") ? "WORLD_SPACE_GEOMETRY" : "BLOCKED") : "off";
+            floorMode = floorVisible ? (floorStatus.startsWith("ok_") ? "WORLD_SPACE_GEOMETRY" : "BLOCKED") : "off";
+            controlsRealityStatus = "camera_object_transform_real grid=" + gridMode + " floor=" + floorMode
+                + " gizmo=" + gizmoMode + " dragSupported=" + gizmoDragSupported;
+        } catch (Throwable t) {
+            helperGeometryStatus = "workspace_foundation_failed: " + shortMessage(t);
+            controlsRealityStatus = "partial_workspace_foundation_failed";
+        }
+    }
+
+    private void ensureWorkspacePlane() {
+        if (findWorkspaceRenderable(OBJECT_ID_FLOOR) != null) return;
+        float s = 4.0f;
+        float[] vertices = new float[] {
+            -s, -0.01f, -s,
+             s, -0.01f, -s,
+             s, -0.01f,  s,
+            -s, -0.01f,  s
+        };
+        short[] indices = new short[] {0, 1, 2, 0, 2, 3};
+        WorkspaceRenderable renderable = createWorkspaceRenderable(OBJECT_ID_FLOOR, vertices, indices,
+            RenderableManager.PrimitiveType.TRIANGLES, 0.45f, 0.48f, 0.50f, false, true,
+            new Box(0.0f, -0.01f, 0.0f, s, 0.02f, s));
+        if (renderable != null) {
+            sceneRegistry.registerObject(OBJECT_ID_FLOOR, "Workspace Floor", "world_floor", "generated_runtime_geometry",
+                renderable.entity, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, "real_world_renderable");
+            floorStatus = "ok_real_world_renderable";
+        }
+    }
+
+    private void ensureWorkspaceGrid() {
+        if (findWorkspaceRenderable(OBJECT_ID_GRID) != null) return;
+        int lineCount = 21;
+        float extent = 5.0f;
+        float[] vertices = new float[lineCount * 2 * 2 * 3];
+        short[] indices = new short[lineCount * 2 * 2];
+        int v = 0;
+        int idx = 0;
+        for (int i = 0; i < lineCount; i++) {
+            float p = -extent + i * (extent * 2.0f / (lineCount - 1));
+            vertices[v++] = -extent; vertices[v++] = 0.0f; vertices[v++] = p;
+            vertices[v++] =  extent; vertices[v++] = 0.0f; vertices[v++] = p;
+            vertices[v++] = p; vertices[v++] = 0.0f; vertices[v++] = -extent;
+            vertices[v++] = p; vertices[v++] = 0.0f; vertices[v++] =  extent;
+            indices[idx] = (short) idx;
+            idx++;
+            indices[idx] = (short) idx;
+            idx++;
+            indices[idx] = (short) idx;
+            idx++;
+            indices[idx] = (short) idx;
+            idx++;
+        }
+        WorkspaceRenderable renderable = createWorkspaceRenderable(OBJECT_ID_GRID, vertices, indices,
+            RenderableManager.PrimitiveType.LINES, 0.18f, 0.20f, 0.22f, false, false,
+            new Box(0.0f, 0.0f, 0.0f, extent, 0.02f, extent));
+        if (renderable != null) {
+            sceneRegistry.registerObject(OBJECT_ID_GRID, "Workspace Grid", "world_grid", "generated_runtime_geometry",
+                renderable.entity, 0.0f, 0.005f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, "real_world_renderable_lines");
+            gridStatus = "ok_real_world_renderable_lines";
+        }
+    }
+
+    private void ensureWorkspaceGizmo() {
+        SceneObject selected = sceneRegistry.getSelectedObject();
+        boolean shouldShow = gizmoVisible && selected != null && !OBJECT_ID_GRID.equals(selected.getId())
+            && !OBJECT_ID_FLOOR.equals(selected.getId()) && !selected.getId().startsWith("gizmo_");
+        if (!shouldShow) {
+            removeWorkspaceRenderable(OBJECT_ID_GIZMO_X);
+            removeWorkspaceRenderable(OBJECT_ID_GIZMO_Y);
+            removeWorkspaceRenderable(OBJECT_ID_GIZMO_Z);
+            gizmoStatus = "hidden_no_selected_object";
+            return;
+        }
+        ensureAxisRenderable(OBJECT_ID_GIZMO_X, "Gizmo X Axis", new float[] {0.0f, 0.0f, 0.0f, 0.85f, 0.0f, 0.0f}, 1.0f, 0.05f, 0.04f);
+        ensureAxisRenderable(OBJECT_ID_GIZMO_Y, "Gizmo Y Axis", new float[] {0.0f, 0.0f, 0.0f, 0.0f, 0.85f, 0.0f}, 0.05f, 0.85f, 0.10f);
+        ensureAxisRenderable(OBJECT_ID_GIZMO_Z, "Gizmo Z Axis", new float[] {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.85f}, 0.08f, 0.20f, 1.0f);
+        gizmoAnchor = twoDecimal(selected.getPositionX()) + "/" + twoDecimal(selected.getPositionY()) + "/" + twoDecimal(selected.getPositionZ());
+        gizmoHitTestStatus = "foundation_only";
+        gizmoStatus = "ok_world_space_axes_visible drag_hook_clean_no_axis_picking";
+    }
+
+    private void ensureAxisRenderable(String id, String name, float[] vertices, float red, float green, float blue) {
+        if (findWorkspaceRenderable(id) != null) return;
+        WorkspaceRenderable renderable = createWorkspaceRenderable(id, vertices, new short[] {0, 1},
+            RenderableManager.PrimitiveType.LINES, red, green, blue, false, false,
+            new Box(0.42f, 0.42f, 0.42f, 0.45f, 0.45f, 0.45f));
+        if (renderable != null) {
+            helperGeometryStatus = "ok_real_world_gizmo_axis_" + name;
+        }
+    }
+
+    private WorkspaceRenderable createWorkspaceRenderable(String id, float[] vertices, short[] indices,
+            RenderableManager.PrimitiveType primitiveType, float red, float green, float blue,
+            boolean castShadows, boolean receiveShadows, Box bounds) {
+        if (modelViewer == null || modelViewer.getEngine() == null || modelViewer.getScene() == null) return null;
+        MaterialInstance material = duplicateHelperMaterial(id, red, green, blue);
+        if (material == null) {
+            helperGeometryStatus = "helper_material_unavailable_for_" + id + " gridMaterial=" + gridMaterialStatus + " floorMaterial=" + floorMaterialStatus;
+            if (OBJECT_ID_FLOOR.equals(id)) floorStatus = helperGeometryStatus;
+            if (OBJECT_ID_GRID.equals(id)) gridStatus = helperGeometryStatus;
+            if (id.startsWith("gizmo_")) gizmoStatus = helperGeometryStatus;
+            return null;
+        }
+        try {
+            Engine engine = modelViewer.getEngine();
+            VertexBuffer vertexBuffer = new VertexBuffer.Builder()
+                .bufferCount(1)
+                .vertexCount(vertices.length / 3)
+                .attribute(VertexBuffer.VertexAttribute.POSITION, 0, VertexBuffer.AttributeType.FLOAT3, 0, 12)
+                .build(engine);
+            ByteBuffer vertexBytes = ByteBuffer.allocateDirect(vertices.length * 4).order(ByteOrder.nativeOrder());
+            vertexBytes.asFloatBuffer().put(vertices);
+            vertexBuffer.setBufferAt(engine, 0, vertexBytes);
+
+            IndexBuffer indexBuffer = new IndexBuffer.Builder()
+                .indexCount(indices.length)
+                .bufferType(IndexBuffer.Builder.IndexType.USHORT)
+                .build(engine);
+            ByteBuffer indexBytes = ByteBuffer.allocateDirect(indices.length * 2).order(ByteOrder.nativeOrder());
+            indexBytes.asShortBuffer().put(indices);
+            indexBuffer.setBuffer(engine, indexBytes);
+
+            int entity = EntityManager.get().create();
+            new RenderableManager.Builder(1)
+                .boundingBox(bounds == null ? new Box(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f) : bounds)
+                .geometry(0, primitiveType, vertexBuffer, indexBuffer, 0, indices.length)
+                .material(0, material)
+                .castShadows(castShadows)
+                .receiveShadows(receiveShadows)
+                .culling(false)
+                .build(engine, entity);
+            TransformManager tm = engine.getTransformManager();
+            if (tm.getInstance(entity) == 0) tm.create(entity);
+            modelViewer.getScene().addEntity(entity);
+            WorkspaceRenderable renderable = new WorkspaceRenderable(id, entity, vertexBuffer, indexBuffer, material);
+            workspaceRenderables.add(renderable);
+            helperGeometryStatus = "ok_real_filament_renderables";
+            return renderable;
+        } catch (Throwable t) {
+            try { modelViewer.getEngine().destroyMaterialInstance(material); } catch (Throwable ignored) { }
+            helperGeometryStatus = "create_renderable_failed_" + id + ": " + shortMessage(t);
+            if (OBJECT_ID_FLOOR.equals(id)) floorStatus = helperGeometryStatus;
+            if (OBJECT_ID_GRID.equals(id)) gridStatus = helperGeometryStatus;
+            if (id.startsWith("gizmo_")) gizmoStatus = helperGeometryStatus;
+            return null;
+        }
+    }
+
+    private MaterialInstance duplicateHelperMaterial(String name, float red, float green, float blue) {
+        Material materialPackage = ensureHelperMaterial();
+        if (materialPackage != null) {
+            try {
+                MaterialInstance material = materialPackage.createInstance("solum_" + name);
+                trySetMaterialColor(material, red, green, blue);
+                material.setDoubleSided(true);
+                if (OBJECT_ID_FLOOR.equals(name)) floorMaterialStatus = "ok_bundled_unlit_helper_material";
+                if (OBJECT_ID_GRID.equals(name)) gridMaterialStatus = "ok_bundled_unlit_helper_material";
+                return material;
+            } catch (Throwable t) {
+                helperGeometryStatus = "helper_material_instance_failed: " + shortMessage(t);
+            }
+        }
+        MaterialInstance source = firstLoadedModelMaterialInstance();
+        if (source == null) return null;
+        try {
+            MaterialInstance material = MaterialInstance.duplicate(source, "solum_" + name);
+            trySetMaterialColor(material, red, green, blue);
+            material.setDoubleSided(true);
+            if (OBJECT_ID_FLOOR.equals(name)) floorMaterialStatus = "fallback_model_material_duplicate_not_primary";
+            if (OBJECT_ID_GRID.equals(name)) gridMaterialStatus = "fallback_model_material_duplicate_not_primary";
+            return material;
+        } catch (Throwable t) {
+            helperGeometryStatus = "material_duplicate_failed: " + shortMessage(t);
+            return null;
+        }
+    }
+
+    private Material ensureHelperMaterial() {
+        if (helperMaterial != null) return helperMaterial;
+        if (modelViewer == null || modelViewer.getEngine() == null) return null;
+        if (!appAssetExists(HELPER_MATERIAL_ASSET_PATH)) {
+            gridMaterialStatus = "BLOCKED_HELPER_MATERIAL_PACKAGE_MISSING";
+            floorMaterialStatus = "BLOCKED_HELPER_MATERIAL_PACKAGE_MISSING";
+            return null;
+        }
+        try {
+            ByteBuffer data = readAssetBuffer(HELPER_MATERIAL_ASSET_PATH);
+            helperMaterial = new Material.Builder()
+                .payload(data, data.remaining())
+                .build(modelViewer.getEngine());
+            gridMaterialStatus = "ok_bundled_unlit_helper_material";
+            floorMaterialStatus = "ok_bundled_unlit_helper_material";
+            return helperMaterial;
+        } catch (Throwable t) {
+            gridMaterialStatus = "helper_material_load_failed: " + shortMessage(t);
+            floorMaterialStatus = gridMaterialStatus;
+            return null;
+        }
+    }
+
+    private MaterialInstance firstLoadedModelMaterialInstance() {
+        if (modelViewer == null || modelViewer.getAsset() == null) return null;
+        try {
+            RenderableManager renderables = modelViewer.getEngine().getRenderableManager();
+            for (int entity : modelViewer.getAsset().getRenderableEntities()) {
+                int instance = renderables.getInstance(entity);
+                if (instance == 0 || renderables.getPrimitiveCount(instance) <= 0) continue;
+                MaterialInstance material = renderables.getMaterialInstanceAt(instance, 0);
+                if (material != null) return material;
+            }
+        } catch (Throwable ignored) { }
+        return null;
+    }
+
+    private void trySetMaterialColor(MaterialInstance material, float red, float green, float blue) {
+        if (material == null) return;
+        String[] names = new String[] {"baseColorFactor", "baseColor", "color", "albedo"};
+        for (String name : names) {
+            try {
+                material.setParameter(name, red, green, blue, 1.0f);
+                return;
+            } catch (Throwable ignored) { }
+        }
+    }
+
+    private WorkspaceRenderable findWorkspaceRenderable(String id) {
+        for (WorkspaceRenderable renderable : workspaceRenderables) {
+            if (renderable.objectId.equals(id)) return renderable;
+        }
+        return null;
+    }
+
+    private void removeWorkspaceRenderable(String id) {
+        for (int i = workspaceRenderables.size() - 1; i >= 0; i--) {
+            WorkspaceRenderable renderable = workspaceRenderables.get(i);
+            if (!renderable.objectId.equals(id)) continue;
+            destroyWorkspaceRenderable(renderable);
+            workspaceRenderables.remove(i);
+        }
+    }
+
+    private void destroyWorkspaceRenderable(WorkspaceRenderable renderable) {
+        if (renderable == null || modelViewer == null || modelViewer.getEngine() == null) return;
+        Engine engine = modelViewer.getEngine();
+        try { if (modelViewer.getScene() != null) modelViewer.getScene().removeEntity(renderable.entity); } catch (Throwable ignored) { }
+        try { engine.getRenderableManager().destroy(renderable.entity); } catch (Throwable ignored) { }
+        try { engine.getTransformManager().destroy(renderable.entity); } catch (Throwable ignored) { }
+        try { engine.destroyVertexBuffer(renderable.vertexBuffer); } catch (Throwable ignored) { }
+        try { engine.destroyIndexBuffer(renderable.indexBuffer); } catch (Throwable ignored) { }
+        try { engine.destroyMaterialInstance(renderable.materialInstance); } catch (Throwable ignored) { }
+        try { EntityManager.get().destroy(renderable.entity); } catch (Throwable ignored) { }
+    }
+
+    private void destroyWorkspaceRenderables() {
+        for (int i = workspaceRenderables.size() - 1; i >= 0; i--) {
+            destroyWorkspaceRenderable(workspaceRenderables.get(i));
+        }
+        workspaceRenderables.clear();
+    }
+
+    private void updateGizmoTransform() {
+        SceneObject selected = sceneRegistry.getSelectedObject();
+        if (selected == null || modelViewer == null) return;
+        float x = selected.getPositionX();
+        float y = selected.getPositionY();
+        float z = selected.getPositionZ();
+        applyEntityTransform(OBJECT_ID_GIZMO_X, x, y, z, 0.0f, 0.0f, 0.0f, 1.0f);
+        applyEntityTransform(OBJECT_ID_GIZMO_Y, x, y, z, 0.0f, 0.0f, 0.0f, 1.0f);
+        applyEntityTransform(OBJECT_ID_GIZMO_Z, x, y, z, 0.0f, 0.0f, 0.0f, 1.0f);
+    }
+
+    private void applyEntityTransform(String objectId, float x, float y, float z, float rx, float ry, float rz, float scale) {
+        if (modelViewer == null) return;
+        SceneObject object = sceneRegistry.findById(objectId);
+        int entity = object == null ? 0 : object.getRenderEntity();
+        if (entity == 0) {
+            WorkspaceRenderable renderable = findWorkspaceRenderable(objectId);
+            entity = renderable == null ? 0 : renderable.entity;
+        }
+        if (entity == 0) return;
+        TransformManager tm = modelViewer.getEngine().getTransformManager();
+        int instance = tm.getInstance(entity);
+        if (instance == 0) return;
+        float[] m = transformMatrix(x, y, z, rx, ry, rz, scale);
+        tm.setTransform(instance, m);
+    }
+
     private void applySunGlareOverlay() {
         if (sunGlareOverlayView == null) {
             sunGlareStatus = "deferred_overlay_not_created";
             return;
         }
-        boolean enabled = sunGlareMode != SunGlareMode.OFF && qualityProfile != FilamentQualityProfile.LOW && sunElevation > 2.0f && sunLightIntensity > 0.1f;
-        if (!enabled) {
-            sunGlareOverlayView.setVisibility(View.GONE);
-            if (sunGlareMode == SunGlareMode.OFF) sunGlareStatus = "off_mobile_safe_default";
-            else if (qualityProfile == FilamentQualityProfile.LOW) sunGlareStatus = "disabled_low_quality";
-            else sunGlareStatus = "off_sun_below_horizon_or_zero_intensity";
-            return;
-        }
-        float az = normalizedAzimuth(sunAzimuth);
-        float x = 0.5f + (float) Math.sin(Math.toRadians(az)) * 0.34f;
-        float y = 0.58f - clamp(sunElevation, 0.0f, 90.0f) / 90.0f * 0.46f;
-        float alpha = sunGlareMode == SunGlareMode.SUBTLE ? 0.10f : 0.17f;
-        float radius = sunGlareMode == SunGlareMode.SUBTLE ? 0.18f : 0.25f;
-        sunGlareOverlayView.configure(clamp(x, 0.08f, 0.92f), clamp(y, 0.06f, 0.78f), radius, alpha);
-        sunGlareOverlayView.setVisibility(View.VISIBLE);
-        sunGlareStatus = "applied_overlay_" + sunGlareMode.name().toLowerCase(Locale.US) + "_screen_space_no_ssr";
+        sunGlareOverlayView.setVisibility(View.GONE);
+        sunGlareStatus = "disabled_debug_only_screen_overlay_not_sky_object";
     }
 
     private float sunGlareStrength() {
@@ -3374,6 +3894,11 @@ public class FilamentGlbPreviewActivity extends Activity {
                     EntityManager.get().destroy(fillLightEntity);
                     fillLightEntity = 0;
                 }
+                destroyWorkspaceRenderables();
+                if (helperMaterial != null) {
+                    try { engine.destroyMaterial(helperMaterial); } catch (Throwable ignored) { }
+                    helperMaterial = null;
+                }
                 destroyAdditionalLights(engine);
                 destroyEnvironmentResources(engine);
                 modelViewer.destroyModel();
@@ -3456,6 +3981,12 @@ public class FilamentGlbPreviewActivity extends Activity {
         modelOffsetY = prefs.getFloat(PREF_FILAMENT_MODEL_OY, 0.0f);
         modelOffsetZ = prefs.getFloat(PREF_FILAMENT_MODEL_OZ, 0.0f);
         cameraDistance = prefs.getFloat(PREF_FILAMENT_CAMERA_DISTANCE, 4.4f);
+        cameraYaw = prefs.getFloat(PREF_FILAMENT_CAMERA_YAW, 0.0f);
+        cameraPitch = prefs.getFloat(PREF_FILAMENT_CAMERA_PITCH, -18.0f);
+        cameraInteractionMode = CameraInteractionMode.CAMERA_ORBIT;
+        objectTransformMode = "camera_orbit_default_after_launch";
+        gridVisible = prefs.getBoolean(PREF_FILAMENT_GRID_VISIBLE, true);
+        floorVisible = prefs.getBoolean(PREF_FILAMENT_FLOOR_VISIBLE, true);
         cameraTargetX = prefs.getFloat(PREF_FILAMENT_CAMERA_TARGET_X, 0.0f);
         cameraTargetY = prefs.getFloat(PREF_FILAMENT_CAMERA_TARGET_Y, 0.0f);
         cameraTargetZ = prefs.getFloat(PREF_FILAMENT_CAMERA_TARGET_Z, 0.0f);
@@ -3519,6 +4050,11 @@ public class FilamentGlbPreviewActivity extends Activity {
             .putFloat(PREF_FILAMENT_MODEL_OY, modelOffsetY)
             .putFloat(PREF_FILAMENT_MODEL_OZ, modelOffsetZ)
             .putFloat(PREF_FILAMENT_CAMERA_DISTANCE, cameraDistance)
+            .putFloat(PREF_FILAMENT_CAMERA_YAW, cameraYaw)
+            .putFloat(PREF_FILAMENT_CAMERA_PITCH, cameraPitch)
+            .putString(PREF_FILAMENT_CAMERA_MODE, cameraInteractionMode.name())
+            .putBoolean(PREF_FILAMENT_GRID_VISIBLE, gridVisible)
+            .putBoolean(PREF_FILAMENT_FLOOR_VISIBLE, floorVisible)
             .putFloat(PREF_FILAMENT_CAMERA_TARGET_X, cameraTargetX)
             .putFloat(PREF_FILAMENT_CAMERA_TARGET_Y, cameraTargetY)
             .putFloat(PREF_FILAMENT_CAMERA_TARGET_Z, cameraTargetZ)
@@ -3562,7 +4098,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         int current = 0;
         for (int i = 0; i < presets.size(); i++) {
             File file = presets.get(i);
-            if (file == null && "procedural_fallback".equals(iblMode)) current = i;
+            if (file == null && "PROCEDURAL_APPROX".equals(iblMode)) current = i;
             else if (file != null && file.getName().equals(iblFile)) current = i;
         }
         File next = presets.get((current + 1) % presets.size());
@@ -3737,11 +4273,47 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void buildCameraPanel() {
         cameraSummaryView = overlayText(10.0f, 12);
         cameraSummaryView.setBackgroundColor(Color.TRANSPARENT);
+        cameraModeButton = button("", v -> {
+            cameraInteractionMode = cameraInteractionMode.next();
+            objectTransformMode = cameraInteractionMode == CameraInteractionMode.CAMERA_ORBIT ? "camera_orbit" : "object_rotate";
+            markManualOverride("camera_mode_" + cameraInteractionMode.name().toLowerCase(Locale.US));
+            persistWorkspaceSettings();
+            refreshUiNow();
+        });
+        cameraPanel.addView(cameraModeButton);
         cameraPanel.addView(button("Reset Camera", v -> resetCameraControls()));
         cameraPanel.addView(button("Fit Model", v -> fitModelCamera()));
+        LinearLayout visibilityRow = row();
+        gridToggleButton = button("", v -> {
+            gridVisible = !gridVisible;
+            markManualOverride("grid_toggle");
+            applyWorkspaceFoundation();
+            persistWorkspaceSettings();
+            refreshUiNow();
+        });
+        floorToggleButton = button("", v -> {
+            floorVisible = !floorVisible;
+            markManualOverride("floor_toggle");
+            applyWorkspaceFoundation();
+            persistWorkspaceSettings();
+            refreshUiNow();
+        });
+        visibilityRow.addView(gridToggleButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        visibilityRow.addView(floorToggleButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        cameraPanel.addView(visibilityRow);
         addLightingSlider(cameraPanel, "Dist", 1.0f, 12.0f, 0.1f, cameraDistance, v -> {
             cameraDistance = v;
             markManualOverride("camera_distance");
+            applyCameraControls();
+        });
+        addLightingSlider(cameraPanel, "Yaw", -180.0f, 180.0f, 1.0f, cameraYaw, v -> {
+            cameraYaw = v;
+            markManualOverride("camera_yaw");
+            applyCameraControls();
+        });
+        addLightingSlider(cameraPanel, "Pitch", -80.0f, 80.0f, 1.0f, cameraPitch, v -> {
+            cameraPitch = v;
+            markManualOverride("camera_pitch");
             applyCameraControls();
         });
         addLightingSlider(cameraPanel, "Pan X", -3.0f, 3.0f, 0.05f, cameraTargetX, v -> {
@@ -3770,6 +4342,11 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void buildModelPanel() {
         modelSummaryView = overlayText(10.0f, 12);
         modelSummaryView.setBackgroundColor(Color.TRANSPARENT);
+        LinearLayout selectRow = row();
+        selectRow.addView(button("Select Next Object", v -> selectNextObject()), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        selectRow.addView(button("Reset Selected", v -> resetSelectedTransform()), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        modelPanel.addView(selectRow);
+        modelPanel.addView(button("Duplicate/Test Object", v -> duplicateTestObject()));
         LinearLayout rxRow = row();
         rxRow.addView(button("Rotate X -90", v -> nudgeModelRotation(-90.0f, 0.0f, 0.0f)), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         rxRow.addView(button("Rotate X +90", v -> nudgeModelRotation(90.0f, 0.0f, 0.0f)), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
@@ -3785,39 +4362,39 @@ public class FilamentGlbPreviewActivity extends Activity {
         addLightingSlider(modelPanel, "Rot X", -180.0f, 180.0f, 1.0f, modelRotationX, v -> {
             modelRotationX = v;
             markManualOverride("model_rot_x");
-            applyModelTransform();
+            applySelectedTransformFromFields("slider_rot_x");
         });
         addLightingSlider(modelPanel, "Rot Y", -180.0f, 180.0f, 1.0f, modelRotationY, v -> {
             modelRotationY = v;
             markManualOverride("model_rot_y");
-            applyModelTransform();
+            applySelectedTransformFromFields("slider_rot_y");
         });
         addLightingSlider(modelPanel, "Rot Z", -180.0f, 180.0f, 1.0f, modelRotationZ, v -> {
             modelRotationZ = v;
             markManualOverride("model_rot_z");
-            applyModelTransform();
+            applySelectedTransformFromFields("slider_rot_z");
         });
         addLightingSlider(modelPanel, "Scale", 0.10f, 10.0f, 0.05f, modelScale, v -> {
             modelScale = v;
             markManualOverride("model_scale");
-            applyModelTransform();
+            applySelectedTransformFromFields("slider_scale");
         });
         addLightingSlider(modelPanel, "Off X", -3.0f, 3.0f, 0.05f, modelOffsetX, v -> {
             modelOffsetX = v;
             markManualOverride("model_offset_x");
-            applyModelTransform();
+            applySelectedTransformFromFields("slider_offset_x");
         });
         addLightingSlider(modelPanel, "Off Y", -3.0f, 3.0f, 0.05f, modelOffsetY, v -> {
             modelOffsetY = v;
             markManualOverride("model_offset_y");
-            applyModelTransform();
+            applySelectedTransformFromFields("slider_offset_y");
         });
         addLightingSlider(modelPanel, "Off Z", -3.0f, 3.0f, 0.05f, modelOffsetZ, v -> {
             modelOffsetZ = v;
             markManualOverride("model_offset_z");
-            applyModelTransform();
+            applySelectedTransformFromFields("slider_offset_z");
         });
-        modelPanel.addView(button("Reset Model Transform", v -> resetModelTransform()));
+        modelPanel.addView(button("Reset Model Transform", v -> resetSelectedTransform()));
         modelPanel.addView(button("Auto Fit after Transform", v -> {
             applyModelTransform();
             fitModelCamera();
@@ -3836,7 +4413,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         modelRotationY = wrapDegrees(modelRotationY + dy);
         modelRotationZ = wrapDegrees(modelRotationZ + dz);
         markManualOverride("model_rotate_button");
-        applyModelTransform();
+        applySelectedTransformFromFields("model_rotate_button");
     }
 
     private void resetModelTransform() {
@@ -3848,6 +4425,115 @@ public class FilamentGlbPreviewActivity extends Activity {
         modelOffsetY = 0.0f;
         modelOffsetZ = 0.0f;
         applyModelTransform();
+    }
+
+    private void resetSelectedTransform() {
+        SceneObject selected = sceneRegistry.getSelectedObject();
+        if (selected == null) {
+            resetModelTransform();
+            return;
+        }
+        setSelectedObjectTransform(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, "reset_selected_transform");
+    }
+
+    private void selectNextObject() {
+        SceneObject selected = null;
+        int count = sceneRegistry.getObjects().size();
+        for (int i = 0; i < Math.max(1, count); i++) {
+            selected = sceneRegistry.selectNext();
+            if (selected == null || !isWorkspaceHelperObject(selected)) break;
+        }
+        syncFieldsFromSelectedObject(selected);
+        objectTransformMode = "selected_object";
+        ensureWorkspaceGizmo();
+        updateGizmoTransform();
+        updateAllSliderLabels();
+        refreshUiNow();
+    }
+
+    private boolean isWorkspaceHelperObject(SceneObject object) {
+        if (object == null) return false;
+        String id = object.getId();
+        return OBJECT_ID_GRID.equals(id) || OBJECT_ID_FLOOR.equals(id) || id.startsWith("gizmo_")
+            || "world_grid".equals(object.getType()) || "world_floor".equals(object.getType());
+    }
+
+    private void duplicateTestObject() {
+        if (findWorkspaceRenderable("test_object_1") != null) {
+            sceneRegistry.selectObject("test_object_1");
+            syncFieldsFromSelectedObject(sceneRegistry.getSelectedObject());
+            refreshUiNow();
+            return;
+        }
+        WorkspaceRenderable renderable = createWorkspaceRenderable("test_object_1",
+            new float[] {
+                -0.18f, 0.0f, -0.18f,
+                 0.18f, 0.0f, -0.18f,
+                 0.0f, 0.42f, 0.0f,
+                 0.18f, 0.0f, 0.18f,
+                -0.18f, 0.0f, 0.18f
+            },
+            new short[] {0, 1, 2, 1, 3, 2, 3, 4, 2, 4, 0, 2},
+            RenderableManager.PrimitiveType.TRIANGLES, 0.95f, 0.75f, 0.20f, true, true,
+            new Box(0.0f, 0.2f, 0.0f, 0.24f, 0.28f, 0.24f));
+        if (renderable == null) {
+            objectTransformMode = "test_object_create_failed_" + helperGeometryStatus;
+            refreshUiNow();
+            return;
+        }
+        SceneObject object = sceneRegistry.registerObject("test_object_1", "Test Primitive", "test_helper_primitive",
+            "generated_runtime_geometry", renderable.entity, 0.85f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+            "real_world_renderable");
+        sceneRegistry.selectObject(object.getId());
+        syncFieldsFromSelectedObject(object);
+        applyEntityTransform(object.getId(), object.getPositionX(), object.getPositionY(), object.getPositionZ(),
+            object.getRotationX(), object.getRotationY(), object.getRotationZ(), object.getScale());
+        updateGizmoTransform();
+        refreshUiNow();
+    }
+
+    private void applySelectedTransformFromFields(String reason) {
+        setSelectedObjectTransform(modelOffsetX, modelOffsetY, modelOffsetZ, modelRotationX, modelRotationY, modelRotationZ, modelScale, reason);
+    }
+
+    private void setSelectedObjectTransform(float x, float y, float z, float rx, float ry, float rz, float scale, String reason) {
+        SceneObject selected = sceneRegistry.getSelectedObject();
+        if (selected == null) {
+            modelOffsetX = x;
+            modelOffsetY = y;
+            modelOffsetZ = z;
+            modelRotationX = rx;
+            modelRotationY = ry;
+            modelRotationZ = rz;
+            modelScale = scale;
+            applyModelTransform();
+            return;
+        }
+        selected.setTransform(x, y, z, rx, ry, rz, scale);
+        syncFieldsFromSelectedObject(selected);
+        if (OBJECT_ID_ACTIVE_MODEL.equals(selected.getId())) {
+            applyModelTransform();
+        } else {
+            applyEntityTransform(selected.getId(), x, y, z, rx, ry, rz, scale);
+            modelTransformStatus = "true";
+            transformTargetStatus = selected.getId();
+            persistWorkspaceSettings();
+        }
+        objectTransformMode = reason;
+        updateGizmoTransform();
+        updateAllSliderLabels();
+        refreshUiNow();
+    }
+
+    private void syncFieldsFromSelectedObject(SceneObject selected) {
+        if (selected == null) return;
+        modelOffsetX = selected.getPositionX();
+        modelOffsetY = selected.getPositionY();
+        modelOffsetZ = selected.getPositionZ();
+        modelRotationX = selected.getRotationX();
+        modelRotationY = selected.getRotationY();
+        modelRotationZ = selected.getRotationZ();
+        modelScale = selected.getScale();
     }
 
     private void applyModelTransform() {
@@ -3864,14 +4550,12 @@ public class FilamentGlbPreviewActivity extends Activity {
                 transformTargetStatus = "rootEntity_missing_transform";
                 return;
             }
-            float[] m = new float[16];
-            Matrix.setIdentityM(m, 0);
-            Matrix.translateM(m, 0, modelOffsetX, modelOffsetY, modelOffsetZ);
-            Matrix.rotateM(m, 0, modelRotationZ, 0.0f, 0.0f, 1.0f);
-            Matrix.rotateM(m, 0, modelRotationY, 0.0f, 1.0f, 0.0f);
-            Matrix.rotateM(m, 0, modelRotationX, 1.0f, 0.0f, 0.0f);
-            Matrix.scaleM(m, 0, modelScale, modelScale, modelScale);
+            float[] m = transformMatrix(modelOffsetX, modelOffsetY, modelOffsetZ, modelRotationX, modelRotationY, modelRotationZ, modelScale);
             tm.setTransform(instance, m);
+            SceneObject selected = sceneRegistry.getSelectedObject();
+            if (selected == null || OBJECT_ID_ACTIVE_MODEL.equals(selected.getId())) {
+                sceneRegistry.updateSelectedTransform(modelOffsetX, modelOffsetY, modelOffsetZ, modelRotationX, modelRotationY, modelRotationZ, modelScale);
+            }
             modelTransformStatus = "true";
             transformTargetStatus = "rootEntity";
             persistWorkspaceSettings();
@@ -3883,8 +4567,23 @@ public class FilamentGlbPreviewActivity extends Activity {
         refreshUiNow();
     }
 
+    private float[] transformMatrix(float x, float y, float z, float rx, float ry, float rz, float scale) {
+        float[] m = new float[16];
+        Matrix.setIdentityM(m, 0);
+        Matrix.translateM(m, 0, x, y, z);
+        Matrix.rotateM(m, 0, rz, 0.0f, 0.0f, 1.0f);
+        Matrix.rotateM(m, 0, ry, 0.0f, 1.0f, 0.0f);
+        Matrix.rotateM(m, 0, rx, 1.0f, 0.0f, 0.0f);
+        Matrix.scaleM(m, 0, scale, scale, scale);
+        return m;
+    }
+
     private void resetCameraControls() {
+        cameraInteractionMode = CameraInteractionMode.CAMERA_ORBIT;
+        objectTransformMode = "reset_camera_only";
         cameraDistance = 4.4f;
+        cameraYaw = 0.0f;
+        cameraPitch = -18.0f;
         cameraTargetX = 0.0f;
         cameraTargetY = 0.0f;
         cameraTargetZ = 0.0f;
@@ -3893,13 +4592,18 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private void fitModelCamera() {
-        if (modelViewer != null) {
-            try {
-                modelViewer.transformToUnitCube(new Float3(0.0f, 0.0f, 0.0f));
-                applyModelTransform();
-            } catch (Throwable ignored) { }
+        SceneObject selected = sceneRegistry.getSelectedObject();
+        if (selected != null && !isWorkspaceHelperObject(selected)) {
+            cameraTargetX = selected.getPositionX();
+            cameraTargetY = selected.getPositionY();
+            cameraTargetZ = selected.getPositionZ();
+        } else {
+            cameraTargetX = 0.0f;
+            cameraTargetY = 0.0f;
+            cameraTargetZ = 0.0f;
         }
         cameraDistance = 4.4f;
+        cameraApplyStatus = "fit_model_adjusted_camera_target_distance_only";
         applyCameraControls();
     }
 
@@ -3908,12 +4612,23 @@ public class FilamentGlbPreviewActivity extends Activity {
         try {
             float distance = clamp(cameraDistance, 1.0f, 30.0f);
             double aspect = surfaceView == null || surfaceView.getHeight() <= 0 ? 1.0 : Math.max(0.1, (double) surfaceView.getWidth() / (double) surfaceView.getHeight());
+            float yawRad = (float) Math.toRadians(cameraYaw);
+            float pitchRad = (float) Math.toRadians(clamp(cameraPitch, -80.0f, 80.0f));
+            float cosPitch = (float) Math.cos(pitchRad);
+            float eyeX = cameraTargetX + distance * (float) Math.sin(yawRad) * cosPitch;
+            float eyeY = cameraTargetY + distance * (float) Math.sin(pitchRad);
+            float eyeZ = cameraTargetZ + distance * (float) Math.cos(yawRad) * cosPitch;
             modelViewer.getCamera().setProjection(cameraFov, aspect, 0.05, 250.0, com.google.android.filament.Camera.Fov.VERTICAL);
-            modelViewer.getCamera().lookAt(cameraTargetX, cameraTargetY, cameraTargetZ + distance, cameraTargetX, cameraTargetY, cameraTargetZ, 0.0f, 1.0f, 0.0f);
-            cameraApplyStatus = "applied_lookAt_target_offset";
-            cameraStatus = "distance=" + twoDecimal(cameraDistance) + " target=" + twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY) + "/" + twoDecimal(cameraTargetZ) + " fov=" + oneDecimal(cameraFov) + " nearFar=0.05/250";
+            modelViewer.getCamera().lookAt(eyeX, eyeY, eyeZ, cameraTargetX, cameraTargetY, cameraTargetZ, 0.0f, 1.0f, 0.0f);
+            realCameraApplied = true;
+            cameraApplyStatus = "applied_real_camera_lookAt_orbit";
+            cameraStatus = "mode=" + cameraInteractionMode.name() + " distance=" + twoDecimal(cameraDistance)
+                + " yawPitch=" + oneDecimal(cameraYaw) + "/" + oneDecimal(cameraPitch)
+                + " target=" + twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY) + "/" + twoDecimal(cameraTargetZ)
+                + " fov=" + oneDecimal(cameraFov) + " nearFar=0.05/250";
             persistWorkspaceSettings();
         } catch (Throwable t) {
+            realCameraApplied = false;
             cameraApplyStatus = "apply_failed: " + shortMessage(t);
         }
         updateAllSliderLabels();
@@ -3974,6 +4689,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         fogDistance = 100.0f;
         fogHeight = 0.0f;
         skyboxVisible = true;
+        gridVisible = true;
+        floorVisible = true;
+        cameraInteractionMode = CameraInteractionMode.CAMERA_ORBIT;
         iblRotation = 0.0f;
         sunLightIntensity = 2.5f;
         sunAzimuth = -145.0f;
@@ -4144,11 +4862,30 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("shadowMode", shadowMode.name());
             json.put("shadowStatus", shadowActualStatus);
             json.put("refractionMode", refractionMode.name());
+            json.put("cameraMode", cameraInteractionMode.name());
             json.put("cameraDistance", cameraDistance);
+            json.put("cameraYaw", cameraYaw);
+            json.put("cameraPitch", cameraPitch);
+            json.put("realCameraApplied", realCameraApplied);
+            json.put("cameraStatus", cameraStatus);
             json.put("cameraTargetX", cameraTargetX);
             json.put("cameraTargetY", cameraTargetY);
             json.put("cameraTargetZ", cameraTargetZ);
             json.put("fov", cameraFov);
+            json.put("gridVisible", gridVisible);
+            json.put("floorVisible", floorVisible);
+            json.put("gridMode", gridMode);
+            json.put("floorMode", floorMode);
+            json.put("gridMaterialStatus", gridMaterialStatus);
+            json.put("floorMaterialStatus", floorMaterialStatus);
+            json.put("gizmoMode", gizmoMode);
+            json.put("gizmoVisible", gizmoVisible);
+            json.put("gizmoDragSupported", gizmoDragSupported);
+            json.put("gizmoAnchor", gizmoAnchor);
+            json.put("gizmoHitTestStatus", gizmoHitTestStatus);
+            json.put("unrealReferenceStatus", unrealReferenceStatus);
+            json.put("fakeOverlayUsed", fakeOverlayUsed);
+            json.put("controlsRealityStatus", controlsRealityStatus);
             json.put("modelRotateX", modelRotationX);
             json.put("modelRotateY", modelRotationY);
             json.put("modelRotateZ", modelRotationZ);
@@ -4229,11 +4966,16 @@ public class FilamentGlbPreviewActivity extends Activity {
         exposure = (float) json.optDouble("exposure", exposure);
         backgroundBrightness = (float) json.optDouble("background", backgroundBrightness);
         skyboxVisible = json.optBoolean("skyboxVisible", skyboxVisible);
+        cameraInteractionMode = CameraInteractionMode.CAMERA_ORBIT;
         cameraDistance = (float) json.optDouble("cameraDistance", cameraDistance);
+        cameraYaw = (float) json.optDouble("cameraYaw", cameraYaw);
+        cameraPitch = (float) json.optDouble("cameraPitch", cameraPitch);
         cameraTargetX = (float) json.optDouble("cameraTargetX", cameraTargetX);
         cameraTargetY = (float) json.optDouble("cameraTargetY", cameraTargetY);
         cameraTargetZ = (float) json.optDouble("cameraTargetZ", cameraTargetZ);
         cameraFov = (float) json.optDouble("fov", cameraFov);
+        gridVisible = json.optBoolean("gridVisible", gridVisible);
+        floorVisible = json.optBoolean("floorVisible", floorVisible);
         modelRotationX = (float) json.optDouble("modelRotateX", modelRotationX);
         modelRotationY = (float) json.optDouble("modelRotateY", modelRotationY);
         modelRotationZ = (float) json.optDouble("modelRotateZ", modelRotationZ);
@@ -4260,6 +5002,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         applySkyboxVisibility();
         applyModelTransform();
         applyCameraControls();
+        applyWorkspaceFoundation();
         persistWorkspaceSettings();
         syncWorkspaceUi();
     }
@@ -4392,24 +5135,40 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nshadowType=" + shadowTypeStatus
                 + "\nshadowMapSizeStatus=not_exposed csmStatus=not_exposed cascadeCountStatus=not_exposed"
                 + "\ncontactShadowsSupported=not_exposed contactShadowsEnabled=false"
-                + "\nshadowStrength=not_exposed shadowSoftness=not_exposed shadowDistance=not_exposed shadowBiasStatus=not_exposed"
+                + "\nshadowToggleReal=" + (shadowMode != ShadowMode.OFF ? shadowsActuallyApplied : "true_off")
+                + "\nshadowQuality=" + shadowMode.name() + " shadowBias=not_exposed shadowDistance=not_exposed"
+                + "\nshadowUnsupportedReason=bias_distance_quality_not_exposed_by_current_activity_api"
                 + "\ncastReceiveFlags=applied_to_renderables_if_loaded"
                 + "\nactualFilamentShadowSettingsSummary=" + shadowActualStatus);
         }
         if (cameraSummaryView != null) {
-            cameraSummaryView.setText("cameraDistance=" + twoDecimal(cameraDistance)
+            cameraSummaryView.setText("cameraMode=" + cameraInteractionMode.label
+                + "\ncameraDistance=" + twoDecimal(cameraDistance)
+                + "\ncameraYawPitch=" + oneDecimal(cameraYaw) + "/" + oneDecimal(cameraPitch)
                 + "\ncameraTargetX/Y/Z=" + twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY) + "/" + twoDecimal(cameraTargetZ)
                 + "\ncameraPanX/Y=" + twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY)
                 + "\nfov=" + oneDecimal(cameraFov) + " nearFar=0.05/250"
-                + "\norbitSensitivity=filament_manipulator_default zoomSensitivity=0.010"
+                + "\norbitPanZoom=real_camera_lookAt realCameraApplied=" + realCameraApplied
+                + "\ngridMode=" + gridMode + " floorMode=" + floorMode
+                + "\ngridStatus=" + gridStatus + " floorStatus=" + floorStatus
+                + "\ngridMaterialStatus=" + gridMaterialStatus + " floorMaterialStatus=" + floorMaterialStatus
                 + "\nfitStatus=" + cameraApplyStatus);
         }
         if (modelSummaryView != null) {
-            modelSummaryView.setText("modelRotationX/Y/Z=" + oneDecimal(modelRotationX) + "/" + oneDecimal(modelRotationY) + "/" + oneDecimal(modelRotationZ)
+            SceneObject selected = sceneRegistry.getSelectedObject();
+            modelSummaryView.setText("selectedObjectId=" + (selected == null ? "none" : selected.getId())
+                + "\nselectedObjectName=" + (selected == null ? "none" : selected.getName())
+                + "\nobjectCount=" + sceneRegistry.getObjects().size()
+                + "\nobjectTransformMode=" + objectTransformMode
+                + "\nmodelRotationX/Y/Z=" + oneDecimal(modelRotationX) + "/" + oneDecimal(modelRotationY) + "/" + oneDecimal(modelRotationZ)
                 + "\nmodelScale=" + twoDecimal(modelScale)
                 + "\nmodelOffsetX/Y/Z=" + twoDecimal(modelOffsetX) + "/" + twoDecimal(modelOffsetY) + "/" + twoDecimal(modelOffsetZ)
                 + "\ntransformApplied=" + modelTransformStatus
                 + "\ntransformTarget=" + transformTargetStatus
+                + "\ngizmoMode=" + gizmoMode + " visible=" + gizmoVisible + " dragSupported=" + gizmoDragSupported
+                + "\ngizmoStatus=" + gizmoStatus
+                + "\ngizmoAnchor=" + gizmoAnchor + " hitTestStatus=" + gizmoHitTestStatus
+                + "\nunrealReferenceStatus=" + unrealReferenceStatus
                 + "\nno_vertex_bake=true no_model_specific_hack=true");
         }
         if (configSummaryView != null) {
@@ -4472,6 +5231,11 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nSource: " + shorten(modelSourcePath, 72)
                 + "\nCopied: " + shorten(modelCopiedPath, 72)
                 + "\nCamera: " + cameraStatus
+                + "\ncameraMode=" + cameraInteractionMode.name() + " cameraTarget=" + twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY) + "/" + twoDecimal(cameraTargetZ) + " cameraDistance=" + twoDecimal(cameraDistance) + " cameraYawPitch=" + oneDecimal(cameraYaw) + "/" + oneDecimal(cameraPitch)
+                + "\ngridMode=" + gridMode + " gridStatus=" + gridStatus + " floorMode=" + floorMode + " floorStatus=" + floorStatus
+                + "\nobjectCount=" + sceneRegistry.getObjects().size() + " selectedObject=" + selectedObjectDebugSummary()
+                + "\ngizmoMode=" + gizmoMode + " gizmoVisible=" + gizmoVisible + " gizmoDragSupported=" + gizmoDragSupported + " fakeOverlayUsed=" + fakeOverlayUsed
+                + "\ncontrolsRealityStatus=" + controlsRealityStatus
                 + "\nLight preset: " + lightingPreset.label + " / " + lightingStatus
                 + "\nSun/Ambient/Fill/Exp/BG: " + oneDecimal(sunLightIntensity) + " / " + oneDecimal(ambientUserIntensity) + " / " + oneDecimal(fillLightIntensity) + " / " + twoDecimal(exposure) + " / " + twoDecimal(backgroundBrightness)
                 + "\nEnvironment: " + environmentShortStatus()
@@ -4495,13 +5259,14 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\ncolorGradingSupported=true colorMode=" + colorMode.name() + " toneMapper=" + toneMapperStatus + " colorGradingStatus=" + colorGradingStatus
                 + "\nfogSupported=true fogMode=" + fogMode.name() + " fogStatus=" + fogStatus
                 + "\nsunGlareMode=" + sunGlareMode.name() + " sunGlareStatus=" + sunGlareStatus
-                + "\nlightCount=" + activeLightCount() + " pointLightSupported=true spotLightSupported=true activeLightRig=" + lightRig.name()
+                + "\nactiveLightCount=" + activeLightCount() + " sunEnabled=" + (sunLightIntensity > 0.0f) + " pointLightSupported=true spotLightSupported=true lightControlsReal=true activeLightRig=" + lightRig.name()
                 + "\naoMode=" + aoMode.name() + " requestedAoMode=" + requestedAoMode + " actualAoMode=" + actualAoMode + " aoApplyStatus=" + aoApplyStatus + " aoEnabled=" + aoEnabled + " aoApplied=" + aoActuallyApplied + " aoType=" + aoTypeStatus
                 + "\naoStatus=" + aoActualStatus + " aoLikelyInvisibleReason=" + aoLikelyInvisibleReason
                 + "\nshadowsMode=" + shadowMode.name() + " shadowsEnabled=" + shadowsEnabled + " shadowsApplied=" + shadowsActuallyApplied
                 + "\nshadowStatus=" + shadowActualStatus + " shadowType=" + shadowTypeStatus
-                + "\nshadowMapSizeStatus=not_exposed contactShadowsSupported=not_exposed csmStatus=not_exposed cascadeCountStatus=not_exposed shadowBiasStatus=not_exposed"
+                + "\nshadowMode=" + shadowMode.name() + " shadowToggleReal=" + (shadowMode == ShadowMode.OFF ? "true_off" : shadowsActuallyApplied) + " shadowQuality=" + shadowMode.name() + " shadowBias=not_exposed shadowDistance=not_exposed shadowUnsupportedReason=bias_distance_not_exposed"
                 + "\nbloomMode=" + bloomMode.name() + " bloomApplyStatus=" + bloomApplyStatus + " " + bloomActualStatus
+                + "\npostProcessMode=filament_view_post_processing exposure=" + twoDecimal(colorExposure) + " bloomMode=" + actualBloomMode + " bloomIntensity=" + twoDecimal(actualBloomStrength) + " toneMappingMode=" + toneMapperStatus + " godRaysMode=planned_not_rendered"
                 + "\nrefractionSupported=true_screen_space_view_api refractionMode=" + refractionMode.name() + " refractionEnabled=" + refractionEnabled + " refractionActuallyApplied=" + refractionActuallyApplied
                 + "\nmodelTransform=" + modelTransformStatus + " target=" + transformTargetStatus + " rx/ry/rz=" + oneDecimal(modelRotationX) + "/" + oneDecimal(modelRotationY) + "/" + oneDecimal(modelRotationZ) + " scale=" + twoDecimal(modelScale)
                 + "\ncameraControls=" + cameraStatus + " apply=" + cameraApplyStatus
@@ -4687,6 +5452,15 @@ public class FilamentGlbPreviewActivity extends Activity {
             + " lastAssetLoadError=" + lastEnvironmentAssetLoadError;
     }
 
+    private String selectedObjectDebugSummary() {
+        SceneObject selected = sceneRegistry.getSelectedObject();
+        if (selected == null) return "none";
+        return selected.getId() + "/" + selected.getName()
+            + " pos=" + twoDecimal(selected.getPositionX()) + "/" + twoDecimal(selected.getPositionY()) + "/" + twoDecimal(selected.getPositionZ())
+            + " rot=" + oneDecimal(selected.getRotationX()) + "/" + oneDecimal(selected.getRotationY()) + "/" + oneDecimal(selected.getRotationZ())
+            + " scale=" + twoDecimal(selected.getScale());
+    }
+
     private String compactCostSummary() {
         if (renderControlApi == null) return "render_api_missing";
         RenderCostDiagnostics cost = RenderCostDiagnostics.fromSettings(renderControlApi.getSettings());
@@ -4773,6 +5547,15 @@ public class FilamentGlbPreviewActivity extends Activity {
             + "\nexpensiveFeatures=" + cost.getEnabledExpensiveFeatures()
             + "\ncostCauseSummary=" + cost.getCostCauseSummary()
             + "\nscene=" + sceneRegistry.summary() + " model=" + (modelName == null || modelName.isEmpty() ? "none" : modelName)
+            + "\ncameraMode=" + cameraInteractionMode.name() + " cameraTarget=" + twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY) + "/" + twoDecimal(cameraTargetZ)
+            + " cameraDistance=" + twoDecimal(cameraDistance) + " cameraYawPitch=" + oneDecimal(cameraYaw) + "/" + oneDecimal(cameraPitch)
+            + " realCameraApplied=" + realCameraApplied
+            + "\ngridMode=" + gridMode + " floorMode=" + floorMode + " gridMaterial=" + gridMaterialStatus + " floorMaterial=" + floorMaterialStatus
+            + "\ngizmoMode=" + gizmoMode + " gizmoAnchor=" + gizmoAnchor + " gizmoHitTestStatus=" + gizmoHitTestStatus
+            + " unrealReferenceStatus=" + unrealReferenceStatus + " fakeOverlayUsed=" + fakeOverlayUsed
+            + "\nreconStatus=asset_derived_light_toolkit_verified blueprintScore=+++ textureScore=+++ materialScore=++ vfxScore=++ audioScore=++ meshStatus=HOLD animationStatus=HOLD"
+            + "\nselectedObject=" + selectedObjectDebugSummary()
+            + "\ncontrolsRealityStatus=" + controlsRealityStatus
             + "\nenvironment=" + environmentShortReportSection()
             + "\nenvironmentAssetManifest=" + environmentAssetShortStatus()
             + "\nownership=" + ownership
@@ -4797,6 +5580,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("fpsFrameTimingSummary", frameTimingJson());
             json.put("performanceCostSummary", costDiagnosticsJson());
             json.put("sceneRegistrySummary", sceneRegistryJson());
+            json.put("reconstructionStatus", reconstructionStatusJson());
             json.put("activeModelInfo", activeModelJson());
             json.put("environmentSettings", environmentSettingsJson());
             json.put("environmentActualState", environmentActualStateJson());
@@ -4854,6 +5638,24 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("fogAppliedStatus", renderControlApi.getDiagnostics().getFogAppliedStatus());
         json.put("fogVisibilityConfidence", renderControlApi.getDiagnostics().getFogVisibilityConfidence());
         json.put("fogWarning", renderControlApi.getDiagnostics().getFogWarning());
+        json.put("activeLightCount", activeLightCount());
+        json.put("sunEnabled", sunLightIntensity > 0.0f);
+        json.put("pointLightSupported", true);
+        json.put("spotLightSupported", true);
+        json.put("lightControlsReal", true);
+        json.put("shadowMode", shadowMode.name());
+        json.put("shadowToggleReal", shadowMode == ShadowMode.OFF ? "true_off" : shadowsActuallyApplied);
+        json.put("shadowQuality", shadowMode.name());
+        json.put("shadowBias", "not_exposed");
+        json.put("shadowDistance", "not_exposed");
+        json.put("shadowUnsupportedReason", "bias_distance_quality_not_exposed_by_current_activity_api");
+        json.put("postProcessMode", "filament_view_post_processing");
+        json.put("exposure", colorExposure);
+        json.put("bloomMode", actualBloomMode);
+        json.put("bloomIntensity", actualBloomStrength);
+        json.put("toneMappingMode", toneMapperStatus);
+        json.put("godRaysMode", "planned_not_rendered");
+        json.put("fakeOverlayUsed", fakeOverlayUsed);
         return json;
     }
 
@@ -4931,6 +5733,106 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("summary", sceneRegistry.summary());
         json.put("selectedObjectId", sceneRegistry.getSelectedObjectId());
         json.put("objectCount", sceneRegistry.getObjects().size());
+        SceneObject selected = sceneRegistry.getSelectedObject();
+        json.put("selectedObjectName", selected == null ? "none" : selected.getName());
+        json.put("selectedObjectPosition", selected == null ? "none" : twoDecimal(selected.getPositionX()) + "/" + twoDecimal(selected.getPositionY()) + "/" + twoDecimal(selected.getPositionZ()));
+        json.put("selectedObjectRotation", selected == null ? "none" : oneDecimal(selected.getRotationX()) + "/" + oneDecimal(selected.getRotationY()) + "/" + oneDecimal(selected.getRotationZ()));
+        json.put("selectedObjectScale", selected == null ? JSONObject.NULL : selected.getScale());
+        json.put("cameraMode", cameraInteractionMode.name());
+        json.put("cameraTarget", twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY) + "/" + twoDecimal(cameraTargetZ));
+        json.put("cameraDistance", cameraDistance);
+        json.put("cameraYawPitch", oneDecimal(cameraYaw) + "/" + oneDecimal(cameraPitch));
+        json.put("realCameraApplied", realCameraApplied);
+        json.put("cameraStatus", cameraStatus);
+        json.put("objectTransformMode", objectTransformMode);
+        json.put("gridMode", gridMode);
+        json.put("floorMode", floorMode);
+        json.put("gridStatus", gridStatus);
+        json.put("floorStatus", floorStatus);
+        json.put("gridMaterialStatus", gridMaterialStatus);
+        json.put("floorMaterialStatus", floorMaterialStatus);
+        json.put("gizmoMode", gizmoMode);
+        json.put("gizmoVisible", gizmoVisible);
+        json.put("gizmoDragSupported", gizmoDragSupported);
+        json.put("gizmoAnchor", gizmoAnchor);
+        json.put("gizmoHitTestStatus", gizmoHitTestStatus);
+        json.put("unrealReferenceStatus", unrealReferenceStatus);
+        json.put("fakeOverlayUsed", fakeOverlayUsed);
+        json.put("controlsRealityStatus", controlsRealityStatus);
+        JSONArray objects = new JSONArray();
+        for (SceneObject object : sceneRegistry.getObjects()) {
+            JSONObject item = new JSONObject();
+            item.put("id", object.getId());
+            item.put("name", object.getName());
+            item.put("type", object.getType());
+            item.put("selected", object.isSelected());
+            item.put("renderEntity", object.getRenderEntity());
+            item.put("position", twoDecimal(object.getPositionX()) + "/" + twoDecimal(object.getPositionY()) + "/" + twoDecimal(object.getPositionZ()));
+            item.put("rotation", oneDecimal(object.getRotationX()) + "/" + oneDecimal(object.getRotationY()) + "/" + oneDecimal(object.getRotationZ()));
+            item.put("scale", object.getScale());
+            item.put("status", object.getStatus());
+            objects.put(item);
+        }
+        json.put("objects", objects);
+        return json;
+    }
+
+    private JSONObject reconstructionStatusJson() throws Exception {
+        JSONObject json = new JSONObject();
+        json.put("reconStatus", "asset_derived_light_toolkit_verified");
+        json.put("manifestPath", "/storage/emulated/0/Download/SOLUM_RECON_TOOLKIT_KEEP/latest_light_output/manifest_light.json");
+        json.put("zipReference", "/storage/emulated/0/Download/SOLUM_RECON_TOOLKIT_KEEP/SOLUM_RECON_TOOLKIT_LIGHT_LATEST.zip");
+        json.put("filesScanned", 300);
+        json.put("readLimitPerFileBytes", 524288);
+        json.put("blueprintCandidates", 10);
+        json.put("jsonExports", 10);
+        json.put("nodeTables", 4);
+        json.put("blueprintScore", "+++");
+        json.put("textureScore", "+++");
+        json.put("materialScore", "++");
+        json.put("vfxScore", "++");
+        json.put("audioScore", "++");
+        json.put("meshStatus", "HOLD");
+        json.put("animationStatus", "HOLD");
+        json.put("weatherLogicScore", "++");
+        json.put("cameraStatus", realCameraApplied ? "+++" : "++");
+        json.put("gridStatus", gridMode);
+        json.put("gizmoStatus", gizmoStatus);
+        json.put("selectionStatus", sceneRegistry.getSelectedObject() == null ? "BLOCKED" : "+++");
+        json.put("unrealReferenceStatus", unrealReferenceStatus);
+        json.put("fakeOverlayUsed", fakeOverlayUsed);
+        JSONArray labels = new JSONArray();
+        labels.put("asset-derived: UAssetAPI JSON exports, node tables, inventory, UDS Rain scalar values");
+        labels.put("reconstructed: SOLUM weather state/status model and editor control diagnostics");
+        labels.put("procedural fill: workspace helper geometry only, not UDS weather visuals");
+        labels.put("unknown: pins, LinkedTo, PinId, exact Blueprint execution flow, Niagara/material topology, audio decode");
+        labels.put("blocked: Unreal source reference access via gh auth");
+        labels.put("fake-risk: treating light toolkit output as full weather/VFX implementation");
+        json.put("proofLabels", labels);
+        json.put("weatherChannels", weatherProofChannelsJson());
+        return json;
+    }
+
+    private JSONArray weatherProofChannelsJson() throws Exception {
+        JSONArray channels = new JSONArray();
+        channels.put(weatherProofChannel("rain", 7.0f, "asset-derived", "UDS Rain.uasset Rain", "+++"));
+        channels.put(weatherProofChannel("snow", 0.0f, "unknown", "not proven by Rain preset", "+"));
+        channels.put(weatherProofChannel("cloud_fog", 7.5f, "asset-derived", "UDS Rain.uasset Cloud Coverage; Fog=3.0", "+++"));
+        channels.put(weatherProofChannel("wind", 3.0f, "asset-derived", "UDS Rain.uasset Wind Intensity", "+++"));
+        channels.put(weatherProofChannel("wetness_puddle", 1.0f, "asset-derived", "UDS Rain.uasset Material Wetness", "+++"));
+        channels.put(weatherProofChannel("lightning_storm", 4.0f, "asset-derived", "UDS Rain.uasset Thunder/Lightning", "+++"));
+        channels.put(weatherProofChannel("audio", 0.0f, "blocked", "SoundWave decode to WAV/OGG not proven", "BLOCKED"));
+        return channels;
+    }
+
+    private JSONObject weatherProofChannel(String name, float value, String sourceStatus, String proofRef, String confidenceScore) throws Exception {
+        JSONObject json = new JSONObject();
+        json.put("channel", name);
+        json.put("value", value);
+        json.put("sourceStatus", sourceStatus);
+        json.put("proofRef", proofRef);
+        json.put("confidenceScore", confidenceScore);
+        json.put("visualRuntime", "HOLD_no_weather_visuals_in_patch");
         return json;
     }
 
@@ -4940,6 +5842,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         EnvironmentDiagnostics diagnostics = environmentApi.getDiagnostics();
         return "timeOfDay=" + twoDecimal(actual.getActiveTimeOfDayHours())
             + " environmentPreset=" + actual.getActiveEnvironmentPreset()
+            + " weatherPreset=" + actual.getWeather().getWeatherPreset()
+            + " iblMode=" + actual.getIblMode().name()
+            + " skyMode=" + actual.getSkyMode()
+            + " fakeOverlayUsed=" + actual.isFakeOverlayUsed()
             + " sunLuxElevation=" + oneDecimal(actual.getSun().getIntensityLux()) + "/" + oneDecimal(actual.getSun().getElevationDeg())
             + " moonLuxElevation=" + oneDecimal(actual.getMoon().getIntensityLux()) + "/" + oneDecimal(actual.getMoon().getElevationDeg())
             + " iblPreset=" + actual.getActiveIblPreset()
@@ -4980,6 +5886,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("starsEnabled", settings.isStarsEnabled());
         json.put("starsIntensity", settings.getStarsIntensity());
         json.put("cloudAmount", settings.getCloudAmount());
+        json.put("weatherPreset", settings.getWeatherPreset());
+        json.put("weather", weatherJson(settings.getWeather()));
         json.put("fallbackAllowed", settings.isFallbackAllowed());
         return json;
     }
@@ -5003,7 +5911,69 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("exposureHint", actual.getExposureHint());
         json.put("fallbackActive", actual.isFallbackActive());
         json.put("environmentAssetFallbackActive", "true".equals(environmentAssetFallbackActive));
+        json.put("iblMode", actual.getIblMode().name());
+        json.put("skyMode", actual.getSkyMode());
+        json.put("sunMode", actual.getSunMode());
+        json.put("moonMode", actual.getMoonMode());
+        json.put("starsMode", actual.getStarsMode());
+        json.put("fakeOverlayUsed", actual.isFakeOverlayUsed());
+        json.put("weather", weatherJson(actual.getWeather()));
+        json.put("weatherVfxRecipe", weatherVfxRecipeJson(actual.getWeatherVfxRecipe()));
         json.put("applyStatus", actual.getApplyStatus());
+        return json;
+    }
+
+    private JSONObject weatherJson(WeatherRuntimeParameters weather) throws Exception {
+        JSONObject json = new JSONObject();
+        if (weather == null) {
+            json.put("weatherPreset", "missing");
+            return json;
+        }
+        json.put("weatherPreset", weather.getWeatherPreset());
+        json.put("weatherLabel", weather.getWeatherLabel());
+        json.put("visualRuntime", "HOLD_no_weather_visuals_in_patch");
+        json.put("rain", weatherValueJson(weather.getRainIntensity(), "asset-derived", "UDS Rain.uasset Rain", "+++"));
+        json.put("snow", weatherValueJson(weather.getSnowIntensity(), "unknown", "not proven by Rain preset", "+"));
+        json.put("cloudFog", weatherValueJson(weather.getCloudCoverage(), "asset-derived", "UDS Rain.uasset Cloud Coverage; Fog=" + oneDecimal(weather.getFogDensity()), "+++"));
+        json.put("wind", weatherValueJson(weather.getWindIntensity(), "asset-derived", "UDS Rain.uasset Wind Intensity", "+++"));
+        json.put("wetnessPuddle", weatherValueJson(weather.getMaterialWetness(), "asset-derived", "UDS Rain.uasset Material Wetness; puddle reconstructed from rain*wetness", "++"));
+        json.put("lightningStorm", weatherValueJson(weather.getThunderIntensity(), "asset-derived", "UDS Rain.uasset Thunder/Lightning", "+++"));
+        json.put("audio", weatherValueJson(0.0f, "blocked", "SoundWave decode to WAV/OGG not proven", "BLOCKED"));
+        json.put("rainIntensity", weather.getRainIntensity());
+        json.put("snowIntensity", weather.getSnowIntensity());
+        json.put("cloudCoverage", weather.getCloudCoverage());
+        json.put("fogDensity", weather.getFogDensity());
+        json.put("windIntensity", weather.getWindIntensity());
+        json.put("materialWetness", weather.getMaterialWetness());
+        json.put("thunderIntensity", weather.getThunderIntensity());
+        json.put("lightningChance", weather.getLightningChance());
+        json.put("puddleAmount", weather.getPuddleAmount());
+        return json;
+    }
+
+    private JSONObject weatherValueJson(float value, String sourceStatus, String proofRef, String confidenceScore) throws Exception {
+        JSONObject json = new JSONObject();
+        json.put("value", value);
+        json.put("sourceStatus", sourceStatus);
+        json.put("proofRef", proofRef);
+        json.put("confidenceScore", confidenceScore);
+        return json;
+    }
+
+    private JSONObject weatherVfxRecipeJson(WeatherVfxRecipe recipe) throws Exception {
+        JSONObject json = new JSONObject();
+        if (recipe == null) {
+            json.put("id", "missing");
+            return json;
+        }
+        json.put("id", recipe.getId());
+        json.put("spawnRate", recipe.getSpawnRate());
+        json.put("velocity", recipe.getVelocity());
+        json.put("lifetime", recipe.getLifetime());
+        json.put("windAffect", recipe.getWindAffect());
+        json.put("splashRate", recipe.getSplashRate());
+        json.put("rippleRate", recipe.getRippleRate());
+        json.put("materialWetnessAffect", recipe.getMaterialWetnessAffect());
         return json;
     }
 
@@ -5035,6 +6005,13 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("timeOfDayStatus", diagnostics.getTimeOfDayStatus());
         json.put("sunStatus", diagnostics.getSunStatus());
         json.put("moonStatus", diagnostics.getMoonStatus());
+        json.put("iblMode", diagnostics.getIblMode());
+        json.put("skyMode", diagnostics.getSkyMode());
+        json.put("sunMode", diagnostics.getSunMode());
+        json.put("moonMode", diagnostics.getMoonMode());
+        json.put("starsMode", diagnostics.getStarsMode());
+        json.put("weatherPreset", diagnostics.getWeatherPreset());
+        json.put("fakeOverlayUsed", diagnostics.isFakeOverlayUsed());
         json.put("iblSlotStatus", diagnostics.getIblSlotStatus());
         json.put("skyboxSlotStatus", diagnostics.getSkyboxSlotStatus());
         json.put("starsStatus", diagnostics.getStarsStatus());
@@ -5046,6 +6023,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("lastAssetLoadError", lastEnvironmentAssetLoadError);
         json.put("assetLicenseStatus", environmentAssetLicenseStatus);
         json.put("cloudStatus", diagnostics.getCloudStatus());
+        json.put("materialWetnessStatus", diagnostics.getMaterialWetnessStatus());
+        json.put("vfxStatus", diagnostics.getVfxStatus());
+        json.put("audioMode", diagnostics.getAudioMode());
         json.put("fallbackStatus", diagnostics.getFallbackStatus());
         json.put("mobileSafetyStatus", diagnostics.getMobileSafetyStatus());
         json.put("lastApplyStatus", diagnostics.getLastApplyStatus());
@@ -5227,8 +6207,8 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private void updateIblButton() {
         if (iblButton == null) return;
-        if ("procedural_fallback".equals(iblMode)) {
-            iblButton.setText("IBL: Procedural fallback");
+        if ("PROCEDURAL_APPROX".equals(iblMode)) {
+            iblButton.setText("IBL: PROCEDURAL_APPROX");
         } else if ("unsupported_exr".equals(iblMode)) {
             iblButton.setText("IBL: EXR unsupported");
         } else {
@@ -5252,6 +6232,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (fogButton != null) fogButton.setText(fogMode.label);
         if (lightRigButton != null) lightRigButton.setText("Light Rig: " + lightRig.label);
         if (skyboxButton != null) skyboxButton.setText("Skybox: " + (skyboxVisible ? "On" : "Off"));
+        if (cameraModeButton != null) cameraModeButton.setText("Mode: " + cameraInteractionMode.label);
+        if (gridToggleButton != null) gridToggleButton.setText("Grid: " + (gridVisible ? "On" : "Off"));
+        if (floorToggleButton != null) floorToggleButton.setText("Floor: " + (floorVisible ? "On" : "Off"));
         if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
         updateEnvironmentControlLabels();
     }
@@ -5311,6 +6294,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         if ("Fog Height".equals(label)) return fogHeight;
         if ("Rot".equals(label)) return iblRotation;
         if ("Dist".equals(label) || "Camera Distance".equals(label)) return cameraDistance;
+        if ("Yaw".equals(label)) return cameraYaw;
+        if ("Pitch".equals(label)) return cameraPitch;
         if ("Pan X".equals(label)) return cameraTargetX;
         if ("Pan Y".equals(label)) return cameraTargetY;
         if ("Target Z".equals(label)) return cameraTargetZ;

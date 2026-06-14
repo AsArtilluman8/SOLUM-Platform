@@ -1,6 +1,6 @@
 # SOLUM Weather Fast Inventory
 
-- weatherRelatedCount: 21
+- weatherRelatedCount: 7
 - legacyCandidateCount: 0
 - currentFilamentCandidateCount: 5
 - reconLatestOutput: True

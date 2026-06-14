@@ -1,17 +1,79 @@
 {
   "schema": "com.solum.weather.presets",
   "schemaVersion": 1,
-  "source": "UDS Rain.uasset property values confirmed 2026-06-10; raw paid assets not copied",
+  "source": "UDS/UDW light recon plus procedural fill; raw paid assets not copied",
   "presets": [
+    {
+      "id": "clear",
+      "label": "Clear",
+      "cloudCoverage": 0.8,
+      "rainIntensity": 0.0,
+      "snowIntensity": 0.0,
+      "thunderIntensity": 0.0,
+      "windIntensity": 1.0,
+      "fogDensity": 0.0,
+      "materialWetness": 0.0,
+      "sourceStatus": "procedural fill"
+    },
     {
       "id": "rain",
       "label": "Rain",
       "cloudCoverage": 7.5,
       "rainIntensity": 7.0,
+      "snowIntensity": 0.0,
       "thunderIntensity": 4.0,
       "windIntensity": 3.0,
       "fogDensity": 3.0,
-      "materialWetness": 1.0
+      "materialWetness": 1.0,
+      "sourceStatus": "reconstructed"
+    },
+    {
+      "id": "snow",
+      "label": "Snow",
+      "cloudCoverage": 6.5,
+      "rainIntensity": 0.0,
+      "snowIntensity": 6.0,
+      "thunderIntensity": 0.0,
+      "windIntensity": 2.5,
+      "fogDensity": 2.0,
+      "materialWetness": 0.0,
+      "sourceStatus": "procedural fill"
+    },
+    {
+      "id": "storm",
+      "label": "Storm",
+      "cloudCoverage": 9.0,
+      "rainIntensity": 9.0,
+      "snowIntensity": 0.0,
+      "thunderIntensity": 8.0,
+      "windIntensity": 7.0,
+      "fogDensity": 4.5,
+      "materialWetness": 1.0,
+      "sourceStatus": "reconstructed/procedural fill"
+    },
+    {
+      "id": "overcast",
+      "label": "Overcast",
+      "cloudCoverage": 8.0,
+      "rainIntensity": 0.0,
+      "snowIntensity": 0.0,
+      "thunderIntensity": 0.0,
+      "windIntensity": 2.5,
+      "fogDensity": 2.0,
+      "materialWetness": 0.0,
+      "sourceStatus": "procedural fill"
+    },
+    {
+      "id": "night",
+      "label": "Night",
+      "cloudCoverage": 2.5,
+      "rainIntensity": 0.0,
+      "snowIntensity": 0.0,
+      "thunderIntensity": 0.0,
+      "windIntensity": 1.2,
+      "fogDensity": 0.8,
+      "materialWetness": 0.0,
+      "sourceStatus": "procedural fill"
     }
   ]
 }

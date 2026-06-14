@@ -32,15 +32,16 @@ public final class WeatherVfxRecipe {
     public float getMaterialWetnessAffect() { return materialWetnessAffect; }
 
     public static WeatherVfxRecipe rainFallback(WeatherRuntimeParameters weather) {
-        if (weather == null || weather.getRainIntensity() <= 0.0f) {
+        if (weather == null || (weather.getRainIntensity() <= 0.0f && weather.getSnowIntensity() <= 0.0f)) {
             return new WeatherVfxRecipe("none", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
         }
         float rain = weather.getRainIntensity();
+        float snow = weather.getSnowIntensity();
         return new WeatherVfxRecipe(
-            "rain_native_recipe_not_niagara",
-            rain * 90.0f,
-            18.0f + rain * 1.4f,
-            1.0f,
+            rain > 0.0f ? "rain_native_recipe_not_niagara" : "snow_native_recipe_not_niagara",
+            Math.max(rain * 90.0f, snow * 45.0f),
+            rain > 0.0f ? 18.0f + rain * 1.4f : 3.0f + snow * 0.8f,
+            rain > 0.0f ? 1.0f : 3.0f,
             weather.getWindIntensity() / 10.0f,
             rain * 5.0f,
             rain * 3.0f,

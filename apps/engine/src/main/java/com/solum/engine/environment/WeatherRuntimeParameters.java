@@ -48,7 +48,7 @@ public class WeatherRuntimeParameters {
         weatherLabel = preset.getLabel();
         cloudCoverage = clampWeather(preset.getCloudCoverage());
         rainIntensity = clampWeather(preset.getRainIntensity());
-        snowIntensity = 0.0f;
+        snowIntensity = clampWeather(preset.getSnowIntensity());
         fogDensity = clampWeather(preset.getFogDensity());
         windIntensity = clampWeather(preset.getWindIntensity());
         materialWetness = EnvironmentSettings.clamp(preset.getMaterialWetness(), 0.0f, 1.0f);

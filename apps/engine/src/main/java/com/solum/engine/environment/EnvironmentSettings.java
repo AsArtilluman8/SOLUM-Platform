@@ -71,13 +71,26 @@ public class EnvironmentSettings {
     public String getWeatherPreset() { return weatherPreset; }
     public WeatherRuntimeParameters getWeather() { return weather; }
     public void setWeatherPreset(String value) {
-        String id = safe(value, "none").toLowerCase();
-        if ("rain".equals(id)) {
-            weatherPreset = WeatherPreset.RAIN.getId();
-            weather.applyPreset(WeatherPreset.RAIN);
+        String id = safe(value, "clear").toLowerCase();
+        WeatherPreset preset = WeatherPreset.fromId(id);
+        if (preset != null) {
+            weatherPreset = preset.getId();
+            weather.applyPreset(preset);
             cloudAmount = clamp(weather.getCloudCoverage() / 10.0f, 0.0f, 1.0f);
         } else {
-            weatherPreset = "none";
+            weatherPreset = "clear";
+            weather.applyPreset(WeatherPreset.CLEAR);
+            cloudAmount = clamp(weather.getCloudCoverage() / 10.0f, 0.0f, 1.0f);
+        }
+    }
+
+    public void clearWeather() {
+        weatherPreset = "clear";
+        WeatherPreset clear = WeatherPreset.CLEAR;
+        if (clear != null) {
+            weather.applyPreset(clear);
+            cloudAmount = clamp(weather.getCloudCoverage() / 10.0f, 0.0f, 1.0f);
+        } else {
             weather.clear();
             cloudAmount = 0.0f;
         }

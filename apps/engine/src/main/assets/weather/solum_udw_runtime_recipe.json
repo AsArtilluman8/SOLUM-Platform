@@ -1,0 +1,146 @@
+{
+  "schema": "com.solum.udw.runtime_recipe",
+  "schemaVersion": 1,
+  "source": "SOLUM_RECON_TOOLKIT_LIGHT_OUTPUT",
+  "latestLightOutput": "/storage/emulated/0/Download/SOLUM_RECON_TOOLKIT_KEEP/latest_light_output",
+  "status": "reconstructed_with_procedural_fill",
+  "fakeRisk": "values without proof are marked procedural fill, not asset-derived",
+  "channels": {
+    "timeOfDay": {
+      "value": 12.0,
+      "default": 12.0,
+      "sourceStatus": "reconstructed",
+      "proofRef": ".4___40_5.5-5.7_____41__EXTRACTED/Ultra Dynamic Sky v9.4 (5.5-5.7​)/Blueprints/System/UDS_TimeOfDay_FadeRange.uasset\",     \"rel\": \"Ultra Dynamic Sky v9.4 (5.5-5.7​)/Blueprints/System/UDS_TimeOfDay_FadeRange.uasset\",     \"name\": \"UDS_TimeOfDay_FadeRange.uasset\"",
+      "matchedAlias": "timeofday",
+      "confidence": 0.62
+    },
+    "dayNightFactor": {
+      "value": 0.0,
+      "default": 0.0,
+      "sourceStatus": "procedural fill",
+      "proofRef": "default chosen for mobile-safe weather showcase",
+      "matchedAlias": "not_found_in_light_output",
+      "confidence": 0.25
+    },
+    "cloudCoverage": {
+      "value": 0.45,
+      "default": 0.45,
+      "sourceStatus": "reconstructed",
+      "proofRef": "nentBoundEvent_4_OnButtonClickedEvent__DelegateSignature\",       \"Cloud Coverage\",       \"CloudCoverage\",       \"FunctionGraphs\",       \"FunctionReference\",       \"GeneratedClass\",       \"GraphGuid\",       \"K2Node_ComponentBoundEvent_PropertyName\",       \"K2No",
+      "matchedAlias": "cloudcoverage",
+      "confidence": 0.62
+    },
+    "rainAmount": {
+      "value": 0.0,
+      "default": 0.0,
+      "sourceStatus": "reconstructed",
+      "proofRef": "-5.7​)/Blueprints/Functions/UltraDynamicWeather_Functions.uasset\",       \"function\": \"Get Rain Amount\",       \"channel\": \"rain\",       \"k2\": \"K2Node_FunctionEntry_0\",       \"x\": -8,       \"y\": 12     },     {       \"asset\": \"Ultra Dynamic Sky v9.4 (5.5-5.7​)/B",
+      "matchedAlias": "rain amount",
+      "confidence": 0.62
+    },
+    "snowAmount": {
+      "value": 0.0,
+      "default": 0.0,
+      "sourceStatus": "reconstructed",
+      "proofRef": "-5.7​)/Blueprints/Functions/UltraDynamicWeather_Functions.uasset\",       \"function\": \"Get Snow Amount\",       \"channel\": \"snow\",       \"k2\": \"K2Node_FunctionEntry_0\",       \"x\": -8,       \"y\": 12     },     {       \"asset\": \"Ultra Dynamic Sky v9.4 (5.5-5.7​)/B",
+      "matchedAlias": "snow amount",
+      "confidence": 0.62
+    },
+    "fog": {
+      "value": 0.0,
+      "default": 0.0,
+      "sourceStatus": "reconstructed",
+      "proofRef": "      \"audio\": 4,       \"mesh\": 0     },     \"channels\": [       \"sky_time\",       \"cloud_fog\",       \"rain\",       \"snow\",       \"wetness_puddle\",       \"storm\",       \"wind\"     ],     \"interesting_strings\": [       \"/Game/UltraDynamicSky/Blueprints/Function",
+      "matchedAlias": "fog",
+      "confidence": 0.62
+    },
+    "windDirection": {
+      "value": 0.0,
+      "default": 0.0,
+      "sourceStatus": "reconstructed",
+      "proofRef": "_Is_WeatherState\",       \"WindActor\",       \"WindCameraShake\",       \"WindDebris\",       \"WindDirection\",       \"WindGusts\"     ]   },   {     \"path\": \"/storage/emulated/0/Download/Ultra_Dynamic_Sky_v9.4___40_5.5-5.7_____41__EXTRACTED/Ultra Dynamic Sky v9.4 (5",
+      "matchedAlias": "winddirection",
+      "confidence": 0.62
+    },
+    "windIntensity": {
+      "value": 0.25,
+      "default": 0.25,
+      "sourceStatus": "reconstructed",
+      "proofRef": "\"W_MaterialWetness\",       \"W_Rain\",       \"W_Snow\",       \"W_ThunderLightning\",       \"W_WindIntensity\",       \"Weather\",       \"Weather Exists\",       \"WeatherPanel\",       \"Wind Intensity\",       \"/Game/UltraDynamicSky/Blueprints/Ultra_Dynamic_Weather\",    ",
+      "matchedAlias": "windintensity",
+      "confidence": 0.62
+    },
+    "materialWetness": {
+      "value": 0.0,
+      "default": 0.0,
+      "sourceStatus": "reconstructed",
+      "proofRef": "ather\",       \"W_CloudCoverage\",       \"W_MaterialDust\",       \"W_MaterialSnow\",       \"W_MaterialWetness\",       \"W_Rain\",       \"W_Snow\",       \"W_ThunderLightning\",       \"W_WindIntensity\",       \"Weather\",       \"Weather Exists\",       \"WeatherPanel\",     ",
+      "matchedAlias": "materialwetness",
+      "confidence": 0.62
+    },
+    "materialSnowCoverage": {
+      "value": 0.0,
+      "default": 0.0,
+      "sourceStatus": "reconstructed",
+      "proofRef": "3E9FA913B750CE\",       \"MaterialDustCoverage_31_4C9DA3A1430CCB4B92BCAB95AB03CAA9\",       \"MaterialSnowCoverage_30_10F93D3F42158AD6D1D5B7A58EB30E28\",       \"MaterialWetness_29_2CE413784192D57B1FA486B8BF605372\",       \"OldWeatherState_219_4D413F1E4B69542295AF849",
+      "matchedAlias": "materialsnowcoverage",
+      "confidence": 0.62
+    },
+    "materialDustCoverage": {
+      "value": 0.0,
+      "default": 0.0,
+      "sourceStatus": "reconstructed",
+      "proofRef": "87CAD9E453AF85E\",       \"ManualWeatherState_217_43B336E740485E3BE53E9FA913B750CE\",       \"MaterialDustCoverage_31_4C9DA3A1430CCB4B92BCAB95AB03CAA9\",       \"MaterialSnowCoverage_30_10F93D3F42158AD6D1D5B7A58EB30E28\",       \"MaterialWetness_29_2CE413784192D57B1FA",
+      "matchedAlias": "materialdustcoverage",
+      "confidence": 0.62
+    },
+    "thunderLightning": {
+      "value": 0.0,
+      "default": 0.0,
+      "sourceStatus": "reconstructed",
+      "proofRef": "     \"Random Weather Mode\",       \"Set Entire Manual Weather State\",       \"Snow\",       \"Thunder/Lightning\",       \"Time To Transition To New Weather (Seconds)\",       \"Time to Transition to Random Weather (Seconds)\",       \"Ultra Dynamic Weather\",       \"Ult",
+      "matchedAlias": "thunder",
+      "confidence": 0.62
+    },
+    "flashLightning": {
+      "value": 0.0,
+      "default": 0.0,
+      "sourceStatus": "reconstructed",
+      "proofRef": "micSky/Materials/Weather/Heat_Distortion\",       \"/Game/UltraDynamicSky/Materials/Weather/LightningFlashBloom_PP\",       \"/Game/UltraDynamicSky/Materials/Weather/Post_Process_Wind_Fog\",       \"/Game/UltraDynamicSky/Materials/Weather/Post_Process_Wind_Fog_Legac",
+      "matchedAlias": "lightningflash",
+      "confidence": 0.62
+    },
+    "temperature": {
+      "value": 20.0,
+      "default": 20.0,
+      "sourceStatus": "reconstructed",
+      "proofRef": "v9.4___40_5.5-5.7_____41__EXTRACTED/Ultra Dynamic Sky v9.4 (5.5-5.7​)/Blueprints/Enum/UDS_TemperatureType.uasset\",     \"rel\": \"Ultra Dynamic Sky v9.4 (5.5-5.7​)/Blueprints/Enum/UDS_TemperatureType.uasset\",     \"name\": \"UDS_TemperatureType.uasset\",     \"size\": ",
+      "matchedAlias": "temperature",
+      "confidence": 0.62
+    },
+    "weatherState": {
+      "value": "Clear",
+      "default": "Clear",
+      "sourceStatus": "reconstructed",
+      "proofRef": "atherVariation_State\",       \"/Game/UltraDynamicSky/Blueprints/Weather_Effects/System/UDW_WeatherState_Structure\",       \"BlueprintGeneratedClass\",       \"K2Node_BreakStruct\",       \"K2Node_CallFunction\",       \"K2Node_FunctionEntry\",       \"K2Node_FunctionRes",
+      "matchedAlias": "weatherstate",
+      "confidence": 0.62
+    },
+    "manualWeatherState": {
+      "value": "Clear",
+      "default": "Clear",
+      "sourceStatus": "reconstructed",
+      "proofRef": "   ],     \"interesting_strings\": [       \"2ddynamicclouds\",       \"changeweather\",       \"manualweatherstate\",       \"materialattributes\",       \"materialfunction\",       \"materialpalette\",       \"materialstate\",       \"radialstorm\",       \"randomweathervariat",
+      "matchedAlias": "manualweatherstate",
+      "confidence": 0.62
+    },
+    "randomWeatherVariation": {
+      "value": 0.0,
+      "default": 0.0,
+      "sourceStatus": "reconstructed",
+      "proofRef": "      \"MemberReference\",       \"NodeGuid\",       \"/Game/UltraDynamicSky/Blueprints/System/RandomWeatherVariation_State\",       \"/Game/UltraDynamicSky/Blueprints/Weather_Effects/System/UDW_WeatherState_Structure\",       \"BlueprintGeneratedClass\",       \"K2Node_",
+      "matchedAlias": "randomweathervariation",
+      "confidence": 0.62
+    }
+  }
+}

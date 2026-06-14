@@ -191,6 +191,14 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String OBJECT_ID_GIZMO_X = "gizmo_axis_x";
     private static final String OBJECT_ID_GIZMO_Y = "gizmo_axis_y";
     private static final String OBJECT_ID_GIZMO_Z = "gizmo_axis_z";
+    private static final String OBJECT_ID_WEATHER_SKY = "weather_sky_dome";
+    private static final String OBJECT_ID_WEATHER_CLOUDS = "weather_cloud_layer";
+    private static final String OBJECT_ID_WEATHER_RAIN = "weather_rain_volume";
+    private static final String OBJECT_ID_WEATHER_SNOW = "weather_snow_volume";
+    private static final String OBJECT_ID_WEATHER_SUN = "weather_sun_marker";
+    private static final String OBJECT_ID_WEATHER_MOON = "weather_moon_marker";
+    private static final String OBJECT_ID_WEATHER_LIGHTNING = "weather_lightning_bolt";
+    private static final String OBJECT_ID_WEATHER_WET_FLOOR = "weather_wet_floor";
     private static final String HELPER_MATERIAL_ASSET_PATH = "materials/solum_helper_unlit.filamat";
 
     private SurfaceView surfaceView;
@@ -413,6 +421,13 @@ public class FilamentGlbPreviewActivity extends Activity {
     private int scanSkippedCount = 0;
     private int scanFailedCount = 0;
     private String cameraStatus = "orbit_drag_pinch_zoom_unit_cube";
+    private String lastGestureType = "none";
+    private String cameraPositionBefore = "none";
+    private String cameraPositionAfter = "none";
+    private boolean cameraMatrixChangedOnGesture = false;
+    private float lastCameraEyeX = 0.0f;
+    private float lastCameraEyeY = 0.0f;
+    private float lastCameraEyeZ = 4.4f;
     private String lightingStatus = "not_applied";
     private String lastInputError = "none";
     private String refractionToggleAffectsTransmission = "false_screen_space_only_alpha_transmission_left_to_gltfio";
@@ -536,6 +551,9 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String controlsRealityStatus = "pending";
     private float lastTouchX = 0.0f;
     private float lastTouchY = 0.0f;
+    private float touchDownX = 0.0f;
+    private float touchDownY = 0.0f;
+    private boolean touchMovedSinceDown = false;
     private float lastPinchDistance = 0.0f;
     private float lastPinchCenterX = 0.0f;
     private float lastPinchCenterY = 0.0f;
@@ -550,8 +568,17 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String ditheringStatus = "on_default";
     private String pickingStatus = "deferred_no_pick_yet";
     private String selectedRenderable = "none";
+    private String selectedObjectStatus = "none";
     private String selectedMaterialIndexStatus = "none";
     private float pickDepth = -1.0f;
+    private String legacyCleanupStatus = "legacy_opengl_weather_isolated_from_app_assets";
+    private String weatherShowcaseStatus = "not_created";
+    private String weatherSkyMode = "SKY_DOME";
+    private boolean skyIs2DOverlay = false;
+    private String weatherSourceStatus = "reconstructed_with_procedural_fill";
+    private String weatherAudioStatus = "missing_assets";
+    private String weatherPuddlesStatus = "partial_wet_floor_no_puddle_mesh";
+    private float weatherAnimationPhase = 0.0f;
     private String lightRigStatus = "off";
     private int manualOverrideCount = 0;
     private String manualOverrideStatus = "none";
@@ -601,7 +628,7 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private enum CameraInteractionMode {
         CAMERA_ORBIT("Camera Orbit"),
-        OBJECT_ROTATE("Object Rotate");
+        OBJECT_ROTATE_ADVANCED("Object Rotate Advanced");
 
         final String label;
 
@@ -610,7 +637,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
 
         CameraInteractionMode next() {
-            return this == CAMERA_ORBIT ? OBJECT_ROTATE : CAMERA_ORBIT;
+            return CAMERA_ORBIT;
         }
     }
 
@@ -1297,9 +1324,18 @@ public class FilamentGlbPreviewActivity extends Activity {
         timePresetRow.addView(button("Night", v -> setEnvironmentPreset("NIGHT")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         iblPanel.addView(timePresetRow);
         LinearLayout weatherPresetRow = row();
-        weatherPresetRow.addView(button("Weather: None", v -> setWeatherPreset("none")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
-        weatherPresetRow.addView(button("Weather: Rain", v -> setWeatherPreset("rain")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        weatherPresetRow.addView(button("Clear", v -> setWeatherPreset("clear")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        weatherPresetRow.addView(button("Rain", v -> setWeatherPreset("rain")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        weatherPresetRow.addView(button("Snow", v -> setWeatherPreset("snow")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        weatherPresetRow.addView(button("Storm", v -> setWeatherPreset("storm")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         iblPanel.addView(weatherPresetRow);
+        LinearLayout weatherPresetRow2 = row();
+        weatherPresetRow2.addView(button("Overcast", v -> setWeatherPreset("overcast")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        weatherPresetRow2.addView(button("Night", v -> {
+            setEnvironmentPreset("NIGHT");
+            setWeatherPreset("night");
+        }), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        iblPanel.addView(weatherPresetRow2);
         addLightingSlider(iblPanel, "Env Sun Az", 0.0f, 360.0f, 1.0f, normalizedAzimuth(sunAzimuth), v -> {
             ensureEnvironmentApi();
             environmentApi.setSunAzimuth(v);
@@ -1670,19 +1706,25 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (action == MotionEvent.ACTION_DOWN) {
             lastTouchX = event.getX();
             lastTouchY = event.getY();
+            touchDownX = lastTouchX;
+            touchDownY = lastTouchY;
+            touchMovedSinceDown = false;
             lastPinchDistance = 0.0f;
+            lastGestureType = "touch_down";
             return;
         }
         if (action == MotionEvent.ACTION_POINTER_DOWN && event.getPointerCount() >= 2) {
             lastPinchDistance = pointerDistance(event);
             lastPinchCenterX = pointerCenterX(event);
             lastPinchCenterY = pointerCenterY(event);
+            touchMovedSinceDown = true;
+            lastGestureType = "pinch_start";
             return;
         }
         if (action == MotionEvent.ACTION_MOVE) {
             if (event.getPointerCount() >= 2) {
                 handleCameraPinchPan(event);
-            } else if (cameraInteractionMode == CameraInteractionMode.OBJECT_ROTATE) {
+            } else if (cameraInteractionMode == CameraInteractionMode.OBJECT_ROTATE_ADVANCED) {
                 handleObjectRotateDrag(event);
             } else {
                 handleCameraOrbitDrag(event);
@@ -1690,8 +1732,14 @@ public class FilamentGlbPreviewActivity extends Activity {
             return;
         }
         if (action == MotionEvent.ACTION_UP) {
-            requestPick(event);
+            if (!touchMovedSinceDown && tapNearObject(event)) {
+                selectActiveModelFromTap("tap_bounding_sphere_foundation");
+                requestPick(event);
+            } else {
+                pickingStatus = "tap_ignored_after_camera_gesture";
+            }
             lastPinchDistance = 0.0f;
+            lastGestureType = touchMovedSinceDown ? lastGestureType : "tap_select";
             return;
         }
         if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_UP) {
@@ -1702,13 +1750,19 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void handleCameraOrbitDrag(MotionEvent event) {
         float dx = event.getX() - lastTouchX;
         float dy = event.getY() - lastTouchY;
+        if (Math.abs(event.getX() - touchDownX) + Math.abs(event.getY() - touchDownY) > 8.0f) {
+            touchMovedSinceDown = true;
+        }
         lastTouchX = event.getX();
         lastTouchY = event.getY();
+        String before = cameraEyeSummary();
         cameraYaw = wrapDegrees(cameraYaw - dx * 0.35f);
         cameraPitch = clamp(cameraPitch + dy * 0.25f, -80.0f, 80.0f);
         objectTransformMode = "camera_orbit_touch";
+        lastGestureType = "camera_orbit_drag";
         markManualOverride("camera_orbit_touch");
         applyCameraControls();
+        updateCameraGestureSelfCheck(before, cameraEyeSummary());
     }
 
     private void handleCameraPinchPan(MotionEvent event) {
@@ -1716,14 +1770,18 @@ public class FilamentGlbPreviewActivity extends Activity {
         float centerX = pointerCenterX(event);
         float centerY = pointerCenterY(event);
         if (lastPinchDistance > 0.0f) {
+            touchMovedSinceDown = true;
+            String before = cameraEyeSummary();
             float zoomDelta = (lastPinchDistance - distance) * 0.012f;
             cameraDistance = clamp(cameraDistance + zoomDelta, 1.0f, 30.0f);
             float panScale = cameraDistance * 0.0018f;
             cameraTargetX -= (centerX - lastPinchCenterX) * panScale;
             cameraTargetY += (centerY - lastPinchCenterY) * panScale;
             objectTransformMode = "camera_pan_zoom_touch";
+            lastGestureType = "camera_pinch_zoom_pan";
             markManualOverride("camera_pan_zoom_touch");
             applyCameraControls();
+            updateCameraGestureSelfCheck(before, cameraEyeSummary());
         }
         lastPinchDistance = distance;
         lastPinchCenterX = centerX;
@@ -1733,13 +1791,18 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void handleObjectRotateDrag(MotionEvent event) {
         float dx = event.getX() - lastTouchX;
         float dy = event.getY() - lastTouchY;
+        if (Math.abs(event.getX() - touchDownX) + Math.abs(event.getY() - touchDownY) > 8.0f) {
+            touchMovedSinceDown = true;
+        }
         lastTouchX = event.getX();
         lastTouchY = event.getY();
         SceneObject selected = sceneRegistry.getSelectedObject();
         if (selected == null) {
             objectTransformMode = "object_rotate_no_selection";
+            lastGestureType = "object_rotate_no_selection";
             return;
         }
+        lastGestureType = "advanced_object_rotate_drag";
         setSelectedObjectTransform(
             selected.getPositionX(),
             selected.getPositionY(),
@@ -1761,6 +1824,44 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private float pointerCenterX(MotionEvent event) {
         return event == null || event.getPointerCount() < 2 ? 0.0f : (event.getX(0) + event.getX(1)) * 0.5f;
+    }
+
+    private boolean tapNearObject(MotionEvent event) {
+        if (event == null || surfaceView == null) return false;
+        if (sceneRegistry.findById(OBJECT_ID_ACTIVE_MODEL) == null) return false;
+        float width = Math.max(1.0f, surfaceView.getWidth());
+        float height = Math.max(1.0f, surfaceView.getHeight());
+        float dx = event.getX() - width * 0.5f;
+        float dy = event.getY() - height * 0.5f;
+        float radius = Math.min(width, height) * 0.38f;
+        return dx * dx + dy * dy <= radius * radius;
+    }
+
+    private void selectActiveModelFromTap(String reason) {
+        SceneObject selected = sceneRegistry.selectObject(OBJECT_ID_ACTIVE_MODEL);
+        if (selected == null) {
+            pickingStatus = "tap_select_blocked_no_active_model";
+            selectedObjectStatus = "BLOCKED_NO_ACTIVE_MODEL";
+            return;
+        }
+        syncFieldsFromSelectedObject(selected);
+        selectedRenderable = OBJECT_ID_ACTIVE_MODEL;
+        selectedObjectStatus = "selected_" + selected.getName();
+        pickingStatus = "ok_" + reason;
+        objectTransformMode = "selected_active_model_from_tap_bounding_sphere";
+        ensureWorkspaceGizmo();
+        updateGizmoTransform();
+        refreshUiNow();
+    }
+
+    private void updateCameraGestureSelfCheck(String before, String after) {
+        cameraPositionBefore = before == null ? "none" : before;
+        cameraPositionAfter = after == null ? "none" : after;
+        cameraMatrixChangedOnGesture = !cameraPositionBefore.equals(cameraPositionAfter);
+    }
+
+    private String cameraEyeSummary() {
+        return twoDecimal(lastCameraEyeX) + "/" + twoDecimal(lastCameraEyeY) + "/" + twoDecimal(lastCameraEyeZ);
     }
 
     private float pointerCenterY(MotionEvent event) {
@@ -1793,6 +1894,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             long frameStartWallNs = System.nanoTime();
             updateFrameTiming(frameTimeNanos, frameStartWallNs);
             updateEnvironmentClock();
+            weatherAnimationPhase = (weatherAnimationPhase + Math.max(0.0f, rollingFrameMs) * 0.001f) % 1000.0f;
             if (modelViewer.getAnimator() != null && modelViewer.getAnimator().getAnimationCount() > 0) {
                 float seconds = frameTimeNanos / 1_000_000_000.0f;
                 modelViewer.getAnimator().applyAnimation(0, seconds);
@@ -2963,6 +3065,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         environmentApplyStatus = "activity_local_applied_reason_" + reason;
         applyLightingValues();
         applySkyboxVisibility();
+        applyWeatherShowcaseGeometry(reason);
         applyIblRotation();
         syncRenderApiRequestedState();
         if (renderControlApi != null) renderControlApi.apply();
@@ -2987,8 +3090,14 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nstarsVisibility=" + twoDecimal(actual.getStarsVisibility()) + " status=" + diagnostics.getStarsStatus()
                 + "\nweather=" + actual.getWeather().getWeatherPreset()
                 + " rain=" + oneDecimal(actual.getWeather().getRainIntensity())
+                + " snow=" + oneDecimal(actual.getWeather().getSnowIntensity())
                 + " cloud=" + oneDecimal(actual.getWeather().getCloudCoverage())
+                + " fog=" + oneDecimal(actual.getWeather().getFogDensity())
+                + " wind=" + oneDecimal(actual.getWeather().getWindIntensity())
                 + " wetness=" + twoDecimal(actual.getWeather().getMaterialWetness())
+                + " lightning=" + oneDecimal(actual.getWeather().getThunderIntensity())
+                + "\nshowcase=" + weatherShowcaseStatus + " skyMode=" + weatherSkyMode + " skyIs2DOverlay=" + skyIs2DOverlay
+                + "\nsourceStatus=" + weatherSourceStatus + " puddles=" + weatherPuddlesStatus + " audio=" + weatherAudioStatus
                 + "\niblMode=" + diagnostics.getIblMode() + " skyMode=" + diagnostics.getSkyMode()
                 + " fakeOverlayUsed=" + diagnostics.isFakeOverlayUsed()
                 + "\naudioMode=" + diagnostics.getAudioMode() + " vfx=" + diagnostics.getVfxStatus()
@@ -3449,6 +3558,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             else removeWorkspaceRenderable(OBJECT_ID_GRID);
             ensureWorkspaceGizmo();
             updateGizmoTransform();
+            applyWeatherShowcaseGeometry("workspace_foundation");
             gridMode = gridVisible ? (gridStatus.startsWith("ok_") ? "WORLD_SPACE_GEOMETRY" : "BLOCKED") : "off";
             floorMode = floorVisible ? (floorStatus.startsWith("ok_") ? "WORLD_SPACE_GEOMETRY" : "BLOCKED") : "off";
             controlsRealityStatus = "camera_object_transform_real grid=" + gridMode + " floor=" + floorMode
@@ -3457,6 +3567,188 @@ public class FilamentGlbPreviewActivity extends Activity {
             helperGeometryStatus = "workspace_foundation_failed: " + shortMessage(t);
             controlsRealityStatus = "partial_workspace_foundation_failed";
         }
+    }
+
+    private void applyWeatherShowcaseGeometry(String reason) {
+        if (modelViewer == null || modelViewer.getScene() == null || environmentApi == null) return;
+        removeWeatherShowcaseRenderables();
+        try {
+            EnvironmentActualState actual = environmentApi.getActualState();
+            WeatherRuntimeParameters weather = actual.getWeather();
+            float day = daylightFactor(actual.getActiveTimeOfDayHours());
+            float cloud = clamp(weather.getCloudCoverage() / 10.0f, 0.0f, 1.0f);
+            float rain = clamp(weather.getRainIntensity() / 10.0f, 0.0f, 1.0f);
+            float snow = clamp(weather.getSnowIntensity() / 10.0f, 0.0f, 1.0f);
+            float wetness = clamp(weather.getMaterialWetness(), 0.0f, 1.0f);
+            float lightning = clamp(weather.getThunderIntensity() / 10.0f, 0.0f, 1.0f);
+
+            boolean skyOk = ensureWeatherSkyDome(day, cloud) != null;
+            boolean sunOk = ensureWeatherDisc(OBJECT_ID_WEATHER_SUN, "Sun", 1.2f, 2.8f, -2.6f,
+                0.95f + day * 0.05f, 0.62f + day * 0.28f, 0.18f + day * 0.18f) != null;
+            boolean moonOk = day < 0.45f && ensureWeatherDisc(OBJECT_ID_WEATHER_MOON, "Moon", -1.5f, 2.5f, -2.7f,
+                0.70f, 0.78f, 1.0f) != null;
+            boolean cloudOk = cloud <= 0.02f || ensureWeatherCloudLayer(cloud, day) != null;
+            boolean rainOk = rain <= 0.02f || ensureWeatherParticleLines(OBJECT_ID_WEATHER_RAIN, "Rain", rain, true) != null;
+            boolean snowOk = snow <= 0.02f || ensureWeatherParticleLines(OBJECT_ID_WEATHER_SNOW, "Snow", snow, false) != null;
+            boolean wetOk = wetness <= 0.02f || ensureWeatherWetFloor(wetness) != null;
+            boolean lightningOk = lightning <= 0.02f || ensureWeatherLightning(lightning) != null;
+
+            weatherSkyMode = "SKY_DOME";
+            skyIs2DOverlay = false;
+            environmentMode = "WEATHER_ENVIRONMENT";
+            weatherAudioStatus = weatherAudioAssetsExist() ? "decoded_audio_candidates_present_not_playback_wired" : "missing_assets";
+            weatherPuddlesStatus = wetness > 0.02f ? "partial_wet_floor_overlay_no_ripple_mesh" : "inactive";
+            weatherShowcaseStatus = "sky=" + statusBool(skyOk)
+                + " sun=" + statusBool(sunOk)
+                + " moon=" + statusBool(moonOk || day >= 0.45f)
+                + " clouds=" + statusBool(cloudOk)
+                + " rain=" + statusBool(rainOk)
+                + " snow=" + statusBool(snowOk)
+                + " wetFloor=" + statusBool(wetOk)
+                + " lightning=" + statusBool(lightningOk)
+                + " reason=" + reason;
+        } catch (Throwable t) {
+            weatherShowcaseStatus = "BLOCKED_create_failed: " + shortMessage(t);
+            skyIs2DOverlay = false;
+        }
+    }
+
+    private WorkspaceRenderable ensureWeatherSkyDome(float daylight, float cloud) {
+        int rings = 4;
+        int segments = 12;
+        float radius = 7.5f;
+        float[] vertices = new float[(rings + 1) * (segments + 1) * 3];
+        short[] indices = new short[rings * segments * 6];
+        int v = 0;
+        for (int r = 0; r <= rings; r++) {
+            float theta = (float) (r * (Math.PI * 0.5) / rings);
+            float y = (float) Math.cos(theta) * radius;
+            float rr = (float) Math.sin(theta) * radius;
+            for (int s = 0; s <= segments; s++) {
+                float a = (float) (s * Math.PI * 2.0 / segments);
+                vertices[v++] = (float) Math.cos(a) * rr;
+                vertices[v++] = y - 0.2f;
+                vertices[v++] = (float) Math.sin(a) * rr;
+            }
+        }
+        int idx = 0;
+        for (int r = 0; r < rings; r++) {
+            for (int s = 0; s < segments; s++) {
+                short a = (short) (r * (segments + 1) + s);
+                short b = (short) (a + 1);
+                short c = (short) ((r + 1) * (segments + 1) + s);
+                short d = (short) (c + 1);
+                indices[idx++] = a; indices[idx++] = c; indices[idx++] = b;
+                indices[idx++] = b; indices[idx++] = c; indices[idx++] = d;
+            }
+        }
+        float red = 0.05f + daylight * 0.18f + cloud * 0.08f;
+        float green = 0.08f + daylight * 0.32f + cloud * 0.08f;
+        float blue = 0.15f + daylight * 0.65f;
+        return createWorkspaceRenderable(OBJECT_ID_WEATHER_SKY, vertices, indices,
+            RenderableManager.PrimitiveType.TRIANGLES, red, green, blue, false, false,
+            new Box(0.0f, 2.0f, 0.0f, radius, radius, radius));
+    }
+
+    private WorkspaceRenderable ensureWeatherDisc(String id, String name, float x, float y, float z, float red, float green, float blue) {
+        float s = 0.18f;
+        WorkspaceRenderable renderable = createWorkspaceRenderable(id,
+            new float[] {x, y + s, z, x - s, y - s, z, x + s, y - s, z},
+            new short[] {0, 1, 2},
+            RenderableManager.PrimitiveType.TRIANGLES, red, green, blue, false, false,
+            new Box(x, y, z, s, s, s));
+        if (renderable != null) helperGeometryStatus = "ok_weather_disc_" + name;
+        return renderable;
+    }
+
+    private WorkspaceRenderable ensureWeatherCloudLayer(float coverage, float daylight) {
+        float y = 2.6f;
+        float s = 4.5f;
+        float drift = (weatherAnimationPhase * 0.08f) % 1.0f;
+        float[] vertices = new float[] {
+            -s + drift, y, -s,
+             s + drift, y, -s,
+             s + drift, y,  s,
+            -s + drift, y,  s
+        };
+        float shade = 0.26f + daylight * 0.35f + coverage * 0.15f;
+        return createWorkspaceRenderable(OBJECT_ID_WEATHER_CLOUDS, vertices, new short[] {0, 1, 2, 0, 2, 3},
+            RenderableManager.PrimitiveType.TRIANGLES, shade, shade, shade + 0.04f, false, false,
+            new Box(0.0f, y, 0.0f, s, 0.1f, s));
+    }
+
+    private WorkspaceRenderable ensureWeatherParticleLines(String id, String name, float intensity, boolean rain) {
+        int count = Math.max(8, Math.min(64, (int) (intensity * (rain ? 64.0f : 42.0f))));
+        float[] vertices = new float[count * 2 * 3];
+        short[] indices = new short[count * 2];
+        float wind = environmentApi == null ? 0.0f : environmentApi.getActualState().getWeather().getWindIntensity() / 10.0f;
+        int v = 0;
+        for (int i = 0; i < count; i++) {
+            float lane = (i % 8) - 3.5f;
+            float row = (i / 8) - 3.0f;
+            float x = lane * 0.42f + ((i * 37) % 11) * 0.015f;
+            float z = row * 0.42f + ((i * 19) % 7) * 0.02f;
+            float y = 2.4f - (i % 5) * 0.22f;
+            float slant = wind * (rain ? 0.30f : 0.16f);
+            float len = rain ? 0.42f : 0.12f;
+            vertices[v++] = x; vertices[v++] = y; vertices[v++] = z;
+            vertices[v++] = x + slant; vertices[v++] = y - len; vertices[v++] = z;
+            indices[i * 2] = (short) (i * 2);
+            indices[i * 2 + 1] = (short) (i * 2 + 1);
+        }
+        return createWorkspaceRenderable(id, vertices, indices, RenderableManager.PrimitiveType.LINES,
+            rain ? 0.52f : 0.90f, rain ? 0.68f : 0.92f, rain ? 1.0f : 1.0f, false, false,
+            new Box(0.0f, 1.4f, 0.0f, 3.8f, 2.0f, 3.8f));
+    }
+
+    private WorkspaceRenderable ensureWeatherWetFloor(float wetness) {
+        float s = 3.8f;
+        float y = 0.002f;
+        float blue = 0.10f + wetness * 0.14f;
+        return createWorkspaceRenderable(OBJECT_ID_WEATHER_WET_FLOOR,
+            new float[] {-s, y, -s, s, y, -s, s, y, s, -s, y, s},
+            new short[] {0, 1, 2, 0, 2, 3}, RenderableManager.PrimitiveType.TRIANGLES,
+            0.03f, 0.05f + wetness * 0.05f, blue, false, false,
+            new Box(0.0f, y, 0.0f, s, 0.01f, s));
+    }
+
+    private WorkspaceRenderable ensureWeatherLightning(float amount) {
+        float x = 1.8f;
+        float[] vertices = new float[] {
+            x, 3.2f, -2.0f,
+            x - 0.25f, 2.3f, -2.0f,
+            x + 0.08f, 2.3f, -2.0f,
+            x - 0.28f, 1.3f, -2.0f
+        };
+        return createWorkspaceRenderable(OBJECT_ID_WEATHER_LIGHTNING, vertices, new short[] {0, 1, 2, 3},
+            RenderableManager.PrimitiveType.LINES, 0.85f + amount * 0.15f, 0.90f, 1.0f, false, false,
+            new Box(x, 2.2f, -2.0f, 0.5f, 2.0f, 0.2f));
+    }
+
+    private void removeWeatherShowcaseRenderables() {
+        removeWorkspaceRenderable(OBJECT_ID_WEATHER_SKY);
+        removeWorkspaceRenderable(OBJECT_ID_WEATHER_CLOUDS);
+        removeWorkspaceRenderable(OBJECT_ID_WEATHER_RAIN);
+        removeWorkspaceRenderable(OBJECT_ID_WEATHER_SNOW);
+        removeWorkspaceRenderable(OBJECT_ID_WEATHER_SUN);
+        removeWorkspaceRenderable(OBJECT_ID_WEATHER_MOON);
+        removeWorkspaceRenderable(OBJECT_ID_WEATHER_LIGHTNING);
+        removeWorkspaceRenderable(OBJECT_ID_WEATHER_WET_FLOOR);
+    }
+
+    private float daylightFactor(float hours) {
+        float angle = (float) ((hours - 6.0f) / 12.0f * Math.PI);
+        return clamp((float) Math.sin(angle), 0.0f, 1.0f);
+    }
+
+    private boolean weatherAudioAssetsExist() {
+        return appAssetExists("weather/audio/rain_loop.wav")
+            || appAssetExists("weather/audio/wind_loop.wav")
+            || appAssetExists("weather/audio/thunder_close.wav");
+    }
+
+    private String statusBool(boolean value) {
+        return value ? "+++" : "BLOCKED";
     }
 
     private void ensureWorkspacePlane() {
@@ -4273,10 +4565,10 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void buildCameraPanel() {
         cameraSummaryView = overlayText(10.0f, 12);
         cameraSummaryView.setBackgroundColor(Color.TRANSPARENT);
-        cameraModeButton = button("", v -> {
-            cameraInteractionMode = cameraInteractionMode.next();
-            objectTransformMode = cameraInteractionMode == CameraInteractionMode.CAMERA_ORBIT ? "camera_orbit" : "object_rotate";
-            markManualOverride("camera_mode_" + cameraInteractionMode.name().toLowerCase(Locale.US));
+        cameraModeButton = button("Touch: Camera Orbit", v -> {
+            cameraInteractionMode = CameraInteractionMode.CAMERA_ORBIT;
+            objectTransformMode = "camera_orbit_primary_object_rotate_advanced_only";
+            markManualOverride("camera_mode_camera_orbit_primary");
             persistWorkspaceSettings();
             refreshUiNow();
         });
@@ -4455,6 +4747,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (object == null) return false;
         String id = object.getId();
         return OBJECT_ID_GRID.equals(id) || OBJECT_ID_FLOOR.equals(id) || id.startsWith("gizmo_")
+            || id.startsWith("weather_")
             || "world_grid".equals(object.getType()) || "world_floor".equals(object.getType());
     }
 
@@ -4618,11 +4911,15 @@ public class FilamentGlbPreviewActivity extends Activity {
             float eyeX = cameraTargetX + distance * (float) Math.sin(yawRad) * cosPitch;
             float eyeY = cameraTargetY + distance * (float) Math.sin(pitchRad);
             float eyeZ = cameraTargetZ + distance * (float) Math.cos(yawRad) * cosPitch;
+            lastCameraEyeX = eyeX;
+            lastCameraEyeY = eyeY;
+            lastCameraEyeZ = eyeZ;
             modelViewer.getCamera().setProjection(cameraFov, aspect, 0.05, 250.0, com.google.android.filament.Camera.Fov.VERTICAL);
             modelViewer.getCamera().lookAt(eyeX, eyeY, eyeZ, cameraTargetX, cameraTargetY, cameraTargetZ, 0.0f, 1.0f, 0.0f);
             realCameraApplied = true;
             cameraApplyStatus = "applied_real_camera_lookAt_orbit";
             cameraStatus = "mode=" + cameraInteractionMode.name() + " distance=" + twoDecimal(cameraDistance)
+                + " eye=" + cameraEyeSummary()
                 + " yawPitch=" + oneDecimal(cameraYaw) + "/" + oneDecimal(cameraPitch)
                 + " target=" + twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY) + "/" + twoDecimal(cameraTargetZ)
                 + " fov=" + oneDecimal(cameraFov) + " nearFar=0.05/250";
@@ -4868,6 +5165,10 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("cameraPitch", cameraPitch);
             json.put("realCameraApplied", realCameraApplied);
             json.put("cameraStatus", cameraStatus);
+            json.put("cameraPositionBefore", cameraPositionBefore);
+            json.put("cameraPositionAfter", cameraPositionAfter);
+            json.put("cameraMatrixChangedOnGesture", cameraMatrixChangedOnGesture);
+            json.put("lastGestureType", lastGestureType);
             json.put("cameraTargetX", cameraTargetX);
             json.put("cameraTargetY", cameraTargetY);
             json.put("cameraTargetZ", cameraTargetZ);
@@ -4885,6 +5186,11 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("gizmoHitTestStatus", gizmoHitTestStatus);
             json.put("unrealReferenceStatus", unrealReferenceStatus);
             json.put("fakeOverlayUsed", fakeOverlayUsed);
+            json.put("weatherShowcaseStatus", weatherShowcaseStatus);
+            json.put("weatherSkyMode", weatherSkyMode);
+            json.put("skyIs2DOverlay", skyIs2DOverlay);
+            json.put("weatherSourceStatus", weatherSourceStatus);
+            json.put("legacyCleanupStatus", legacyCleanupStatus);
             json.put("controlsRealityStatus", controlsRealityStatus);
             json.put("modelRotateX", modelRotationX);
             json.put("modelRotateY", modelRotationY);
@@ -5149,6 +5455,8 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\ncameraPanX/Y=" + twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY)
                 + "\nfov=" + oneDecimal(cameraFov) + " nearFar=0.05/250"
                 + "\norbitPanZoom=real_camera_lookAt realCameraApplied=" + realCameraApplied
+                + "\nlastGesture=" + lastGestureType + " matrixChanged=" + cameraMatrixChangedOnGesture
+                + "\ncameraBefore=" + cameraPositionBefore + " after=" + cameraPositionAfter
                 + "\ngridMode=" + gridMode + " floorMode=" + floorMode
                 + "\ngridStatus=" + gridStatus + " floorStatus=" + floorStatus
                 + "\ngridMaterialStatus=" + gridMaterialStatus + " floorMaterialStatus=" + floorMaterialStatus
@@ -5158,6 +5466,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             SceneObject selected = sceneRegistry.getSelectedObject();
             modelSummaryView.setText("selectedObjectId=" + (selected == null ? "none" : selected.getId())
                 + "\nselectedObjectName=" + (selected == null ? "none" : selected.getName())
+                + "\nselectedObjectStatus=" + selectedObjectStatus
                 + "\nobjectCount=" + sceneRegistry.getObjects().size()
                 + "\nobjectTransformMode=" + objectTransformMode
                 + "\nmodelRotationX/Y/Z=" + oneDecimal(modelRotationX) + "/" + oneDecimal(modelRotationY) + "/" + oneDecimal(modelRotationZ)
@@ -5166,6 +5475,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\ntransformApplied=" + modelTransformStatus
                 + "\ntransformTarget=" + transformTargetStatus
                 + "\ngizmoMode=" + gizmoMode + " visible=" + gizmoVisible + " dragSupported=" + gizmoDragSupported
+                + "\ngizmoSource=RECONSTRUCTED_FROM_UNREAL_REFERENCE fakeOverlayUsed=" + fakeOverlayUsed
                 + "\ngizmoStatus=" + gizmoStatus
                 + "\ngizmoAnchor=" + gizmoAnchor + " hitTestStatus=" + gizmoHitTestStatus
                 + "\nunrealReferenceStatus=" + unrealReferenceStatus
@@ -5232,9 +5542,12 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nCopied: " + shorten(modelCopiedPath, 72)
                 + "\nCamera: " + cameraStatus
                 + "\ncameraMode=" + cameraInteractionMode.name() + " cameraTarget=" + twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY) + "/" + twoDecimal(cameraTargetZ) + " cameraDistance=" + twoDecimal(cameraDistance) + " cameraYawPitch=" + oneDecimal(cameraYaw) + "/" + oneDecimal(cameraPitch)
+                + "\ncameraSelfCheck before=" + cameraPositionBefore + " after=" + cameraPositionAfter + " matrixChangedOnGesture=" + cameraMatrixChangedOnGesture + " lastGesture=" + lastGestureType
                 + "\ngridMode=" + gridMode + " gridStatus=" + gridStatus + " floorMode=" + floorMode + " floorStatus=" + floorStatus
                 + "\nobjectCount=" + sceneRegistry.getObjects().size() + " selectedObject=" + selectedObjectDebugSummary()
                 + "\ngizmoMode=" + gizmoMode + " gizmoVisible=" + gizmoVisible + " gizmoDragSupported=" + gizmoDragSupported + " fakeOverlayUsed=" + fakeOverlayUsed
+                + "\nweatherShowcase=" + weatherShowcaseStatus + " weatherSkyMode=" + weatherSkyMode + " skyIs2DOverlay=" + skyIs2DOverlay
+                + "\nlegacyCleanupStatus=" + legacyCleanupStatus + " weatherSourceStatus=" + weatherSourceStatus
                 + "\ncontrolsRealityStatus=" + controlsRealityStatus
                 + "\nLight preset: " + lightingPreset.label + " / " + lightingStatus
                 + "\nSun/Ambient/Fill/Exp/BG: " + oneDecimal(sunLightIntensity) + " / " + oneDecimal(ambientUserIntensity) + " / " + oneDecimal(fillLightIntensity) + " / " + twoDecimal(exposure) + " / " + twoDecimal(backgroundBrightness)
@@ -5744,6 +6057,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("cameraYawPitch", oneDecimal(cameraYaw) + "/" + oneDecimal(cameraPitch));
         json.put("realCameraApplied", realCameraApplied);
         json.put("cameraStatus", cameraStatus);
+        json.put("cameraPositionBefore", cameraPositionBefore);
+        json.put("cameraPositionAfter", cameraPositionAfter);
+        json.put("cameraMatrixChangedOnGesture", cameraMatrixChangedOnGesture);
+        json.put("lastGestureType", lastGestureType);
         json.put("objectTransformMode", objectTransformMode);
         json.put("gridMode", gridMode);
         json.put("floorMode", floorMode);
@@ -5758,6 +6075,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("gizmoHitTestStatus", gizmoHitTestStatus);
         json.put("unrealReferenceStatus", unrealReferenceStatus);
         json.put("fakeOverlayUsed", fakeOverlayUsed);
+        json.put("selectedObjectStatus", selectedObjectStatus);
+        json.put("weatherShowcaseStatus", weatherShowcaseStatus);
+        json.put("weatherSkyMode", weatherSkyMode);
+        json.put("skyIs2DOverlay", skyIs2DOverlay);
         json.put("controlsRealityStatus", controlsRealityStatus);
         JSONArray objects = new JSONArray();
         for (SceneObject object : sceneRegistry.getObjects()) {
@@ -6232,7 +6553,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (fogButton != null) fogButton.setText(fogMode.label);
         if (lightRigButton != null) lightRigButton.setText("Light Rig: " + lightRig.label);
         if (skyboxButton != null) skyboxButton.setText("Skybox: " + (skyboxVisible ? "On" : "Off"));
-        if (cameraModeButton != null) cameraModeButton.setText("Mode: " + cameraInteractionMode.label);
+        if (cameraModeButton != null) cameraModeButton.setText("Touch: Camera Orbit");
         if (gridToggleButton != null) gridToggleButton.setText("Grid: " + (gridVisible ? "On" : "Off"));
         if (floorToggleButton != null) floorToggleButton.setText("Floor: " + (floorVisible ? "On" : "Off"));
         if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);

@@ -56,8 +56,8 @@ public class EnvironmentActualState {
     public void setFakeOverlayUsed(boolean value) { fakeOverlayUsed = value; }
     public WeatherRuntimeParameters getWeather() { return weather; }
     public void setWeatherFrom(WeatherRuntimeParameters value) {
-        if (value == null || "none".equals(value.getWeatherPreset())) weather.clear();
-        else if ("rain".equals(value.getWeatherPreset())) weather.applyPreset(WeatherPreset.RAIN);
+        WeatherPreset preset = value == null ? WeatherPreset.CLEAR : WeatherPreset.fromId(value.getWeatherPreset());
+        weather.applyPreset(preset == null ? WeatherPreset.CLEAR : preset);
         weatherVfxRecipe = WeatherVfxRecipe.rainFallback(weather);
     }
     public WeatherVfxRecipe getWeatherVfxRecipe() { return weatherVfxRecipe; }

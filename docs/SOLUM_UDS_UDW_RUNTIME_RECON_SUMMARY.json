@@ -1,0 +1,26 @@
+{
+  "status": "reconstructed_with_procedural_fill",
+  "output": "apps/engine/src/main/assets/weather/solum_udw_runtime_recipe.json",
+  "reconstructed": [
+    "timeOfDay",
+    "cloudCoverage",
+    "rainAmount",
+    "snowAmount",
+    "fog",
+    "windDirection",
+    "windIntensity",
+    "materialWetness",
+    "materialSnowCoverage",
+    "materialDustCoverage",
+    "thunderLightning",
+    "flashLightning",
+    "temperature",
+    "weatherState",
+    "manualWeatherState",
+    "randomWeatherVariation"
+  ],
+  "proceduralFill": [
+    "dayNightFactor"
+  ],
+  "blocked": []
+}

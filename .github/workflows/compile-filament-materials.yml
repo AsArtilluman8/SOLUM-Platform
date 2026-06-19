@@ -1,0 +1,82 @@
+name: Compile Filament Materials
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "apps/engine/src/main/filament/**/*.mat"
+      - "tools/compile_filament_materials.sh"
+      - ".github/workflows/compile-filament-materials.yml"
+  pull_request:
+    paths:
+      - "apps/engine/src/main/filament/**/*.mat"
+      - "tools/compile_filament_materials.sh"
+      - ".github/workflows/compile-filament-materials.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  compile-filament-materials:
+    runs-on: ubuntu-latest
+    env:
+      FILAMENT_VERSION: "1.71.4"
+      FILAMENT_TAG: "v1.71.4"
+      MATERIAL_SRC_DIR: "apps/engine/src/main/filament"
+      MATERIAL_OUT_DIR: "apps/engine/src/main/assets/materials"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Filament matc
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/filament"
+          url="https://github.com/google/filament/releases/download/${FILAMENT_TAG}/filament-v${FILAMENT_VERSION}-linux.tgz"
+          echo "Downloading ${url}"
+          curl -L --fail --retry 3 --retry-delay 5 -o "$RUNNER_TEMP/filament/filament-linux.tgz" "$url"
+          tar -xzf "$RUNNER_TEMP/filament/filament-linux.tgz" -C "$RUNNER_TEMP/filament"
+          matc_path="$(find "$RUNNER_TEMP/filament" -type f -name matc -perm -111 | head -n 1)"
+          if [ -z "$matc_path" ]; then
+            echo "MATC_FOUND=false"
+            echo "MATC_NOT_FOUND in Filament release archive"
+            find "$RUNNER_TEMP/filament" -maxdepth 4 -type f | sort | head -n 200
+            exit 2
+          fi
+          echo "MATC_FOUND=true"
+          echo "MATC_PATH=$matc_path"
+          echo "MATC_PATH=$matc_path" >> "$GITHUB_ENV"
+
+      - name: Compile .mat to .filamat
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tools/compile_filament_materials.sh
+          find "$MATERIAL_OUT_DIR" -type f -name "*.filamat" -print | sort
+
+      - name: Upload filamat artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: solum-filament-materials
+          path: apps/engine/src/main/assets/materials/*.filamat
+          if-no-files-found: error
+
+      - name: Commit generated filamat
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
+          git add apps/engine/src/main/assets/materials/*.filamat
+          if git diff --cached --quiet; then
+            echo "No generated .filamat changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "build: compile Filament material assets"
+          git push

@@ -182,6 +182,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String UDS_SUN_LUT_VOLUME_PATH = UDS_SKY_ROOT + "Sun_Atmosphere_LUT_Volume.png";
     private static final String UDS_LENS_FLARE_PATH = UDS_SKY_ROOT + "Prime_Flare.png";
     private static final String UDS_DEBUG_OVERLAY_LABEL = "debug_overlay_only_not_renderer_sky";
+    private static final String SKY_UNLIT_TEST_MATERIAL_PATH = "materials/sky_unlit_test.filamat";
 
     private SurfaceView surfaceView;
     private SunGlareOverlayView sunGlareOverlayView;
@@ -192,6 +193,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private IndirectLight indirectLight;
     private Skybox skybox;
     private ColorGrading colorGrading;
+    private Material skyUnlitTestMaterial;
     private final List<Texture> iblOwnedTextures = new ArrayList<>();
     private int fillLightEntity = 0;
     private int pointLightEntity = 0;
@@ -530,6 +532,12 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String lightRigStatus = "off";
     private int manualOverrideCount = 0;
     private String manualOverrideStatus = "none";
+    private String filamentMaterialPipelineReady = "false";
+    private String skyUnlitTestFilamatExists = "false";
+    private String skyUnlitTestFilamatLoaded = "false";
+    private String skyUnlitTestRenderableCreated = "false";
+    private String skyUnlitTestRenderableVisible = "false";
+    private String skyUnlitTestMaterialStatus = "not_checked";
 
     private enum FilamentQualityProfile {
         LOW("Low"),
@@ -1643,6 +1651,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 return true;
             });
             createEnvironmentFallback();
+            proveFilamentMaterialPipeline();
             applyEnvironmentStateToActivity("viewer_created");
             applyQualityProfile();
             applyLightingValues();
@@ -2592,6 +2601,54 @@ public class FilamentGlbPreviewActivity extends Activity {
             int read;
             while ((read = input.read(chunk)) != -1) output.write(chunk, 0, read);
             return new String(output.toByteArray(), "UTF-8");
+        }
+    }
+
+    private ByteBuffer readAssetBuffer(String path) throws Exception {
+        try (InputStream input = getAssets().open(path); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] chunk = new byte[8192];
+            int read;
+            while ((read = input.read(chunk)) != -1) output.write(chunk, 0, read);
+            byte[] bytes = output.toByteArray();
+            ByteBuffer buffer = ByteBuffer.allocateDirect(bytes.length);
+            buffer.put(bytes);
+            buffer.flip();
+            return buffer;
+        }
+    }
+
+    private void proveFilamentMaterialPipeline() {
+        filamentMaterialPipelineReady = "false";
+        skyUnlitTestFilamatExists = String.valueOf(appAssetExists(SKY_UNLIT_TEST_MATERIAL_PATH));
+        skyUnlitTestFilamatLoaded = "false";
+        skyUnlitTestRenderableCreated = "false";
+        skyUnlitTestRenderableVisible = "false";
+        skyUnlitTestMaterialStatus = "not_attempted";
+        if (modelViewer == null) {
+            skyUnlitTestMaterialStatus = "blocked_model_viewer_missing";
+            return;
+        }
+        if (!"true".equals(skyUnlitTestFilamatExists)) {
+            skyUnlitTestMaterialStatus = "blocked_filamat_asset_missing";
+            return;
+        }
+        try {
+            Engine engine = modelViewer.getEngine();
+            if (skyUnlitTestMaterial != null) {
+                engine.destroyMaterial(skyUnlitTestMaterial);
+                skyUnlitTestMaterial = null;
+            }
+            ByteBuffer payload = readAssetBuffer(SKY_UNLIT_TEST_MATERIAL_PATH);
+            skyUnlitTestMaterial = new Material.Builder()
+                .payload(payload, payload.remaining())
+                .build(engine);
+            skyUnlitTestFilamatLoaded = "true";
+            filamentMaterialPipelineReady = "true";
+            skyUnlitTestMaterialStatus = "loaded_material_only_no_sky_sphere";
+        } catch (Throwable t) {
+            skyUnlitTestMaterial = null;
+            skyUnlitTestMaterialStatus = "load_failed: " + shortMessage(t);
+            lastLifecycleError = shortMessage(t);
         }
     }
 
@@ -3562,6 +3619,10 @@ public class FilamentGlbPreviewActivity extends Activity {
                 }
                 destroyAdditionalLights(engine);
                 destroyEnvironmentResources(engine);
+                if (skyUnlitTestMaterial != null) {
+                    engine.destroyMaterial(skyUnlitTestMaterial);
+                    skyUnlitTestMaterial = null;
+                }
                 modelViewer.destroyModel();
                 modelViewer.destroy();
                 modelViewer = null;
@@ -4714,6 +4775,12 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nconfigStatus=" + configStatus + " lastActionStatus=" + lastActionStatus
                 + "\npresetMismatch=" + presetMismatchStatus
                 + "\nmaterialInspectorStatus=" + materialInspectorStatus + " materialCount=" + materialCount
+                + "\nfilamentMaterialPipelineReady=" + filamentMaterialPipelineReady
+                + "\nskyUnlitTestFilamatExists=" + skyUnlitTestFilamatExists
+                + "\nskyUnlitTestFilamatLoaded=" + skyUnlitTestFilamatLoaded
+                + "\nskyUnlitTestRenderableCreated=" + skyUnlitTestRenderableCreated
+                + "\nskyUnlitTestRenderableVisible=" + skyUnlitTestRenderableVisible
+                + "\nskyUnlitTestMaterialStatus=" + skyUnlitTestMaterialStatus
                 + "\nimportCopyStatus=" + importCopyStatus
                 + "\nscanDownloadStatus=" + scanDownloadStatus + " copied/skipped/failed=" + scanCopiedCount + "/" + scanSkippedCount + "/" + scanFailedCount
                 + "\npermissionStatus=" + permissionStatus
@@ -5058,6 +5125,12 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("fogAppliedStatus", renderControlApi.getDiagnostics().getFogAppliedStatus());
         json.put("fogVisibilityConfidence", renderControlApi.getDiagnostics().getFogVisibilityConfidence());
         json.put("fogWarning", renderControlApi.getDiagnostics().getFogWarning());
+        json.put("filamentMaterialPipelineReady", filamentMaterialPipelineReady);
+        json.put("skyUnlitTestFilamatExists", skyUnlitTestFilamatExists);
+        json.put("skyUnlitTestFilamatLoaded", skyUnlitTestFilamatLoaded);
+        json.put("skyUnlitTestRenderableCreated", skyUnlitTestRenderableCreated);
+        json.put("skyUnlitTestRenderableVisible", skyUnlitTestRenderableVisible);
+        json.put("skyUnlitTestMaterialStatus", skyUnlitTestMaterialStatus);
         return json;
     }
 

@@ -42,6 +42,8 @@ import android.view.inputmethod.EditorInfo;
 import com.google.android.filament.ColorGrading;
 import com.google.android.filament.Engine;
 import com.google.android.filament.EntityManager;
+import com.google.android.filament.Box;
+import com.google.android.filament.IndexBuffer;
 import com.google.android.filament.IndirectLight;
 import com.google.android.filament.LightManager;
 import com.google.android.filament.Material;
@@ -49,8 +51,10 @@ import com.google.android.filament.MaterialInstance;
 import com.google.android.filament.RenderableManager;
 import com.google.android.filament.Renderer;
 import com.google.android.filament.Skybox;
+import com.google.android.filament.TextureSampler;
 import com.google.android.filament.Texture;
 import com.google.android.filament.TransformManager;
+import com.google.android.filament.VertexBuffer;
 import com.google.android.filament.View.AmbientOcclusion;
 import com.google.android.filament.View.AntiAliasing;
 import com.google.android.filament.View.Dithering;
@@ -89,6 +93,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -222,6 +227,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private Button skyboxButton;
     private Button moonButton;
     private Button udsSkyButton;
+    private Button udsSkyRouteButton;
     private Button udsStarsButton;
     private Button udsLensButton;
     private Button collapseButton;
@@ -470,20 +476,55 @@ public class FilamentGlbPreviewActivity extends Activity {
     private float moonIntensityLux = 0.3f;
     private float moonPhase = 0.5f;
     private float starsIntensity = 1.0f;
+    private float udsSunDiskEmissive = 1.0f;
     private UdsTimePreset udsTimePreset = UdsTimePreset.NOON;
     private boolean udsSkyEnabled = true;
+    private boolean udsRouteAEnabled = true;
     private boolean udsStarsEnabled = true;
     private boolean udsLensFlareEnabled = true;
     private float udsStarBrightness = 1.0f;
     private float udsStarThreshold = 0.62f;
+    private UdsStarsDebugMode udsStarsDebugMode = UdsStarsDebugMode.OFF;
+    private String udsSkyRoute = "C_fallback";
     private String udsSkyRouteStatus = "not_loaded";
     private String udsSkyAssetsStatus = "not_loaded";
     private String udsSkyRendererBacked = "false";
     private String udsSkyCameraAware = "false";
+    private String udsSkyEntityCreated = "false";
+    private String udsSkyOverlayUsed = "false";
+    private String udsSkyMaterial = "none";
+    private String udsSkyDomeVisible = "expected_false";
+    private String udsSkyDepthSafe = "unknown";
+    private String udsSkyModelStillVisible = "unknown";
+    private String udsSkyStage1Status = "not_started";
     private String udsSkyOverlayDisabled = "false";
     private String udsStarsSource = "Real_Stars/Tiling_Stars/no_Stars_Noise";
     private String udsStarsStatus = "not_checked";
+    private String udsStarsRendererBacked = "false";
+    private String udsStarsVisible = "false";
+    private String udsStarsStageStatus = "not_started";
+    private String udsSunRendererBacked = "false";
+    private String udsSunDiskVisible = "false";
+    private String udsSunEmissiveStatus = "0";
+    private String udsSunLightLuxStatus = "0";
+    private String udsSunDirectionWorld = "(0,0,0)";
+    private String udsSunStageStatus = "not_started";
+    private String udsSunDiskRoute = "not_started";
+    private String udsMoonRendererBacked = "false";
+    private String udsMoonTexture = "missing";
+    private String udsMoonSquareBackgroundRemoved = "not_applicable";
     private String udsMoonPhaseStatus = "not_implemented_exact_uds_formula_not_decoded";
+    private String udsMoonDiskVisible = "false";
+    private String udsMoonIntensityStatus = "0";
+    private String udsMoonLightRoute = "disabled";
+    private String udsMoonStageStatus = "not_started";
+    private String udsLightingSyncedToTimeOfDay = "false";
+    private String udsNightAmbientReduced = "false";
+    private String udsReflectionSyncPrepared = "false";
+    private String udsTimeOfDayLightingState = "noon";
+    private String udsAmbientIntensityStatus = "0";
+    private String udsReflectionIntensityStatus = "0";
+    private String runtimeVisualUserVerificationRequired = "true";
     private String udsSkyPerformanceStatus = "mobile_safe_filament_skybox_clear_no_volumetric_no_particles_no_weather";
     private String environmentApplyStatus = "not_applied";
     private float modelRotationX = 0.0f;
@@ -538,6 +579,14 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String skyUnlitTestRenderableCreated = "false";
     private String skyUnlitTestRenderableVisible = "false";
     private String skyUnlitTestMaterialStatus = "not_checked";
+    private int udsSkyDomeEntity = 0;
+    private int udsSunDiskEntity = 0;
+    private int udsMoonDiskEntity = 0;
+    private GeometryResource udsSkyDomeGeometry;
+    private GeometryResource udsDiskGeometry;
+    private MaterialInstance udsSkyDomeMaterialInstance;
+    private MaterialInstance udsSunDiskMaterialInstance;
+    private MaterialInstance udsMoonDiskMaterialInstance;
 
     private enum FilamentQualityProfile {
         LOW("Low"),
@@ -598,6 +647,96 @@ public class FilamentGlbPreviewActivity extends Activity {
 
         UdsTimePreset next() {
             return values()[(ordinal() + 1) % values().length];
+        }
+    }
+
+    private enum UdsStarsDebugMode {
+        OFF("Stars: Off"),
+        RAW_REAL("Stars: Real_Stars raw"),
+        RAW_TILING("Stars: Tiling_Stars raw"),
+        MIXED("Stars: Mixed Real/Tiling");
+
+        final String label;
+
+        UdsStarsDebugMode(String label) {
+            this.label = label;
+        }
+
+        UdsStarsDebugMode next() {
+            return values()[(ordinal() + 1) % values().length];
+        }
+    }
+
+    private static final class GeometryResource {
+        final VertexBuffer vertexBuffer;
+        final IndexBuffer indexBuffer;
+        final ByteBuffer vertexData;
+        final ByteBuffer indexData;
+        final int indexCount;
+        final float boundsRadius;
+
+        GeometryResource(VertexBuffer vertexBuffer, IndexBuffer indexBuffer, ByteBuffer vertexData, ByteBuffer indexData, int indexCount, float boundsRadius) {
+            this.vertexBuffer = vertexBuffer;
+            this.indexBuffer = indexBuffer;
+            this.vertexData = vertexData;
+            this.indexData = indexData;
+            this.indexCount = indexCount;
+            this.boundsRadius = boundsRadius;
+        }
+    }
+
+    private static final class UdsSkyLightingState {
+        final String timeState;
+        final float timeOfDay;
+        final float[] skyTopColor;
+        final float[] skyHorizonColor;
+        final float[] sunDirection;
+        final float[] sunColor;
+        final float sunDiskEmissive;
+        final float sunLightLux;
+        final float[] moonDirection;
+        final float moonDiskIntensity;
+        final float moonLightLux;
+        final float[] ambientColor;
+        final float ambientIntensity;
+        final float[] reflectionTint;
+        final float reflectionIntensity;
+        final float exposureCompensation;
+
+        UdsSkyLightingState(
+            String timeState,
+            float timeOfDay,
+            float[] skyTopColor,
+            float[] skyHorizonColor,
+            float[] sunDirection,
+            float[] sunColor,
+            float sunDiskEmissive,
+            float sunLightLux,
+            float[] moonDirection,
+            float moonDiskIntensity,
+            float moonLightLux,
+            float[] ambientColor,
+            float ambientIntensity,
+            float[] reflectionTint,
+            float reflectionIntensity,
+            float exposureCompensation
+        ) {
+            this.timeState = timeState;
+            this.timeOfDay = timeOfDay;
+            this.skyTopColor = skyTopColor;
+            this.skyHorizonColor = skyHorizonColor;
+            this.sunDirection = sunDirection;
+            this.sunColor = sunColor;
+            this.sunDiskEmissive = sunDiskEmissive;
+            this.sunLightLux = sunLightLux;
+            this.moonDirection = moonDirection;
+            this.moonDiskIntensity = moonDiskIntensity;
+            this.moonLightLux = moonLightLux;
+            this.ambientColor = ambientColor;
+            this.ambientIntensity = ambientIntensity;
+            this.reflectionTint = reflectionTint;
+            this.reflectionIntensity = reflectionIntensity;
+            this.exposureCompensation = exposureCompensation;
         }
     }
 
@@ -1269,6 +1408,11 @@ public class FilamentGlbPreviewActivity extends Activity {
         timePresetRow.addView(button("Night", v -> setEnvironmentPreset("NIGHT")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         iblPanel.addView(timePresetRow);
         iblPanel.addView(sectionHeader("UDS Renderer Sky Foundation"));
+        udsSkyRouteButton = button("", v -> {
+            udsRouteAEnabled = !udsRouteAEnabled;
+            applyUdsSkyState(udsRouteAEnabled ? "uds_route_a_enabled" : "uds_route_c_fallback");
+        });
+        iblPanel.addView(udsSkyRouteButton);
         udsSkyButton = button("", v -> {
             udsTimePreset = udsTimePreset.next();
             setUdsTimePreset(udsTimePreset, "uds_time_button");
@@ -1280,11 +1424,15 @@ public class FilamentGlbPreviewActivity extends Activity {
         udsPresetRow.addView(button("Noon", v -> setUdsTimePreset(UdsTimePreset.NOON, "uds_noon")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         udsPresetRow.addView(button("Dusk", v -> setUdsTimePreset(UdsTimePreset.DUSK, "uds_dusk")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         iblPanel.addView(udsPresetRow);
-        addLightingSlider(iblPanel, "UDS Sun", 0.0f, 20.0f, 0.5f, sunLightIntensity, v -> {
+        addLightingSlider(iblPanel, "UDS Sun Light Lux", 0.0f, 20.0f, 0.5f, sunLightIntensity, v -> {
             ensureEnvironmentApi();
             sunLightIntensity = v;
             environmentApi.setSunIntensityLux(v);
             applyEnvironmentStateToActivity("uds_sun_intensity");
+        });
+        addLightingSlider(iblPanel, "UDS Sun Emissive", 0.0f, 4.0f, 0.05f, udsSunDiskEmissive, v -> {
+            udsSunDiskEmissive = v;
+            applyUdsSkyState("uds_sun_emissive");
         });
         addLightingSlider(iblPanel, "UDS Moon", 0.0f, 1.0f, 0.05f, moonIntensityLux, v -> {
             ensureEnvironmentApi();
@@ -1293,8 +1441,9 @@ public class FilamentGlbPreviewActivity extends Activity {
             applyEnvironmentStateToActivity("uds_moon_intensity");
         });
         udsStarsButton = button("", v -> {
-            udsStarsEnabled = !udsStarsEnabled;
-            applyUdsSkyState("uds_stars_toggle");
+            udsStarsDebugMode = udsStarsDebugMode.next();
+            udsStarsEnabled = udsStarsDebugMode != UdsStarsDebugMode.OFF;
+            applyUdsSkyState("uds_stars_mode");
         });
         iblPanel.addView(udsStarsButton);
         addLightingSlider(iblPanel, "UDS Star Bright", 0.0f, 2.0f, 0.05f, udsStarBrightness, v -> {
@@ -1652,6 +1801,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             });
             createEnvironmentFallback();
             proveFilamentMaterialPipeline();
+            ensureUdsRouteAResources("viewer_created");
             applyEnvironmentStateToActivity("viewer_created");
             applyQualityProfile();
             applyLightingValues();
@@ -1700,6 +1850,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             long frameStartWallNs = System.nanoTime();
             updateFrameTiming(frameTimeNanos, frameStartWallNs);
             updateEnvironmentClock();
+            updateUdsSkyFrameState("frame");
             if (modelViewer.getAnimator() != null && modelViewer.getAnimator().getAnimationCount() > 0) {
                 float seconds = frameTimeNanos / 1_000_000_000.0f;
                 modelViewer.getAnimator().applyAnimation(0, seconds);
@@ -2652,6 +2803,237 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
     }
 
+    private void ensureUdsRouteAResources(String reason) {
+        if (modelViewer == null || modelViewer.getScene() == null || skyUnlitTestMaterial == null) {
+            udsSkyStage1Status = "blocked_material_or_scene_missing reason=" + reason;
+            return;
+        }
+        if (udsSkyDomeEntity != 0) return;
+        try {
+            Engine engine = modelViewer.getEngine();
+            if (udsSkyDomeGeometry == null) udsSkyDomeGeometry = createSphereGeometry(engine, 18, 36, 1.0f);
+            if (udsDiskGeometry == null) udsDiskGeometry = createDiskGeometry(engine, 48, 1.0f);
+
+            udsSkyDomeMaterialInstance = skyUnlitTestMaterial.createInstance("uds_sky_dome");
+            configureSkyMaterialInstance(udsSkyDomeMaterialInstance, true);
+            setMaterialColor(udsSkyDomeMaterialInstance, udsSkyColor(currentUdsTimeHours(), nightFactorForHour(currentUdsTimeHours()), dawnDuskFactorForHour(currentUdsTimeHours())));
+
+            udsSunDiskMaterialInstance = skyUnlitTestMaterial.createInstance("uds_sun_disk");
+            configureSkyMaterialInstance(udsSunDiskMaterialInstance, true);
+            setMaterialColor(udsSunDiskMaterialInstance, 1.0f, 0.92f, 0.62f, 1.0f);
+
+            udsMoonDiskMaterialInstance = skyUnlitTestMaterial.createInstance("uds_full_moon_disk");
+            configureSkyMaterialInstance(udsMoonDiskMaterialInstance, true);
+            setMaterialColor(udsMoonDiskMaterialInstance, 0.66f, 0.72f, 0.82f, 1.0f);
+
+            udsSkyDomeEntity = createSkyRenderable(engine, udsSkyDomeGeometry, udsSkyDomeMaterialInstance, 0, "sky_dome");
+            udsSunDiskEntity = createSkyRenderable(engine, udsDiskGeometry, udsSunDiskMaterialInstance, 1, "sun_disk");
+            udsMoonDiskEntity = createSkyRenderable(engine, udsDiskGeometry, udsMoonDiskMaterialInstance, 1, "moon_disk");
+            modelViewer.getScene().addEntity(udsSkyDomeEntity);
+            modelViewer.getScene().addEntity(udsSunDiskEntity);
+            modelViewer.getScene().addEntity(udsMoonDiskEntity);
+
+            udsSkyEntityCreated = "true";
+            udsSkyRendererBacked = "true";
+            udsSkyCameraAware = "true";
+            udsSkyOverlayUsed = "false";
+            udsSkyOverlayDisabled = "true_primary_canvas_overlay_removed_" + UDS_DEBUG_OVERLAY_LABEL;
+            udsSkyMaterial = "sky_unlit_test.filamat";
+            udsSkyDomeVisible = "expected_true";
+            udsSkyDepthSafe = "true_depth_write_false_depth_test_true_priority_0";
+            udsSkyModelStillVisible = "expected_true";
+            udsSkyStage1Status = "ok";
+            skyUnlitTestRenderableCreated = "true";
+            skyUnlitTestRenderableVisible = "true";
+            updateUdsSkyFrameState("create_" + reason);
+        } catch (Throwable t) {
+            lastLifecycleError = shortMessage(t);
+            udsSkyStage1Status = "blocked: " + shortMessage(t);
+            udsSkyEntityCreated = "false";
+            udsSkyRendererBacked = "false";
+            udsSkyCameraAware = "false";
+            udsSkyDomeVisible = "expected_false";
+            udsSkyDepthSafe = "unknown";
+            udsSkyModelStillVisible = "unknown";
+            destroyUdsRouteAResources();
+        }
+    }
+
+    private void configureSkyMaterialInstance(MaterialInstance instance, boolean depthTest) {
+        if (instance == null) return;
+        instance.setDepthWrite(false);
+        instance.setDepthCulling(depthTest);
+        instance.setDepthFunc(TextureSampler.CompareFunction.LESS_EQUAL);
+        instance.setCullingMode(Material.CullingMode.NONE);
+        instance.setDoubleSided(true);
+    }
+
+    private int createSkyRenderable(Engine engine, GeometryResource geometry, MaterialInstance material, int priority, String label) {
+        int entity = EntityManager.get().create();
+        TransformManager tm = engine.getTransformManager();
+        if (!tm.hasComponent(entity)) tm.create(entity);
+        new RenderableManager.Builder(1)
+            .boundingBox(new Box(0.0f, 0.0f, 0.0f, geometry.boundsRadius, geometry.boundsRadius, geometry.boundsRadius))
+            .geometry(0, RenderableManager.PrimitiveType.TRIANGLES, geometry.vertexBuffer, geometry.indexBuffer, 0, geometry.indexCount)
+            .material(0, material)
+            .priority(priority)
+            .culling(false)
+            .castShadows(false)
+            .receiveShadows(false)
+            .fog(false)
+            .build(engine, entity);
+        return entity;
+    }
+
+    private GeometryResource createSphereGeometry(Engine engine, int rings, int segments, float radius) {
+        int vertexCount = (rings + 1) * (segments + 1);
+        int indexCount = rings * segments * 6;
+        ByteBuffer vertexBytes = ByteBuffer.allocateDirect(vertexCount * 3 * 4).order(ByteOrder.nativeOrder());
+        ByteBuffer indexBytes = ByteBuffer.allocateDirect(indexCount * 2).order(ByteOrder.nativeOrder());
+        for (int y = 0; y <= rings; y++) {
+            double v = (double) y / (double) rings;
+            double theta = v * Math.PI;
+            float sinTheta = (float) Math.sin(theta);
+            float cosTheta = (float) Math.cos(theta);
+            for (int x = 0; x <= segments; x++) {
+                double u = (double) x / (double) segments;
+                double phi = u * Math.PI * 2.0;
+                vertexBytes.putFloat((float) Math.cos(phi) * sinTheta * radius);
+                vertexBytes.putFloat(cosTheta * radius);
+                vertexBytes.putFloat((float) Math.sin(phi) * sinTheta * radius);
+            }
+        }
+        for (int y = 0; y < rings; y++) {
+            for (int x = 0; x < segments; x++) {
+                int a = y * (segments + 1) + x;
+                int b = a + segments + 1;
+                putIndex(indexBytes, a);
+                putIndex(indexBytes, b);
+                putIndex(indexBytes, a + 1);
+                putIndex(indexBytes, a + 1);
+                putIndex(indexBytes, b);
+                putIndex(indexBytes, b + 1);
+            }
+        }
+        vertexBytes.flip();
+        indexBytes.flip();
+        VertexBuffer vb = new VertexBuffer.Builder()
+            .bufferCount(1)
+            .vertexCount(vertexCount)
+            .attribute(VertexBuffer.VertexAttribute.POSITION, 0, VertexBuffer.AttributeType.FLOAT3, 0, 12)
+            .build(engine);
+        IndexBuffer ib = new IndexBuffer.Builder()
+            .indexCount(indexCount)
+            .bufferType(IndexBuffer.Builder.IndexType.USHORT)
+            .build(engine);
+        vb.setBufferAt(engine, 0, vertexBytes);
+        ib.setBuffer(engine, indexBytes);
+        return new GeometryResource(vb, ib, vertexBytes, indexBytes, indexCount, radius);
+    }
+
+    private GeometryResource createDiskGeometry(Engine engine, int segments, float radius) {
+        int vertexCount = segments + 2;
+        int indexCount = segments * 3;
+        ByteBuffer vertexBytes = ByteBuffer.allocateDirect(vertexCount * 3 * 4).order(ByteOrder.nativeOrder());
+        ByteBuffer indexBytes = ByteBuffer.allocateDirect(indexCount * 2).order(ByteOrder.nativeOrder());
+        vertexBytes.putFloat(0.0f).putFloat(0.0f).putFloat(0.0f);
+        for (int i = 0; i <= segments; i++) {
+            double a = (double) i / (double) segments * Math.PI * 2.0;
+            vertexBytes.putFloat((float) Math.cos(a) * radius);
+            vertexBytes.putFloat((float) Math.sin(a) * radius);
+            vertexBytes.putFloat(0.0f);
+        }
+        for (int i = 1; i <= segments; i++) {
+            putIndex(indexBytes, 0);
+            putIndex(indexBytes, i);
+            putIndex(indexBytes, i + 1);
+        }
+        vertexBytes.flip();
+        indexBytes.flip();
+        VertexBuffer vb = new VertexBuffer.Builder()
+            .bufferCount(1)
+            .vertexCount(vertexCount)
+            .attribute(VertexBuffer.VertexAttribute.POSITION, 0, VertexBuffer.AttributeType.FLOAT3, 0, 12)
+            .build(engine);
+        IndexBuffer ib = new IndexBuffer.Builder()
+            .indexCount(indexCount)
+            .bufferType(IndexBuffer.Builder.IndexType.USHORT)
+            .build(engine);
+        vb.setBufferAt(engine, 0, vertexBytes);
+        ib.setBuffer(engine, indexBytes);
+        return new GeometryResource(vb, ib, vertexBytes, indexBytes, indexCount, radius);
+    }
+
+    private void putIndex(ByteBuffer buffer, int value) {
+        buffer.putShort((short) (value & 0xffff));
+    }
+
+    private void destroyUdsRouteAResources() {
+        if (modelViewer == null) return;
+        try {
+            Engine engine = modelViewer.getEngine();
+            if (modelViewer.getScene() != null) {
+                if (udsSkyDomeEntity != 0) modelViewer.getScene().removeEntity(udsSkyDomeEntity);
+                if (udsSunDiskEntity != 0) modelViewer.getScene().removeEntity(udsSunDiskEntity);
+                if (udsMoonDiskEntity != 0) modelViewer.getScene().removeEntity(udsMoonDiskEntity);
+            }
+            destroySkyRenderable(engine, udsSkyDomeEntity);
+            destroySkyRenderable(engine, udsSunDiskEntity);
+            destroySkyRenderable(engine, udsMoonDiskEntity);
+            udsSkyDomeEntity = 0;
+            udsSunDiskEntity = 0;
+            udsMoonDiskEntity = 0;
+            destroyMaterialInstance(engine, udsSkyDomeMaterialInstance);
+            destroyMaterialInstance(engine, udsSunDiskMaterialInstance);
+            destroyMaterialInstance(engine, udsMoonDiskMaterialInstance);
+            udsSkyDomeMaterialInstance = null;
+            udsSunDiskMaterialInstance = null;
+            udsMoonDiskMaterialInstance = null;
+            destroyGeometry(engine, udsSkyDomeGeometry);
+            destroyGeometry(engine, udsDiskGeometry);
+            udsSkyDomeGeometry = null;
+            udsDiskGeometry = null;
+        } catch (Throwable t) {
+            lastLifecycleError = shortMessage(t);
+        }
+    }
+
+    private void destroySkyRenderable(Engine engine, int entity) {
+        if (entity == 0) return;
+        try {
+            RenderableManager rm = engine.getRenderableManager();
+            if (rm.getInstance(entity) != 0) rm.destroy(entity);
+            TransformManager tm = engine.getTransformManager();
+            if (tm.hasComponent(entity)) tm.destroy(entity);
+            engine.destroyEntity(entity);
+        } catch (Throwable ignored) {
+            try { EntityManager.get().destroy(entity); } catch (Throwable ignoredAgain) {}
+        }
+    }
+
+    private void destroyMaterialInstance(Engine engine, MaterialInstance instance) {
+        if (instance == null) return;
+        try {
+            engine.destroyMaterialInstance(instance);
+        } catch (Throwable ignored) {}
+    }
+
+    private void destroyGeometry(Engine engine, GeometryResource geometry) {
+        if (geometry == null) return;
+        try { engine.destroyVertexBuffer(geometry.vertexBuffer); } catch (Throwable ignored) {}
+        try { engine.destroyIndexBuffer(geometry.indexBuffer); } catch (Throwable ignored) {}
+    }
+
+    private void setMaterialColor(MaterialInstance instance, float[] rgba) {
+        if (rgba == null || rgba.length < 4) return;
+        setMaterialColor(instance, rgba[0], rgba[1], rgba[2], rgba[3]);
+    }
+
+    private void setMaterialColor(MaterialInstance instance, float r, float g, float b, float a) {
+        if (instance == null) return;
+        instance.setParameter("baseColor", clamp(r, 0.0f, 8.0f), clamp(g, 0.0f, 8.0f), clamp(b, 0.0f, 8.0f), clamp(a, 0.0f, 1.0f));
+    }
+
     private File copyAssetToCacheFile(String path) throws Exception {
         File dir = new File(getCacheDir(), "env_assets");
         if (!dir.isDirectory() && !dir.mkdirs()) throw new IllegalStateException("env_asset_cache_unavailable");
@@ -2907,33 +3289,219 @@ public class FilamentGlbPreviewActivity extends Activity {
         ensureEnvironmentApi();
         EnvironmentActualState actual = environmentApi.getActualState();
         float timeHours = actual.getActiveTimeOfDayHours();
-        float nightFactor = nightFactorForHour(timeHours);
-        float dawnDuskFactor = dawnDuskFactorForHour(timeHours);
+        UdsSkyLightingState lighting = buildUdsSkyLightingState(timeHours);
         udsSkyOverlayDisabled = "true_primary_canvas_overlay_removed_" + UDS_DEBUG_OVERLAY_LABEL;
-        udsSkyRendererBacked = udsSkyEnabled ? "true_filament_skybox_clear_route_c" : "false_disabled";
-        udsSkyCameraAware = udsSkyEnabled ? "true_filament_skybox_background_tracks_camera" : "false_disabled";
-        udsSkyRouteStatus = udsSkyEnabled
-            ? "route_c_filament_skybox_clear_showSun_renderer_backed_camera_aware_no_canvas_overlay"
-            : "uds_sky_disabled_overlay_still_removed";
+        udsSkyOverlayUsed = "false";
+        if (udsSkyEnabled && udsRouteAEnabled) ensureUdsRouteAResources(reason);
+        if (!udsSkyEnabled || !udsRouteAEnabled) destroyUdsRouteAResources();
+        boolean routeAReady = udsSkyEnabled && udsRouteAEnabled && udsSkyDomeEntity != 0 && "true".equals(filamentMaterialPipelineReady);
+        udsSkyRoute = routeAReady ? "A_sky_dome_material_proof" : "C_fallback";
+        udsSkyRendererBacked = routeAReady ? "true" : (udsSkyEnabled ? "true_filament_skybox_clear_route_c_fallback" : "false_disabled");
+        udsSkyCameraAware = routeAReady ? "true" : (udsSkyEnabled ? "true_filament_skybox_background_tracks_camera_fallback" : "false_disabled");
+        udsSkyRouteStatus = routeAReady
+            ? "A_sky_dome_material_proof"
+            : (udsSkyEnabled ? "C_fallback_filament_skybox_clear_labeled_fallback" : "uds_sky_disabled_overlay_still_removed");
+        udsSkyEntityCreated = routeAReady ? "true" : "false";
+        udsSkyMaterial = routeAReady ? "sky_unlit_test.filamat" : "none";
+        udsSkyDomeVisible = routeAReady ? "expected_true" : "expected_false";
+        udsSkyDepthSafe = routeAReady ? "true_depth_write_false_depth_test_true_priority_0" : "unknown";
+        udsSkyModelStillVisible = routeAReady ? "expected_true" : "unknown";
+        udsSkyStage1Status = routeAReady ? "ok" : (udsRouteAEnabled ? udsSkyStage1Status : "fallback");
         udsStarsSource = "Real_Stars/Tiling_Stars/no_Stars_Noise";
-        udsStarsStatus = (udsSkyEnabled && udsStarsEnabled && nightFactor > 0.05f && udsStarBrightness > 0.0f)
-            ? "disabled_by_route_c_texture_star_rendering_not_available_no_Stars_Noise"
-            : "disabled_no_Stars_Noise";
+        udsStarsRendererBacked = "false";
+        udsStarsVisible = udsStarsDebugMode == UdsStarsDebugMode.OFF ? "false" : "false_material_texture_route_unavailable";
+        udsStarsStatus = udsStarsDebugMode == UdsStarsDebugMode.OFF
+            ? "off_no_Stars_Noise"
+            : "blocked_until_texture_sampling_sky_material_raw_mode_" + udsStarsDebugMode.name().toLowerCase(Locale.US);
+        udsStarsStageStatus = udsStarsDebugMode == UdsStarsDebugMode.OFF ? "fallback" : "blocked_material_texture_route_unavailable";
         udsLensFlareEnabled = false;
-        udsSkyPerformanceStatus = "mobile_safe_filament_skybox_clear_no_volumetric_no_particles_no_weather reason=" + reason;
+        udsSkyPerformanceStatus = "mobile_safe_filament_route_" + udsSkyRoute + "_no_volumetric_no_particles_no_weather_no_lens reason=" + reason;
+        applyUdsSkyLightingState(lighting, routeAReady);
+        updateUdsSkyFrameState(reason);
         if (skybox != null && !"true".equals(realIblReady)) {
-            skybox.setColor(udsSkyEnabled ? udsSkyColor(timeHours, nightFactor, dawnDuskFactor) : backgroundColor());
+            skybox.setColor(udsSkyEnabled ? lighting.skyHorizonColor : backgroundColor());
         }
         if (modelViewer != null && modelViewer.getRenderer() != null) {
             Renderer.ClearOptions clear = modelViewer.getRenderer().getClearOptions();
             clear.clear = true;
             clear.discard = true;
-            clear.clearColor = udsSkyEnabled ? udsSkyColor(timeHours, nightFactor, dawnDuskFactor) : backgroundColor();
+            clear.clearColor = udsSkyEnabled ? lighting.skyHorizonColor : backgroundColor();
             modelViewer.getRenderer().setClearOptions(clear);
         }
         syncEnvironmentAssetDiagnostics();
         updateEnvironmentControlLabels();
         refreshUiNow();
+    }
+
+    private UdsSkyLightingState buildUdsSkyLightingState(float timeHours) {
+        float nightFactor = nightFactorForHour(timeHours);
+        float dawnDuskFactor = dawnDuskFactorForHour(timeHours);
+        float dayFactor = 1.0f - nightFactor;
+        boolean dawn = timeHours >= 4.5f && timeHours < 9.0f;
+        boolean dusk = timeHours >= 16.0f && timeHours < 20.5f;
+        String state = nightFactor > 0.65f ? "night" : (dawn ? "dawn" : (dusk ? "dusk" : "noon"));
+        float[] top = udsSkyColor(timeHours, nightFactor, dawnDuskFactor);
+        float[] horizon = mixColor(top, dawn || dusk ? new float[] {0.86f, 0.44f, 0.24f, 1.0f} : new float[] {0.48f, 0.66f, 0.90f, 1.0f}, dawnDuskFactor * 0.75f);
+        float[] sunDir = sunDirectionFromAngles();
+        float[] moonDir = new float[] {-sunDir[0], -sunDir[1], -sunDir[2]};
+        float[] sunColor = sunColorFromKelvin(sunColorTemperatureKelvin);
+        float sunLux = nightFactor > 0.65f ? 0.0f : clamp(sunLightIntensity * (0.35f + 0.65f * dayFactor), 0.0f, 20.0f);
+        float sunEmissive = nightFactor > 0.65f ? 0.0f : clamp(udsSunDiskEmissive * (0.35f + 0.65f * dayFactor), 0.0f, 4.0f);
+        float ambient = state.equals("night") ? 0.12f : (state.equals("noon") ? 1.0f : 0.42f);
+        float reflection = state.equals("night") ? 0.16f : (state.equals("noon") ? 1.0f : 0.45f);
+        float moonDisk = state.equals("night") && moonEnabled ? clamp(moonIntensityLux * 2.0f, 0.0f, 1.0f) : 0.0f;
+        float moonLux = state.equals("night") && moonEnabled ? clamp(moonIntensityLux, 0.0f, 0.6f) : 0.0f;
+        return new UdsSkyLightingState(
+            state,
+            timeHours,
+            top,
+            horizon,
+            sunDir,
+            sunColor,
+            sunEmissive,
+            sunLux,
+            moonDir,
+            moonDisk,
+            moonLux,
+            state.equals("night") ? new float[] {0.30f, 0.38f, 0.72f} : (dawn || dusk ? new float[] {1.0f, 0.70f, 0.48f} : new float[] {0.82f, 0.90f, 1.0f}),
+            ambient,
+            state.equals("night") ? new float[] {0.22f, 0.30f, 0.52f} : new float[] {1.0f, 1.0f, 1.0f},
+            reflection,
+            state.equals("night") ? -0.45f : (dawn || dusk ? -0.12f : 0.0f)
+        );
+    }
+
+    private void applyUdsSkyLightingState(UdsSkyLightingState state, boolean routeAReady) {
+        udsTimeOfDayLightingState = state.timeState;
+        udsLightingSyncedToTimeOfDay = "true";
+        udsNightAmbientReduced = state.timeState.equals("night") && state.ambientIntensity <= 0.15f ? "true" : "false";
+        udsReflectionSyncPrepared = "true_existing_indirect_intensity_only_no_ktx_generation";
+        udsAmbientIntensityStatus = twoDecimal(state.ambientIntensity);
+        udsReflectionIntensityStatus = twoDecimal(state.reflectionIntensity);
+        udsSunEmissiveStatus = twoDecimal(state.sunDiskEmissive);
+        udsSunLightLuxStatus = twoDecimal(state.sunLightLux);
+        udsSunDirectionWorld = "(" + twoDecimal(state.sunDirection[0]) + "," + twoDecimal(state.sunDirection[1]) + "," + twoDecimal(state.sunDirection[2]) + ")";
+        udsMoonIntensityStatus = twoDecimal(state.moonDiskIntensity);
+        try {
+            if (indirectLight != null) indirectLight.setIntensity(ambientToInternal(state.ambientIntensity));
+            if (modelViewer != null) {
+                LightManager lights = modelViewer.getEngine().getLightManager();
+                int sunInstance = lights.getInstance(modelViewer.getLight());
+                if (sunInstance != 0) {
+                    lights.setDirection(sunInstance, state.sunDirection[0], state.sunDirection[1], state.sunDirection[2]);
+                    lights.setIntensity(sunInstance, state.sunLightLux);
+                    lights.setColor(sunInstance, state.sunColor[0], state.sunColor[1], state.sunColor[2]);
+                    lights.setShadowCaster(sunInstance, shadowMode != ShadowMode.OFF && state.sunLightLux > 0.01f);
+                }
+                modelViewer.getCamera().setExposure(clamp(exposure + state.exposureCompensation, 0.10f, 5.00f));
+            }
+        } catch (Throwable t) {
+            udsLightingSyncedToTimeOfDay = "false_apply_failed: " + shortMessage(t);
+        }
+        if (routeAReady) {
+            setMaterialColor(udsSkyDomeMaterialInstance, mixColor(state.skyTopColor, state.skyHorizonColor, 0.35f));
+            setMaterialColor(udsSunDiskMaterialInstance,
+                state.sunColor[0] * Math.max(0.0f, state.sunDiskEmissive),
+                state.sunColor[1] * Math.max(0.0f, state.sunDiskEmissive),
+                state.sunColor[2] * Math.max(0.0f, state.sunDiskEmissive),
+                state.sunDiskEmissive > 0.01f ? 1.0f : 0.0f);
+            setMaterialColor(udsMoonDiskMaterialInstance,
+                0.55f * state.moonDiskIntensity,
+                0.62f * state.moonDiskIntensity,
+                0.80f * state.moonDiskIntensity,
+                state.moonDiskIntensity > 0.01f ? 1.0f : 0.0f);
+            udsSunRendererBacked = "true";
+            udsSunDiskVisible = state.sunDiskEmissive > 0.01f ? "true" : "false";
+            udsSunStageStatus = "ok";
+            udsSunDiskRoute = "renderer_backed_circular_mesh_no_square_card";
+            udsMoonRendererBacked = "true";
+            udsMoonDiskVisible = state.moonDiskIntensity > 0.01f ? "true" : "false";
+            udsMoonTexture = appAssetExists(UDS_MOON_COLOR_PATH) ? "Moon_Color_present_but_sampler_blocked_unlit_test_material" : "missing_private_asset";
+            udsMoonSquareBackgroundRemoved = "true_circular_mesh_no_square_background";
+            udsMoonLightRoute = state.moonLightLux > 0.0f ? "disabled_low_directional_prepared_not_added_this_patch" : "disabled";
+            udsMoonStageStatus = "ok_full_disk_material_proof_texture_sampling_blocked";
+        } else {
+            udsSunRendererBacked = "false";
+            udsSunDiskVisible = "false";
+            udsSunStageStatus = "fallback";
+            udsSunDiskRoute = "fallback_no_renderer_sun_disk";
+            udsMoonRendererBacked = "false";
+            udsMoonDiskVisible = "false";
+            udsMoonTexture = appAssetExists(UDS_MOON_COLOR_PATH) ? "Moon_Color_present_private_asset" : "missing_private_asset";
+            udsMoonSquareBackgroundRemoved = "not_applicable";
+            udsMoonLightRoute = "disabled";
+            udsMoonStageStatus = "fallback";
+        }
+    }
+
+    private void updateUdsSkyFrameState(String reason) {
+        if (modelViewer == null || udsSkyDomeEntity == 0 || !udsSkyEnabled || !udsRouteAEnabled) return;
+        try {
+            UdsSkyLightingState state = buildUdsSkyLightingState(currentUdsTimeHours());
+            float[] camera = modelViewer.getCamera().getPosition(new float[3]);
+            setEntityTransform(udsSkyDomeEntity, camera[0], camera[1], camera[2], 180.0f);
+            setDiskTransform(udsSunDiskEntity, camera, state.sunDirection, 150.0f, state.sunDiskEmissive > 0.01f ? 7.5f : 0.001f);
+            setDiskTransform(udsMoonDiskEntity, camera, state.moonDirection, 145.0f, state.moonDiskIntensity > 0.01f ? 5.5f : 0.001f);
+            udsSkyCameraAware = "true_camera_position_from_filament_camera";
+            udsSkyStage1Status = "ok";
+        } catch (Throwable t) {
+            udsSkyCameraAware = "false_update_failed: " + shortMessage(t);
+            udsSkyStage1Status = "fallback_camera_update_failed";
+        }
+    }
+
+    private void setEntityTransform(int entity, float x, float y, float z, float scale) {
+        if (modelViewer == null || entity == 0) return;
+        TransformManager tm = modelViewer.getEngine().getTransformManager();
+        int instance = tm.getInstance(entity);
+        if (instance == 0) return;
+        float[] m = new float[16];
+        Matrix.setIdentityM(m, 0);
+        Matrix.translateM(m, 0, x, y, z);
+        Matrix.scaleM(m, 0, scale, scale, scale);
+        tm.setTransform(instance, m);
+    }
+
+    private void setDiskTransform(int entity, float[] camera, float[] direction, float distance, float scale) {
+        if (modelViewer == null || entity == 0 || camera == null || direction == null) return;
+        float[] normal = normalize3(direction);
+        float[] worldUp = Math.abs(normal[1]) > 0.92f ? new float[] {1.0f, 0.0f, 0.0f} : new float[] {0.0f, 1.0f, 0.0f};
+        float[] right = normalize3(cross3(worldUp, normal));
+        float[] up = normalize3(cross3(normal, right));
+        float x = camera[0] + normal[0] * distance;
+        float y = camera[1] + normal[1] * distance;
+        float z = camera[2] + normal[2] * distance;
+        float[] m = new float[16];
+        m[0] = right[0] * scale; m[1] = right[1] * scale; m[2] = right[2] * scale; m[3] = 0.0f;
+        m[4] = up[0] * scale; m[5] = up[1] * scale; m[6] = up[2] * scale; m[7] = 0.0f;
+        m[8] = normal[0] * scale; m[9] = normal[1] * scale; m[10] = normal[2] * scale; m[11] = 0.0f;
+        m[12] = x; m[13] = y; m[14] = z; m[15] = 1.0f;
+        TransformManager tm = modelViewer.getEngine().getTransformManager();
+        int instance = tm.getInstance(entity);
+        if (instance != 0) tm.setTransform(instance, m);
+    }
+
+    private float[] normalize3(float[] v) {
+        float len = (float) Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        if (len <= 0.0001f) return new float[] {0.0f, 0.0f, 1.0f};
+        return new float[] {v[0] / len, v[1] / len, v[2] / len};
+    }
+
+    private float[] cross3(float[] a, float[] b) {
+        return new float[] {
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0]
+        };
+    }
+
+    private float currentUdsTimeHours() {
+        if (environmentApi == null) return udsTimePreset.hour;
+        try {
+            return environmentApi.getActualState().getActiveTimeOfDayHours();
+        } catch (Throwable ignored) {
+            return udsTimePreset.hour;
+        }
     }
 
     private String scanUdsSkyAssetStatus() {
@@ -2978,8 +3546,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         EnvironmentActualState actual = environmentApi.getActualState();
         EnvironmentDiagnostics diagnostics = environmentApi.getDiagnostics();
         if (moonButton != null) moonButton.setText("Moon: " + (moonEnabled ? "On" : "Off") + " / " + diagnostics.getMoonStatus());
-        if (udsSkyButton != null) udsSkyButton.setText((udsSkyEnabled ? "UDS Sky C: " : "UDS Sky Off: ") + udsTimePreset.label);
-        if (udsStarsButton != null) udsStarsButton.setText("UDS Stars: " + (udsStarsEnabled ? "On" : "Off"));
+        if (udsSkyRouteButton != null) udsSkyRouteButton.setText(udsRouteAEnabled ? "Route A sky dome" : "Route C fallback");
+        if (udsSkyButton != null) udsSkyButton.setText((udsSkyEnabled ? "UDS Time: " : "UDS Sky Off: ") + udsTimePreset.label);
+        if (udsStarsButton != null) udsStarsButton.setText(udsStarsDebugMode.label);
         if (udsLensButton != null) udsLensButton.setText("UDS Lens: disabled");
         if (environmentSummaryView != null) {
             CelestialBodyState sun = actual.getSun();
@@ -2987,9 +3556,23 @@ public class FilamentGlbPreviewActivity extends Activity {
             environmentSummaryView.setText("timeOfDay=" + twoDecimal(actual.getActiveTimeOfDayHours()) + " preset=" + actual.getActiveEnvironmentPreset()
                 + "\nsun lux/elev=" + oneDecimal(sun.getIntensityLux()) + "/" + oneDecimal(sun.getElevationDeg()) + " K=" + oneDecimal(sun.getColorTemperatureKelvin())
                 + "\nmoon lux/elev=" + oneDecimal(moon.getIntensityLux()) + "/" + oneDecimal(moon.getElevationDeg()) + " phase=" + twoDecimal(moon.getPhase())
+                + "\nudsSkyRoute=" + udsSkyRoute
                 + "\nudsSkyRouteStatus=" + udsSkyRouteStatus
+                + "\nudsSkyEntityCreated=" + udsSkyEntityCreated
                 + "\nudsSkyRendererBacked=" + udsSkyRendererBacked
                 + "\nudsSkyCameraAware=" + udsSkyCameraAware
+                + "\nudsSkyOverlayUsed=" + udsSkyOverlayUsed
+                + "\nudsSkyMaterial=" + udsSkyMaterial
+                + "\nudsSkyDomeVisible=" + udsSkyDomeVisible + " depthSafe=" + udsSkyDepthSafe
+                + "\nudsSkyModelStillVisible=" + udsSkyModelStillVisible + " stage1=" + udsSkyStage1Status
+                + "\nudsSunRendererBacked=" + udsSunRendererBacked + " disk=" + udsSunDiskVisible + " emissive=" + udsSunEmissiveStatus + " lux=" + udsSunLightLuxStatus
+                + "\nudsSunDirectionWorld=" + udsSunDirectionWorld + " status=" + udsSunStageStatus
+                + "\nudsMoonRendererBacked=" + udsMoonRendererBacked + " texture=" + udsMoonTexture + " disk=" + udsMoonDiskVisible
+                + "\nudsMoonSquareBackgroundRemoved=" + udsMoonSquareBackgroundRemoved + " status=" + udsMoonStageStatus
+                + "\nudsStarsRendererBacked=" + udsStarsRendererBacked + " mode=" + udsStarsDebugMode.name().toLowerCase(Locale.US) + " visible=" + udsStarsVisible
+                + "\nudsLightingSyncedToTimeOfDay=" + udsLightingSyncedToTimeOfDay + " nightAmbientReduced=" + udsNightAmbientReduced
+                + "\nudsTimeOfDayLightingState=" + udsTimeOfDayLightingState + " ambient=" + udsAmbientIntensityStatus + " reflection=" + udsReflectionIntensityStatus
+                + "\nruntime_visual_user_verification_required=" + runtimeVisualUserVerificationRequired
                 + "\nudsSkyOverlayDisabled=" + udsSkyOverlayDisabled
                 + "\nudsMoonPhaseStatus=" + udsMoonPhaseStatus
                 + "\nudsStarsSource=" + udsStarsSource
@@ -3619,6 +4202,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 }
                 destroyAdditionalLights(engine);
                 destroyEnvironmentResources(engine);
+                destroyUdsRouteAResources();
                 if (skyUnlitTestMaterial != null) {
                     engine.destroyMaterial(skyUnlitTestMaterial);
                     skyUnlitTestMaterial = null;
@@ -4374,18 +4958,50 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("skyboxVisible", skyboxVisible);
             json.put("udsSkyEnabled", udsSkyEnabled);
             json.put("udsTimePreset", udsTimePreset.name());
+            json.put("udsSkyRoute", udsSkyRoute);
             json.put("udsSkyRouteStatus", udsSkyRouteStatus);
+            json.put("udsSkyEntityCreated", udsSkyEntityCreated);
             json.put("udsSkyAssetsStatus", udsSkyAssetsStatus);
             json.put("udsSkyRendererBacked", udsSkyRendererBacked);
             json.put("udsSkyCameraAware", udsSkyCameraAware);
+            json.put("udsSkyOverlayUsed", udsSkyOverlayUsed);
+            json.put("udsSkyMaterial", udsSkyMaterial);
+            json.put("udsSkyDomeVisible", udsSkyDomeVisible);
+            json.put("udsSkyDepthSafe", udsSkyDepthSafe);
+            json.put("udsSkyModelStillVisible", udsSkyModelStillVisible);
+            json.put("udsSkyStage1Status", udsSkyStage1Status);
             json.put("udsSkyOverlayDisabled", udsSkyOverlayDisabled);
+            json.put("udsSunRendererBacked", udsSunRendererBacked);
+            json.put("udsSunDiskVisible", udsSunDiskVisible);
+            json.put("udsSunEmissive", udsSunEmissiveStatus);
+            json.put("udsSunLightLux", udsSunLightLuxStatus);
+            json.put("udsSunDirectionWorld", udsSunDirectionWorld);
+            json.put("udsSunStageStatus", udsSunStageStatus);
+            json.put("udsMoonRendererBacked", udsMoonRendererBacked);
+            json.put("udsMoonTexture", udsMoonTexture);
+            json.put("udsMoonSquareBackgroundRemoved", udsMoonSquareBackgroundRemoved);
+            json.put("udsMoonDiskVisible", udsMoonDiskVisible);
+            json.put("udsMoonIntensity", udsMoonIntensityStatus);
+            json.put("udsMoonLightRoute", udsMoonLightRoute);
+            json.put("udsMoonStageStatus", udsMoonStageStatus);
             json.put("udsMoonPhaseStatus", udsMoonPhaseStatus);
             json.put("udsStarsSource", udsStarsSource);
             json.put("udsStarsEnabled", udsStarsEnabled);
+            json.put("udsStarsRendererBacked", udsStarsRendererBacked);
+            json.put("udsStarsVisible", udsStarsVisible);
+            json.put("udsStarsDebugMode", udsStarsDebugMode.name().toLowerCase(Locale.US));
+            json.put("udsStarsStageStatus", udsStarsStageStatus);
             json.put("udsStarsStatus", udsStarsStatus);
             json.put("udsStarBrightness", udsStarBrightness);
             json.put("udsStarThreshold", udsStarThreshold);
             json.put("udsLensFlareEnabled", udsLensFlareEnabled);
+            json.put("udsLightingSyncedToTimeOfDay", udsLightingSyncedToTimeOfDay);
+            json.put("udsNightAmbientReduced", udsNightAmbientReduced);
+            json.put("udsReflectionSyncPrepared", udsReflectionSyncPrepared);
+            json.put("udsTimeOfDayLightingState", udsTimeOfDayLightingState);
+            json.put("udsAmbientIntensity", udsAmbientIntensityStatus);
+            json.put("udsReflectionIntensity", udsReflectionIntensityStatus);
+            json.put("runtime_visual_user_verification_required", runtimeVisualUserVerificationRequired);
             json.put("udsPerformanceStatus", udsSkyPerformanceStatus);
             json.put("aoMode", aoMode.name());
             json.put("requestedAoMode", requestedAoMode);
@@ -4781,6 +5397,13 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nskyUnlitTestRenderableCreated=" + skyUnlitTestRenderableCreated
                 + "\nskyUnlitTestRenderableVisible=" + skyUnlitTestRenderableVisible
                 + "\nskyUnlitTestMaterialStatus=" + skyUnlitTestMaterialStatus
+                + "\nudsSkyRoute=" + udsSkyRoute + " entity=" + udsSkyEntityCreated + " rendererBacked=" + udsSkyRendererBacked + " cameraAware=" + udsSkyCameraAware
+                + "\nudsSkyOverlayUsed=" + udsSkyOverlayUsed + " material=" + udsSkyMaterial + " stage1=" + udsSkyStage1Status
+                + "\nudsSunRendererBacked=" + udsSunRendererBacked + " disk=" + udsSunDiskVisible + " emissive=" + udsSunEmissiveStatus + " lux=" + udsSunLightLuxStatus
+                + "\nudsMoonRendererBacked=" + udsMoonRendererBacked + " texture=" + udsMoonTexture + " squareRemoved=" + udsMoonSquareBackgroundRemoved
+                + "\nudsStarsRendererBacked=" + udsStarsRendererBacked + " source=" + udsStarsSource + " mode=" + udsStarsDebugMode.name().toLowerCase(Locale.US)
+                + "\nudsLightingSyncedToTimeOfDay=" + udsLightingSyncedToTimeOfDay + " nightAmbientReduced=" + udsNightAmbientReduced + " reflectionSyncPrepared=" + udsReflectionSyncPrepared
+                + "\nruntime_visual_user_verification_required=" + runtimeVisualUserVerificationRequired
                 + "\nimportCopyStatus=" + importCopyStatus
                 + "\nscanDownloadStatus=" + scanDownloadStatus + " copied/skipped/failed=" + scanCopiedCount + "/" + scanSkippedCount + "/" + scanFailedCount
                 + "\npermissionStatus=" + permissionStatus
@@ -5131,6 +5754,18 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("skyUnlitTestRenderableCreated", skyUnlitTestRenderableCreated);
         json.put("skyUnlitTestRenderableVisible", skyUnlitTestRenderableVisible);
         json.put("skyUnlitTestMaterialStatus", skyUnlitTestMaterialStatus);
+        json.put("udsSkyRoute", udsSkyRoute);
+        json.put("udsSkyEntityCreated", udsSkyEntityCreated);
+        json.put("udsSkyRendererBacked", udsSkyRendererBacked);
+        json.put("udsSkyCameraAware", udsSkyCameraAware);
+        json.put("udsSkyOverlayUsed", udsSkyOverlayUsed);
+        json.put("udsSkyMaterial", udsSkyMaterial);
+        json.put("udsSunRendererBacked", udsSunRendererBacked);
+        json.put("udsMoonRendererBacked", udsMoonRendererBacked);
+        json.put("udsStarsRendererBacked", udsStarsRendererBacked);
+        json.put("udsLightingSyncedToTimeOfDay", udsLightingSyncedToTimeOfDay);
+        json.put("udsNightAmbientReduced", udsNightAmbientReduced);
+        json.put("runtime_visual_user_verification_required", runtimeVisualUserVerificationRequired);
         return json;
     }
 
@@ -5359,9 +5994,20 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("udsSunAtmosphereLutVolume", UDS_SUN_LUT_VOLUME_PATH);
         json.put("udsLensFlare", UDS_LENS_FLARE_PATH);
         json.put("udsPrivateAssetWorkflow", "/storage/emulated/0/Download/SOLUM_UDS_USER_SKY/ -> tools/sync_uds_sky_assets.sh -> apps/engine/src/main/assets/private_premium/uds_sky/");
+        json.put("udsSkyRoute", udsSkyRoute);
         json.put("udsSkyRouteStatus", udsSkyRouteStatus);
+        json.put("udsSkyEntityCreated", udsSkyEntityCreated);
         json.put("udsSkyRendererBacked", udsSkyRendererBacked);
         json.put("udsSkyCameraAware", udsSkyCameraAware);
+        json.put("udsSkyOverlayUsed", udsSkyOverlayUsed);
+        json.put("udsSkyMaterial", udsSkyMaterial);
+        json.put("udsSunRendererBacked", udsSunRendererBacked);
+        json.put("udsMoonRendererBacked", udsMoonRendererBacked);
+        json.put("udsStarsRendererBacked", udsStarsRendererBacked);
+        json.put("udsLightingSyncedToTimeOfDay", udsLightingSyncedToTimeOfDay);
+        json.put("udsNightAmbientReduced", udsNightAmbientReduced);
+        json.put("udsReflectionSyncPrepared", udsReflectionSyncPrepared);
+        json.put("runtime_visual_user_verification_required", runtimeVisualUserVerificationRequired);
         json.put("udsSkyOverlayDisabled", udsSkyOverlayDisabled);
         json.put("udsStarsSource", udsStarsSource);
         json.put("udsMoonPhaseStatus", udsMoonPhaseStatus);

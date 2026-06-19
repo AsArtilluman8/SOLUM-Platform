@@ -7,10 +7,15 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.RadialGradient;
+import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.Shader;
 import android.net.Uri;
 import android.opengl.Matrix;
@@ -173,9 +178,19 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String GFXINFO_FRAMESTATS_COMMAND = "adb shell dumpsys gfxinfo com.solum.engine framestats";
     private static final String ENV_ASSET_MANIFEST_PATH = "env/ENVIRONMENT_ASSETS_MANIFEST.json";
     private static final long ENV_ASSET_BUNDLE_LIMIT_BYTES = 10L * 1024L * 1024L;
+    private static final String UDS_SKY_ROOT = "private_premium/uds_sky/";
+    private static final String UDS_MOON_COLOR_PATH = UDS_SKY_ROOT + "Moon_Color.png";
+    private static final String UDS_MOON_NORMAL_PATH = UDS_SKY_ROOT + "Moon_PhaseNormal.png";
+    private static final String UDS_REAL_STARS_PATH = UDS_SKY_ROOT + "Real_Stars.png";
+    private static final String UDS_TILING_STARS_PATH = UDS_SKY_ROOT + "Tiling_Stars.png";
+    private static final String UDS_SUN_LUT_PATH = UDS_SKY_ROOT + "Sun_Atmosphere_LUT.png";
+    private static final String UDS_SUN_LUT_VOLUME_PATH = UDS_SKY_ROOT + "Sun_Atmosphere_LUT_Volume.png";
+    private static final String UDS_LENS_FLARE_PATH = UDS_SKY_ROOT + "Prime_Flare.png";
+    private static final String UDS_REFERENCE_MAT_PATH = UDS_SKY_ROOT + "Ultra_Dynamic_Sky_Mat.png";
 
     private SurfaceView surfaceView;
     private SunGlareOverlayView sunGlareOverlayView;
+    private UdsSkyOverlayView udsSkyOverlayView;
     private ModelViewer modelViewer;
     private RenderControlApi renderControlApi;
     private EnvironmentApi environmentApi;
@@ -210,6 +225,9 @@ public class FilamentGlbPreviewActivity extends Activity {
     private Button lightRigButton;
     private Button skyboxButton;
     private Button moonButton;
+    private Button udsSkyButton;
+    private Button udsStarsButton;
+    private Button udsLensButton;
     private Button collapseButton;
     private Button assetsTabButton;
     private Button lightingTabButton;
@@ -456,6 +474,17 @@ public class FilamentGlbPreviewActivity extends Activity {
     private float moonIntensityLux = 0.3f;
     private float moonPhase = 0.5f;
     private float starsIntensity = 1.0f;
+    private UdsTimePreset udsTimePreset = UdsTimePreset.NOON;
+    private boolean udsSkyEnabled = true;
+    private boolean udsStarsEnabled = true;
+    private boolean udsLensFlareEnabled = true;
+    private float udsStarBrightness = 1.0f;
+    private float udsStarThreshold = 0.62f;
+    private String udsSkyRouteStatus = "not_loaded";
+    private String udsSkyAssetsStatus = "not_loaded";
+    private String udsStarsStatus = "not_checked";
+    private String udsMoonPhaseStatus = "not_implemented_exact_uds_formula_not_decoded";
+    private String udsSkyPerformanceStatus = "mobile_safe_overlay_no_volumetric_no_particles_no_weather";
     private String environmentApplyStatus = "not_applied";
     private float modelRotationX = 0.0f;
     private float modelRotationY = 0.0f;
@@ -544,6 +573,25 @@ public class FilamentGlbPreviewActivity extends Activity {
 
         WorkspaceTab(String label) {
             this.label = label;
+        }
+    }
+
+    private enum UdsTimePreset {
+        NIGHT("UDS Night", 0.0f),
+        DAWN("UDS Dawn", 6.0f),
+        NOON("UDS Noon", 12.0f),
+        DUSK("UDS Dusk", 18.0f);
+
+        final String label;
+        final float hour;
+
+        UdsTimePreset(String label, float hour) {
+            this.label = label;
+            this.hour = hour;
+        }
+
+        UdsTimePreset next() {
+            return values()[(ordinal() + 1) % values().length];
         }
     }
 
@@ -787,6 +835,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         FrameLayout root = new FrameLayout(this);
         surfaceView = new SurfaceView(this);
         root.addView(surfaceView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        udsSkyOverlayView = new UdsSkyOverlayView(this);
+        udsSkyAssetsStatus = udsSkyOverlayView.loadAssets(getAssets());
+        root.addView(udsSkyOverlayView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         sunGlareOverlayView = new SunGlareOverlayView(this);
         sunGlareOverlayView.setVisibility(View.GONE);
         root.addView(sunGlareOverlayView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -1212,6 +1263,48 @@ public class FilamentGlbPreviewActivity extends Activity {
         timePresetRow.addView(button("Sunset", v -> setEnvironmentPreset("SUNSET")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         timePresetRow.addView(button("Night", v -> setEnvironmentPreset("NIGHT")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         iblPanel.addView(timePresetRow);
+        iblPanel.addView(sectionHeader("UDS Sky MVP"));
+        udsSkyButton = button("", v -> {
+            udsTimePreset = udsTimePreset.next();
+            setUdsTimePreset(udsTimePreset, "uds_time_button");
+        });
+        iblPanel.addView(udsSkyButton);
+        LinearLayout udsPresetRow = row();
+        udsPresetRow.addView(button("Night", v -> setUdsTimePreset(UdsTimePreset.NIGHT, "uds_night")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        udsPresetRow.addView(button("Dawn", v -> setUdsTimePreset(UdsTimePreset.DAWN, "uds_dawn")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        udsPresetRow.addView(button("Noon", v -> setUdsTimePreset(UdsTimePreset.NOON, "uds_noon")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        udsPresetRow.addView(button("Dusk", v -> setUdsTimePreset(UdsTimePreset.DUSK, "uds_dusk")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        iblPanel.addView(udsPresetRow);
+        addLightingSlider(iblPanel, "UDS Sun", 0.0f, 20.0f, 0.5f, sunLightIntensity, v -> {
+            ensureEnvironmentApi();
+            sunLightIntensity = v;
+            environmentApi.setSunIntensityLux(v);
+            applyEnvironmentStateToActivity("uds_sun_intensity");
+        });
+        addLightingSlider(iblPanel, "UDS Moon", 0.0f, 1.0f, 0.05f, moonIntensityLux, v -> {
+            ensureEnvironmentApi();
+            moonIntensityLux = v;
+            environmentApi.setMoonIntensityLux(v);
+            applyEnvironmentStateToActivity("uds_moon_intensity");
+        });
+        udsStarsButton = button("", v -> {
+            udsStarsEnabled = !udsStarsEnabled;
+            applyUdsSkyState("uds_stars_toggle");
+        });
+        iblPanel.addView(udsStarsButton);
+        addLightingSlider(iblPanel, "UDS Star Bright", 0.0f, 2.0f, 0.05f, udsStarBrightness, v -> {
+            udsStarBrightness = v;
+            applyUdsSkyState("uds_star_brightness");
+        });
+        addLightingSlider(iblPanel, "UDS Star Thresh", 0.30f, 0.95f, 0.01f, udsStarThreshold, v -> {
+            udsStarThreshold = v;
+            applyUdsSkyState("uds_star_threshold");
+        });
+        udsLensButton = button("", v -> {
+            udsLensFlareEnabled = !udsLensFlareEnabled;
+            applyUdsSkyState("uds_lens_toggle");
+        });
+        iblPanel.addView(udsLensButton);
         addLightingSlider(iblPanel, "Env Sun Az", 0.0f, 360.0f, 1.0f, normalizedAzimuth(sunAzimuth), v -> {
             ensureEnvironmentApi();
             environmentApi.setSunAzimuth(v);
@@ -2480,7 +2573,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         EnvironmentDiagnostics diagnostics = environmentApi.getDiagnostics();
         diagnostics.setIblSlotStatus(activeIblAssetStatus + " active=" + activeEnvironmentAssetSlot + " path=" + activeIblAssetPath);
         diagnostics.setSkyboxSlotStatus(activeSkyboxAssetStatus + " active=" + activeEnvironmentAssetSlot + " path=" + activeSkyboxAssetPath);
-        diagnostics.setStarsStatus(activeStarsAssetStatus + " intensity=" + twoDecimal(starsIntensity) + " path=" + activeStarsAssetPath);
+        diagnostics.setStarsStatus(activeStarsAssetStatus + " intensity=" + twoDecimal(starsIntensity) + " path=" + activeStarsAssetPath
+            + " uds=" + udsStarsStatus + " no_stars_noise=true");
         diagnostics.setFallbackStatus("true".equals(environmentAssetFallbackActive) ? "missing_asset_fallback" : "asset_backed_environment");
         diagnostics.setLastApplyStatus(environmentApi.getDiagnostics().getLastApplyStatus() + " p52_assets=" + activeIblAssetStatus);
     }
@@ -2700,6 +2794,17 @@ public class FilamentGlbPreviewActivity extends Activity {
         applyEnvironmentStateToActivity("preset_" + preset.toLowerCase(Locale.US));
     }
 
+    private void setUdsTimePreset(UdsTimePreset preset, String reason) {
+        udsTimePreset = preset == null ? UdsTimePreset.NOON : preset;
+        ensureEnvironmentApi();
+        environmentApi.setTimeOfDay(udsTimePreset.hour);
+        if (udsTimePreset == UdsTimePreset.NIGHT) environmentApi.setEnvironmentPreset("NIGHT");
+        else if (udsTimePreset == UdsTimePreset.DAWN) environmentApi.setEnvironmentPreset("DAWN");
+        else if (udsTimePreset == UdsTimePreset.DUSK) environmentApi.setEnvironmentPreset("SUNSET");
+        else environmentApi.setEnvironmentPreset("NOON");
+        applyEnvironmentStateToActivity(reason == null ? "uds_time_preset" : reason);
+    }
+
     private void updateEnvironmentClock() {
         if (environmentApi == null || lastFrameWallNs == 0L || rollingFrameMs <= 0.0f) return;
         EnvironmentSettings settings = environmentApi.getSettings();
@@ -2737,8 +2842,47 @@ public class FilamentGlbPreviewActivity extends Activity {
         applyIblRotation();
         syncRenderApiRequestedState();
         if (renderControlApi != null) renderControlApi.apply();
+        applyUdsSkyState(reason);
         updateEnvironmentControlLabels();
         setLastAction("environment_" + reason);
+    }
+
+    private void applyUdsSkyState(String reason) {
+        if (udsSkyOverlayView == null) return;
+        ensureEnvironmentApi();
+        EnvironmentActualState actual = environmentApi.getActualState();
+        CelestialBodyState sun = actual.getSun();
+        CelestialBodyState moon = actual.getMoon();
+        float timeHours = actual.getActiveTimeOfDayHours();
+        float nightFactor = nightFactorForHour(timeHours);
+        float dawnDuskFactor = dawnDuskFactorForHour(timeHours);
+        boolean starsActive = udsSkyEnabled && udsStarsEnabled && nightFactor > 0.05f && udsStarBrightness > 0.0f;
+        udsStarsStatus = starsActive
+            ? "enabled_real_textures_real_stars_tiling_stars_threshold_" + twoDecimal(udsStarThreshold)
+            : "disabled_or_daytime_real_textures_kept_off_no_stars_noise";
+        udsSkyRouteStatus = udsSkyEnabled
+            ? "uds_sky_mvp_overlay_route_visible_sky_dome_reference_ultra_dynamic_sky_mat"
+            : "uds_sky_mvp_disabled";
+        udsSkyOverlayView.configure(
+            udsSkyEnabled,
+            timeHours,
+            sun.getAzimuthDeg(),
+            sun.getElevationDeg(),
+            sun.isVisible() ? sunLightIntensity : 0.0f,
+            moonEnabled,
+            moon.getAzimuthDeg(),
+            moon.getElevationDeg(),
+            moonIntensityLux,
+            starsActive,
+            udsStarBrightness,
+            udsStarThreshold,
+            udsLensFlareEnabled,
+            nightFactor,
+            dawnDuskFactor);
+        udsSkyPerformanceStatus = "mobile_safe_single_overlay_no_volumetric_no_particles_no_weather reason=" + reason;
+        syncEnvironmentAssetDiagnostics();
+        updateEnvironmentControlLabels();
+        refreshUiNow();
     }
 
     private void updateEnvironmentControlLabels() {
@@ -2746,12 +2890,19 @@ public class FilamentGlbPreviewActivity extends Activity {
         EnvironmentActualState actual = environmentApi.getActualState();
         EnvironmentDiagnostics diagnostics = environmentApi.getDiagnostics();
         if (moonButton != null) moonButton.setText("Moon: " + (moonEnabled ? "On" : "Off") + " / " + diagnostics.getMoonStatus());
+        if (udsSkyButton != null) udsSkyButton.setText((udsSkyEnabled ? "UDS Sky: " : "UDS Sky Off: ") + udsTimePreset.label);
+        if (udsStarsButton != null) udsStarsButton.setText("UDS Stars: " + (udsStarsEnabled ? "On" : "Off"));
+        if (udsLensButton != null) udsLensButton.setText("UDS Lens: " + (udsLensFlareEnabled ? "On" : "Off"));
         if (environmentSummaryView != null) {
             CelestialBodyState sun = actual.getSun();
             CelestialBodyState moon = actual.getMoon();
             environmentSummaryView.setText("timeOfDay=" + twoDecimal(actual.getActiveTimeOfDayHours()) + " preset=" + actual.getActiveEnvironmentPreset()
                 + "\nsun lux/elev=" + oneDecimal(sun.getIntensityLux()) + "/" + oneDecimal(sun.getElevationDeg()) + " K=" + oneDecimal(sun.getColorTemperatureKelvin())
                 + "\nmoon lux/elev=" + oneDecimal(moon.getIntensityLux()) + "/" + oneDecimal(moon.getElevationDeg()) + " phase=" + twoDecimal(moon.getPhase())
+                + "\nUDS Sky=" + udsSkyRouteStatus
+                + "\nMoon phase: not implemented / exact UDS formula not decoded"
+                + "\nUDS Stars=" + udsStarsStatus + " bright=" + twoDecimal(udsStarBrightness) + " threshold=" + twoDecimal(udsStarThreshold)
+                + "\nUDS Lens=" + udsLensFlareEnabled + " assets=" + udsSkyAssetsStatus
                 + "\niblPreset=" + actual.getActiveIblPreset() + " skyboxPreset=" + actual.getActiveSkyboxPreset()
                 + "\nassetSlot=" + activeEnvironmentAssetSlot + " ibl=" + activeIblAssetStatus + " sky=" + activeSkyboxAssetStatus
                 + "\nlicense=" + environmentAssetLicenseStatus + " sizeEst=" + totalEnvironmentAssetSizeEstimate
@@ -4125,6 +4276,17 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("exposure", exposure);
             json.put("background", backgroundBrightness);
             json.put("skyboxVisible", skyboxVisible);
+            json.put("udsSkyEnabled", udsSkyEnabled);
+            json.put("udsTimePreset", udsTimePreset.name());
+            json.put("udsSkyRouteStatus", udsSkyRouteStatus);
+            json.put("udsSkyAssetsStatus", udsSkyAssetsStatus);
+            json.put("udsMoonPhaseStatus", udsMoonPhaseStatus);
+            json.put("udsStarsEnabled", udsStarsEnabled);
+            json.put("udsStarsStatus", udsStarsStatus);
+            json.put("udsStarBrightness", udsStarBrightness);
+            json.put("udsStarThreshold", udsStarThreshold);
+            json.put("udsLensFlareEnabled", udsLensFlareEnabled);
+            json.put("udsPerformanceStatus", udsSkyPerformanceStatus);
             json.put("aoMode", aoMode.name());
             json.put("requestedAoMode", requestedAoMode);
             json.put("actualAoMode", actualAoMode);
@@ -4775,6 +4937,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             + "\nscene=" + sceneRegistry.summary() + " model=" + (modelName == null || modelName.isEmpty() ? "none" : modelName)
             + "\nenvironment=" + environmentShortReportSection()
             + "\nenvironmentAssetManifest=" + environmentAssetShortStatus()
+            + "\nudsSky=" + udsSkyRouteStatus + " assets=" + udsSkyAssetsStatus + " moonPhase=" + udsMoonPhaseStatus + " stars=" + udsStarsStatus
             + "\nownership=" + ownership
             + "\nnot_verified_or_not_exposed=" + notReady
             + "\nappBuild=unknown_local_debug";
@@ -5073,6 +5236,16 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("missingPlannedAssets", missingEnvironmentAssetsSummary);
         json.put("apkEnvAssetSizeLimitBytes", ENV_ASSET_BUNDLE_LIMIT_BYTES);
         json.put("p52Notes", "assets_not_bundled_fallback_active_p52b_add_verified_ktx_after_cmgen_toktx_available");
+        json.put("udsSkyRoot", UDS_SKY_ROOT);
+        json.put("udsMoonColor", UDS_MOON_COLOR_PATH);
+        json.put("udsMoonPhaseNormal", UDS_MOON_NORMAL_PATH);
+        json.put("udsRealStars", UDS_REAL_STARS_PATH);
+        json.put("udsTilingStars", UDS_TILING_STARS_PATH);
+        json.put("udsSunAtmosphereLut", UDS_SUN_LUT_PATH);
+        json.put("udsSunAtmosphereLutVolume", UDS_SUN_LUT_VOLUME_PATH);
+        json.put("udsLensFlare", UDS_LENS_FLARE_PATH);
+        json.put("udsReferenceMaterialPreview", UDS_REFERENCE_MAT_PATH);
+        json.put("udsMoonPhaseStatus", udsMoonPhaseStatus);
         return json;
     }
 
@@ -5272,7 +5445,8 @@ public class FilamentGlbPreviewActivity extends Activity {
             || "Exposure".equals(name) || "Background".equals(name) || name.contains("Scale") || name.contains("Offset")
             || name.startsWith("Pan") || name.startsWith("Target") || name.contains("Distance")
             || name.startsWith("Color ") || "Bloom Strength".equals(name) || "Time".equals(name)
-            || "Moon Lux".equals(name) || "Moon Phase".equals(name) || "Stars".equals(name)) {
+            || "Moon Lux".equals(name) || "Moon Phase".equals(name) || "Stars".equals(name)
+            || name.startsWith("UDS ")) {
             label.setText(name + " " + twoDecimal(value));
         } else if ("Bloom Highlight".equals(name)) {
             label.setText(name + " " + oneDecimal(value));
@@ -5297,8 +5471,12 @@ public class FilamentGlbPreviewActivity extends Activity {
         if ("Env Sun Lux".equals(label)) return sunLightIntensity;
         if ("Sun K".equals(label)) return sunColorTemperatureKelvin;
         if ("Moon Lux".equals(label)) return moonIntensityLux;
+        if ("UDS Moon".equals(label)) return moonIntensityLux;
         if ("Moon Phase".equals(label)) return moonPhase;
         if ("Stars".equals(label)) return starsIntensity;
+        if ("UDS Sun".equals(label)) return sunLightIntensity;
+        if ("UDS Star Bright".equals(label)) return udsStarBrightness;
+        if ("UDS Star Thresh".equals(label)) return udsStarThreshold;
         if ("Render Scale".equals(label)) return renderScale;
         if ("Bloom Strength".equals(label)) return bloomStrength;
         if ("Bloom Highlight".equals(label)) return bloomHighlight;
@@ -5466,6 +5644,27 @@ public class FilamentGlbPreviewActivity extends Activity {
         return out;
     }
 
+    private static float nightFactorForHour(float hour) {
+        float h = normalizedHour(hour);
+        if (h >= 20.0f || h <= 4.0f) return 1.0f;
+        if (h > 4.0f && h < 7.0f) return 1.0f - ((h - 4.0f) / 3.0f);
+        if (h > 17.0f && h < 20.0f) return (h - 17.0f) / 3.0f;
+        return 0.0f;
+    }
+
+    private static float dawnDuskFactorForHour(float hour) {
+        float h = normalizedHour(hour);
+        float dawn = 1.0f - clamp(Math.abs(h - 6.0f) / 2.5f, 0.0f, 1.0f);
+        float dusk = 1.0f - clamp(Math.abs(h - 18.0f) / 2.5f, 0.0f, 1.0f);
+        return Math.max(dawn, dusk);
+    }
+
+    private static float normalizedHour(float hour) {
+        float out = hour % 24.0f;
+        if (out < 0.0f) out += 24.0f;
+        return out;
+    }
+
     private static int sanitizeMsaa(int value) {
         if (value <= 1) return 1;
         if (value <= 2) return 2;
@@ -5487,6 +5686,215 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private static String nowTimestamp() {
         return new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(new Date());
+    }
+
+    private static final class UdsSkyOverlayView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+        private final RectF dst = new RectF();
+        private Bitmap moonColor;
+        private Bitmap moonNormal;
+        private Bitmap realStars;
+        private Bitmap tilingStars;
+        private Bitmap sunAtmosphereLut;
+        private Bitmap sunAtmosphereLutVolume;
+        private Bitmap lensFlare;
+        private Bitmap referenceMaterialPreview;
+        private boolean enabled = true;
+        private float timeHours = 12.0f;
+        private float sunAzimuth = 180.0f;
+        private float sunElevation = 45.0f;
+        private float sunIntensity = 2.5f;
+        private boolean moonEnabled = true;
+        private float moonAzimuth = 0.0f;
+        private float moonElevation = 45.0f;
+        private float moonIntensity = 0.3f;
+        private boolean starsEnabled = false;
+        private float starBrightness = 1.0f;
+        private float starThreshold = 0.62f;
+        private boolean lensEnabled = true;
+        private float nightFactor = 0.0f;
+        private float dawnDuskFactor = 0.0f;
+        private String assetStatus = "not_loaded";
+
+        UdsSkyOverlayView(Context context) {
+            super(context);
+            setWillNotDraw(false);
+            setClickable(false);
+        }
+
+        String loadAssets(android.content.res.AssetManager assets) {
+            try {
+                moonColor = loadBitmap(assets, UDS_MOON_COLOR_PATH);
+                moonNormal = loadBitmap(assets, UDS_MOON_NORMAL_PATH);
+                realStars = loadBitmap(assets, UDS_REAL_STARS_PATH);
+                tilingStars = loadBitmap(assets, UDS_TILING_STARS_PATH);
+                sunAtmosphereLut = loadBitmap(assets, UDS_SUN_LUT_PATH);
+                sunAtmosphereLutVolume = loadBitmap(assets, UDS_SUN_LUT_VOLUME_PATH);
+                lensFlare = loadBitmap(assets, UDS_LENS_FLARE_PATH);
+                referenceMaterialPreview = loadBitmap(assets, UDS_REFERENCE_MAT_PATH);
+                assetStatus = "loaded_moon_color_phase_normal_real_stars_tiling_stars_sun_lut_lens_reference_mat";
+            } catch (Throwable t) {
+                assetStatus = "partial_or_failed: " + t.getClass().getSimpleName();
+            }
+            return assetStatus;
+        }
+
+        private Bitmap loadBitmap(android.content.res.AssetManager assets, String path) throws Exception {
+            try (InputStream input = assets.open(path)) {
+                Bitmap bitmap = BitmapFactory.decodeStream(input);
+                if (bitmap == null) throw new IllegalStateException("decode_null_" + path);
+                return bitmap;
+            }
+        }
+
+        void configure(boolean enabled, float timeHours, float sunAzimuth, float sunElevation, float sunIntensity,
+                       boolean moonEnabled, float moonAzimuth, float moonElevation, float moonIntensity,
+                       boolean starsEnabled, float starBrightness, float starThreshold, boolean lensEnabled,
+                       float nightFactor, float dawnDuskFactor) {
+            this.enabled = enabled;
+            this.timeHours = timeHours;
+            this.sunAzimuth = sunAzimuth;
+            this.sunElevation = sunElevation;
+            this.sunIntensity = sunIntensity;
+            this.moonEnabled = moonEnabled;
+            this.moonAzimuth = moonAzimuth;
+            this.moonElevation = moonElevation;
+            this.moonIntensity = moonIntensity;
+            this.starsEnabled = starsEnabled;
+            this.starBrightness = starBrightness;
+            this.starThreshold = starThreshold;
+            this.lensEnabled = lensEnabled;
+            this.nightFactor = clamp(nightFactor, 0.0f, 1.0f);
+            this.dawnDuskFactor = clamp(dawnDuskFactor, 0.0f, 1.0f);
+            setVisibility(enabled ? View.VISIBLE : View.GONE);
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            if (!enabled) return;
+            int width = getWidth();
+            int height = getHeight();
+            if (width <= 0 || height <= 0) return;
+            drawAtmosphere(canvas, width, height);
+            drawStars(canvas, width, height);
+            drawSun(canvas, width, height);
+            drawMoon(canvas, width, height);
+        }
+
+        private void drawAtmosphere(Canvas canvas, int width, int height) {
+            int topNight = Color.argb(178, 6, 12, 30);
+            int topDay = Color.argb(118, 62, 138, 218);
+            int topDawn = Color.argb(140, 74, 87, 146);
+            int horizonNight = Color.argb(96, 11, 18, 34);
+            int horizonDay = Color.argb(92, 142, 198, 240);
+            int horizonDawn = Color.argb(150, 255, 143, 82);
+            float dayFactor = 1.0f - nightFactor;
+            int top = blendColor(blendColor(topNight, topDay, dayFactor), topDawn, dawnDuskFactor * 0.72f);
+            int horizon = blendColor(blendColor(horizonNight, horizonDay, dayFactor), horizonDawn, dawnDuskFactor);
+            paint.setShader(new LinearGradient(0.0f, 0.0f, 0.0f, height * 0.78f, top, horizon, Shader.TileMode.CLAMP));
+            canvas.drawRect(0.0f, 0.0f, width, height, paint);
+            paint.setShader(null);
+        }
+
+        private void drawStars(Canvas canvas, int width, int height) {
+            if (!starsEnabled || realStars == null || tilingStars == null) return;
+            float thresholdGate = clamp((0.98f - starThreshold) / 0.68f, 0.0f, 1.0f);
+            int alpha = Math.round(210.0f * clamp(nightFactor * starBrightness * thresholdGate, 0.0f, 1.0f));
+            if (alpha <= 4) return;
+            paint.setAlpha(alpha);
+            drawTiledBitmap(canvas, tilingStars, width, height, 0.0f, 0.0f, Math.max(260.0f, width * 0.72f));
+            paint.setAlpha(Math.min(255, Math.round(alpha * 0.85f)));
+            drawTiledBitmap(canvas, realStars, width, Math.round(height * 0.58f), width * 0.13f, 0.0f, Math.max(320.0f, width * 0.96f));
+            paint.setAlpha(255);
+        }
+
+        private void drawTiledBitmap(Canvas canvas, Bitmap bitmap, int width, int height, float offsetX, float offsetY, float tileWidth) {
+            if (bitmap == null || width <= 0 || height <= 0) return;
+            float aspect = bitmap.getHeight() <= 0 ? 0.5f : (float) bitmap.getHeight() / (float) bitmap.getWidth();
+            float tileHeight = Math.max(80.0f, tileWidth * aspect);
+            for (float y = offsetY; y < height; y += tileHeight) {
+                for (float x = -tileWidth + offsetX; x < width + tileWidth; x += tileWidth) {
+                    dst.set(x, y, x + tileWidth, y + tileHeight);
+                    canvas.drawBitmap(bitmap, null, dst, paint);
+                }
+            }
+        }
+
+        private void drawSun(Canvas canvas, int width, int height) {
+            if (sunIntensity <= 0.01f || sunElevation < -3.0f) return;
+            float[] p = skyPoint(width, height, sunAzimuth, sunElevation);
+            float visibility = clamp((sunElevation + 3.0f) / 18.0f, 0.0f, 1.0f) * clamp(sunIntensity / 20.0f, 0.0f, 1.0f);
+            if (visibility <= 0.01f) return;
+            float haloRadius = Math.max(width, height) * (0.12f + 0.08f * dawnDuskFactor);
+            int haloInner = Color.argb(Math.round(118.0f * visibility), 255, 226, 160);
+            int haloOuter = Color.argb(0, 255, 190, 90);
+            paint.setShader(new RadialGradient(p[0], p[1], haloRadius, haloInner, haloOuter, Shader.TileMode.CLAMP));
+            canvas.drawCircle(p[0], p[1], haloRadius, paint);
+            paint.setShader(null);
+            paint.setColor(Color.argb(Math.round(235.0f * visibility), 255, 238, 190));
+            float disk = Math.max(10.0f, Math.min(width, height) * 0.022f);
+            canvas.drawCircle(p[0], p[1], disk, paint);
+            if (sunAtmosphereLut != null && dawnDuskFactor > 0.05f) {
+                paint.setAlpha(Math.round(60.0f * dawnDuskFactor * visibility));
+                dst.set(0.0f, height * 0.42f, width, height * 0.76f);
+                canvas.drawBitmap(sunAtmosphereLut, null, dst, paint);
+                paint.setAlpha(255);
+            }
+            if (lensEnabled && lensFlare != null && visibility > 0.08f) {
+                float size = Math.max(width, height) * 0.20f;
+                paint.setAlpha(Math.round(115.0f * visibility));
+                dst.set(p[0] - size * 0.5f, p[1] - size * 0.5f, p[0] + size * 0.5f, p[1] + size * 0.5f);
+                canvas.drawBitmap(lensFlare, null, dst, paint);
+                paint.setAlpha(255);
+            }
+        }
+
+        private void drawMoon(Canvas canvas, int width, int height) {
+            if (!moonEnabled || moonColor == null || moonIntensity <= 0.01f || nightFactor <= 0.05f) return;
+            float az = moonAzimuth;
+            float el = moonElevation;
+            if (el < 2.0f) {
+                az = (sunAzimuth + 180.0f) % 360.0f;
+                el = Math.max(18.0f, 62.0f - Math.max(0.0f, sunElevation));
+            }
+            float[] p = skyPoint(width, height, az, el);
+            float visibility = clamp(nightFactor * (0.35f + moonIntensity * 1.25f), 0.0f, 1.0f);
+            float size = Math.max(42.0f, Math.min(width, height) * 0.105f);
+            int glow = Color.argb(Math.round(70.0f * visibility), 176, 205, 255);
+            paint.setShader(new RadialGradient(p[0], p[1], size * 1.8f, glow, Color.argb(0, 176, 205, 255), Shader.TileMode.CLAMP));
+            canvas.drawCircle(p[0], p[1], size * 1.8f, paint);
+            paint.setShader(null);
+            paint.setAlpha(Math.round(235.0f * visibility));
+            dst.set(p[0] - size * 0.5f, p[1] - size * 0.5f, p[0] + size * 0.5f, p[1] + size * 0.5f);
+            canvas.drawBitmap(moonColor, null, dst, paint);
+            if (moonNormal != null) {
+                paint.setAlpha(Math.round(42.0f * visibility));
+                canvas.drawBitmap(moonNormal, null, dst, paint);
+            }
+            paint.setAlpha(255);
+        }
+
+        private float[] skyPoint(int width, int height, float azimuth, float elevation) {
+            double az = Math.toRadians(normalizedAzimuth(azimuth));
+            float x = width * (0.5f + (float) Math.sin(az) * 0.38f);
+            float y = height * (0.64f - clamp(elevation, -10.0f, 90.0f) / 90.0f * 0.54f);
+            return new float[] {clamp(x, width * 0.06f, width * 0.94f), clamp(y, height * 0.06f, height * 0.72f)};
+        }
+
+        private static int blendColor(int a, int b, float t) {
+            float k = clamp(t, 0.0f, 1.0f);
+            int aa = Color.alpha(a);
+            int ar = Color.red(a);
+            int ag = Color.green(a);
+            int ab = Color.blue(a);
+            return Color.argb(
+                Math.round(aa + (Color.alpha(b) - aa) * k),
+                Math.round(ar + (Color.red(b) - ar) * k),
+                Math.round(ag + (Color.green(b) - ag) * k),
+                Math.round(ab + (Color.blue(b) - ab) * k));
+        }
     }
 
     private static final class SunGlareOverlayView extends View {

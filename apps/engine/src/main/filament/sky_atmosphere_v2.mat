@@ -33,7 +33,7 @@ fragment {
         prepareMaterial(material);
 
         float mode = materialParams.visualMode;
-        float3 d = normalize(getWorldPosition().xyz - materialParams.skyCenter);
+        float3 d = normalize(getPosition().xyz);
 
         // TEST 2: absolute material/renderable proof. If Route A dome is visible,
         // screen background must become bright magenta.

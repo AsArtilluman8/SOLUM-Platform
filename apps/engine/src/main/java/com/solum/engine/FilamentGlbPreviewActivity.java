@@ -482,7 +482,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private UdsTimePreset udsTimePreset = UdsTimePreset.NOON;
     private boolean udsSkyEnabled = true;
     private boolean udsRouteAEnabled = true;
-    private UdsAtmosphereVisualMode udsAtmosphereVisualMode = UdsAtmosphereVisualMode.STRONG_GRADIENT;
+    private UdsAtmosphereVisualMode udsAtmosphereVisualMode = UdsAtmosphereVisualMode.DOME_SOLID_MAGENTA;
     private boolean udsStarsEnabled = true;
     private boolean udsLensFlareEnabled = true;
     private float udsStarBrightness = 1.0f;
@@ -640,6 +640,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String udsClearColorMode = "unknown";
     private String udsSkyClearMayMaskDome = "unknown";
     private String udsSkyDomeMaterialActive = "false";
+    private String udsSkyMaterialParamStatus = "not_checked";
     private String udsSkyAtmosphereRoute = "none";
     private String udsAtmosphereFormula = "uds_inspired_approximation";
     private String udsExactFormulaDecoded = "false";
@@ -750,7 +751,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         DOME_SOLID_MAGENTA("dome_solid_magenta", "Sky Test: Dome Solid Magenta"),
         DOME_RGB_HEIGHT("dome_rgb_height", "Sky Test: Dome RGB Height"),
         DOME_HORIZON_BAND("dome_horizon_band", "Sky Test: Dome Horizon Band"),
-        SUN_DISK_PROOF("sun_disk_proof", "Sky Test: Sun Disk Proof");
+        SUN_DISK_PROOF("sun_disk_proof", "Sky Test: Sun Disk Proof"),
+        DOME_UNLIT_MAGENTA("dome_unlit_magenta", "Sky Test: Dome uses Unlit Magenta"),
+        SUN_ATMOSPHERE_MAGENTA("sun_atmosphere_magenta", "Sky Test: Sun uses Atmosphere Magenta"),
+        BOTH_ATMOSPHERE_MAGENTA("both_atmosphere_magenta", "Sky Test: Dome+Sun Atmosphere Magenta");
 
         final String id;
         final String label;
@@ -761,7 +765,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
 
         UdsAtmosphereVisualMode next() {
-            return this == NATURAL ? STRONG_GRADIENT : NATURAL;
+            UdsAtmosphereVisualMode[] modes = values();
+            return modes[(ordinal() + 1) % modes.length];
         }
     }
 
@@ -1553,6 +1558,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         iblPanel.addView(udsSkyRouteButton);
         udsAtmosphereModeButton = button("", v -> {
             udsAtmosphereVisualMode = udsAtmosphereVisualMode.next();
+            rebuildUdsRouteAResourcesForSkyDiagnostic("uds_atmosphere_visual_mode_" + udsAtmosphereVisualMode.id);
             applyUdsSkyState("uds_atmosphere_visual_mode_" + udsAtmosphereVisualMode.id);
         });
         iblPanel.addView(udsAtmosphereModeButton);
@@ -2965,21 +2971,34 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (udsSkyDomeEntity != 0) return;
         try {
             Engine engine = modelViewer.getEngine();
-            if (udsSkyDomeGeometry == null) udsSkyDomeGeometry = createSphereGeometry(engine, 18, 36, 180.0f);
+            if (udsSkyDomeGeometry == null) udsSkyDomeGeometry = createSphereGeometry(engine, 18, 36, 20.0f);
             if (udsDiskGeometry == null) udsDiskGeometry = createDiskGeometry(engine, 48, 1.0f);
 
-            Material domeMaterial = skyAtmosphereV2Material != null ? skyAtmosphereV2Material : skyUnlitTestMaterial;
+            boolean domeUsesUnlitMagenta = udsAtmosphereVisualMode == UdsAtmosphereVisualMode.DOME_UNLIT_MAGENTA;
+            boolean domeUsesAtmosphereMagenta = udsAtmosphereVisualMode == UdsAtmosphereVisualMode.BOTH_ATMOSPHERE_MAGENTA;
+            boolean sunUsesAtmosphereMagenta = udsAtmosphereVisualMode == UdsAtmosphereVisualMode.SUN_ATMOSPHERE_MAGENTA
+                || udsAtmosphereVisualMode == UdsAtmosphereVisualMode.BOTH_ATMOSPHERE_MAGENTA;
+            Material domeMaterial = domeUsesUnlitMagenta
+                ? skyUnlitTestMaterial
+                : (skyAtmosphereV2Material != null ? skyAtmosphereV2Material : skyUnlitTestMaterial);
             udsSkyDomeMaterialInstance = domeMaterial.createInstance("uds_sky_dome");
             configureSkyMaterialInstance(udsSkyDomeMaterialInstance, false);
-            if (skyAtmosphereV2Material == null) {
+            if (domeUsesUnlitMagenta) {
+                setMaterialColor(udsSkyDomeMaterialInstance, 1.0f, 0.0f, 1.0f, 1.0f);
+            } else if (skyAtmosphereV2Material == null) {
                 setMaterialColor(udsSkyDomeMaterialInstance, udsSkyColor(currentUdsTimeHours(), nightFactorForHour(currentUdsTimeHours()), dawnDuskFactorForHour(currentUdsTimeHours())));
             } else {
                 applySkyAtmosphereV2Parameters(udsSkyDomeMaterialInstance, buildUdsSkyLightingState(currentUdsTimeHours()), null);
             }
 
-            udsSunDiskMaterialInstance = skyUnlitTestMaterial.createInstance("uds_sun_disk");
+            Material sunDiskMaterial = sunUsesAtmosphereMagenta && skyAtmosphereV2Material != null ? skyAtmosphereV2Material : skyUnlitTestMaterial;
+            udsSunDiskMaterialInstance = sunDiskMaterial.createInstance("uds_sun_disk");
             configureSkyMaterialInstance(udsSunDiskMaterialInstance, true);
-            setMaterialColor(udsSunDiskMaterialInstance, 1.0f, 0.92f, 0.62f, 1.0f);
+            if (sunUsesAtmosphereMagenta && skyAtmosphereV2Material != null) {
+                applySkyAtmosphereV2Parameters(udsSunDiskMaterialInstance, buildUdsSkyLightingState(currentUdsTimeHours()), null);
+            } else {
+                setMaterialColor(udsSunDiskMaterialInstance, 1.0f, 0.92f, 0.62f, 1.0f);
+            }
 
             udsMoonDiskMaterialInstance = skyUnlitTestMaterial.createInstance("uds_full_moon_disk");
             configureSkyMaterialInstance(udsMoonDiskMaterialInstance, true);
@@ -2991,6 +3010,12 @@ public class FilamentGlbPreviewActivity extends Activity {
             modelViewer.getScene().addEntity(udsSkyDomeEntity);
             modelViewer.getScene().addEntity(udsSunDiskEntity);
             modelViewer.getScene().addEntity(udsMoonDiskEntity);
+            try {
+                modelViewer.getScene().setSkybox(null);
+                udsSkyClearMayMaskDome = "false_route_a_scene_skybox_null";
+            } catch (Throwable ignored) {
+                udsSkyClearMayMaskDome = "unknown_route_a_skybox_null_failed";
+            }
 
             udsSkyEntityCreated = "true";
             udsSkyRendererBacked = "true";
@@ -3189,14 +3214,55 @@ public class FilamentGlbPreviewActivity extends Activity {
         try { engine.destroyIndexBuffer(geometry.indexBuffer); } catch (Throwable ignored) {}
     }
 
+
+    private void safeSetMaterialFloat(MaterialInstance instance, String name, float value) {
+        if (instance == null || name == null) return;
+        try {
+            instance.setParameter(name, value);
+        } catch (IllegalArgumentException ignored) {
+            recordSkippedMaterialParam(name);
+        } catch (Throwable ignored) {
+            recordSkippedMaterialParam(name);
+        }
+    }
+
+    private void safeSetMaterialFloat3(MaterialInstance instance, String name, float x, float y, float z) {
+        if (instance == null || name == null) return;
+        try {
+            instance.setParameter(name, x, y, z);
+        } catch (IllegalArgumentException ignored) {
+            recordSkippedMaterialParam(name);
+        } catch (Throwable ignored) {
+            recordSkippedMaterialParam(name);
+        }
+    }
+
+    private void safeSetMaterialFloat4(MaterialInstance instance, String name, float x, float y, float z, float w) {
+        if (instance == null || name == null) return;
+        try {
+            instance.setParameter(name, x, y, z, w);
+        } catch (IllegalArgumentException ignored) {
+            recordSkippedMaterialParam(name);
+        } catch (Throwable ignored) {
+            recordSkippedMaterialParam(name);
+        }
+    }
+
+    private void recordSkippedMaterialParam(String name) {
+        try {
+            if (name == null) name = "null";
+            udsSkyMaterialParamStatus = "skipped_missing_or_invalid_uniform_" + name;
+        } catch (Throwable ignored) {
+        }
+    }
+
     private void setMaterialColor(MaterialInstance instance, float[] rgba) {
         if (rgba == null || rgba.length < 4) return;
         setMaterialColor(instance, rgba[0], rgba[1], rgba[2], rgba[3]);
     }
 
     private void setMaterialColor(MaterialInstance instance, float r, float g, float b, float a) {
-        if (instance == null) return;
-        instance.setParameter("baseColor", clamp(r, 0.0f, 8.0f), clamp(g, 0.0f, 8.0f), clamp(b, 0.0f, 8.0f), clamp(a, 0.0f, 1.0f));
+        safeSetMaterialFloat4(instance, "baseColor", r, g, b, a);
     }
 
     private File copyAssetToCacheFile(String path) throws Exception {
@@ -3629,10 +3695,10 @@ public class FilamentGlbPreviewActivity extends Activity {
             udsLightingSyncedToTimeOfDay = "false_apply_failed: " + shortMessage(t);
         }
         if (routeAReady) {
-            if ("true".equals(udsSkyMaterialV2Loaded)) {
+            if ("true".equals(udsSkyMaterialV2Loaded) && udsAtmosphereVisualMode != UdsAtmosphereVisualMode.DOME_UNLIT_MAGENTA) {
                 applySkyAtmosphereV2Parameters(udsSkyDomeMaterialInstance, state, null);
             } else {
-                setMaterialColor(udsSkyDomeMaterialInstance, mixColor(state.skyTopColor, state.skyHorizonColor, 0.35f));
+                setMaterialColor(udsSkyDomeMaterialInstance, 1.0f, 0.0f, 1.0f, 1.0f);
             }
             setMaterialColor(udsSunDiskMaterialInstance,
                 state.sunColor[0] * Math.max(0.0f, state.sunDiskEmissive),
@@ -3683,27 +3749,27 @@ public class FilamentGlbPreviewActivity extends Activity {
         setMaterialColorParam(instance, "horizonColor", state.skyHorizonColor);
         setMaterialColorParam(instance, "groundColor", state.skyGroundColor);
         setMaterialColorParam(instance, "sunColor", state.sunColor[0], state.sunColor[1], state.sunColor[2], 1.0f);
-        instance.setParameter("sunDirection", state.sunDirection[0], state.sunDirection[1], state.sunDirection[2]);
-        instance.setParameter("skyCenter", center[0], center[1], center[2]);
-        instance.setParameter("sunDiskIntensity", udsAtmosphereVisualMode == UdsAtmosphereVisualMode.SUN_DISK_PROOF ? 4.0f : clamp(state.sunDiskEmissive, 0.0f, 4.0f));
-        instance.setParameter("sunGlowIntensity", udsAtmosphereVisualMode == UdsAtmosphereVisualMode.SUN_DISK_PROOF ? 3.0f : clamp(state.sunGlowIntensity, 0.0f, 4.0f));
-        instance.setParameter("horizonSoftness", state.horizonSoftness);
+        safeSetMaterialFloat3(instance, "sunDirection", state.sunDirection[0], state.sunDirection[1], state.sunDirection[2]);
+        safeSetMaterialFloat3(instance, "skyCenter", center[0], center[1], center[2]);
+        safeSetMaterialFloat(instance, "sunDiskIntensity", udsAtmosphereVisualMode == UdsAtmosphereVisualMode.SUN_DISK_PROOF ? 4.0f : clamp(state.sunDiskEmissive, 0.0f, 4.0f));
+        safeSetMaterialFloat(instance, "sunGlowIntensity", udsAtmosphereVisualMode == UdsAtmosphereVisualMode.SUN_DISK_PROOF ? 3.0f : clamp(state.sunGlowIntensity, 0.0f, 4.0f));
+        safeSetMaterialFloat(instance, "horizonSoftness", state.horizonSoftness);
         float gradientStrength = atmosphereGradientStrength();
         float horizonBandStrength = atmosphereHorizonBandStrength();
         float sunGlowStrength = atmosphereSunGlowStrength();
         float minBrightness = atmosphereMinBrightness(state);
         float visualMode = atmosphereVisualModeValue();
-        instance.setParameter("gradientStrength", gradientStrength);
-        instance.setParameter("horizonBandStrength", horizonBandStrength);
-        instance.setParameter("sunGlowStrength", sunGlowStrength);
-        instance.setParameter("minBrightness", minBrightness);
-        instance.setParameter("visualMode", visualMode);
-        instance.setParameter("nightFactor", state.nightFactor);
-        instance.setParameter("dawnDuskFactor", state.dawnDuskFactor);
+        safeSetMaterialFloat(instance, "gradientStrength", gradientStrength);
+        safeSetMaterialFloat(instance, "horizonBandStrength", horizonBandStrength);
+        safeSetMaterialFloat(instance, "sunGlowStrength", sunGlowStrength);
+        safeSetMaterialFloat(instance, "minBrightness", minBrightness);
+        safeSetMaterialFloat(instance, "visualMode", visualMode);
+        safeSetMaterialFloat(instance, "nightFactor", state.nightFactor);
+        safeSetMaterialFloat(instance, "dawnDuskFactor", state.dawnDuskFactor);
         float materialExposure = udsAtmosphereVisualMode == UdsAtmosphereVisualMode.STRONG_GRADIENT
             ? (state.timeState.equals("night") ? 1.35f : 1.70f)
             : clamp(0.90f + state.exposureCompensation * 0.25f, 0.35f, 1.35f);
-        instance.setParameter("exposure", materialExposure);
+        safeSetMaterialFloat(instance, "exposure", materialExposure);
         udsAtmosphereVisualModeStatus = udsAtmosphereVisualMode.id;
         udsTimeState = state.timeState;
         udsZenithColor = color3Text(state.skyTopColor);
@@ -3745,6 +3811,8 @@ public class FilamentGlbPreviewActivity extends Activity {
             case DOME_RGB_HEIGHT: return 3.0f;
             case DOME_HORIZON_BAND: return 4.0f;
             case SUN_DISK_PROOF: return 5.0f;
+            case SUN_ATMOSPHERE_MAGENTA: return 2.0f;
+            case BOTH_ATMOSPHERE_MAGENTA: return 2.0f;
             case ROUTE_C_FALLBACK:
             case NATURAL:
             default:
@@ -3764,6 +3832,12 @@ public class FilamentGlbPreviewActivity extends Activity {
                 return "Dome should show obvious yellow horizon band; if absent, horizon orientation/formula is wrong.";
             case SUN_DISK_PROOF:
                 return "Dome is neutral dark; sun disk should be clearly visible when facing sun. If sun works but dome tests fail, disk route works and dome route is broken.";
+            case DOME_UNLIT_MAGENTA:
+                return "Dome uses sky_unlit_test material with forced magenta baseColor. If this is visible, sphere/renderable works and sky_atmosphere_v2 material path is suspect.";
+            case SUN_ATMOSPHERE_MAGENTA:
+                return "Sun disk uses sky_atmosphere_v2 material forced to magenta. If visible, atmosphere material works on disk but dome route is suspect.";
+            case BOTH_ATMOSPHERE_MAGENTA:
+                return "Both dome and sun disk use sky_atmosphere_v2 forced magenta. If sun is magenta but dome is not, dome geometry/rendering is broken.";
             case STRONG_GRADIENT:
                 return "Strong material gradient should be readable; if too dark, atmosphere parameters are wrong.";
             case NATURAL:
@@ -3803,7 +3877,36 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private void setMaterialColorParam(MaterialInstance instance, String name, float r, float g, float b, float a) {
-        instance.setParameter(name, clamp(r, 0.0f, 8.0f), clamp(g, 0.0f, 8.0f), clamp(b, 0.0f, 8.0f), clamp(a, 0.0f, 1.0f));
+        safeSetMaterialFloat4(instance, name, r, g, b, a);
+    }
+
+
+    private void rebuildUdsRouteAResourcesForSkyDiagnostic(String reason) {
+        if (modelViewer == null) return;
+        try {
+            Engine engine = modelViewer.getEngine();
+            if (modelViewer.getScene() != null) {
+                if (udsSkyDomeEntity != 0) modelViewer.getScene().removeEntity(udsSkyDomeEntity);
+                if (udsSunDiskEntity != 0) modelViewer.getScene().removeEntity(udsSunDiskEntity);
+                if (udsMoonDiskEntity != 0) modelViewer.getScene().removeEntity(udsMoonDiskEntity);
+            }
+            if (udsSkyDomeEntity != 0) destroySkyRenderable(engine, udsSkyDomeEntity);
+            if (udsSunDiskEntity != 0) destroySkyRenderable(engine, udsSunDiskEntity);
+            if (udsMoonDiskEntity != 0) destroySkyRenderable(engine, udsMoonDiskEntity);
+            udsSkyDomeEntity = 0;
+            udsSunDiskEntity = 0;
+            udsMoonDiskEntity = 0;
+            destroyMaterialInstance(engine, udsSkyDomeMaterialInstance);
+            destroyMaterialInstance(engine, udsSunDiskMaterialInstance);
+            destroyMaterialInstance(engine, udsMoonDiskMaterialInstance);
+            udsSkyDomeMaterialInstance = null;
+            udsSunDiskMaterialInstance = null;
+            udsMoonDiskMaterialInstance = null;
+            udsSkyEntityCreated = "false_rebuild_" + reason;
+            udsSkyStage1Status = "diagnostic_rebuild_requested_" + reason;
+        } catch (Throwable t) {
+            udsSkyStage1Status = "diagnostic_rebuild_failed_" + shortMessage(t);
+        }
     }
 
     private void updateUdsSkyFrameState(String reason) {
@@ -3813,7 +3916,11 @@ public class FilamentGlbPreviewActivity extends Activity {
             float[] camera = modelViewer.getCamera().getPosition(new float[3]);
             setEntityTransform(udsSkyDomeEntity, camera[0], camera[1], camera[2], 1.0f);
             if ("true".equals(udsSkyMaterialV2Loaded)) {
-                applySkyAtmosphereV2Parameters(udsSkyDomeMaterialInstance, state, camera);
+                if (udsAtmosphereVisualMode == UdsAtmosphereVisualMode.DOME_UNLIT_MAGENTA) {
+                    setMaterialColor(udsSkyDomeMaterialInstance, 1.0f, 0.0f, 1.0f, 1.0f);
+                } else {
+                    applySkyAtmosphereV2Parameters(udsSkyDomeMaterialInstance, state, camera);
+                }
             }
             float[] sunVisualDirection = new float[] {-state.sunDirection[0], -state.sunDirection[1], -state.sunDirection[2]};
             setDiskTransform(udsSunDiskEntity, camera, sunVisualDirection, 90.0f, state.sunDiskEmissive > 0.01f ? 9.0f : 0.001f);

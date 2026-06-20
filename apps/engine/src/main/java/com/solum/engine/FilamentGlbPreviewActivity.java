@@ -745,7 +745,12 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private enum UdsAtmosphereVisualMode {
         NATURAL("natural", "Atmosphere: Natural"),
-        STRONG_GRADIENT("strong_gradient", "Atmosphere: Strong Gradient");
+        STRONG_GRADIENT("strong_gradient", "Atmosphere: Strong Gradient"),
+        ROUTE_C_FALLBACK("route_c_fallback", "Sky Test: Route C fallback"),
+        DOME_SOLID_MAGENTA("dome_solid_magenta", "Sky Test: Dome Solid Magenta"),
+        DOME_RGB_HEIGHT("dome_rgb_height", "Sky Test: Dome RGB Height"),
+        DOME_HORIZON_BAND("dome_horizon_band", "Sky Test: Dome Horizon Band"),
+        SUN_DISK_PROOF("sun_disk_proof", "Sky Test: Sun Disk Proof");
 
         final String id;
         final String label;
@@ -2960,7 +2965,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (udsSkyDomeEntity != 0) return;
         try {
             Engine engine = modelViewer.getEngine();
-            if (udsSkyDomeGeometry == null) udsSkyDomeGeometry = createSphereGeometry(engine, 18, 36, 1.0f);
+            if (udsSkyDomeGeometry == null) udsSkyDomeGeometry = createSphereGeometry(engine, 18, 36, 180.0f);
             if (udsDiskGeometry == null) udsDiskGeometry = createDiskGeometry(engine, 48, 1.0f);
 
             Material domeMaterial = skyAtmosphereV2Material != null ? skyAtmosphereV2Material : skyUnlitTestMaterial;
@@ -3454,7 +3459,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         udsSkyOverlayUsed = "false";
         if (udsSkyEnabled && udsRouteAEnabled) ensureUdsRouteAResources(reason);
         if (!udsSkyEnabled || !udsRouteAEnabled) destroyUdsRouteAResources();
-        boolean routeAReady = udsSkyEnabled && udsRouteAEnabled && udsSkyDomeEntity != 0 && "true".equals(filamentMaterialPipelineReady);
+        boolean routeAReady = udsSkyEnabled && udsRouteAEnabled && !isSkyRouteCFallbackDiagnosticMode() && udsSkyDomeEntity != 0 && "true".equals(filamentMaterialPipelineReady);
         boolean routeV2Ready = routeAReady && "true".equals(udsSkyMaterialV2Loaded);
         udsAtmosphereVisualModeStatus = udsAtmosphereVisualMode.id;
         udsAtmosphereFormula = "uds_inspired_approximation";
@@ -3680,14 +3685,14 @@ public class FilamentGlbPreviewActivity extends Activity {
         setMaterialColorParam(instance, "sunColor", state.sunColor[0], state.sunColor[1], state.sunColor[2], 1.0f);
         instance.setParameter("sunDirection", state.sunDirection[0], state.sunDirection[1], state.sunDirection[2]);
         instance.setParameter("skyCenter", center[0], center[1], center[2]);
-        instance.setParameter("sunDiskIntensity", clamp(state.sunDiskEmissive, 0.0f, 4.0f));
-        instance.setParameter("sunGlowIntensity", clamp(state.sunGlowIntensity, 0.0f, 4.0f));
+        instance.setParameter("sunDiskIntensity", udsAtmosphereVisualMode == UdsAtmosphereVisualMode.SUN_DISK_PROOF ? 4.0f : clamp(state.sunDiskEmissive, 0.0f, 4.0f));
+        instance.setParameter("sunGlowIntensity", udsAtmosphereVisualMode == UdsAtmosphereVisualMode.SUN_DISK_PROOF ? 3.0f : clamp(state.sunGlowIntensity, 0.0f, 4.0f));
         instance.setParameter("horizonSoftness", state.horizonSoftness);
         float gradientStrength = atmosphereGradientStrength();
         float horizonBandStrength = atmosphereHorizonBandStrength();
         float sunGlowStrength = atmosphereSunGlowStrength();
         float minBrightness = atmosphereMinBrightness(state);
-        float visualMode = udsAtmosphereVisualMode == UdsAtmosphereVisualMode.STRONG_GRADIENT ? 1.0f : 0.0f;
+        float visualMode = atmosphereVisualModeValue();
         instance.setParameter("gradientStrength", gradientStrength);
         instance.setParameter("horizonBandStrength", horizonBandStrength);
         instance.setParameter("sunGlowStrength", sunGlowStrength);
@@ -3726,6 +3731,45 @@ public class FilamentGlbPreviewActivity extends Activity {
         udsSkyAtmosphereRoute = "material_v2";
         udsSunGlowMaterialDriven = "true";
         udsSunGlowRoute = "sky_material_v2";
+    }
+
+
+    private boolean isSkyRouteCFallbackDiagnosticMode() {
+        return udsAtmosphereVisualMode == UdsAtmosphereVisualMode.ROUTE_C_FALLBACK;
+    }
+
+    private float atmosphereVisualModeValue() {
+        switch (udsAtmosphereVisualMode) {
+            case STRONG_GRADIENT: return 1.0f;
+            case DOME_SOLID_MAGENTA: return 2.0f;
+            case DOME_RGB_HEIGHT: return 3.0f;
+            case DOME_HORIZON_BAND: return 4.0f;
+            case SUN_DISK_PROOF: return 5.0f;
+            case ROUTE_C_FALLBACK:
+            case NATURAL:
+            default:
+                return 0.0f;
+        }
+    }
+
+    private String skyDebugExpectedHint() {
+        switch (udsAtmosphereVisualMode) {
+            case ROUTE_C_FALLBACK:
+                return "Route C fallback should show simple clear/skybox color; if visible while Route A tests fail, Route A dome path is broken.";
+            case DOME_SOLID_MAGENTA:
+                return "Dome must be bright magenta; if not visible, sky dome renderable/material is not drawing.";
+            case DOME_RGB_HEIGHT:
+                return "Dome should show red upper, yellow/green horizon, blue lower; if magenta worked but RGB fails, worldPosition/skyCenter direction is wrong.";
+            case DOME_HORIZON_BAND:
+                return "Dome should show obvious yellow horizon band; if absent, horizon orientation/formula is wrong.";
+            case SUN_DISK_PROOF:
+                return "Dome is neutral dark; sun disk should be clearly visible when facing sun. If sun works but dome tests fail, disk route works and dome route is broken.";
+            case STRONG_GRADIENT:
+                return "Strong material gradient should be readable; if too dark, atmosphere parameters are wrong.";
+            case NATURAL:
+            default:
+                return "Normal Route A atmosphere mode.";
+        }
     }
 
     private float atmosphereGradientStrength() {
@@ -3767,7 +3811,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         try {
             UdsSkyLightingState state = buildUdsSkyLightingState(currentUdsTimeHours());
             float[] camera = modelViewer.getCamera().getPosition(new float[3]);
-            setEntityTransform(udsSkyDomeEntity, camera[0], camera[1], camera[2], 180.0f);
+            setEntityTransform(udsSkyDomeEntity, camera[0], camera[1], camera[2], 1.0f);
             if ("true".equals(udsSkyMaterialV2Loaded)) {
                 applySkyAtmosphereV2Parameters(udsSkyDomeMaterialInstance, state, camera);
             }
@@ -3912,6 +3956,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nudsSkyMaterialV2Loaded=" + udsSkyMaterialV2Loaded + " route=" + udsSkyAtmosphereRoute
                 + "\nudsAtmosphereVisualMode=" + udsAtmosphereVisualModeStatus + " gradientVisibleExpected=" + udsSkyGradientVisibleExpected
                 + "\nudsStrongGradientVisualProof=" + udsStrongGradientVisualProof + " minBrightness=" + udsMinBrightness
+                + "\nudsSkyDebugExpected=" + skyDebugExpectedHint()
                 + "\nudsGradientStrength=" + udsGradientStrength + " horizonBand=" + udsHorizonBandStrength + " sunGlowStrength=" + udsSunGlowStrength
                 + "\nudsSkyClearMayMaskDome=" + udsSkyClearMayMaskDome + " clearColorMode=" + udsClearColorMode + " domeMaterialActive=" + udsSkyDomeMaterialActive
                 + "\nudsSkyGradientMode=" + udsSkyGradientMode + " interpolation=" + udsSkyColorInterpolation + " continuous=" + udsTimeContinuous
@@ -6396,6 +6441,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("udsSkyMaterial", udsSkyMaterial);
         json.put("udsSkyGradientMode", udsSkyGradientMode);
         json.put("udsAtmosphereVisualMode", udsAtmosphereVisualModeStatus);
+        json.put("udsSkyDebugTestMode", udsAtmosphereVisualModeStatus);
+        json.put("udsSkyDebugExpected", skyDebugExpectedHint());
         json.put("udsSkyGradientVisibleExpected", udsSkyGradientVisibleExpected);
         json.put("udsStrongGradientVisualProof", udsStrongGradientVisualProof);
         json.put("udsGradientStrength", udsGradientStrength);

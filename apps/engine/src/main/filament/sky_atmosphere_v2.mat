@@ -18,6 +18,9 @@ material {
         { type : float, name : horizonBandStrength },
         { type : float, name : sunGlowStrength },
         { type : float, name : minBrightness },
+        // visualMode diagnostic values:
+        // 0 natural, 1 strong gradient, 2 solid magenta, 3 RGB height bands,
+        // 4 horizon band, 5 sun disk proof / neutral dome.
         { type : float, name : visualMode },
         { type : float, name : nightFactor },
         { type : float, name : dawnDuskFactor },
@@ -29,23 +32,77 @@ fragment {
     void material(inout MaterialInputs material) {
         prepareMaterial(material);
 
+        float mode = materialParams.visualMode;
         float3 d = normalize(getWorldPosition().xyz - materialParams.skyCenter);
 
-        float up = smoothstep(0.20, 0.85, d.y);
-        float down = smoothstep(0.20, 0.85, -d.y);
-        float horizon = 1.0 - smoothstep(0.00, 0.22, abs(d.y));
+        // TEST 2: absolute material/renderable proof. If Route A dome is visible,
+        // screen background must become bright magenta.
+        if (mode > 1.5 && mode < 2.5) {
+            material.baseColor = float4(1.0, 0.0, 1.0, 1.0);
+            return;
+        }
 
-        float3 topColor = float3(1.0, 0.05, 0.20);
-        float3 horizonColor = float3(0.10, 1.0, 0.10);
-        float3 bottomColor = float3(0.05, 0.15, 1.0);
+        // TEST 3: RGB world-height proof. Upper = red, horizon = green, lower = blue.
+        if (mode > 2.5 && mode < 3.5) {
+            float up = smoothstep(0.18, 0.82, d.y);
+            float down = smoothstep(0.18, 0.82, -d.y);
+            float horizon = 1.0 - smoothstep(0.0, 0.24, abs(d.y));
+            float3 c = mix(float3(0.05, 0.10, 1.0), float3(0.0, 1.0, 0.1), 1.0 - down);
+            c = mix(c, float3(1.0, 0.05, 0.1), up);
+            c = mix(c, float3(1.0, 1.0, 0.0), horizon);
+            material.baseColor = float4(c, 1.0);
+            return;
+        }
 
-        float3 color = mix(bottomColor, horizonColor, 1.0 - down);
-        color = mix(color, topColor, up);
-        color = mix(color, horizonColor, horizon);
+        // TEST 4: explicit horizon band proof.
+        if (mode > 3.5 && mode < 4.5) {
+            float horizon = 1.0 - smoothstep(0.0, 0.20, abs(d.y));
+            float3 c = mix(float3(0.03, 0.10, 0.70), float3(1.0, 0.85, 0.02), horizon);
+            material.baseColor = float4(c, 1.0);
+            return;
+        }
 
-        float sunAlign = clamp(dot(d, normalize(-materialParams.sunDirection)), 0.0, 1.0);
-        color += float3(1.0, 0.85, 0.45) * pow(sunAlign, 64.0) * 2.5;
-        color += float3(1.0, 0.55, 0.20) * pow(sunAlign, 8.0) * 0.45;
+        // TEST 5: leave dome neutral/dim; sun disk proof handled mostly in Java sun mesh.
+        if (mode > 4.5 && mode < 5.5) {
+            material.baseColor = float4(0.02, 0.03, 0.045, 1.0);
+            return;
+        }
+
+        // Normal / strong-gradient atmosphere approximation.
+        float proofMode = step(0.5, mode);
+        float gradientStrength = clamp(materialParams.gradientStrength, 0.35, 4.0);
+        float horizonBandStrength = clamp(materialParams.horizonBandStrength, 0.0, 4.0);
+        float sunGlowStrength = clamp(materialParams.sunGlowStrength, 0.0, 4.0);
+        float minBrightness = clamp(materialParams.minBrightness, 0.0, 1.0);
+
+        float height = clamp(d.y * 0.5 + 0.5, 0.0, 1.0);
+        float horizonWidth = clamp(materialParams.horizonSoftness, 0.04, 0.70);
+        float upperBlend = smoothstep(0.38 - horizonWidth * 0.25, 0.95, height);
+        float lowerBlend = smoothstep(0.00, 0.58 + horizonWidth * 0.30, height);
+        upperBlend = pow(upperBlend, 1.0 / gradientStrength);
+        lowerBlend = pow(lowerBlend, 1.0 / max(gradientStrength * 0.85, 0.35));
+
+        float3 belowHorizon = mix(materialParams.groundColor.rgb, materialParams.horizonColor.rgb, lowerBlend);
+        float3 skyGradient = mix(belowHorizon, materialParams.zenithColor.rgb, upperBlend);
+        float horizonBand = 1.0 - smoothstep(0.0, horizonWidth, abs(d.y));
+        skyGradient = mix(skyGradient, materialParams.horizonColor.rgb, clamp(horizonBand * horizonBandStrength * 0.70, 0.0, 0.95));
+
+        float sunAlignment = clamp(dot(d, normalize(-materialParams.sunDirection)), 0.0, 1.0);
+        float glowCore = pow(sunAlignment, mix(96.0, 56.0, proofMode)) * materialParams.sunDiskIntensity;
+        float glowHalo = pow(sunAlignment, mix(8.0, 5.0, proofMode)) * materialParams.sunGlowIntensity * sunGlowStrength;
+        float sunsetBand = materialParams.dawnDuskFactor * smoothstep(0.03, 0.66, 1.0 - abs(d.y));
+        float nightClamp = mix(
+            1.0 - clamp(materialParams.nightFactor * 0.72, 0.0, 0.82),
+            1.0 - clamp(materialParams.nightFactor * 0.20, 0.0, 0.35),
+            proofMode
+        );
+
+        float3 color = skyGradient;
+        color = mix(color, materialParams.sunColor.rgb, clamp(glowHalo * (0.32 + sunsetBand * 0.68), 0.0, 0.92));
+        color = mix(color, materialParams.sunColor.rgb, clamp(sunsetBand * horizonBand * 0.58 * horizonBandStrength, 0.0, 0.86));
+        color += materialParams.sunColor.rgb * glowCore;
+        color *= materialParams.exposure * nightClamp;
+        color = max(color, float3(minBrightness));
 
         material.baseColor = float4(color, 1.0);
     }

@@ -229,6 +229,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private Button moonButton;
     private Button udsSkyButton;
     private Button udsSkyRouteButton;
+    private Button udsAtmosphereModeButton;
     private Button udsStarsButton;
     private Button udsLensButton;
     private Button collapseButton;
@@ -481,6 +482,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private UdsTimePreset udsTimePreset = UdsTimePreset.NOON;
     private boolean udsSkyEnabled = true;
     private boolean udsRouteAEnabled = true;
+    private UdsAtmosphereVisualMode udsAtmosphereVisualMode = UdsAtmosphereVisualMode.STRONG_GRADIENT;
     private boolean udsStarsEnabled = true;
     private boolean udsLensFlareEnabled = true;
     private float udsStarBrightness = 1.0f;
@@ -625,6 +627,13 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String skyAtmosphereV2FilamatExists = "false";
     private String udsSkyMaterialV2Loaded = "false";
     private String udsSkyGradientMode = "none";
+    private String udsAtmosphereVisualModeStatus = "strong_gradient";
+    private String udsSkyGradientVisibleExpected = "false";
+    private String udsGradientStrength = "0";
+    private String udsHorizonBandStrength = "0";
+    private String udsSunGlowStrength = "0";
+    private String udsSkyClearMayMaskDome = "unknown";
+    private String udsSkyDomeMaterialActive = "false";
     private String udsSkyAtmosphereRoute = "none";
     private String udsAtmosphereFormula = "uds_inspired_approximation";
     private String udsExactFormulaDecoded = "false";
@@ -725,6 +734,23 @@ public class FilamentGlbPreviewActivity extends Activity {
 
         UdsStarsDebugMode next() {
             return values()[(ordinal() + 1) % values().length];
+        }
+    }
+
+    private enum UdsAtmosphereVisualMode {
+        NATURAL("natural", "Atmosphere: Natural"),
+        STRONG_GRADIENT("strong_gradient", "Atmosphere: Strong Gradient");
+
+        final String id;
+        final String label;
+
+        UdsAtmosphereVisualMode(String id, String label) {
+            this.id = id;
+            this.label = label;
+        }
+
+        UdsAtmosphereVisualMode next() {
+            return this == NATURAL ? STRONG_GRADIENT : NATURAL;
         }
     }
 
@@ -1514,6 +1540,11 @@ public class FilamentGlbPreviewActivity extends Activity {
             applyUdsSkyState(udsRouteAEnabled ? "uds_route_a_enabled" : "uds_route_c_fallback");
         });
         iblPanel.addView(udsSkyRouteButton);
+        udsAtmosphereModeButton = button("", v -> {
+            udsAtmosphereVisualMode = udsAtmosphereVisualMode.next();
+            applyUdsSkyState("uds_atmosphere_visual_mode_" + udsAtmosphereVisualMode.id);
+        });
+        iblPanel.addView(udsAtmosphereModeButton);
         udsSkyButton = button("", v -> {
             udsTimePreset = udsTimePreset.next();
             setUdsTimePreset(udsTimePreset, "uds_time_button");
@@ -2960,6 +2991,8 @@ public class FilamentGlbPreviewActivity extends Activity {
             udsSkyAtmosphereRoute = skyAtmosphereV2Material != null ? "material_v2" : "material_v1_fallback";
             udsSunGlowMaterialDriven = skyAtmosphereV2Material != null ? "true" : "false";
             udsSunGlowRoute = skyAtmosphereV2Material != null ? "sky_material_v2" : "not_supported";
+            udsSkyDomeMaterialActive = skyAtmosphereV2Material != null ? "true" : "false";
+            udsSkyGradientVisibleExpected = skyAtmosphereV2Material != null ? "true" : "false";
             udsSkyDomeVisible = "expected_true";
             udsSkyDepthSafe = "true_depth_write_false_depth_test_true_priority_0";
             udsSkyModelStillVisible = "expected_true";
@@ -3417,6 +3450,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (!udsSkyEnabled || !udsRouteAEnabled) destroyUdsRouteAResources();
         boolean routeAReady = udsSkyEnabled && udsRouteAEnabled && udsSkyDomeEntity != 0 && "true".equals(filamentMaterialPipelineReady);
         boolean routeV2Ready = routeAReady && "true".equals(udsSkyMaterialV2Loaded);
+        udsAtmosphereVisualModeStatus = udsAtmosphereVisualMode.id;
         udsAtmosphereFormula = "uds_inspired_approximation";
         udsExactFormulaDecoded = "false";
         udsTimeContinuous = "true";
@@ -3430,6 +3464,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         udsSkyEntityCreated = routeAReady ? "true" : "false";
         udsSkyMaterial = routeV2Ready ? "sky_atmosphere_v2.filamat" : (routeAReady ? "sky_unlit_test.filamat" : "none");
         udsSkyGradientMode = routeV2Ready ? "top_horizon_ground" : (routeAReady ? "single_baseColor_fallback" : "none");
+        udsSkyGradientVisibleExpected = routeV2Ready ? "true" : "false";
+        udsSkyDomeMaterialActive = routeV2Ready ? "true" : "false";
         udsSkyAtmosphereRoute = routeV2Ready ? "material_v2" : (routeAReady ? "material_v1_fallback" : "route_c_fallback");
         udsSunGlowMaterialDriven = routeV2Ready ? "true" : "false";
         udsSunGlowRoute = routeV2Ready ? "sky_material_v2" : "not_supported";
@@ -3450,14 +3486,16 @@ public class FilamentGlbPreviewActivity extends Activity {
         udsSkyPerformanceStatus = "mobile_safe_filament_route_" + udsSkyRoute + "_no_volumetric_no_particles_no_weather_no_lens reason=" + reason;
         applyUdsSkyLightingState(lighting, routeAReady);
         updateUdsSkyFrameState(reason);
+        float[] routeAClearColor = routeAReady ? neutralSkyDomeClearColor(lighting) : (udsSkyEnabled ? lighting.skyHorizonColor : backgroundColor());
+        udsSkyClearMayMaskDome = routeAReady ? "false_neutral_clear_route_a_dome_active" : (udsSkyEnabled ? "true_route_c_clear_matches_horizon" : "false_disabled");
         if (skybox != null && !"true".equals(realIblReady)) {
-            skybox.setColor(udsSkyEnabled ? lighting.skyHorizonColor : backgroundColor());
+            skybox.setColor(routeAClearColor);
         }
         if (modelViewer != null && modelViewer.getRenderer() != null) {
             Renderer.ClearOptions clear = modelViewer.getRenderer().getClearOptions();
             clear.clear = true;
             clear.discard = true;
-            clear.clearColor = udsSkyEnabled ? lighting.skyHorizonColor : backgroundColor();
+            clear.clearColor = routeAClearColor;
             modelViewer.getRenderer().setClearOptions(clear);
         }
         syncEnvironmentAssetDiagnostics();
@@ -3489,6 +3527,27 @@ public class FilamentGlbPreviewActivity extends Activity {
         float sunEmissive = nightFactor > 0.65f ? 0.0f : clamp(udsSunDiskEmissive * (0.35f + 0.65f * dayFactor), 0.0f, 4.0f);
         float sunGlow = clamp((0.16f + sunsetWarmth * 0.84f + sunElevationFactor * 0.24f) * dayFactor, 0.0f, 1.35f);
         float horizonSoftness = clamp(0.34f + dawnDuskFactor * 0.24f + nightFactor * 0.12f, 0.18f, 0.72f);
+        if (udsAtmosphereVisualMode == UdsAtmosphereVisualMode.STRONG_GRADIENT) {
+            if (state.equals("night")) {
+                top = new float[] {0.004f, 0.010f, 0.070f, 1.0f};
+                horizon = new float[] {0.105f, 0.130f, 0.285f, 1.0f};
+                ground = new float[] {0.008f, 0.007f, 0.026f, 1.0f};
+                sunGlow = 0.0f;
+                horizonSoftness = 0.30f;
+            } else if (dawn || dusk) {
+                top = new float[] {0.035f, 0.150f, 0.520f, 1.0f};
+                horizon = new float[] {1.000f, 0.430f, 0.155f, 1.0f};
+                ground = new float[] {0.145f, 0.052f, 0.025f, 1.0f};
+                sunGlow = 2.25f;
+                horizonSoftness = 0.24f;
+            } else {
+                top = new float[] {0.018f, 0.205f, 0.820f, 1.0f};
+                horizon = new float[] {0.820f, 0.950f, 1.120f, 1.0f};
+                ground = new float[] {0.055f, 0.095f, 0.130f, 1.0f};
+                sunGlow = 1.65f;
+                horizonSoftness = 0.22f;
+            }
+        }
         float ambient = state.equals("night") ? 0.12f : (state.equals("noon") ? 1.0f : 0.42f);
         float reflection = state.equals("night") ? 0.16f : (state.equals("noon") ? 1.0f : 0.45f);
         float moonDisk = state.equals("night") && moonEnabled ? clamp(moonIntensityLux * 2.0f, 0.0f, 1.0f) : 0.0f;
@@ -3606,25 +3665,54 @@ public class FilamentGlbPreviewActivity extends Activity {
         instance.setParameter("sunDirection", state.sunDirection[0], state.sunDirection[1], state.sunDirection[2]);
         instance.setParameter("skyCenter", center[0], center[1], center[2]);
         instance.setParameter("sunDiskIntensity", clamp(state.sunDiskEmissive, 0.0f, 4.0f));
-        instance.setParameter("sunGlowIntensity", clamp(state.sunGlowIntensity, 0.0f, 2.0f));
+        instance.setParameter("sunGlowIntensity", clamp(state.sunGlowIntensity, 0.0f, 4.0f));
         instance.setParameter("horizonSoftness", state.horizonSoftness);
+        float gradientStrength = atmosphereGradientStrength();
+        float horizonBandStrength = atmosphereHorizonBandStrength();
+        float sunGlowStrength = atmosphereSunGlowStrength();
+        instance.setParameter("gradientStrength", gradientStrength);
+        instance.setParameter("horizonBandStrength", horizonBandStrength);
+        instance.setParameter("sunGlowStrength", sunGlowStrength);
         instance.setParameter("nightFactor", state.nightFactor);
         instance.setParameter("dawnDuskFactor", state.dawnDuskFactor);
         instance.setParameter("exposure", clamp(0.90f + state.exposureCompensation * 0.25f, 0.35f, 1.35f));
+        udsAtmosphereVisualModeStatus = udsAtmosphereVisualMode.id;
         udsZenithColor = color3Text(state.skyTopColor);
         udsHorizonColor = color3Text(state.skyHorizonColor);
         udsGroundColor = color3Text(state.skyGroundColor);
         udsNightFactor = twoDecimal(state.nightFactor);
         udsDawnDuskFactor = twoDecimal(state.dawnDuskFactor);
         udsHorizonSoftness = twoDecimal(state.horizonSoftness);
+        udsGradientStrength = twoDecimal(gradientStrength);
+        udsHorizonBandStrength = twoDecimal(horizonBandStrength);
+        udsSunGlowStrength = twoDecimal(sunGlowStrength);
         udsSunElevationFactor = twoDecimal(state.sunElevationFactor);
         udsDayFactor = twoDecimal(state.dayFactor);
         udsTimeContinuous = "true";
         udsSkyColorInterpolation = "smoothstep";
         udsSkyGradientMode = "top_horizon_ground";
+        udsSkyGradientVisibleExpected = "true";
+        udsSkyDomeMaterialActive = "true";
         udsSkyAtmosphereRoute = "material_v2";
         udsSunGlowMaterialDriven = "true";
         udsSunGlowRoute = "sky_material_v2";
+    }
+
+    private float atmosphereGradientStrength() {
+        return udsAtmosphereVisualMode == UdsAtmosphereVisualMode.STRONG_GRADIENT ? 2.85f : 1.0f;
+    }
+
+    private float atmosphereHorizonBandStrength() {
+        return udsAtmosphereVisualMode == UdsAtmosphereVisualMode.STRONG_GRADIENT ? 2.45f : 1.0f;
+    }
+
+    private float atmosphereSunGlowStrength() {
+        return udsAtmosphereVisualMode == UdsAtmosphereVisualMode.STRONG_GRADIENT ? 2.10f : 1.0f;
+    }
+
+    private float[] neutralSkyDomeClearColor(UdsSkyLightingState state) {
+        if (state != null && "night".equals(state.timeState)) return new float[] {0.003f, 0.004f, 0.012f, 1.0f};
+        return new float[] {0.006f, 0.010f, 0.016f, 1.0f};
     }
 
     private void setMaterialColorParam(MaterialInstance instance, String name, float[] rgba) {
@@ -3766,6 +3854,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         EnvironmentDiagnostics diagnostics = environmentApi.getDiagnostics();
         if (moonButton != null) moonButton.setText("Moon: " + (moonEnabled ? "On" : "Off") + " / " + diagnostics.getMoonStatus());
         if (udsSkyRouteButton != null) udsSkyRouteButton.setText(udsRouteAEnabled ? "Route A sky dome" : "Route C fallback");
+        if (udsAtmosphereModeButton != null) udsAtmosphereModeButton.setText(udsAtmosphereVisualMode.label);
         if (udsSkyButton != null) udsSkyButton.setText((udsSkyEnabled ? "UDS Time: " : "UDS Sky Off: ") + udsTimePreset.label);
         if (udsStarsButton != null) udsStarsButton.setText(udsStarsDebugMode.label);
         if (udsLensButton != null) udsLensButton.setText("UDS Lens: disabled");
@@ -3783,6 +3872,9 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nudsSkyOverlayUsed=" + udsSkyOverlayUsed
                 + "\nudsSkyMaterial=" + udsSkyMaterial
                 + "\nudsSkyMaterialV2Loaded=" + udsSkyMaterialV2Loaded + " route=" + udsSkyAtmosphereRoute
+                + "\nudsAtmosphereVisualMode=" + udsAtmosphereVisualModeStatus + " gradientVisibleExpected=" + udsSkyGradientVisibleExpected
+                + "\nudsGradientStrength=" + udsGradientStrength + " horizonBand=" + udsHorizonBandStrength + " sunGlowStrength=" + udsSunGlowStrength
+                + "\nudsSkyClearMayMaskDome=" + udsSkyClearMayMaskDome + " domeMaterialActive=" + udsSkyDomeMaterialActive
                 + "\nudsSkyGradientMode=" + udsSkyGradientMode + " interpolation=" + udsSkyColorInterpolation + " continuous=" + udsTimeContinuous
                 + "\nudsAtmosphereFormula=" + udsAtmosphereFormula + " exactDecoded=" + udsExactFormulaDecoded
                 + "\nudsZenithColor=" + udsZenithColor + " horizon=" + udsHorizonColor + " ground=" + udsGroundColor
@@ -5886,6 +5978,9 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nudsSkyRoute=" + udsSkyRoute + " entity=" + udsSkyEntityCreated + " rendererBacked=" + udsSkyRendererBacked + " cameraAware=" + udsSkyCameraAware
                 + "\nudsSkyOverlayUsed=" + udsSkyOverlayUsed + " material=" + udsSkyMaterial + " stage1=" + udsSkyStage1Status
                 + "\nudsSkyAtmosphereRoute=" + udsSkyAtmosphereRoute + " gradient=" + udsSkyGradientMode + " interpolation=" + udsSkyColorInterpolation + " continuous=" + udsTimeContinuous
+                + "\nudsAtmosphereVisualMode=" + udsAtmosphereVisualModeStatus + " gradientVisibleExpected=" + udsSkyGradientVisibleExpected
+                + "\nudsGradientStrength=" + udsGradientStrength + " horizonBand=" + udsHorizonBandStrength + " sunGlowStrength=" + udsSunGlowStrength
+                + "\nudsSkyClearMayMaskDome=" + udsSkyClearMayMaskDome + " domeMaterialActive=" + udsSkyDomeMaterialActive
                 + "\nudsAtmosphereFormula=" + udsAtmosphereFormula + " exactDecoded=" + udsExactFormulaDecoded
                 + "\nudsZenithColor=" + udsZenithColor + " horizon=" + udsHorizonColor + " ground=" + udsGroundColor
                 + "\nudsNightFactor=" + udsNightFactor + " dawnDusk=" + udsDawnDuskFactor + " day=" + udsDayFactor + " sunElevationFactor=" + udsSunElevationFactor
@@ -6259,6 +6354,13 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("udsSkyOverlayUsed", udsSkyOverlayUsed);
         json.put("udsSkyMaterial", udsSkyMaterial);
         json.put("udsSkyGradientMode", udsSkyGradientMode);
+        json.put("udsAtmosphereVisualMode", udsAtmosphereVisualModeStatus);
+        json.put("udsSkyGradientVisibleExpected", udsSkyGradientVisibleExpected);
+        json.put("udsGradientStrength", udsGradientStrength);
+        json.put("udsHorizonBandStrength", udsHorizonBandStrength);
+        json.put("udsSunGlowStrength", udsSunGlowStrength);
+        json.put("udsSkyClearMayMaskDome", udsSkyClearMayMaskDome);
+        json.put("udsSkyDomeMaterialActive", udsSkyDomeMaterialActive);
         json.put("udsSkyAtmosphereRoute", udsSkyAtmosphereRoute);
         json.put("udsAtmosphereFormula", udsAtmosphereFormula);
         json.put("udsExactFormulaDecoded", udsExactFormulaDecoded);

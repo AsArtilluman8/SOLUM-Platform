@@ -1,0 +1,49 @@
+material {
+    name : sky_atmosphere_v2,
+    shadingModel : unlit,
+    depthWrite : false,
+    depthCulling : false,
+    doubleSided : true,
+    parameters : [
+        { type : float4, name : zenithColor },
+        { type : float4, name : horizonColor },
+        { type : float4, name : groundColor },
+        { type : float4, name : sunColor },
+        { type : float3, name : sunDirection },
+        { type : float3, name : skyCenter },
+        { type : float, name : sunDiskIntensity },
+        { type : float, name : sunGlowIntensity },
+        { type : float, name : horizonSoftness },
+        { type : float, name : nightFactor },
+        { type : float, name : dawnDuskFactor },
+        { type : float, name : exposure }
+    ]
+}
+
+fragment {
+    void material(inout MaterialInputs material) {
+        prepareMaterial(material);
+
+        float3 direction = normalize(getWorldPosition().xyz - materialParams.skyCenter);
+        float height = clamp(direction.y * 0.5 + 0.5, 0.0, 1.0);
+        float horizonWidth = clamp(materialParams.horizonSoftness, 0.08, 0.92);
+        float upperBlend = smoothstep(0.42 - horizonWidth * 0.28, 1.0, height);
+        float lowerBlend = smoothstep(0.0, 0.52 + horizonWidth * 0.30, height);
+
+        float3 belowHorizon = mix(materialParams.groundColor.rgb, materialParams.horizonColor.rgb, lowerBlend);
+        float3 skyGradient = mix(belowHorizon, materialParams.zenithColor.rgb, upperBlend);
+
+        float sunAlignment = clamp(dot(direction, normalize(-materialParams.sunDirection)), 0.0, 1.0);
+        float glowCore = pow(sunAlignment, 96.0) * materialParams.sunDiskIntensity;
+        float glowHalo = pow(sunAlignment, 10.0) * materialParams.sunGlowIntensity;
+        float sunsetBand = materialParams.dawnDuskFactor * smoothstep(0.08, 0.58, 1.0 - abs(direction.y));
+        float nightClamp = 1.0 - clamp(materialParams.nightFactor * 0.72, 0.0, 0.82);
+
+        float3 color = skyGradient;
+        color = mix(color, materialParams.sunColor.rgb, glowHalo * (0.35 + sunsetBand * 0.65));
+        color += materialParams.sunColor.rgb * glowCore;
+        color *= materialParams.exposure * nightClamp;
+
+        material.baseColor = float4(color, 1.0);
+    }
+}

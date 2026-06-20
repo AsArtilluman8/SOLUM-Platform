@@ -14,6 +14,9 @@ material {
         { type : float, name : sunDiskIntensity },
         { type : float, name : sunGlowIntensity },
         { type : float, name : horizonSoftness },
+        { type : float, name : gradientStrength },
+        { type : float, name : horizonBandStrength },
+        { type : float, name : sunGlowStrength },
         { type : float, name : nightFactor },
         { type : float, name : dawnDuskFactor },
         { type : float, name : exposure }
@@ -25,22 +28,30 @@ fragment {
         prepareMaterial(material);
 
         float3 direction = normalize(getWorldPosition().xyz - materialParams.skyCenter);
+        float gradientStrength = clamp(materialParams.gradientStrength, 0.35, 4.0);
+        float horizonBandStrength = clamp(materialParams.horizonBandStrength, 0.0, 4.0);
+        float sunGlowStrength = clamp(materialParams.sunGlowStrength, 0.0, 4.0);
         float height = clamp(direction.y * 0.5 + 0.5, 0.0, 1.0);
-        float horizonWidth = clamp(materialParams.horizonSoftness, 0.08, 0.92);
-        float upperBlend = smoothstep(0.42 - horizonWidth * 0.28, 1.0, height);
-        float lowerBlend = smoothstep(0.0, 0.52 + horizonWidth * 0.30, height);
+        float horizonWidth = clamp(materialParams.horizonSoftness, 0.05, 0.65);
+        float upperBlend = smoothstep(0.50 - horizonWidth * 0.32, 0.96, height);
+        float lowerBlend = smoothstep(0.00, 0.50 + horizonWidth * 0.24, height);
+        upperBlend = pow(upperBlend, 1.0 / gradientStrength);
+        lowerBlend = pow(lowerBlend, 1.0 / max(gradientStrength * 0.85, 0.35));
 
         float3 belowHorizon = mix(materialParams.groundColor.rgb, materialParams.horizonColor.rgb, lowerBlend);
         float3 skyGradient = mix(belowHorizon, materialParams.zenithColor.rgb, upperBlend);
+        float horizonBand = 1.0 - smoothstep(0.0, horizonWidth, abs(direction.y));
+        skyGradient = mix(skyGradient, materialParams.horizonColor.rgb, clamp(horizonBand * horizonBandStrength * 0.55, 0.0, 0.85));
 
         float sunAlignment = clamp(dot(direction, normalize(-materialParams.sunDirection)), 0.0, 1.0);
         float glowCore = pow(sunAlignment, 96.0) * materialParams.sunDiskIntensity;
-        float glowHalo = pow(sunAlignment, 10.0) * materialParams.sunGlowIntensity;
-        float sunsetBand = materialParams.dawnDuskFactor * smoothstep(0.08, 0.58, 1.0 - abs(direction.y));
+        float glowHalo = pow(sunAlignment, 8.0) * materialParams.sunGlowIntensity * sunGlowStrength;
+        float sunsetBand = materialParams.dawnDuskFactor * smoothstep(0.03, 0.66, 1.0 - abs(direction.y));
         float nightClamp = 1.0 - clamp(materialParams.nightFactor * 0.72, 0.0, 0.82);
 
         float3 color = skyGradient;
-        color = mix(color, materialParams.sunColor.rgb, glowHalo * (0.35 + sunsetBand * 0.65));
+        color = mix(color, materialParams.sunColor.rgb, clamp(glowHalo * (0.32 + sunsetBand * 0.68), 0.0, 0.92));
+        color = mix(color, materialParams.sunColor.rgb, clamp(sunsetBand * horizonBand * 0.40 * horizonBandStrength, 0.0, 0.70));
         color += materialParams.sunColor.rgb * glowCore;
         color *= materialParams.exposure * nightClamp;
 

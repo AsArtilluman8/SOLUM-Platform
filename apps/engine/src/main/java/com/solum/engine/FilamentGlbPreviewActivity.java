@@ -539,6 +539,30 @@ public class FilamentGlbPreviewActivity extends Activity {
     private float cameraTargetY = 0.0f;
     private float cameraTargetZ = 0.0f;
     private float cameraFov = 45.0f;
+    private final OrbitCameraState orbitCameraState = new OrbitCameraState();
+    private int orbitActivePointerId = -1;
+    private float orbitLastTouchX = 0.0f;
+    private float orbitLastTouchY = 0.0f;
+    private float orbitLastPinchDistance = 0.0f;
+    private boolean orbitTouchMoved = false;
+    private boolean orbitPinching = false;
+    private String cameraControllerOwner = "solum_orbit_state";
+    private String cameraConflictDetected = "false";
+    private String touchOrbitEnabled = "true";
+    private String pinchZoomEnabled = "true";
+    private String uiCameraSlidersLive = "true";
+    private String modelTransformIndependent = "true";
+    private String fitModelCameraMode = "orbit_state";
+    private String udsSkyUsesFinalCameraPosition = "false";
+    private String udsSkyCameraSource = "unknown";
+    private String udsSunPositionMode = "unknown";
+    private String udsMoonPositionMode = "unknown";
+    private float finalCameraX = 0.0f;
+    private float finalCameraY = 0.0f;
+    private float finalCameraZ = 4.4f;
+    private float finalLookAtX = 0.0f;
+    private float finalLookAtY = 0.0f;
+    private float finalLookAtZ = 0.0f;
     private float colorExposure = 0.0f;
     private float colorContrast = 1.0f;
     private float colorSaturation = 1.0f;
@@ -683,6 +707,22 @@ public class FilamentGlbPreviewActivity extends Activity {
             this.indexCount = indexCount;
             this.boundsRadius = boundsRadius;
         }
+    }
+
+    private static final class OrbitCameraState {
+        float targetX = 0.0f;
+        float targetY = 0.0f;
+        float targetZ = 0.0f;
+        float yaw = 0.0f;
+        float pitch = 0.0f;
+        float distance = 4.4f;
+        float fovDegrees = 45.0f;
+        float panX = 0.0f;
+        float panY = 0.0f;
+        final float minDistance = 0.8f;
+        final float maxDistance = 30.0f;
+        final float minPitch = -85.0f;
+        final float maxPitch = 85.0f;
     }
 
     private static final class UdsSkyLightingState {
@@ -1795,8 +1835,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             environmentApi = new EnvironmentController(renderControlApi);
             surfaceView.setOnTouchListener((view, event) -> {
                 if (destroying || destroyed || modelViewer == null) return true;
-                modelViewer.onTouchEvent(event);
-                if (event.getAction() == MotionEvent.ACTION_UP) requestPick(event);
+                handleOrbitCameraTouch(event);
                 return true;
             });
             createEnvironmentFallback();
@@ -1805,7 +1844,8 @@ public class FilamentGlbPreviewActivity extends Activity {
             applyEnvironmentStateToActivity("viewer_created");
             applyQualityProfile();
             applyLightingValues();
-            applyCameraControls();
+            syncOrbitStateFromLegacyCameraFields();
+            applyOrbitCameraStateToFilamentCamera();
             updateAdvancedValuesVisibility();
             lifecycleStatus = "viewer_created";
         } catch (Throwable t) {
@@ -3443,9 +3483,17 @@ public class FilamentGlbPreviewActivity extends Activity {
             setDiskTransform(udsSunDiskEntity, camera, state.sunDirection, 150.0f, state.sunDiskEmissive > 0.01f ? 7.5f : 0.001f);
             setDiskTransform(udsMoonDiskEntity, camera, state.moonDirection, 145.0f, state.moonDiskIntensity > 0.01f ? 5.5f : 0.001f);
             udsSkyCameraAware = "true_camera_position_from_filament_camera";
+            udsSkyUsesFinalCameraPosition = "true";
+            udsSkyCameraSource = "final_filament_camera_after_orbit_apply";
+            udsSunPositionMode = "camera_relative_world_direction";
+            udsMoonPositionMode = "camera_relative_world_direction";
             udsSkyStage1Status = "ok";
         } catch (Throwable t) {
             udsSkyCameraAware = "false_update_failed: " + shortMessage(t);
+            udsSkyUsesFinalCameraPosition = "false";
+            udsSkyCameraSource = "update_failed";
+            udsSunPositionMode = "unknown";
+            udsMoonPositionMode = "unknown";
             udsSkyStage1Status = "fallback_camera_update_failed";
         }
     }
@@ -4291,6 +4339,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         cameraTargetY = prefs.getFloat(PREF_FILAMENT_CAMERA_TARGET_Y, 0.0f);
         cameraTargetZ = prefs.getFloat(PREF_FILAMENT_CAMERA_TARGET_Z, 0.0f);
         cameraFov = prefs.getFloat(PREF_FILAMENT_CAMERA_FOV, 45.0f);
+        syncOrbitStateFromLegacyCameraFields();
         colorExposure = prefs.getFloat(PREF_FILAMENT_COLOR_EXPOSURE, 0.0f);
         colorContrast = prefs.getFloat(PREF_FILAMENT_COLOR_CONTRAST, colorMode.contrast);
         colorSaturation = prefs.getFloat(PREF_FILAMENT_COLOR_SATURATION, colorMode.saturation);
@@ -4571,29 +4620,36 @@ public class FilamentGlbPreviewActivity extends Activity {
         cameraPanel.addView(button("Reset Camera", v -> resetCameraControls()));
         cameraPanel.addView(button("Fit Model", v -> fitModelCamera()));
         addLightingSlider(cameraPanel, "Dist", 1.0f, 12.0f, 0.1f, cameraDistance, v -> {
-            cameraDistance = v;
+            orbitCameraState.distance = clamp(v, orbitCameraState.minDistance, orbitCameraState.maxDistance);
+            syncLegacyCameraFieldsFromOrbitState();
             markManualOverride("camera_distance");
-            applyCameraControls();
+            applyOrbitCameraStateToFilamentCamera();
         });
         addLightingSlider(cameraPanel, "Pan X", -3.0f, 3.0f, 0.05f, cameraTargetX, v -> {
-            cameraTargetX = v;
+            orbitCameraState.targetX = v;
+            orbitCameraState.panX = v;
+            syncLegacyCameraFieldsFromOrbitState();
             markManualOverride("camera_pan_x");
-            applyCameraControls();
+            applyOrbitCameraStateToFilamentCamera();
         });
         addLightingSlider(cameraPanel, "Pan Y", -3.0f, 3.0f, 0.05f, cameraTargetY, v -> {
-            cameraTargetY = v;
+            orbitCameraState.targetY = v;
+            orbitCameraState.panY = v;
+            syncLegacyCameraFieldsFromOrbitState();
             markManualOverride("camera_pan_y");
-            applyCameraControls();
+            applyOrbitCameraStateToFilamentCamera();
         });
         addLightingSlider(cameraPanel, "Target Z", -3.0f, 3.0f, 0.05f, cameraTargetZ, v -> {
-            cameraTargetZ = v;
+            orbitCameraState.targetZ = v;
+            syncLegacyCameraFieldsFromOrbitState();
             markManualOverride("camera_target_z");
-            applyCameraControls();
+            applyOrbitCameraStateToFilamentCamera();
         });
         addLightingSlider(cameraPanel, "FOV", 20.0f, 80.0f, 1.0f, cameraFov, v -> {
-            cameraFov = v;
+            orbitCameraState.fovDegrees = clamp(v, 20.0f, 80.0f);
+            syncLegacyCameraFieldsFromOrbitState();
             markManualOverride("camera_fov");
-            applyCameraControls();
+            applyOrbitCameraStateToFilamentCamera();
         });
         cameraPanel.addView(cameraSummaryView);
     }
@@ -4714,38 +4770,189 @@ public class FilamentGlbPreviewActivity extends Activity {
         refreshUiNow();
     }
 
+    private void handleOrbitCameraTouch(MotionEvent event) {
+        if (event == null) return;
+        int action = event.getActionMasked();
+        switch (action) {
+            case MotionEvent.ACTION_DOWN:
+                orbitActivePointerId = event.getPointerId(0);
+                orbitLastTouchX = event.getX(0);
+                orbitLastTouchY = event.getY(0);
+                orbitLastPinchDistance = 0.0f;
+                orbitTouchMoved = false;
+                orbitPinching = false;
+                break;
+            case MotionEvent.ACTION_POINTER_DOWN:
+                if (event.getPointerCount() >= 2) {
+                    orbitPinching = true;
+                    orbitTouchMoved = true;
+                    orbitLastPinchDistance = pointerDistance(event);
+                }
+                break;
+            case MotionEvent.ACTION_MOVE:
+                if (orbitPinching && event.getPointerCount() >= 2) {
+                    float pinchDistance = pointerDistance(event);
+                    if (orbitLastPinchDistance > 1.0f && pinchDistance > 1.0f) {
+                        float zoomFactor = orbitLastPinchDistance / pinchDistance;
+                        orbitCameraState.distance = clamp(orbitCameraState.distance * zoomFactor, orbitCameraState.minDistance, orbitCameraState.maxDistance);
+                        syncLegacyCameraFieldsFromOrbitState();
+                        applyOrbitCameraStateToFilamentCamera();
+                    }
+                    orbitLastPinchDistance = pinchDistance;
+                    return;
+                }
+                int index = orbitActivePointerId < 0 ? 0 : event.findPointerIndex(orbitActivePointerId);
+                if (index < 0) index = 0;
+                float x = event.getX(index);
+                float y = event.getY(index);
+                float dx = x - orbitLastTouchX;
+                float dy = y - orbitLastTouchY;
+                if (Math.abs(dx) > 1.0f || Math.abs(dy) > 1.0f) {
+                    orbitTouchMoved = true;
+                    float width = surfaceView == null ? 1.0f : Math.max(1.0f, surfaceView.getWidth());
+                    float height = surfaceView == null ? 1.0f : Math.max(1.0f, surfaceView.getHeight());
+                    orbitCameraState.yaw = wrapDegrees(orbitCameraState.yaw - dx / width * 180.0f);
+                    orbitCameraState.pitch = clamp(orbitCameraState.pitch + dy / height * 120.0f, orbitCameraState.minPitch, orbitCameraState.maxPitch);
+                    syncLegacyCameraFieldsFromOrbitState();
+                    applyOrbitCameraStateToFilamentCamera();
+                }
+                orbitLastTouchX = x;
+                orbitLastTouchY = y;
+                break;
+            case MotionEvent.ACTION_POINTER_UP:
+                orbitLastPinchDistance = 0.0f;
+                orbitPinching = event.getPointerCount() > 2;
+                int liftedIndex = event.getActionIndex();
+                if (event.getPointerId(liftedIndex) == orbitActivePointerId) {
+                    int replacement = liftedIndex == 0 ? 1 : 0;
+                    if (replacement < event.getPointerCount()) {
+                        orbitActivePointerId = event.getPointerId(replacement);
+                        orbitLastTouchX = event.getX(replacement);
+                        orbitLastTouchY = event.getY(replacement);
+                    }
+                }
+                break;
+            case MotionEvent.ACTION_UP:
+                if (!orbitTouchMoved && !orbitPinching) requestPick(event);
+                orbitActivePointerId = -1;
+                orbitLastPinchDistance = 0.0f;
+                orbitTouchMoved = false;
+                orbitPinching = false;
+                break;
+            case MotionEvent.ACTION_CANCEL:
+                orbitActivePointerId = -1;
+                orbitLastPinchDistance = 0.0f;
+                orbitTouchMoved = false;
+                orbitPinching = false;
+                break;
+            default:
+                break;
+        }
+    }
+
+    private float pointerDistance(MotionEvent event) {
+        if (event == null || event.getPointerCount() < 2) return 0.0f;
+        float dx = event.getX(0) - event.getX(1);
+        float dy = event.getY(0) - event.getY(1);
+        return (float) Math.sqrt(dx * dx + dy * dy);
+    }
+
+    private void syncOrbitStateFromLegacyCameraFields() {
+        orbitCameraState.distance = clamp(cameraDistance, orbitCameraState.minDistance, orbitCameraState.maxDistance);
+        orbitCameraState.targetX = cameraTargetX;
+        orbitCameraState.targetY = cameraTargetY;
+        orbitCameraState.targetZ = cameraTargetZ;
+        orbitCameraState.panX = cameraTargetX;
+        orbitCameraState.panY = cameraTargetY;
+        orbitCameraState.fovDegrees = clamp(cameraFov, 20.0f, 80.0f);
+    }
+
+    private void syncLegacyCameraFieldsFromOrbitState() {
+        cameraDistance = orbitCameraState.distance;
+        cameraTargetX = orbitCameraState.targetX;
+        cameraTargetY = orbitCameraState.targetY;
+        cameraTargetZ = orbitCameraState.targetZ;
+        cameraFov = orbitCameraState.fovDegrees;
+    }
+
     private void resetCameraControls() {
-        cameraDistance = 4.4f;
-        cameraTargetX = 0.0f;
-        cameraTargetY = 0.0f;
-        cameraTargetZ = 0.0f;
-        cameraFov = 45.0f;
-        applyCameraControls();
+        orbitCameraState.targetX = 0.0f;
+        orbitCameraState.targetY = 0.0f;
+        orbitCameraState.targetZ = 0.0f;
+        orbitCameraState.yaw = 0.0f;
+        orbitCameraState.pitch = 0.0f;
+        orbitCameraState.distance = 4.4f;
+        orbitCameraState.fovDegrees = 45.0f;
+        orbitCameraState.panX = 0.0f;
+        orbitCameraState.panY = 0.0f;
+        fitModelCameraMode = "orbit_state";
+        syncLegacyCameraFieldsFromOrbitState();
+        applyOrbitCameraStateToFilamentCamera();
     }
 
     private void fitModelCamera() {
+        float radius = 1.0f;
         if (modelViewer != null) {
             try {
                 modelViewer.transformToUnitCube(new Float3(0.0f, 0.0f, 0.0f));
                 applyModelTransform();
+                if (modelViewer.getAsset() != null) {
+                    Box box = modelViewer.getAsset().getBoundingBox();
+                    float[] half = box.getHalfExtent();
+                    radius = Math.max(0.5f, (float) Math.sqrt(half[0] * half[0] + half[1] * half[1] + half[2] * half[2]));
+                }
             } catch (Throwable ignored) { }
         }
-        cameraDistance = 4.4f;
-        applyCameraControls();
+        orbitCameraState.targetX = 0.0f;
+        orbitCameraState.targetY = 0.0f;
+        orbitCameraState.targetZ = 0.0f;
+        orbitCameraState.distance = clamp(radius * 4.4f, orbitCameraState.minDistance, orbitCameraState.maxDistance);
+        orbitCameraState.fovDegrees = clamp(orbitCameraState.fovDegrees, 20.0f, 80.0f);
+        fitModelCameraMode = "orbit_state";
+        syncLegacyCameraFieldsFromOrbitState();
+        applyOrbitCameraStateToFilamentCamera();
     }
 
     private void applyCameraControls() {
+        syncOrbitStateFromLegacyCameraFields();
+        applyOrbitCameraStateToFilamentCamera();
+    }
+
+    private void applyOrbitCameraStateToFilamentCamera() {
         if (modelViewer == null) return;
         try {
-            float distance = clamp(cameraDistance, 1.0f, 30.0f);
+            orbitCameraState.distance = clamp(orbitCameraState.distance, orbitCameraState.minDistance, orbitCameraState.maxDistance);
+            orbitCameraState.pitch = clamp(orbitCameraState.pitch, orbitCameraState.minPitch, orbitCameraState.maxPitch);
+            orbitCameraState.fovDegrees = clamp(orbitCameraState.fovDegrees, 20.0f, 80.0f);
+            syncLegacyCameraFieldsFromOrbitState();
+
             double aspect = surfaceView == null || surfaceView.getHeight() <= 0 ? 1.0 : Math.max(0.1, (double) surfaceView.getWidth() / (double) surfaceView.getHeight());
-            modelViewer.getCamera().setProjection(cameraFov, aspect, 0.05, 250.0, com.google.android.filament.Camera.Fov.VERTICAL);
-            modelViewer.getCamera().lookAt(cameraTargetX, cameraTargetY, cameraTargetZ + distance, cameraTargetX, cameraTargetY, cameraTargetZ, 0.0f, 1.0f, 0.0f);
-            cameraApplyStatus = "applied_lookAt_target_offset";
-            cameraStatus = "distance=" + twoDecimal(cameraDistance) + " target=" + twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY) + "/" + twoDecimal(cameraTargetZ) + " fov=" + oneDecimal(cameraFov) + " nearFar=0.05/250";
+            float yawRad = (float) Math.toRadians(orbitCameraState.yaw);
+            float pitchRad = (float) Math.toRadians(orbitCameraState.pitch);
+            float cosPitch = (float) Math.cos(pitchRad);
+            finalLookAtX = orbitCameraState.targetX;
+            finalLookAtY = orbitCameraState.targetY;
+            finalLookAtZ = orbitCameraState.targetZ;
+            finalCameraX = finalLookAtX + orbitCameraState.distance * (float) Math.sin(yawRad) * cosPitch;
+            finalCameraY = finalLookAtY + orbitCameraState.distance * (float) Math.sin(pitchRad);
+            finalCameraZ = finalLookAtZ + orbitCameraState.distance * (float) Math.cos(yawRad) * cosPitch;
+
+            modelViewer.getCamera().setProjection(orbitCameraState.fovDegrees, aspect, 0.05, 250.0, com.google.android.filament.Camera.Fov.VERTICAL);
+            modelViewer.getCamera().lookAt(finalCameraX, finalCameraY, finalCameraZ, finalLookAtX, finalLookAtY, finalLookAtZ, 0.0f, 1.0f, 0.0f);
+            cameraControllerOwner = "solum_orbit_state";
+            cameraConflictDetected = "false";
+            uiCameraSlidersLive = "true";
+            modelTransformIndependent = "true";
+            cameraApplyStatus = "applied_orbit_state_final_camera";
+            cameraStatus = "owner=solum_orbit_state distance=" + twoDecimal(orbitCameraState.distance)
+                + " target=" + twoDecimal(orbitCameraState.targetX) + "/" + twoDecimal(orbitCameraState.targetY) + "/" + twoDecimal(orbitCameraState.targetZ)
+                + " yawPitch=" + oneDecimal(orbitCameraState.yaw) + "/" + oneDecimal(orbitCameraState.pitch)
+                + " fov=" + oneDecimal(orbitCameraState.fovDegrees) + " nearFar=0.05/250";
+            updateUdsSkyFrameState("camera_orbit_apply");
             persistWorkspaceSettings();
         } catch (Throwable t) {
             cameraApplyStatus = "apply_failed: " + shortMessage(t);
+            cameraConflictDetected = "true";
         }
         updateAllSliderLabels();
         refreshUiNow();
@@ -5027,6 +5234,23 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("cameraTargetY", cameraTargetY);
             json.put("cameraTargetZ", cameraTargetZ);
             json.put("fov", cameraFov);
+            json.put("cameraControllerOwner", cameraControllerOwner);
+            json.put("cameraConflictDetected", cameraConflictDetected);
+            json.put("orbitYaw", orbitCameraState.yaw);
+            json.put("orbitPitch", orbitCameraState.pitch);
+            json.put("orbitDistance", orbitCameraState.distance);
+            json.put("orbitTarget", "(" + twoDecimal(orbitCameraState.targetX) + "," + twoDecimal(orbitCameraState.targetY) + "," + twoDecimal(orbitCameraState.targetZ) + ")");
+            json.put("cameraPosition", "(" + twoDecimal(finalCameraX) + "," + twoDecimal(finalCameraY) + "," + twoDecimal(finalCameraZ) + ")");
+            json.put("cameraLookAtTarget", "(" + twoDecimal(finalLookAtX) + "," + twoDecimal(finalLookAtY) + "," + twoDecimal(finalLookAtZ) + ")");
+            json.put("touchOrbitEnabled", touchOrbitEnabled);
+            json.put("pinchZoomEnabled", pinchZoomEnabled);
+            json.put("uiCameraSlidersLive", uiCameraSlidersLive);
+            json.put("modelTransformIndependent", modelTransformIndependent);
+            json.put("fitModelCameraMode", fitModelCameraMode);
+            json.put("udsSkyUsesFinalCameraPosition", udsSkyUsesFinalCameraPosition);
+            json.put("udsSkyCameraSource", udsSkyCameraSource);
+            json.put("udsSunPositionMode", udsSunPositionMode);
+            json.put("udsMoonPositionMode", udsMoonPositionMode);
             json.put("modelRotateX", modelRotationX);
             json.put("modelRotateY", modelRotationY);
             json.put("modelRotateZ", modelRotationZ);
@@ -5112,6 +5336,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         cameraTargetY = (float) json.optDouble("cameraTargetY", cameraTargetY);
         cameraTargetZ = (float) json.optDouble("cameraTargetZ", cameraTargetZ);
         cameraFov = (float) json.optDouble("fov", cameraFov);
+        syncOrbitStateFromLegacyCameraFields();
+        orbitCameraState.yaw = (float) json.optDouble("orbitYaw", orbitCameraState.yaw);
+        orbitCameraState.pitch = clamp((float) json.optDouble("orbitPitch", orbitCameraState.pitch), orbitCameraState.minPitch, orbitCameraState.maxPitch);
         modelRotationX = (float) json.optDouble("modelRotateX", modelRotationX);
         modelRotationY = (float) json.optDouble("modelRotateY", modelRotationY);
         modelRotationZ = (float) json.optDouble("modelRotateZ", modelRotationZ);
@@ -5137,7 +5364,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         applyIblRotation();
         applySkyboxVisibility();
         applyModelTransform();
-        applyCameraControls();
+        applyOrbitCameraStateToFilamentCamera();
         persistWorkspaceSettings();
         syncWorkspaceUi();
     }
@@ -5275,11 +5502,23 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nactualFilamentShadowSettingsSummary=" + shadowActualStatus);
         }
         if (cameraSummaryView != null) {
-            cameraSummaryView.setText("cameraDistance=" + twoDecimal(cameraDistance)
-                + "\ncameraTargetX/Y/Z=" + twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY) + "/" + twoDecimal(cameraTargetZ)
-                + "\ncameraPanX/Y=" + twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY)
-                + "\nfov=" + oneDecimal(cameraFov) + " nearFar=0.05/250"
-                + "\norbitSensitivity=filament_manipulator_default zoomSensitivity=0.010"
+            cameraSummaryView.setText("cameraControllerOwner=" + cameraControllerOwner
+                + "\ncameraConflictDetected=" + cameraConflictDetected
+                + "\norbitYaw=" + oneDecimal(orbitCameraState.yaw)
+                + "\norbitPitch=" + oneDecimal(orbitCameraState.pitch)
+                + "\norbitDistance=" + twoDecimal(orbitCameraState.distance)
+                + "\norbitTarget=(" + twoDecimal(orbitCameraState.targetX) + "," + twoDecimal(orbitCameraState.targetY) + "," + twoDecimal(orbitCameraState.targetZ) + ")"
+                + "\ncameraFov=" + oneDecimal(orbitCameraState.fovDegrees) + " nearFar=0.05/250"
+                + "\ncameraPosition=(" + twoDecimal(finalCameraX) + "," + twoDecimal(finalCameraY) + "," + twoDecimal(finalCameraZ) + ")"
+                + "\ncameraLookAtTarget=(" + twoDecimal(finalLookAtX) + "," + twoDecimal(finalLookAtY) + "," + twoDecimal(finalLookAtZ) + ")"
+                + "\ntouchOrbitEnabled=" + touchOrbitEnabled + " pinchZoomEnabled=" + pinchZoomEnabled
+                + "\nuiCameraSlidersLive=" + uiCameraSlidersLive
+                + "\nmodelTransformIndependent=" + modelTransformIndependent
+                + "\nfitModelCameraMode=" + fitModelCameraMode
+                + "\nudsSkyUsesFinalCameraPosition=" + udsSkyUsesFinalCameraPosition
+                + "\nudsSkyCameraSource=" + udsSkyCameraSource
+                + "\nudsSunPositionMode=" + udsSunPositionMode
+                + "\nudsMoonPositionMode=" + udsMoonPositionMode
                 + "\nfitStatus=" + cameraApplyStatus);
         }
         if (modelSummaryView != null) {
@@ -5383,6 +5622,14 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nrefractionSupported=true_screen_space_view_api refractionMode=" + refractionMode.name() + " refractionEnabled=" + refractionEnabled + " refractionActuallyApplied=" + refractionActuallyApplied
                 + "\nmodelTransform=" + modelTransformStatus + " target=" + transformTargetStatus + " rx/ry/rz=" + oneDecimal(modelRotationX) + "/" + oneDecimal(modelRotationY) + "/" + oneDecimal(modelRotationZ) + " scale=" + twoDecimal(modelScale)
                 + "\ncameraControls=" + cameraStatus + " apply=" + cameraApplyStatus
+                + "\ncameraControllerOwner=" + cameraControllerOwner + " cameraConflictDetected=" + cameraConflictDetected
+                + "\norbitYaw=" + oneDecimal(orbitCameraState.yaw) + " orbitPitch=" + oneDecimal(orbitCameraState.pitch) + " orbitDistance=" + twoDecimal(orbitCameraState.distance)
+                + "\norbitTarget=(" + twoDecimal(orbitCameraState.targetX) + "," + twoDecimal(orbitCameraState.targetY) + "," + twoDecimal(orbitCameraState.targetZ) + ") cameraFov=" + oneDecimal(orbitCameraState.fovDegrees)
+                + "\ncameraPosition=(" + twoDecimal(finalCameraX) + "," + twoDecimal(finalCameraY) + "," + twoDecimal(finalCameraZ) + ") cameraLookAtTarget=(" + twoDecimal(finalLookAtX) + "," + twoDecimal(finalLookAtY) + "," + twoDecimal(finalLookAtZ) + ")"
+                + "\ntouchOrbitEnabled=" + touchOrbitEnabled + " pinchZoomEnabled=" + pinchZoomEnabled + " uiCameraSlidersLive=" + uiCameraSlidersLive
+                + "\nmodelTransformIndependent=" + modelTransformIndependent + " fitModelCameraMode=" + fitModelCameraMode
+                + "\nudsSkyUsesFinalCameraPosition=" + udsSkyUsesFinalCameraPosition + " udsSkyCameraSource=" + udsSkyCameraSource
+                + "\nudsSunPositionMode=" + udsSunPositionMode + " udsMoonPositionMode=" + udsMoonPositionMode
                 + "\npickingSupported=true selectedRenderable=" + selectedRenderable + " selectedMaterialIndex=" + selectedMaterialIndexStatus + " pickDepth=" + oneDecimal(pickDepth) + " pickStatus=" + pickingStatus
                 + "\nLegacy Vulkan=removed_from_normal_flow/deprecated/build_required_only normal_ui_route=false"
                 + "\nconfigPath=" + configFile().getAbsolutePath()
@@ -5758,8 +6005,23 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("udsSkyEntityCreated", udsSkyEntityCreated);
         json.put("udsSkyRendererBacked", udsSkyRendererBacked);
         json.put("udsSkyCameraAware", udsSkyCameraAware);
+        json.put("udsSkyUsesFinalCameraPosition", udsSkyUsesFinalCameraPosition);
+        json.put("udsSkyCameraSource", udsSkyCameraSource);
+        json.put("udsSunPositionMode", udsSunPositionMode);
+        json.put("udsMoonPositionMode", udsMoonPositionMode);
         json.put("udsSkyOverlayUsed", udsSkyOverlayUsed);
         json.put("udsSkyMaterial", udsSkyMaterial);
+        json.put("cameraControllerOwner", cameraControllerOwner);
+        json.put("cameraConflictDetected", cameraConflictDetected);
+        json.put("orbitYaw", orbitCameraState.yaw);
+        json.put("orbitPitch", orbitCameraState.pitch);
+        json.put("orbitDistance", orbitCameraState.distance);
+        json.put("cameraFov", orbitCameraState.fovDegrees);
+        json.put("touchOrbitEnabled", touchOrbitEnabled);
+        json.put("pinchZoomEnabled", pinchZoomEnabled);
+        json.put("uiCameraSlidersLive", uiCameraSlidersLive);
+        json.put("modelTransformIndependent", modelTransformIndependent);
+        json.put("fitModelCameraMode", fitModelCameraMode);
         json.put("udsSunRendererBacked", udsSunRendererBacked);
         json.put("udsMoonRendererBacked", udsMoonRendererBacked);
         json.put("udsStarsRendererBacked", udsStarsRendererBacked);
@@ -5999,8 +6261,23 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("udsSkyEntityCreated", udsSkyEntityCreated);
         json.put("udsSkyRendererBacked", udsSkyRendererBacked);
         json.put("udsSkyCameraAware", udsSkyCameraAware);
+        json.put("udsSkyUsesFinalCameraPosition", udsSkyUsesFinalCameraPosition);
+        json.put("udsSkyCameraSource", udsSkyCameraSource);
+        json.put("udsSunPositionMode", udsSunPositionMode);
+        json.put("udsMoonPositionMode", udsMoonPositionMode);
         json.put("udsSkyOverlayUsed", udsSkyOverlayUsed);
         json.put("udsSkyMaterial", udsSkyMaterial);
+        json.put("cameraControllerOwner", cameraControllerOwner);
+        json.put("cameraConflictDetected", cameraConflictDetected);
+        json.put("orbitYaw", orbitCameraState.yaw);
+        json.put("orbitPitch", orbitCameraState.pitch);
+        json.put("orbitDistance", orbitCameraState.distance);
+        json.put("cameraFov", orbitCameraState.fovDegrees);
+        json.put("touchOrbitEnabled", touchOrbitEnabled);
+        json.put("pinchZoomEnabled", pinchZoomEnabled);
+        json.put("uiCameraSlidersLive", uiCameraSlidersLive);
+        json.put("modelTransformIndependent", modelTransformIndependent);
+        json.put("fitModelCameraMode", fitModelCameraMode);
         json.put("udsSunRendererBacked", udsSunRendererBacked);
         json.put("udsMoonRendererBacked", udsMoonRendererBacked);
         json.put("udsStarsRendererBacked", udsStarsRendererBacked);

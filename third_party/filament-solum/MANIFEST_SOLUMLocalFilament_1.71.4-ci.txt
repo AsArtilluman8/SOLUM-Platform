@@ -1,0 +1,7 @@
+SOLUM local Filament artifact pack
+Version: 1.71.4-ci
+Source: GitHub Actions build from google/filament v1.71.4
+Proof branch: work/filament-local-aar-dropin-f2k-20260623_213752
+Proof commit: 227d0ef
+Status: runtime APK launched on Android arm64 device
+Do not merge to main until Gradle local Maven wiring is tested.

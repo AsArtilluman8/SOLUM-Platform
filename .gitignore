@@ -19,6 +19,15 @@ _build/
 __pycache__/
 *.pyc
 
+# Repo-local temporary agent artifacts.
+/patch*.py
+/patch*.sh
+/*_patch_*.py
+/*_patch_*.sh
+/*.zip
+/*.html
+/SOLUM_ASSET_LAB*/
+
 .gradle/
 build/
 **/build/

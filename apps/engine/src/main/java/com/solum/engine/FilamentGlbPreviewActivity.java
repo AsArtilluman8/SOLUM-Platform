@@ -423,6 +423,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     private long slpkPackageBytes = 0L;
     private long slpkGlbBytes = 0L;
     private String slpkChunkTypes = "none";
+    private String slpkSourceGlbPath = "none";
+    private String slpkCookedPackagePath = "none";
     private String importCopyStatus = "not_run";
     private String permissionStatus = "not_checked";
     private String scanDownloadStatus = "not_run";
@@ -977,8 +979,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         assetsPanel.addView(importIblButton);
         assetsPanel.addView(scanDownloadButton);
         assetsPanel.addView(reloadButton);
-        Button loadSlpkSampleButton = button("Load SLPK Sample");
-        loadSlpkSampleButton.setOnClickListener(v -> loadSlpkSampleRoute());
+        Button loadSlpkSampleButton = button("Cook Active GLB → SLPK");
+        loadSlpkSampleButton.setOnClickListener(v -> cookActiveGlbAsSlpkRoute());
         assetsPanel.addView(loadSlpkSampleButton);
         assetsPanel.addView(assetsSummaryView);
 
@@ -1546,6 +1548,74 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
     }
 
+
+
+    private void cookActiveGlbAsSlpkRoute() {
+        try {
+            File source = activeGlbSourceFileForSlpkCook();
+            if (source == null) {
+                slpkRouteStatus = "no_active_glb_import_first";
+                slpkSourceGlbPath = "none";
+                slpkCookedPackagePath = "none";
+                setLastAction("slpk_import_needs_active_glb");
+                refreshUiNow();
+                return;
+            }
+
+            SolumAndroidPackageCookerMvp.CookResult cook = SolumAndroidPackageCookerMvp.cookGlbFile(this, source);
+            slpkSourceGlbPath = cook.sourceGlb.getAbsolutePath();
+            slpkCookedPackagePath = cook.slpkFile.getAbsolutePath();
+
+            SolumSlpkGlbRouteMvp.RouteResult route = SolumSlpkGlbRouteMvp.extractFileGlb(this, cook.slpkFile, "f5g_imported_route_model.glb");
+            slpkRouteStatus = cook.status + "_then_" + route.status;
+            slpkRouteAssetPath = route.assetPath;
+            slpkExtractedGlbPath = route.extractedGlbFile == null ? "none" : route.extractedGlbFile.getAbsolutePath();
+            slpkChunkCount = route.chunkCount;
+            slpkMaterialCount = route.materialCount;
+            slpkTextureRefCount = route.textureCount;
+            slpkPackageBytes = route.packageBytes;
+            slpkGlbBytes = route.glbBytes;
+            slpkChunkTypes = String.valueOf(route.chunkTypes);
+
+            modelSourcePath = slpkCookedPackagePath;
+            modelCopiedPath = slpkExtractedGlbPath;
+            modelPath = slpkExtractedGlbPath;
+            modelName = "SLPK " + route.packageName;
+
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putString(PREF_ACTIVE_MODEL_LOCAL_PATH, modelCopiedPath)
+                .putString(PREF_ACTIVE_MODEL_PATH, modelCopiedPath)
+                .putString(PREF_ACTIVE_MODEL_NAME, modelName)
+                .apply();
+
+            setLastAction("slpk_import_glb_route_ready");
+            loadModel();
+            refreshUiNow();
+        } catch (Throwable t) {
+            slpkRouteStatus = "import_glb_to_slpk_failed: " + shortMessage(t);
+            lastLifecycleError = shortMessage(t);
+            setLastAction("slpk_import_glb_route_failed");
+            refreshUiNow();
+        }
+    }
+
+    private File activeGlbSourceFileForSlpkCook() {
+        File[] candidates = new File[] {
+            safeFile(modelCopiedPath),
+            safeFile(modelPath),
+            safeFile(resolveModelPath())
+        };
+        for (File f : candidates) {
+            if (f != null && f.isFile() && f.getName().toLowerCase(Locale.US).endsWith(".glb")) return f;
+        }
+        return null;
+    }
+
+    private File safeFile(String path) {
+        if (path == null || path.trim().isEmpty()) return null;
+        if (path.startsWith("asset://")) return null;
+        try { return new File(path); } catch (Throwable ignored) { return null; }
+    }
 
     private void loadSlpkSampleRoute() {
         try {
@@ -4842,6 +4912,8 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nSLPK route: " + slpkRouteStatus
                 + "\nSLPK asset: " + shorten(slpkRouteAssetPath, 72)
                 + "\nSLPK extracted GLB: " + shorten(slpkExtractedGlbPath, 72)
+                + "\nSLPK source GLB: " + shorten(slpkSourceGlbPath, 72)
+                + "\nSLPK cooked package: " + shorten(slpkCookedPackagePath, 72)
                 + "\nSLPK package/glb bytes: " + slpkPackageBytes + "/" + slpkGlbBytes
                 + "\nSLPK chunks/materials/textures: " + slpkChunkCount + "/" + slpkMaterialCount + "/" + slpkTextureRefCount
                 + "\nSLPK chunk types: " + shorten(slpkChunkTypes, 96)
@@ -4958,6 +5030,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         b.append("slpkRouteStatus=").append(slpkRouteStatus).append('\n');
         b.append("slpkAssetPath=").append(slpkRouteAssetPath).append('\n');
         b.append("slpkExtractedGlbPath=").append(slpkExtractedGlbPath).append('\n');
+        b.append("sourceGlbPath=").append(slpkSourceGlbPath).append('\n');
+        b.append("cookedPackagePath=").append(slpkCookedPackagePath).append('\n');
         b.append("slpkPackageBytes=").append(slpkPackageBytes).append('\n');
         b.append("slpkGlbBytes=").append(slpkGlbBytes).append('\n');
         b.append("slpkChunkCount=").append(slpkChunkCount).append('\n');
@@ -4986,6 +5060,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("routeStatus", slpkRouteStatus);
         json.put("assetPath", slpkRouteAssetPath);
         json.put("extractedGlbPath", slpkExtractedGlbPath);
+        json.put("sourceGlbPath", slpkSourceGlbPath);
+        json.put("cookedPackagePath", slpkCookedPackagePath);
         json.put("packageBytes", slpkPackageBytes);
         json.put("glbBytes", slpkGlbBytes);
         json.put("chunkCount", slpkChunkCount);

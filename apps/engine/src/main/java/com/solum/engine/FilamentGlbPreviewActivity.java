@@ -89,12 +89,15 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import kotlin.jvm.functions.Function1;
 import org.json.JSONArray;
@@ -163,6 +166,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String PREF_FILAMENT_DEFAULT_CONFIG_JSON = "filament_default_config_json";
     private static final String CONFIG_FILE_NAME = "filament_render_config.json";
     private static final String RENDER_REPORT_DIR = "/storage/emulated/0/Download/SOLUM_REPORTS";
+    private static final String RENDER_DEBUG_LATEST_ZIP = "/storage/emulated/0/Download/SOLUM_RENDER_DEBUG_LATEST.zip";
     private static final int CONFIG_SCHEMA_VERSION = 6;
     private static final int REQUEST_IMPORT_MODEL = 4101;
     private static final int REQUEST_IMPORT_IBL = 4102;
@@ -320,6 +324,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private final float[] frameWindowMs = new float[180];
     private int frameWindowIndex = 0;
     private int frameWindowCount = 0;
+    private boolean frameStatsDirty = false;
     private float avgFrameMs = 0.0f;
     private float minFrameMs = 0.0f;
     private float maxFrameMs = 0.0f;
@@ -336,6 +341,22 @@ public class FilamentGlbPreviewActivity extends Activity {
     private float frameMetricsGpuMs = 0.0f;
     private float frameMetricsSwapMs = 0.0f;
     private float frameMetricsDrawMs = 0.0f;
+    private float frameMetricsUnknownDelayMs = 0.0f;
+    private float frameMetricsInputMs = 0.0f;
+    private float frameMetricsAnimationMs = 0.0f;
+    private float frameMetricsLayoutMeasureMs = 0.0f;
+    private float frameMetricsSyncMs = 0.0f;
+    private float frameMetricsCommandIssueMs = 0.0f;
+    private float frameMetricsKnownDurationSumMs = 0.0f;
+    private float frameMetricsUnexplainedTotalMs = 0.0f;
+    private float frameMetricsVsyncDeltaMs = 0.0f;
+    private float frameMetricsListenerOverheadMs = 0.0f;
+    private float hudUpdateOverheadMs = 0.0f;
+    private float frameStatsComputeOverheadMs = 0.0f;
+    private long hudTickCounter = 0L;
+    private long frameStatsComputeCounter = 0L;
+    private String frameMetricsTotalMeaning = "latency_pipeline_duration_not_direct_fps";
+    private String hudSelfCostStatus = "not_measured";
     private long frameMetricsSlowCount = 0L;
     private long frameMetricsJankCount = 0L;
     private String primaryFpsSource = "estimated_visible_p95_until_framemetrics_total";
@@ -393,6 +414,17 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String modelSourcePath = "none";
     private String modelCopiedPath = "none";
     private String gltfioLoaded = "false";
+    private String slpkRouteStatus = "not_run";
+    private String slpkRouteAssetPath = "none";
+    private String slpkExtractedGlbPath = "none";
+    private int slpkChunkCount = 0;
+    private int slpkMaterialCount = 0;
+    private int slpkTextureRefCount = 0;
+    private long slpkPackageBytes = 0L;
+    private long slpkGlbBytes = 0L;
+    private String slpkChunkTypes = "none";
+    private String slpkSourceGlbPath = "none";
+    private String slpkCookedPackagePath = "none";
     private String importCopyStatus = "not_run";
     private String permissionStatus = "not_checked";
     private String scanDownloadStatus = "not_run";
@@ -947,6 +979,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         assetsPanel.addView(importIblButton);
         assetsPanel.addView(scanDownloadButton);
         assetsPanel.addView(reloadButton);
+        Button loadSlpkSampleButton = button("Cook Active GLB → SLPK");
+        loadSlpkSampleButton.setOnClickListener(v -> cookActiveGlbAsSlpkRoute());
+        assetsPanel.addView(loadSlpkSampleButton);
         assetsPanel.addView(assetsSummaryView);
 
         qualityButton = button("Quality: " + qualityProfile.label);
@@ -1418,10 +1453,16 @@ public class FilamentGlbPreviewActivity extends Activity {
         copyShortReportButton.setOnClickListener(v -> copyShortDiagnosticsReport());
         Button exportFullReportButton = button("Export Full Report");
         exportFullReportButton.setOnClickListener(v -> exportFullDiagnosticsReport());
+        Button exportDebugZipButton = button("Export Debug ZIP");
+        exportDebugZipButton.setOnClickListener(v -> exportRenderDebugZip());
+        Button exportSlpkDebugZipButton = button("Export SLPK Debug ZIP");
+        exportSlpkDebugZipButton.setOnClickListener(v -> exportSlpkDebugZip());
         debugPanel.addView(closeButton);
         debugPanel.addView(resetFrameCountersButton);
         debugPanel.addView(copyShortReportButton);
         debugPanel.addView(exportFullReportButton);
+        debugPanel.addView(exportDebugZipButton);
+        debugPanel.addView(exportSlpkDebugZipButton);
         debugPanel.addView(statusView);
 
         workspacePanel.addView(assetsPanel);
@@ -1504,6 +1545,110 @@ public class FilamentGlbPreviewActivity extends Activity {
                 return;
             }
             importIblFromUri(data.getData());
+        }
+    }
+
+
+
+    private void cookActiveGlbAsSlpkRoute() {
+        try {
+            File source = activeGlbSourceFileForSlpkCook();
+            if (source == null) {
+                slpkRouteStatus = "no_active_glb_import_first";
+                slpkSourceGlbPath = "none";
+                slpkCookedPackagePath = "none";
+                setLastAction("slpk_import_needs_active_glb");
+                refreshUiNow();
+                return;
+            }
+
+            SolumAndroidPackageCookerMvp.CookResult cook = SolumAndroidPackageCookerMvp.cookGlbFile(this, source);
+            slpkSourceGlbPath = cook.sourceGlb.getAbsolutePath();
+            slpkCookedPackagePath = cook.slpkFile.getAbsolutePath();
+
+            SolumSlpkGlbRouteMvp.RouteResult route = SolumSlpkGlbRouteMvp.extractFileGlb(this, cook.slpkFile, "f5g_imported_route_model.glb");
+            slpkRouteStatus = cook.status + "_then_" + route.status;
+            slpkRouteAssetPath = route.assetPath;
+            slpkExtractedGlbPath = route.extractedGlbFile == null ? "none" : route.extractedGlbFile.getAbsolutePath();
+            slpkChunkCount = route.chunkCount;
+            slpkMaterialCount = route.materialCount;
+            slpkTextureRefCount = route.textureCount;
+            slpkPackageBytes = route.packageBytes;
+            slpkGlbBytes = route.glbBytes;
+            slpkChunkTypes = String.valueOf(route.chunkTypes);
+
+            modelSourcePath = slpkCookedPackagePath;
+            modelCopiedPath = slpkExtractedGlbPath;
+            modelPath = slpkExtractedGlbPath;
+            modelName = "SLPK " + route.packageName;
+
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putString(PREF_ACTIVE_MODEL_LOCAL_PATH, modelCopiedPath)
+                .putString(PREF_ACTIVE_MODEL_PATH, modelCopiedPath)
+                .putString(PREF_ACTIVE_MODEL_NAME, modelName)
+                .apply();
+
+            setLastAction("slpk_import_glb_route_ready");
+            loadModel();
+            refreshUiNow();
+        } catch (Throwable t) {
+            slpkRouteStatus = "import_glb_to_slpk_failed: " + shortMessage(t);
+            lastLifecycleError = shortMessage(t);
+            setLastAction("slpk_import_glb_route_failed");
+            refreshUiNow();
+        }
+    }
+
+    private File activeGlbSourceFileForSlpkCook() {
+        File[] candidates = new File[] {
+            safeFile(modelCopiedPath),
+            safeFile(modelPath),
+            safeFile(resolveModelPath())
+        };
+        for (File f : candidates) {
+            if (f != null && f.isFile() && f.getName().toLowerCase(Locale.US).endsWith(".glb")) return f;
+        }
+        return null;
+    }
+
+    private File safeFile(String path) {
+        if (path == null || path.trim().isEmpty()) return null;
+        if (path.startsWith("asset://")) return null;
+        try { return new File(path); } catch (Throwable ignored) { return null; }
+    }
+
+    private void loadSlpkSampleRoute() {
+        try {
+            SolumSlpkGlbRouteMvp.RouteResult route = SolumSlpkGlbRouteMvp.extractBundledSampleGlb(this);
+            slpkRouteStatus = route.status;
+            slpkRouteAssetPath = route.assetPath;
+            slpkExtractedGlbPath = route.extractedGlbFile == null ? "none" : route.extractedGlbFile.getAbsolutePath();
+            slpkChunkCount = route.chunkCount;
+            slpkMaterialCount = route.materialCount;
+            slpkTextureRefCount = route.textureCount;
+            slpkPackageBytes = route.packageBytes;
+            slpkGlbBytes = route.glbBytes;
+            slpkChunkTypes = String.valueOf(route.chunkTypes);
+
+            modelSourcePath = "asset://" + route.assetPath;
+            modelCopiedPath = slpkExtractedGlbPath;
+            modelPath = slpkExtractedGlbPath;
+            modelName = "SLPK " + route.packageName;
+
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putString(PREF_ACTIVE_MODEL_LOCAL_PATH, modelCopiedPath)
+                .putString(PREF_ACTIVE_MODEL_PATH, modelCopiedPath)
+                .putString(PREF_ACTIVE_MODEL_NAME, modelName)
+                .apply();
+
+            setLastAction("slpk_glb_route_ready");
+            loadModel();
+            refreshUiNow();
+        } catch (Throwable t) {
+            slpkRouteStatus = "failed: " + shortMessage(t);
+            lastLifecycleError = shortMessage(t);
+            setLastAction("slpk_glb_route_failed");
+            refreshUiNow();
         }
     }
 
@@ -1724,8 +1869,11 @@ public class FilamentGlbPreviewActivity extends Activity {
         lastFrameNs = frameTimeNanos;
         lastFrameWallNs = frameWallNs;
         if (lastHudUpdateNs == 0L || frameTimeNanos - lastHudUpdateNs >= HUD_UPDATE_NS) {
+            long hudStartNs = System.nanoTime();
+            if (frameStatsDirty) computeFrameStats();
             lastHudUpdateNs = frameTimeNanos;
-            refreshUiNow();
+            updateLiveHudOnly();
+            recordHudUpdateOverhead(hudStartNs);
         }
     }
 
@@ -1768,11 +1916,22 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private void recordAndroidFrameMetrics(FrameMetrics metrics) {
+        long listenerStartNs = System.nanoTime();
         if (metrics == null) return;
-        float totalMs = nanosToMs(metrics.getMetric(FrameMetrics.TOTAL_DURATION));
-        float gpuMs = nanosToMs(metrics.getMetric(FrameMetrics.GPU_DURATION));
-        float swapMs = nanosToMs(metrics.getMetric(FrameMetrics.SWAP_BUFFERS_DURATION));
-        float drawMs = nanosToMs(metrics.getMetric(FrameMetrics.DRAW_DURATION));
+        float totalMs = nanosToMs(frameMetric(metrics, "TOTAL_DURATION"));
+        float gpuMs = nanosToMs(frameMetric(metrics, "GPU_DURATION"));
+        float swapMs = nanosToMs(frameMetric(metrics, "SWAP_BUFFERS_DURATION"));
+        float drawMs = nanosToMs(frameMetric(metrics, "DRAW_DURATION"));
+        float unknownDelayMs = nanosToMs(frameMetric(metrics, "UNKNOWN_DELAY_DURATION"));
+        float inputMs = nanosToMs(frameMetric(metrics, "INPUT_HANDLING_DURATION"));
+        float animationMs = nanosToMs(frameMetric(metrics, "ANIMATION_DURATION"));
+        float layoutMs = nanosToMs(frameMetric(metrics, "LAYOUT_MEASURE_DURATION"));
+        float syncMs = nanosToMs(frameMetric(metrics, "SYNC_DURATION"));
+        float commandIssueMs = nanosToMs(frameMetric(metrics, "COMMAND_ISSUE_DURATION"));
+        long intendedVsyncNs = frameMetric(metrics, "INTENDED_VSYNC_TIMESTAMP");
+        long vsyncNs = frameMetric(metrics, "VSYNC_TIMESTAMP");
+        float vsyncDeltaMs = (intendedVsyncNs > 0L && vsyncNs > 0L) ? nanosToMs(Math.abs(vsyncNs - intendedVsyncNs)) : 0.0f;
+
         if (totalMs > 0.0f && totalMs < 1000.0f) {
             frameMetricsTotalMs = smoothMetric(frameMetricsTotalMs, totalMs, 0.25f);
             if (totalMs > 22.2f) frameMetricsSlowCount++;
@@ -1781,9 +1940,59 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (gpuMs > 0.0f && gpuMs < 1000.0f) frameMetricsGpuMs = smoothMetric(frameMetricsGpuMs, gpuMs, 0.25f);
         if (swapMs > 0.0f && swapMs < 1000.0f) frameMetricsSwapMs = smoothMetric(frameMetricsSwapMs, swapMs, 0.25f);
         if (drawMs > 0.0f && drawMs < 1000.0f) frameMetricsDrawMs = smoothMetric(frameMetricsDrawMs, drawMs, 0.25f);
+        if (unknownDelayMs > 0.0f && unknownDelayMs < 1000.0f) frameMetricsUnknownDelayMs = smoothMetric(frameMetricsUnknownDelayMs, unknownDelayMs, 0.25f);
+        if (inputMs > 0.0f && inputMs < 1000.0f) frameMetricsInputMs = smoothMetric(frameMetricsInputMs, inputMs, 0.25f);
+        if (animationMs > 0.0f && animationMs < 1000.0f) frameMetricsAnimationMs = smoothMetric(frameMetricsAnimationMs, animationMs, 0.25f);
+        if (layoutMs > 0.0f && layoutMs < 1000.0f) frameMetricsLayoutMeasureMs = smoothMetric(frameMetricsLayoutMeasureMs, layoutMs, 0.25f);
+        if (syncMs > 0.0f && syncMs < 1000.0f) frameMetricsSyncMs = smoothMetric(frameMetricsSyncMs, syncMs, 0.25f);
+        if (commandIssueMs > 0.0f && commandIssueMs < 1000.0f) frameMetricsCommandIssueMs = smoothMetric(frameMetricsCommandIssueMs, commandIssueMs, 0.25f);
+        if (vsyncDeltaMs > 0.0f && vsyncDeltaMs < 1000.0f) frameMetricsVsyncDeltaMs = smoothMetric(frameMetricsVsyncDeltaMs, vsyncDeltaMs, 0.25f);
+
+        float known = drawMs + swapMs + gpuMs + unknownDelayMs + inputMs + animationMs + layoutMs + syncMs + commandIssueMs;
+        if (known > 0.0f && known < 2000.0f) frameMetricsKnownDurationSumMs = smoothMetric(frameMetricsKnownDurationSumMs, known, 0.25f);
+        if (totalMs > 0.0f && known > 0.0f) {
+            frameMetricsUnexplainedTotalMs = smoothMetric(frameMetricsUnexplainedTotalMs, totalMs - known, 0.25f);
+        }
+
         frameMetricsSampleCount++;
-        frameMetricsStatus = gpuMs > 0.0f ? "android_frame_metrics_gpu_duration_available" : "android_frame_metrics_gpu_duration_unavailable";
+        frameMetricsTotalMeaning = "latency_pipeline_duration_not_direct_throughput_fps";
+        frameMetricsStatus = gpuMs > 0.0f ? "android_frame_metrics_gpu_duration_available_full_probe" : "android_frame_metrics_gpu_duration_unavailable_full_probe";
+        recordFrameMetricsListenerOverhead(listenerStartNs);
         updateTimingTruthStatus();
+    }
+
+    private long frameMetric(FrameMetrics metrics, String fieldName) {
+        try {
+            java.lang.reflect.Field field = FrameMetrics.class.getField(fieldName);
+            return metrics.getMetric(field.getInt(null));
+        } catch (Throwable ignored) {
+            return 0L;
+        }
+    }
+
+    private void recordFrameMetricsListenerOverhead(long startNs) {
+        float ms = nanosToMs(System.nanoTime() - startNs);
+        if (ms >= 0.0f && ms < 50.0f) {
+            frameMetricsListenerOverheadMs = smoothMetric(frameMetricsListenerOverheadMs, ms, 0.25f);
+        }
+    }
+
+    private void recordHudUpdateOverhead(long startNs) {
+        hudTickCounter++;
+        float ms = nanosToMs(System.nanoTime() - startNs);
+        if (ms >= 0.0f && ms < 250.0f) {
+            hudUpdateOverheadMs = smoothMetric(hudUpdateOverheadMs, ms, 0.25f);
+        }
+        hudSelfCostStatus = hudUpdateOverheadMs > 4.0f ? "suspected_hud_tick_cost_high"
+            : (hudUpdateOverheadMs > 1.0f ? "possible_hud_tick_cost_medium" : "hud_tick_cost_low");
+    }
+
+    private void recordFrameStatsComputeOverhead(long startNs) {
+        frameStatsComputeCounter++;
+        float ms = nanosToMs(System.nanoTime() - startNs);
+        if (ms >= 0.0f && ms < 250.0f) {
+            frameStatsComputeOverheadMs = smoothMetric(frameStatsComputeOverheadMs, ms, 0.25f);
+        }
     }
 
     private static float nanosToMs(long nanos) {
@@ -1801,10 +2010,12 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (worstFrameMs <= 0.0f || frameMs > worstFrameMs) worstFrameMs = frameMs;
         if (frameMs > 33.3f) jankFrameCounter++;
         if (frameMs > 22.2f) slowFrameCounter++;
-        computeFrameStats();
+        frameStatsDirty = true;
     }
 
     private void computeFrameStats() {
+        long frameStatsStartNs = System.nanoTime();
+        frameStatsDirty = false;
         if (frameWindowCount <= 0) {
             avgFrameMs = 0.0f;
             minFrameMs = 0.0f;
@@ -1848,36 +2059,47 @@ public class FilamentGlbPreviewActivity extends Activity {
         updateSsrPerformanceWarning();
         smoothnessStatus = "target=" + presetTargetFps() + "fps javaCallback=" + oneDecimal(rollingFps) + "fps estimatedVisible=" + oneDecimal(visibleSmoothFps) + "fps p50=" + oneDecimal(p50FrameMs) + "ms p95=" + oneDecimal(p95FrameMs) + "ms jitter=" + oneDecimal(jitterMs) + "ms stability=" + fpsStability;
         updateTimingTruthStatus();
+        recordFrameStatsComputeOverhead(frameStatsStartNs);
     }
 
     private void updateTimingTruthStatus() {
         float primaryFrameMs = primaryFrameMs();
         float primaryFps = primaryFpsValue();
-        if (frameMetricsSampleCount >= 6L && frameMetricsTotalMs > 0.0f) {
-            primaryFpsSource = "android_framemetrics_total_duration";
-        } else if (p95FrameMs > 0.0f) {
-            primaryFpsSource = "estimated_visible_p95_frame_interval";
+        if (p95FrameMs > 0.0f) {
+            primaryFpsSource = "p95_frame_interval_throughput_estimate";
+        } else if (frameMetricsTotalMs > 0.0f) {
+            primaryFpsSource = "framemetrics_total_latency_fallback_not_direct_fps";
         } else {
             primaryFpsSource = "sampling_no_primary_fps_yet";
         }
-        boolean disagreesWithJava = rollingFps > 0.0f && primaryFps > 0.0f && Math.abs(rollingFps - primaryFps) >= Math.max(12.0f, primaryFps * 0.35f);
-        boolean disagreesWithFrameMetrics = frameMetricsTotalMs > 0.0f && p95FrameMs > 0.0f && Math.abs(frameMetricsTotalMs - p95FrameMs) >= Math.max(8.0f, p95FrameMs * 0.35f);
-        timingDisagreement = disagreesWithJava || disagreesWithFrameMetrics;
+
+        boolean callbackDisagrees = rollingFps > 0.0f && primaryFps > 0.0f
+            && Math.abs(rollingFps - primaryFps) >= Math.max(12.0f, primaryFps * 0.35f);
+        boolean latencyGap = frameMetricsTotalMs > 0.0f && p95FrameMs > 0.0f
+            && (frameMetricsTotalMs - p95FrameMs) >= Math.max(8.0f, p95FrameMs * 0.35f);
+        timingDisagreement = callbackDisagrees || latencyGap;
+
         if (frameWindowCount < 30) {
             fpsConfidence = "waiting_for_samples";
-        } else if (!timingDisagreement && frameMetricsSampleCount >= 12L && frameMetricsTotalMs > 0.0f && p95FrameMs > 0.0f) {
+        } else if (!callbackDisagrees && !latencyGap && frameMetricsSampleCount >= 12L) {
             fpsConfidence = "high";
-        } else if (!timingDisagreement && p95FrameMs > 0.0f) {
-            fpsConfidence = "medium";
+        } else if (p95FrameMs > 0.0f && frameWindowCount >= 30) {
+            fpsConfidence = latencyGap ? "medium_latency_gap" : "medium";
         } else {
             fpsConfidence = "low";
         }
-        timingDisagreementStatus = "timing_disagreement=" + timingDisagreement
+
+        timingDisagreementStatus = "callbackDisagrees=" + callbackDisagrees
+            + " latencyGap=" + latencyGap
             + " primarySource=" + primaryFpsSource
             + " primaryFps=" + oneDecimal(primaryFps)
             + " primaryFrameMs=" + oneDecimal(primaryFrameMs)
-            + " javaCallbackFps=" + oneDecimal(rollingFps)
-            + " frameMetricsTotalMs=" + oneDecimal(frameMetricsTotalMs)
+            + " callbackFps=" + oneDecimal(rollingFps)
+            + " frameMetricsTotalLatencyMs=" + oneDecimal(frameMetricsTotalMs)
+            + " knownMetricsSumMs=" + oneDecimal(frameMetricsKnownDurationSumMs)
+            + " unexplainedTotalMs=" + oneDecimal(frameMetricsUnexplainedTotalMs)
+            + " hudOverheadMs=" + oneDecimal(hudUpdateOverheadMs)
+            + " statsComputeOverheadMs=" + oneDecimal(frameStatsComputeOverheadMs)
             + " confidence=" + fpsConfidence
             + " stability=" + fpsStability;
         updateRenderDiagnosticsFrameTiming();
@@ -1903,6 +2125,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         Arrays.fill(frameWindowMs, 0.0f);
         frameWindowIndex = 0;
         frameWindowCount = 0;
+        frameStatsDirty = false;
         rollingFrameMs = 0.0f;
         rollingFps = 0.0f;
         visibleSmoothFps = 0.0f;
@@ -4384,6 +4607,22 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("timing_disagreement", timingDisagreement);
             json.put("primaryFpsSource", primaryFpsSource);
             json.put("beginFrameStatus", beginFrameStatus);
+        json.put("frameMetricsTotalMeaning", frameMetricsTotalMeaning);
+        json.put("frameMetricsUnknownDelayMs", frameMetricsUnknownDelayMs);
+        json.put("frameMetricsInputMs", frameMetricsInputMs);
+        json.put("frameMetricsAnimationMs", frameMetricsAnimationMs);
+        json.put("frameMetricsLayoutMeasureMs", frameMetricsLayoutMeasureMs);
+        json.put("frameMetricsSyncMs", frameMetricsSyncMs);
+        json.put("frameMetricsCommandIssueMs", frameMetricsCommandIssueMs);
+        json.put("frameMetricsKnownDurationSumMs", frameMetricsKnownDurationSumMs);
+        json.put("frameMetricsUnexplainedTotalMs", frameMetricsUnexplainedTotalMs);
+        json.put("frameMetricsVsyncDeltaMs", frameMetricsVsyncDeltaMs);
+        json.put("frameMetricsListenerOverheadMs", frameMetricsListenerOverheadMs);
+        json.put("hudUpdateOverheadMs", hudUpdateOverheadMs);
+        json.put("frameStatsComputeOverheadMs", frameStatsComputeOverheadMs);
+        json.put("hudTickCounter", hudTickCounter);
+        json.put("frameStatsComputeCounter", frameStatsComputeCounter);
+        json.put("hudSelfCostStatus", hudSelfCostStatus);
             json.put("diagnosticsOnDemand", fullDiagnosticsAvailability);
             json.put("lastDiagnosticsCopyStatus", lastDiagnosticsCopyStatus);
             json.put("lastDiagnosticsExportStatus", lastDiagnosticsExportStatus);
@@ -4491,13 +4730,11 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private void updateHud() {
         if (hudView != null) {
-            hudView.setText("FPS " + primaryFpsHud()
-                + " | frame " + oneDecimal(primaryFrameMs()) + " ms"
-                + " | p95 " + oneDecimal(p95FrameMs) + " ms"
+            hudView.setText(primaryFpsHudTruthLine()
+                + " | " + oneDecimal(primaryFrameMs()) + "ms"
                 + " | " + renderHealthLabel()
-                + " | " + fpsConfidence
                 + " | " + qualityProfile.label
-                + " | cause: " + performanceDoctorCause());
+                + " | cause: " + fpsTruthCause());
         }
         if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
         if (assetsSummaryView != null) {
@@ -4629,9 +4866,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (statusView != null && debugPanel != null && debugPanel.getVisibility() == View.VISIBLE) {
             statusView.setText(capabilityStatusTable()
                 + "\n\nPerformance:"
-                + "\nPrimary HUD FPS: " + primaryFpsHud()
+                + "\nHUD FPS: " + primaryFpsHudTruthLine()
                 + "\nPrimary FPS source: " + primaryFpsSource
                 + "\nFPS confidence/stability: " + fpsConfidence + "/" + fpsStability
+                + "\nFPS truth cause: " + fpsTruthCause()
                 + "\nEstimated visible FPS: " + estimatedVisibleFpsHud()
                 + "\nJava callback FPS debug-only: " + oneDecimal(rollingFps)
                 + "\nCurrent frame ms: " + oneDecimal(rollingFrameMs)
@@ -4652,6 +4890,8 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nChoreographer/wall interval: " + timingSourceStatus
                 + "\nAndroid FrameMetrics status: " + frameMetricsStatus + " samples=" + frameMetricsSampleCount
                 + "\nFrameMetrics total/draw/swap/GPU ms: " + oneDecimal(frameMetricsTotalMs) + "/" + oneDecimal(frameMetricsDrawMs) + "/" + oneDecimal(frameMetricsSwapMs) + "/" + gpuMetricLabel()
+                + "\nFrameMetrics known/unknown gap ms: " + oneDecimal(frameMetricsKnownDurationSumMs) + "/" + oneDecimal(frameMetricsUnexplainedTotalMs) + " meaning=" + frameMetricsTotalMeaning
+                + "\nHUD/self cost ms: hud=" + oneDecimal(hudUpdateOverheadMs) + " stats=" + oneDecimal(frameStatsComputeOverheadMs) + " listener=" + oneDecimal(frameMetricsListenerOverheadMs) + " " + hudSelfCostStatus
                 + "\nGPU timing status: " + gpuTimingStatus()
                 + "\nbeginFrame status: " + beginFrameStatus
                 + "\nbeginFrame allowed/skipped/rendered/renderedFps: " + beginFrameAllowedCount + "/" + beginFrameSkippedCount + "/" + renderedFrameCount + "/" + oneDecimal(renderedFps)
@@ -4669,6 +4909,15 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nModel: " + (modelName == null || modelName.isEmpty() ? "none" : modelName)
                 + "\nRenderer: Filament"
                 + "\nGLB loader: gltfio loaded=" + gltfioLoaded
+                + "\nSLPK route: " + slpkRouteStatus
+                + "\nSLPK asset: " + shorten(slpkRouteAssetPath, 72)
+                + "\nSLPK extracted GLB: " + shorten(slpkExtractedGlbPath, 72)
+                + "\nSLPK source GLB: " + shorten(slpkSourceGlbPath, 72)
+                + "\nSLPK cooked package: " + shorten(slpkCookedPackagePath, 72)
+                + "\nSLPK package/glb bytes: " + slpkPackageBytes + "/" + slpkGlbBytes
+                + "\nSLPK chunks/materials/textures: " + slpkChunkCount + "/" + slpkMaterialCount + "/" + slpkTextureRefCount
+                + "\nSLPK chunk types: " + shorten(slpkChunkTypes, 96)
+                + "\nSLPK debug ZIP path: /storage/emulated/0/Download/SOLUM_SLPK_DEBUG_LATEST.zip"
                 + "\nLoad: " + loadStatus
                 + "\nSource: " + shorten(modelSourcePath, 72)
                 + "\nCopied: " + shorten(modelCopiedPath, 72)
@@ -4725,6 +4974,159 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
     }
 
+
+    private void exportSlpkDebugZip() {
+        File zipFile = new File("/storage/emulated/0/Download/SOLUM_SLPK_DEBUG_LATEST.zip");
+        try {
+            File parent = zipFile.getParentFile();
+            if (parent != null && !parent.exists()) parent.mkdirs();
+
+            java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(new FileOutputStream(zipFile));
+            try {
+                slpkAddZipTextEntry(zip, "slpk_route_report.txt", buildSlpkRouteReportText());
+                try {
+                    slpkAddZipTextEntry(zip, "slpk_summary.json", buildSlpkSummaryJson().toString(2));
+                } catch (Throwable jsonError) {
+                    slpkAddZipTextEntry(zip, "slpk_summary_error.txt", shortMessage(jsonError));
+                }
+
+                try {
+                    byte[] slpkBytes = slpkReadAssetBytes(SolumSlpkGlbRouteMvp.SAMPLE_ASSET_PATH);
+                    slpkAddZipBytesEntry(zip, "sample/f5e_sample_cooked_scene.slpk", slpkBytes);
+                } catch (Throwable assetError) {
+                    slpkAddZipTextEntry(zip, "sample_asset_error.txt", shortMessage(assetError));
+                }
+
+                try {
+                    File extracted = new File(slpkExtractedGlbPath);
+                    if (extracted.isFile()) {
+                        slpkAddZipFileEntry(zip, "sample/extracted_f5e_route_model.glb", extracted);
+                    } else {
+                        slpkAddZipTextEntry(zip, "sample/extracted_glb_missing.txt", slpkExtractedGlbPath);
+                    }
+                } catch (Throwable extractedError) {
+                    slpkAddZipTextEntry(zip, "sample_extracted_glb_error.txt", shortMessage(extractedError));
+                }
+            } finally {
+                try { zip.close(); } catch (Throwable ignored) { }
+            }
+
+            setLastAction("slpk_debug_zip_exported");
+            slpkRouteStatus = slpkRouteStatus + "_debug_zip_exported";
+            lastDiagnosticsExportStatus = "slpk_debug_zip_ok";
+            lastDiagnosticsReportPath = zipFile.getAbsolutePath();
+        } catch (Throwable t) {
+            lastDiagnosticsExportStatus = "slpk_debug_zip_failed: " + shortMessage(t);
+            lastLifecycleError = shortMessage(t);
+            setLastAction("slpk_debug_zip_failed");
+        }
+        refreshUiNow();
+    }
+
+    private String buildSlpkRouteReportText() {
+        StringBuilder b = new StringBuilder();
+        b.append("SOLUM SLPK Route Report\n");
+        b.append("timestamp=").append(nowTimestamp()).append('\n');
+        b.append("slpkRouteStatus=").append(slpkRouteStatus).append('\n');
+        b.append("slpkAssetPath=").append(slpkRouteAssetPath).append('\n');
+        b.append("slpkExtractedGlbPath=").append(slpkExtractedGlbPath).append('\n');
+        b.append("sourceGlbPath=").append(slpkSourceGlbPath).append('\n');
+        b.append("cookedPackagePath=").append(slpkCookedPackagePath).append('\n');
+        b.append("slpkPackageBytes=").append(slpkPackageBytes).append('\n');
+        b.append("slpkGlbBytes=").append(slpkGlbBytes).append('\n');
+        b.append("slpkChunkCount=").append(slpkChunkCount).append('\n');
+        b.append("slpkMaterialCount=").append(slpkMaterialCount).append('\n');
+        b.append("slpkTextureRefCount=").append(slpkTextureRefCount).append('\n');
+        b.append("slpkChunkTypes=").append(slpkChunkTypes).append('\n');
+        b.append("modelName=").append(modelName).append('\n');
+        b.append("modelSourcePath=").append(modelSourcePath).append('\n');
+        b.append("modelCopiedPath=").append(modelCopiedPath).append('\n');
+        b.append("gltfioLoaded=").append(gltfioLoaded).append('\n');
+        b.append("loadStatus=").append(loadStatus).append('\n');
+        b.append("lastActionStatus=").append(lastActionStatus).append('\n');
+        b.append("primaryFps=").append(oneDecimal(primaryFpsValue())).append('\n');
+        b.append("primaryFrameMs=").append(oneDecimal(primaryFrameMs())).append('\n');
+        b.append("fpsSource=").append(primaryFpsSource).append('\n');
+        b.append("hudOverheadMs=").append(oneDecimal(hudUpdateOverheadMs)).append('\n');
+        b.append("renderCpuSubmitMs=").append(oneDecimal(rollingRenderCpuMs)).append('\n');
+        return b.toString();
+    }
+
+    private JSONObject buildSlpkSummaryJson() throws Exception {
+        JSONObject json = new JSONObject();
+        json.put("schema", "solum_slpk_route_debug");
+        json.put("schemaVersion", 1);
+        json.put("timestamp", nowTimestamp());
+        json.put("routeStatus", slpkRouteStatus);
+        json.put("assetPath", slpkRouteAssetPath);
+        json.put("extractedGlbPath", slpkExtractedGlbPath);
+        json.put("sourceGlbPath", slpkSourceGlbPath);
+        json.put("cookedPackagePath", slpkCookedPackagePath);
+        json.put("packageBytes", slpkPackageBytes);
+        json.put("glbBytes", slpkGlbBytes);
+        json.put("chunkCount", slpkChunkCount);
+        json.put("materialCount", slpkMaterialCount);
+        json.put("textureRefCount", slpkTextureRefCount);
+        json.put("chunkTypes", slpkChunkTypes);
+        json.put("modelName", modelName);
+        json.put("modelSourcePath", modelSourcePath);
+        json.put("modelCopiedPath", modelCopiedPath);
+        json.put("gltfioLoaded", gltfioLoaded);
+        json.put("loadStatus", loadStatus);
+        json.put("lastActionStatus", lastActionStatus);
+        json.put("primaryFps", primaryFpsValue());
+        json.put("primaryFrameMs", primaryFrameMs());
+        json.put("primaryFpsSource", primaryFpsSource);
+        json.put("hudUpdateOverheadMs", hudUpdateOverheadMs);
+        json.put("renderCpuSubmitApproxMs", rollingRenderCpuMs);
+        json.put("note", "F5F export: send this ZIP instead of screenshots");
+        return json;
+    }
+
+    private byte[] slpkReadAssetBytes(String path) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (InputStream input = getAssets().open(path)) {
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+        }
+        return output.toByteArray();
+    }
+
+    private void slpkAddZipTextEntry(java.util.zip.ZipOutputStream zip, String name, String text) throws Exception {
+        byte[] bytes = text == null ? new byte[0] : text.getBytes("UTF-8");
+        slpkAddZipBytesEntry(zip, name, bytes);
+    }
+
+    private void slpkAddZipBytesEntry(java.util.zip.ZipOutputStream zip, String name, byte[] bytes) throws Exception {
+        java.util.zip.ZipEntry entry = new java.util.zip.ZipEntry(name);
+        zip.putNextEntry(entry);
+        if (bytes != null && bytes.length > 0) zip.write(bytes);
+        zip.closeEntry();
+    }
+
+    private void slpkAddZipFileEntry(java.util.zip.ZipOutputStream zip, String name, File file) throws Exception {
+        java.util.zip.ZipEntry entry = new java.util.zip.ZipEntry(name);
+        zip.putNextEntry(entry);
+        try (InputStream input = new FileInputStream(file)) {
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) zip.write(buffer, 0, read);
+        }
+        zip.closeEntry();
+    }
+
+    private void updateLiveHudOnly() {
+        if (hudView != null) {
+            hudView.setText(primaryFpsHudTruthLine()
+                + " | " + oneDecimal(primaryFrameMs()) + "ms"
+                + " | " + renderHealthLabel()
+                + " | " + qualityProfile.label
+                + " | cause: " + fpsTruthCause());
+        }
+        if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
+    }
+
     private void refreshUiNow() {
         updateAllSliderLabels();
         updateToggleLabels();
@@ -4771,8 +5173,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     }
 
     private float primaryFrameMs() {
-        if (frameMetricsSampleCount >= 6L && frameMetricsTotalMs > 0.0f) return frameMetricsTotalMs;
         if (frameWindowCount > 0 && p95FrameMs > 0.0f) return p95FrameMs;
+        if (frameMetricsSampleCount >= 6L && frameMetricsTotalMs > 0.0f) return frameMetricsTotalMs;
         return rollingFrameMs;
     }
 
@@ -4960,6 +5362,213 @@ public class FilamentGlbPreviewActivity extends Activity {
         refreshUiNow();
     }
 
+
+    private void exportRenderDebugZip() {
+        try {
+            syncRenderApiRequestedState();
+            File out = new File(RENDER_DEBUG_LATEST_ZIP);
+            File parent = out.getParentFile();
+            if (parent != null && !parent.isDirectory()) parent.mkdirs();
+
+            ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(out));
+            try {
+                writeZipText(zip, "render_state.json", buildFullDiagnosticsReportJson().toString(2));
+                writeZipText(zip, "short_report.txt", buildShortDiagnosticsReport());
+                writeZipText(zip, "fps_summary.txt", buildFpsSummaryText());
+                writeZipText(zip, "fps_truth.json", buildFpsTruthJson().toString(2));
+                writeZipText(zip, "fps_samples.csv", buildFpsSamplesCsv());
+                writeZipText(zip, "native_libs.txt", buildNativeLibsText());
+                writeZipText(zip, "app_build.txt", buildDebugAppText());
+                writeZipText(zip, "readme.txt",
+                    "SOLUM Render Debug ZIP\n"
+                    + "Send this ZIP to ChatGPT.\n"
+                    + "FPS is reported with source/confidence. Exact Filament GPU beginFrame timing is not exposed in current ModelViewer path.\n");
+            } finally {
+                try { zip.close(); } catch (Throwable ignored) { }
+            }
+
+            lastDiagnosticsReportPath = out.getAbsolutePath();
+            lastDiagnosticsExportStatus = "exported_render_debug_zip";
+            setLastAction("export_debug_zip_ok");
+            Toast.makeText(this, "Debug ZIP exported to Download", Toast.LENGTH_SHORT).show();
+        } catch (Throwable t) {
+            lastDiagnosticsExportStatus = "export_debug_zip_failed: " + shortMessage(t);
+            lastDiagnosticsReportPath = "unavailable";
+            setLastAction(lastDiagnosticsExportStatus);
+        }
+        refreshUiNow();
+    }
+
+    private String buildFpsSummaryText() {
+        return "SOLUM FPS / Frame Timing Summary"
+            + "\ntimestamp=" + nowTimestamp()
+            + "\nmainHudFpsLine=" + primaryFpsHudTruthLine()
+            + "\nprimaryFps=" + oneDecimal(primaryFpsValue())
+            + "\nprimaryFrameMs=" + oneDecimal(primaryFrameMs())
+            + "\nprimaryFpsSource=" + primaryFpsSource
+            + "\nfpsConfidence=" + fpsConfidence
+            + "\nfpsStability=" + fpsStability
+            + "\nmeasurementTruth=" + fpsMeasurementTruthText()
+            + "\ntruthCause=" + fpsTruthCause()
+            + "\njavaCallbackFpsDebugOnly=" + oneDecimal(rollingFps)
+            + "\nestimatedVisibleFpsP95=" + oneDecimal(visibleSmoothFps)
+            + "\nrollingFrameMs=" + oneDecimal(rollingFrameMs)
+            + "\np50FrameMs=" + oneDecimal(p50FrameMs)
+            + "\np95FrameMs=" + oneDecimal(p95FrameMs)
+            + "\nworstFrameMs=" + oneDecimal(worstFrameMs)
+            + "\njitterMs=" + oneDecimal(jitterMs)
+            + "\njitterScore=" + jitterScore
+            + "\nslowFrameCounter=" + slowFrameCounter
+            + "\njankFrameCounter=" + jankFrameCounter
+            + "\nframeWindowCount=" + frameWindowCount
+            + "\nliveFrameCounter=" + liveFrameCounter
+            + "\nframeMetricsStatus=" + frameMetricsStatus
+            + "\nframeMetricsSampleCount=" + frameMetricsSampleCount
+            + "\nframeMetricsTotalMs=" + oneDecimal(frameMetricsTotalMs)
+            + "\nframeMetricsTotalMeaning=" + frameMetricsTotalMeaning
+            + "\nknownMetricsSumMs=" + oneDecimal(frameMetricsKnownDurationSumMs)
+            + "\nunexplainedTotalMs=" + oneDecimal(frameMetricsUnexplainedTotalMs)
+            + "\nhudUpdateOverheadMs=" + oneDecimal(hudUpdateOverheadMs)
+            + "\nframeStatsComputeOverheadMs=" + oneDecimal(frameStatsComputeOverheadMs)
+            + "\nhudSelfCostStatus=" + hudSelfCostStatus
+            + "\nframeMetricsDrawMs=" + oneDecimal(frameMetricsDrawMs)
+            + "\nframeMetricsSwapMs=" + oneDecimal(frameMetricsSwapMs)
+            + "\nframeMetricsGpuMs=" + gpuMetricLabel()
+            + "\nframeMetricsSlowJank=" + frameMetricsSlowCount + "/" + frameMetricsJankCount
+            + "\nrenderCpuSubmitApproxMs=" + oneDecimal(rollingRenderCpuMs)
+            + "\ntimingDisagreement=" + timingDisagreement
+            + "\ntimingDisagreementStatus=" + timingDisagreementStatus
+            + "\nbeginFrameStatus=" + beginFrameStatus;
+    }
+
+    private String fpsMeasurementTruthText() {
+        if (frameMetricsSampleCount >= 12L && frameMetricsTotalMs > 0.0f && !timingDisagreement) {
+            return "good_android_frame_metrics_total_duration_primary_gpu_duration_" + (frameMetricsGpuMs > 0.0f ? "available" : "unavailable");
+        }
+        if (frameMetricsSampleCount >= 6L && frameMetricsTotalMs > 0.0f) {
+            return "medium_android_frame_metrics_primary_but_timing_disagreement_or_low_samples";
+        }
+        if (frameWindowCount >= 30 && p95FrameMs > 0.0f) {
+            return "estimated_choreographer_wall_interval_p95_no_framemetrics_primary";
+        }
+        return "warming_up_not_enough_samples";
+    }
+
+
+    private JSONObject buildFpsTruthJson() throws Exception {
+        JSONObject json = new JSONObject();
+        json.put("mainHudFps", primaryFpsValue());
+        json.put("mainHudFpsRounded", primaryFpsHud());
+        json.put("mainHudLine", primaryFpsHudTruthLine());
+        json.put("primaryFrameMs", primaryFrameMs());
+        json.put("primaryFpsSource", primaryFpsSource);
+        json.put("fpsConfidence", fpsConfidence);
+        json.put("fpsStability", fpsStability);
+        json.put("measurementTruth", fpsMeasurementTruthText());
+        json.put("truthCause", fpsTruthCause());
+        json.put("timingDisagreement", timingDisagreement);
+        json.put("timingDisagreementStatus", timingDisagreementStatus);
+        json.put("callbackFpsDebugOnly", rollingFps);
+        json.put("p95VisibleFps", visibleSmoothFps);
+        json.put("p50FrameMs", p50FrameMs);
+        json.put("p95FrameMs", p95FrameMs);
+        json.put("worstFrameMs", worstFrameMs);
+        json.put("frameMetricsTotalMs", frameMetricsTotalMs);
+        json.put("frameMetricsDrawMs", frameMetricsDrawMs);
+        json.put("frameMetricsSwapMs", frameMetricsSwapMs);
+        json.put("frameMetricsGpuMs", frameMetricsGpuMs > 0.0f ? frameMetricsGpuMs : JSONObject.NULL);
+        json.put("frameMetricsSamples", frameMetricsSampleCount);
+        json.put("renderCpuSubmitApproxMs", rollingRenderCpuMs);
+        json.put("beginFrameStatus", beginFrameStatus);
+        json.put("debugCostPolicy", "live_hud_lightweight_export_zip_on_demand_only");
+        json.put("heavyDebugEveryFrame", false);
+        json.put("statsSortPolicy", "p50_p95_recomputed_on_hud_tick_not_every_frame");
+        json.put("liveHudUpdatePolicy", "hud_tick_updates_top_hud_only_full_ui_refresh_on_user_actions_or_export");
+        return json;
+    }
+
+    private String primaryFpsHudTruthLine() {
+        float fps = primaryFpsValue();
+        if (fps <= 0.0f) return "FPS sampling";
+        String shortSource;
+        if (primaryFpsSource.startsWith("p95_frame_interval")) shortSource = "p95";
+        else if (primaryFpsSource.startsWith("framemetrics_total")) shortSource = "latencyFallback";
+        else shortSource = "sampling";
+        return "FPS " + Math.max(1, Math.round(fps)) + " [" + shortSource + "/" + fpsConfidence + "]";
+    }
+
+    private String fpsTruthCause() {
+        if (frameWindowCount < 30) return "warming_up_need_30_plus_samples";
+        if (hudUpdateOverheadMs > 4.0f || frameStatsComputeOverheadMs > 2.0f) {
+            return "hud_or_stats_self_cost_suspected_hudMs=" + oneDecimal(hudUpdateOverheadMs)
+                + "_statsMs=" + oneDecimal(frameStatsComputeOverheadMs);
+        }
+        if (frameMetricsUnexplainedTotalMs > 8.0f) {
+            return "framemetrics_latency_gap_totalMinusKnownMs=" + oneDecimal(frameMetricsUnexplainedTotalMs)
+                + "_totalIsLatencyNotDirectFps";
+        }
+        if (frameMetricsGpuMs > 22.2f) return "gpu_over_45fps_budget";
+        if (frameMetricsSwapMs > 22.2f) return "swap_buffers_slow";
+        if (p95FrameMs > 33.3f) return "p95_over_30fps_budget";
+        if (p95FrameMs > 22.2f) return "p95_over_45fps_budget";
+        return "no_major_bottleneck_detected_by_lightweight_metrics";
+    }
+
+    private String buildFpsSamplesCsv() {
+        StringBuilder b = new StringBuilder();
+        b.append("index,frame_ms,fps_from_sample,source\n");
+        int count = frameWindowCount;
+        int start = count == frameWindowMs.length ? frameWindowIndex : 0;
+        for (int i = 0; i < count; i++) {
+            int idx = (start + i) % frameWindowMs.length;
+            float ms = frameWindowMs[idx];
+            float fps = ms > 0.0f ? 1000.0f / Math.max(1.0f, ms) : 0.0f;
+            b.append(i).append(',')
+                .append(oneDecimal(ms)).append(',')
+                .append(oneDecimal(fps)).append(',')
+                .append("choreographer_wall_interval").append('\n');
+        }
+        return b.toString();
+    }
+
+    private String buildNativeLibsText() {
+        StringBuilder b = new StringBuilder();
+        b.append("nativeLibraryDir=").append(getApplicationInfo().nativeLibraryDir).append('\n');
+        b.append("sourceDir=").append(getApplicationInfo().sourceDir).append('\n');
+        File dir = new File(getApplicationInfo().nativeLibraryDir == null ? "" : getApplicationInfo().nativeLibraryDir);
+        File[] files = dir.isDirectory() ? dir.listFiles() : null;
+        if (files == null || files.length == 0) {
+            b.append("nativeLibFiles=none_or_unreadable\n");
+            return b.toString();
+        }
+        Arrays.sort(files, (a, c) -> a.getName().compareTo(c.getName()));
+        for (File file : files) {
+            b.append(file.getName()).append(" size=").append(file.length()).append('\n');
+        }
+        return b.toString();
+    }
+
+    private String buildDebugAppText() {
+        return "SOLUM Debug App Info"
+            + "\ntimestamp=" + nowTimestamp()
+            + "\npackage=" + getPackageName()
+            + "\nsourceDir=" + getApplicationInfo().sourceDir
+            + "\nnativeLibraryDir=" + getApplicationInfo().nativeLibraryDir
+            + "\nrenderer=Filament"
+            + "\nfilamentArtifact=local_maven_com.solum.filament_1.71.4-ci"
+            + "\nreportZip=" + RENDER_DEBUG_LATEST_ZIP
+            + "\nmodel=" + (modelName == null || modelName.isEmpty() ? "none" : modelName)
+            + "\nqualityProfile=" + qualityProfile.name();
+    }
+
+    private static void writeZipText(ZipOutputStream zip, String name, String text) throws Exception {
+        ZipEntry entry = new ZipEntry(name);
+        zip.putNextEntry(entry);
+        byte[] bytes = (text == null ? "" : text).getBytes(StandardCharsets.UTF_8);
+        zip.write(bytes);
+        zip.closeEntry();
+    }
+
     private String buildShortDiagnosticsReport() {
         syncRenderApiRequestedState();
         RenderCostDiagnostics cost = RenderCostDiagnostics.fromSettings(renderControlApi == null ? null : renderControlApi.getSettings());
@@ -5116,6 +5725,13 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("timingDisagreement", timingDisagreement);
         json.put("timingDisagreementReason", timingDisagreementStatus);
         json.put("beginFrameStatus", beginFrameStatus);
+        json.put("frameWindowCount", frameWindowCount);
+        json.put("liveFrameCounter", liveFrameCounter);
+        json.put("frameMetricsSampleCount", frameMetricsSampleCount);
+        json.put("frameMetricsSlowCount", frameMetricsSlowCount);
+        json.put("frameMetricsJankCount", frameMetricsJankCount);
+        json.put("javaRenderCpuSubmitApproxMs", rollingRenderCpuMs);
+        json.put("measurementTruth", fpsMeasurementTruthText());
         return json;
     }
 

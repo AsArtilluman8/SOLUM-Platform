@@ -89,12 +89,15 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import kotlin.jvm.functions.Function1;
 import org.json.JSONArray;
@@ -163,6 +166,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String PREF_FILAMENT_DEFAULT_CONFIG_JSON = "filament_default_config_json";
     private static final String CONFIG_FILE_NAME = "filament_render_config.json";
     private static final String RENDER_REPORT_DIR = "/storage/emulated/0/Download/SOLUM_REPORTS";
+    private static final String RENDER_DEBUG_LATEST_ZIP = "/storage/emulated/0/Download/SOLUM_RENDER_DEBUG_LATEST.zip";
     private static final int CONFIG_SCHEMA_VERSION = 6;
     private static final int REQUEST_IMPORT_MODEL = 4101;
     private static final int REQUEST_IMPORT_IBL = 4102;
@@ -320,6 +324,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private final float[] frameWindowMs = new float[180];
     private int frameWindowIndex = 0;
     private int frameWindowCount = 0;
+    private boolean frameStatsDirty = false;
     private float avgFrameMs = 0.0f;
     private float minFrameMs = 0.0f;
     private float maxFrameMs = 0.0f;
@@ -1418,10 +1423,13 @@ public class FilamentGlbPreviewActivity extends Activity {
         copyShortReportButton.setOnClickListener(v -> copyShortDiagnosticsReport());
         Button exportFullReportButton = button("Export Full Report");
         exportFullReportButton.setOnClickListener(v -> exportFullDiagnosticsReport());
+        Button exportDebugZipButton = button("Export Debug ZIP");
+        exportDebugZipButton.setOnClickListener(v -> exportRenderDebugZip());
         debugPanel.addView(closeButton);
         debugPanel.addView(resetFrameCountersButton);
         debugPanel.addView(copyShortReportButton);
         debugPanel.addView(exportFullReportButton);
+        debugPanel.addView(exportDebugZipButton);
         debugPanel.addView(statusView);
 
         workspacePanel.addView(assetsPanel);
@@ -1724,6 +1732,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         lastFrameNs = frameTimeNanos;
         lastFrameWallNs = frameWallNs;
         if (lastHudUpdateNs == 0L || frameTimeNanos - lastHudUpdateNs >= HUD_UPDATE_NS) {
+            if (frameStatsDirty) computeFrameStats();
             lastHudUpdateNs = frameTimeNanos;
             refreshUiNow();
         }
@@ -1801,10 +1810,11 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (worstFrameMs <= 0.0f || frameMs > worstFrameMs) worstFrameMs = frameMs;
         if (frameMs > 33.3f) jankFrameCounter++;
         if (frameMs > 22.2f) slowFrameCounter++;
-        computeFrameStats();
+        frameStatsDirty = true;
     }
 
     private void computeFrameStats() {
+        frameStatsDirty = false;
         if (frameWindowCount <= 0) {
             avgFrameMs = 0.0f;
             minFrameMs = 0.0f;
@@ -1903,6 +1913,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         Arrays.fill(frameWindowMs, 0.0f);
         frameWindowIndex = 0;
         frameWindowCount = 0;
+        frameStatsDirty = false;
         rollingFrameMs = 0.0f;
         rollingFps = 0.0f;
         visibleSmoothFps = 0.0f;
@@ -4491,13 +4502,11 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private void updateHud() {
         if (hudView != null) {
-            hudView.setText("FPS " + primaryFpsHud()
-                + " | frame " + oneDecimal(primaryFrameMs()) + " ms"
-                + " | p95 " + oneDecimal(p95FrameMs) + " ms"
+            hudView.setText(primaryFpsHudTruthLine()
+                + " | " + oneDecimal(primaryFrameMs()) + "ms"
                 + " | " + renderHealthLabel()
-                + " | " + fpsConfidence
                 + " | " + qualityProfile.label
-                + " | cause: " + performanceDoctorCause());
+                + " | cause: " + fpsTruthCause());
         }
         if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
         if (assetsSummaryView != null) {
@@ -4629,9 +4638,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (statusView != null && debugPanel != null && debugPanel.getVisibility() == View.VISIBLE) {
             statusView.setText(capabilityStatusTable()
                 + "\n\nPerformance:"
-                + "\nPrimary HUD FPS: " + primaryFpsHud()
+                + "\nHUD FPS: " + primaryFpsHudTruthLine()
                 + "\nPrimary FPS source: " + primaryFpsSource
                 + "\nFPS confidence/stability: " + fpsConfidence + "/" + fpsStability
+                + "\nFPS truth cause: " + fpsTruthCause()
                 + "\nEstimated visible FPS: " + estimatedVisibleFpsHud()
                 + "\nJava callback FPS debug-only: " + oneDecimal(rollingFps)
                 + "\nCurrent frame ms: " + oneDecimal(rollingFrameMs)
@@ -4960,6 +4970,204 @@ public class FilamentGlbPreviewActivity extends Activity {
         refreshUiNow();
     }
 
+
+    private void exportRenderDebugZip() {
+        try {
+            syncRenderApiRequestedState();
+            File out = new File(RENDER_DEBUG_LATEST_ZIP);
+            File parent = out.getParentFile();
+            if (parent != null && !parent.isDirectory()) parent.mkdirs();
+
+            ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(out));
+            try {
+                writeZipText(zip, "render_state.json", buildFullDiagnosticsReportJson().toString(2));
+                writeZipText(zip, "short_report.txt", buildShortDiagnosticsReport());
+                writeZipText(zip, "fps_summary.txt", buildFpsSummaryText());
+                writeZipText(zip, "fps_truth.json", buildFpsTruthJson().toString(2));
+                writeZipText(zip, "fps_samples.csv", buildFpsSamplesCsv());
+                writeZipText(zip, "native_libs.txt", buildNativeLibsText());
+                writeZipText(zip, "app_build.txt", buildDebugAppText());
+                writeZipText(zip, "readme.txt",
+                    "SOLUM Render Debug ZIP\n"
+                    + "Send this ZIP to ChatGPT.\n"
+                    + "FPS is reported with source/confidence. Exact Filament GPU beginFrame timing is not exposed in current ModelViewer path.\n");
+            } finally {
+                try { zip.close(); } catch (Throwable ignored) { }
+            }
+
+            lastDiagnosticsReportPath = out.getAbsolutePath();
+            lastDiagnosticsExportStatus = "exported_render_debug_zip";
+            setLastAction("export_debug_zip_ok");
+            Toast.makeText(this, "Debug ZIP exported to Download", Toast.LENGTH_SHORT).show();
+        } catch (Throwable t) {
+            lastDiagnosticsExportStatus = "export_debug_zip_failed: " + shortMessage(t);
+            lastDiagnosticsReportPath = "unavailable";
+            setLastAction(lastDiagnosticsExportStatus);
+        }
+        refreshUiNow();
+    }
+
+    private String buildFpsSummaryText() {
+        return "SOLUM FPS / Frame Timing Summary"
+            + "\ntimestamp=" + nowTimestamp()
+            + "\nmainHudFpsLine=" + primaryFpsHudTruthLine()
+            + "\nprimaryFps=" + oneDecimal(primaryFpsValue())
+            + "\nprimaryFrameMs=" + oneDecimal(primaryFrameMs())
+            + "\nprimaryFpsSource=" + primaryFpsSource
+            + "\nfpsConfidence=" + fpsConfidence
+            + "\nfpsStability=" + fpsStability
+            + "\nmeasurementTruth=" + fpsMeasurementTruthText()
+            + "\ntruthCause=" + fpsTruthCause()
+            + "\njavaCallbackFpsDebugOnly=" + oneDecimal(rollingFps)
+            + "\nestimatedVisibleFpsP95=" + oneDecimal(visibleSmoothFps)
+            + "\nrollingFrameMs=" + oneDecimal(rollingFrameMs)
+            + "\np50FrameMs=" + oneDecimal(p50FrameMs)
+            + "\np95FrameMs=" + oneDecimal(p95FrameMs)
+            + "\nworstFrameMs=" + oneDecimal(worstFrameMs)
+            + "\njitterMs=" + oneDecimal(jitterMs)
+            + "\njitterScore=" + jitterScore
+            + "\nslowFrameCounter=" + slowFrameCounter
+            + "\njankFrameCounter=" + jankFrameCounter
+            + "\nframeWindowCount=" + frameWindowCount
+            + "\nliveFrameCounter=" + liveFrameCounter
+            + "\nframeMetricsStatus=" + frameMetricsStatus
+            + "\nframeMetricsSampleCount=" + frameMetricsSampleCount
+            + "\nframeMetricsTotalMs=" + oneDecimal(frameMetricsTotalMs)
+            + "\nframeMetricsDrawMs=" + oneDecimal(frameMetricsDrawMs)
+            + "\nframeMetricsSwapMs=" + oneDecimal(frameMetricsSwapMs)
+            + "\nframeMetricsGpuMs=" + gpuMetricLabel()
+            + "\nframeMetricsSlowJank=" + frameMetricsSlowCount + "/" + frameMetricsJankCount
+            + "\nrenderCpuSubmitApproxMs=" + oneDecimal(rollingRenderCpuMs)
+            + "\ntimingDisagreement=" + timingDisagreement
+            + "\ntimingDisagreementStatus=" + timingDisagreementStatus
+            + "\nbeginFrameStatus=" + beginFrameStatus;
+    }
+
+    private String fpsMeasurementTruthText() {
+        if (frameMetricsSampleCount >= 12L && frameMetricsTotalMs > 0.0f && !timingDisagreement) {
+            return "good_android_frame_metrics_total_duration_primary_gpu_duration_" + (frameMetricsGpuMs > 0.0f ? "available" : "unavailable");
+        }
+        if (frameMetricsSampleCount >= 6L && frameMetricsTotalMs > 0.0f) {
+            return "medium_android_frame_metrics_primary_but_timing_disagreement_or_low_samples";
+        }
+        if (frameWindowCount >= 30 && p95FrameMs > 0.0f) {
+            return "estimated_choreographer_wall_interval_p95_no_framemetrics_primary";
+        }
+        return "warming_up_not_enough_samples";
+    }
+
+
+    private JSONObject buildFpsTruthJson() throws Exception {
+        JSONObject json = new JSONObject();
+        json.put("mainHudFps", primaryFpsValue());
+        json.put("mainHudFpsRounded", primaryFpsHud());
+        json.put("mainHudLine", primaryFpsHudTruthLine());
+        json.put("primaryFrameMs", primaryFrameMs());
+        json.put("primaryFpsSource", primaryFpsSource);
+        json.put("fpsConfidence", fpsConfidence);
+        json.put("fpsStability", fpsStability);
+        json.put("measurementTruth", fpsMeasurementTruthText());
+        json.put("truthCause", fpsTruthCause());
+        json.put("timingDisagreement", timingDisagreement);
+        json.put("timingDisagreementStatus", timingDisagreementStatus);
+        json.put("callbackFpsDebugOnly", rollingFps);
+        json.put("p95VisibleFps", visibleSmoothFps);
+        json.put("p50FrameMs", p50FrameMs);
+        json.put("p95FrameMs", p95FrameMs);
+        json.put("worstFrameMs", worstFrameMs);
+        json.put("frameMetricsTotalMs", frameMetricsTotalMs);
+        json.put("frameMetricsDrawMs", frameMetricsDrawMs);
+        json.put("frameMetricsSwapMs", frameMetricsSwapMs);
+        json.put("frameMetricsGpuMs", frameMetricsGpuMs > 0.0f ? frameMetricsGpuMs : JSONObject.NULL);
+        json.put("frameMetricsSamples", frameMetricsSampleCount);
+        json.put("renderCpuSubmitApproxMs", rollingRenderCpuMs);
+        json.put("beginFrameStatus", beginFrameStatus);
+        json.put("debugCostPolicy", "live_hud_lightweight_export_zip_on_demand_only");
+        json.put("heavyDebugEveryFrame", false);
+        json.put("statsSortPolicy", "p50_p95_recomputed_on_hud_tick_not_every_frame");
+        return json;
+    }
+
+    private String primaryFpsHudTruthLine() {
+        float fps = primaryFpsValue();
+        if (fps <= 0.0f) return "FPS sampling";
+        String shortSource;
+        if ("android_framemetrics_total_duration".equals(primaryFpsSource)) shortSource = "window";
+        else if ("estimated_visible_p95_frame_interval".equals(primaryFpsSource)) shortSource = "p95";
+        else shortSource = "sampling";
+        return "FPS " + Math.max(1, Math.round(fps)) + " [" + shortSource + "/" + fpsConfidence + "]";
+    }
+
+    private String fpsTruthCause() {
+        if (frameWindowCount < 30) return "warming_up_need_30_plus_samples";
+        if (timingDisagreement) {
+            return "sources_disagree_callback=" + oneDecimal(rollingFps)
+                + "_primary=" + oneDecimal(primaryFpsValue())
+                + "_frameMetricsTotalMs=" + oneDecimal(frameMetricsTotalMs);
+        }
+        if (frameMetricsTotalMs > 33.3f) return "window_total_over_30fps_budget";
+        if (frameMetricsGpuMs > 22.2f) return "gpu_over_45fps_budget";
+        if (frameMetricsSwapMs > 22.2f) return "swap_buffers_slow";
+        if (p95FrameMs > 33.3f) return "p95_over_30fps_budget";
+        if (p95FrameMs > 22.2f) return "p95_over_45fps_budget";
+        return "no_major_fps_bottleneck_detected_by_lightweight_metrics";
+    }
+
+    private String buildFpsSamplesCsv() {
+        StringBuilder b = new StringBuilder();
+        b.append("index,frame_ms,fps_from_sample,source\n");
+        int count = frameWindowCount;
+        int start = count == frameWindowMs.length ? frameWindowIndex : 0;
+        for (int i = 0; i < count; i++) {
+            int idx = (start + i) % frameWindowMs.length;
+            float ms = frameWindowMs[idx];
+            float fps = ms > 0.0f ? 1000.0f / Math.max(1.0f, ms) : 0.0f;
+            b.append(i).append(',')
+                .append(oneDecimal(ms)).append(',')
+                .append(oneDecimal(fps)).append(',')
+                .append("choreographer_wall_interval").append('\n');
+        }
+        return b.toString();
+    }
+
+    private String buildNativeLibsText() {
+        StringBuilder b = new StringBuilder();
+        b.append("nativeLibraryDir=").append(getApplicationInfo().nativeLibraryDir).append('\n');
+        b.append("sourceDir=").append(getApplicationInfo().sourceDir).append('\n');
+        File dir = new File(getApplicationInfo().nativeLibraryDir == null ? "" : getApplicationInfo().nativeLibraryDir);
+        File[] files = dir.isDirectory() ? dir.listFiles() : null;
+        if (files == null || files.length == 0) {
+            b.append("nativeLibFiles=none_or_unreadable\n");
+            return b.toString();
+        }
+        Arrays.sort(files, (a, c) -> a.getName().compareTo(c.getName()));
+        for (File file : files) {
+            b.append(file.getName()).append(" size=").append(file.length()).append('\n');
+        }
+        return b.toString();
+    }
+
+    private String buildDebugAppText() {
+        return "SOLUM Debug App Info"
+            + "\ntimestamp=" + nowTimestamp()
+            + "\npackage=" + getPackageName()
+            + "\nsourceDir=" + getApplicationInfo().sourceDir
+            + "\nnativeLibraryDir=" + getApplicationInfo().nativeLibraryDir
+            + "\nrenderer=Filament"
+            + "\nfilamentArtifact=local_maven_com.solum.filament_1.71.4-ci"
+            + "\nreportZip=" + RENDER_DEBUG_LATEST_ZIP
+            + "\nmodel=" + (modelName == null || modelName.isEmpty() ? "none" : modelName)
+            + "\nqualityProfile=" + qualityProfile.name();
+    }
+
+    private static void writeZipText(ZipOutputStream zip, String name, String text) throws Exception {
+        ZipEntry entry = new ZipEntry(name);
+        zip.putNextEntry(entry);
+        byte[] bytes = (text == null ? "" : text).getBytes(StandardCharsets.UTF_8);
+        zip.write(bytes);
+        zip.closeEntry();
+    }
+
     private String buildShortDiagnosticsReport() {
         syncRenderApiRequestedState();
         RenderCostDiagnostics cost = RenderCostDiagnostics.fromSettings(renderControlApi == null ? null : renderControlApi.getSettings());
@@ -5116,6 +5324,13 @@ public class FilamentGlbPreviewActivity extends Activity {
         json.put("timingDisagreement", timingDisagreement);
         json.put("timingDisagreementReason", timingDisagreementStatus);
         json.put("beginFrameStatus", beginFrameStatus);
+        json.put("frameWindowCount", frameWindowCount);
+        json.put("liveFrameCounter", liveFrameCounter);
+        json.put("frameMetricsSampleCount", frameMetricsSampleCount);
+        json.put("frameMetricsSlowCount", frameMetricsSlowCount);
+        json.put("frameMetricsJankCount", frameMetricsJankCount);
+        json.put("javaRenderCpuSubmitApproxMs", rollingRenderCpuMs);
+        json.put("measurementTruth", fpsMeasurementTruthText());
         return json;
     }
 

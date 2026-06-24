@@ -1453,11 +1453,14 @@ public class FilamentGlbPreviewActivity extends Activity {
         exportFullReportButton.setOnClickListener(v -> exportFullDiagnosticsReport());
         Button exportDebugZipButton = button("Export Debug ZIP");
         exportDebugZipButton.setOnClickListener(v -> exportRenderDebugZip());
+        Button exportSlpkDebugZipButton = button("Export SLPK Debug ZIP");
+        exportSlpkDebugZipButton.setOnClickListener(v -> exportSlpkDebugZip());
         debugPanel.addView(closeButton);
         debugPanel.addView(resetFrameCountersButton);
         debugPanel.addView(copyShortReportButton);
         debugPanel.addView(exportFullReportButton);
         debugPanel.addView(exportDebugZipButton);
+        debugPanel.addView(exportSlpkDebugZipButton);
         debugPanel.addView(statusView);
 
         workspacePanel.addView(assetsPanel);
@@ -4842,6 +4845,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nSLPK package/glb bytes: " + slpkPackageBytes + "/" + slpkGlbBytes
                 + "\nSLPK chunks/materials/textures: " + slpkChunkCount + "/" + slpkMaterialCount + "/" + slpkTextureRefCount
                 + "\nSLPK chunk types: " + shorten(slpkChunkTypes, 96)
+                + "\nSLPK debug ZIP path: /storage/emulated/0/Download/SOLUM_SLPK_DEBUG_LATEST.zip"
                 + "\nLoad: " + loadStatus
                 + "\nSource: " + shorten(modelSourcePath, 72)
                 + "\nCopied: " + shorten(modelCopiedPath, 72)
@@ -4896,6 +4900,144 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nlegacyVulkanReturnStatus: " + legacyVulkanReturnStatus
                 + "\nlastLifecycleError: " + lastLifecycleError);
         }
+    }
+
+
+    private void exportSlpkDebugZip() {
+        File zipFile = new File("/storage/emulated/0/Download/SOLUM_SLPK_DEBUG_LATEST.zip");
+        try {
+            File parent = zipFile.getParentFile();
+            if (parent != null && !parent.exists()) parent.mkdirs();
+
+            java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(new FileOutputStream(zipFile));
+            try {
+                slpkAddZipTextEntry(zip, "slpk_route_report.txt", buildSlpkRouteReportText());
+                try {
+                    slpkAddZipTextEntry(zip, "slpk_summary.json", buildSlpkSummaryJson().toString(2));
+                } catch (Throwable jsonError) {
+                    slpkAddZipTextEntry(zip, "slpk_summary_error.txt", shortMessage(jsonError));
+                }
+
+                try {
+                    byte[] slpkBytes = slpkReadAssetBytes(SolumSlpkGlbRouteMvp.SAMPLE_ASSET_PATH);
+                    slpkAddZipBytesEntry(zip, "sample/f5e_sample_cooked_scene.slpk", slpkBytes);
+                } catch (Throwable assetError) {
+                    slpkAddZipTextEntry(zip, "sample_asset_error.txt", shortMessage(assetError));
+                }
+
+                try {
+                    File extracted = new File(slpkExtractedGlbPath);
+                    if (extracted.isFile()) {
+                        slpkAddZipFileEntry(zip, "sample/extracted_f5e_route_model.glb", extracted);
+                    } else {
+                        slpkAddZipTextEntry(zip, "sample/extracted_glb_missing.txt", slpkExtractedGlbPath);
+                    }
+                } catch (Throwable extractedError) {
+                    slpkAddZipTextEntry(zip, "sample_extracted_glb_error.txt", shortMessage(extractedError));
+                }
+            } finally {
+                try { zip.close(); } catch (Throwable ignored) { }
+            }
+
+            setLastAction("slpk_debug_zip_exported");
+            slpkRouteStatus = slpkRouteStatus + "_debug_zip_exported";
+            lastDiagnosticsExportStatus = "slpk_debug_zip_ok";
+            lastDiagnosticsReportPath = zipFile.getAbsolutePath();
+        } catch (Throwable t) {
+            lastDiagnosticsExportStatus = "slpk_debug_zip_failed: " + shortMessage(t);
+            lastLifecycleError = shortMessage(t);
+            setLastAction("slpk_debug_zip_failed");
+        }
+        refreshUiNow();
+    }
+
+    private String buildSlpkRouteReportText() {
+        StringBuilder b = new StringBuilder();
+        b.append("SOLUM SLPK Route Report\n");
+        b.append("timestamp=").append(nowTimestamp()).append('\n');
+        b.append("slpkRouteStatus=").append(slpkRouteStatus).append('\n');
+        b.append("slpkAssetPath=").append(slpkRouteAssetPath).append('\n');
+        b.append("slpkExtractedGlbPath=").append(slpkExtractedGlbPath).append('\n');
+        b.append("slpkPackageBytes=").append(slpkPackageBytes).append('\n');
+        b.append("slpkGlbBytes=").append(slpkGlbBytes).append('\n');
+        b.append("slpkChunkCount=").append(slpkChunkCount).append('\n');
+        b.append("slpkMaterialCount=").append(slpkMaterialCount).append('\n');
+        b.append("slpkTextureRefCount=").append(slpkTextureRefCount).append('\n');
+        b.append("slpkChunkTypes=").append(slpkChunkTypes).append('\n');
+        b.append("modelName=").append(modelName).append('\n');
+        b.append("modelSourcePath=").append(modelSourcePath).append('\n');
+        b.append("modelCopiedPath=").append(modelCopiedPath).append('\n');
+        b.append("gltfioLoaded=").append(gltfioLoaded).append('\n');
+        b.append("loadStatus=").append(loadStatus).append('\n');
+        b.append("lastActionStatus=").append(lastActionStatus).append('\n');
+        b.append("primaryFps=").append(oneDecimal(primaryFpsValue())).append('\n');
+        b.append("primaryFrameMs=").append(oneDecimal(primaryFrameMs())).append('\n');
+        b.append("fpsSource=").append(primaryFpsSource).append('\n');
+        b.append("hudOverheadMs=").append(oneDecimal(hudUpdateOverheadMs)).append('\n');
+        b.append("renderCpuSubmitMs=").append(oneDecimal(rollingRenderCpuMs)).append('\n');
+        return b.toString();
+    }
+
+    private JSONObject buildSlpkSummaryJson() throws Exception {
+        JSONObject json = new JSONObject();
+        json.put("schema", "solum_slpk_route_debug");
+        json.put("schemaVersion", 1);
+        json.put("timestamp", nowTimestamp());
+        json.put("routeStatus", slpkRouteStatus);
+        json.put("assetPath", slpkRouteAssetPath);
+        json.put("extractedGlbPath", slpkExtractedGlbPath);
+        json.put("packageBytes", slpkPackageBytes);
+        json.put("glbBytes", slpkGlbBytes);
+        json.put("chunkCount", slpkChunkCount);
+        json.put("materialCount", slpkMaterialCount);
+        json.put("textureRefCount", slpkTextureRefCount);
+        json.put("chunkTypes", slpkChunkTypes);
+        json.put("modelName", modelName);
+        json.put("modelSourcePath", modelSourcePath);
+        json.put("modelCopiedPath", modelCopiedPath);
+        json.put("gltfioLoaded", gltfioLoaded);
+        json.put("loadStatus", loadStatus);
+        json.put("lastActionStatus", lastActionStatus);
+        json.put("primaryFps", primaryFpsValue());
+        json.put("primaryFrameMs", primaryFrameMs());
+        json.put("primaryFpsSource", primaryFpsSource);
+        json.put("hudUpdateOverheadMs", hudUpdateOverheadMs);
+        json.put("renderCpuSubmitApproxMs", rollingRenderCpuMs);
+        json.put("note", "F5F export: send this ZIP instead of screenshots");
+        return json;
+    }
+
+    private byte[] slpkReadAssetBytes(String path) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (InputStream input = getAssets().open(path)) {
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+        }
+        return output.toByteArray();
+    }
+
+    private void slpkAddZipTextEntry(java.util.zip.ZipOutputStream zip, String name, String text) throws Exception {
+        byte[] bytes = text == null ? new byte[0] : text.getBytes("UTF-8");
+        slpkAddZipBytesEntry(zip, name, bytes);
+    }
+
+    private void slpkAddZipBytesEntry(java.util.zip.ZipOutputStream zip, String name, byte[] bytes) throws Exception {
+        java.util.zip.ZipEntry entry = new java.util.zip.ZipEntry(name);
+        zip.putNextEntry(entry);
+        if (bytes != null && bytes.length > 0) zip.write(bytes);
+        zip.closeEntry();
+    }
+
+    private void slpkAddZipFileEntry(java.util.zip.ZipOutputStream zip, String name, File file) throws Exception {
+        java.util.zip.ZipEntry entry = new java.util.zip.ZipEntry(name);
+        zip.putNextEntry(entry);
+        try (InputStream input = new FileInputStream(file)) {
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) zip.write(buffer, 0, read);
+        }
+        zip.closeEntry();
     }
 
     private void updateLiveHudOnly() {

@@ -414,6 +414,15 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String modelSourcePath = "none";
     private String modelCopiedPath = "none";
     private String gltfioLoaded = "false";
+    private String slpkRouteStatus = "not_run";
+    private String slpkRouteAssetPath = "none";
+    private String slpkExtractedGlbPath = "none";
+    private int slpkChunkCount = 0;
+    private int slpkMaterialCount = 0;
+    private int slpkTextureRefCount = 0;
+    private long slpkPackageBytes = 0L;
+    private long slpkGlbBytes = 0L;
+    private String slpkChunkTypes = "none";
     private String importCopyStatus = "not_run";
     private String permissionStatus = "not_checked";
     private String scanDownloadStatus = "not_run";
@@ -968,6 +977,9 @@ public class FilamentGlbPreviewActivity extends Activity {
         assetsPanel.addView(importIblButton);
         assetsPanel.addView(scanDownloadButton);
         assetsPanel.addView(reloadButton);
+        Button loadSlpkSampleButton = button("Load SLPK Sample");
+        loadSlpkSampleButton.setOnClickListener(v -> loadSlpkSampleRoute());
+        assetsPanel.addView(loadSlpkSampleButton);
         assetsPanel.addView(assetsSummaryView);
 
         qualityButton = button("Quality: " + qualityProfile.label);
@@ -1528,6 +1540,42 @@ public class FilamentGlbPreviewActivity extends Activity {
                 return;
             }
             importIblFromUri(data.getData());
+        }
+    }
+
+
+    private void loadSlpkSampleRoute() {
+        try {
+            SolumSlpkGlbRouteMvp.RouteResult route = SolumSlpkGlbRouteMvp.extractBundledSampleGlb(this);
+            slpkRouteStatus = route.status;
+            slpkRouteAssetPath = route.assetPath;
+            slpkExtractedGlbPath = route.extractedGlbFile == null ? "none" : route.extractedGlbFile.getAbsolutePath();
+            slpkChunkCount = route.chunkCount;
+            slpkMaterialCount = route.materialCount;
+            slpkTextureRefCount = route.textureCount;
+            slpkPackageBytes = route.packageBytes;
+            slpkGlbBytes = route.glbBytes;
+            slpkChunkTypes = String.valueOf(route.chunkTypes);
+
+            modelSourcePath = "asset://" + route.assetPath;
+            modelCopiedPath = slpkExtractedGlbPath;
+            modelPath = slpkExtractedGlbPath;
+            modelName = "SLPK " + route.packageName;
+
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putString(PREF_ACTIVE_MODEL_LOCAL_PATH, modelCopiedPath)
+                .putString(PREF_ACTIVE_MODEL_PATH, modelCopiedPath)
+                .putString(PREF_ACTIVE_MODEL_NAME, modelName)
+                .apply();
+
+            setLastAction("slpk_glb_route_ready");
+            loadModel();
+            refreshUiNow();
+        } catch (Throwable t) {
+            slpkRouteStatus = "failed: " + shortMessage(t);
+            lastLifecycleError = shortMessage(t);
+            setLastAction("slpk_glb_route_failed");
+            refreshUiNow();
         }
     }
 
@@ -4788,6 +4836,12 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nModel: " + (modelName == null || modelName.isEmpty() ? "none" : modelName)
                 + "\nRenderer: Filament"
                 + "\nGLB loader: gltfio loaded=" + gltfioLoaded
+                + "\nSLPK route: " + slpkRouteStatus
+                + "\nSLPK asset: " + shorten(slpkRouteAssetPath, 72)
+                + "\nSLPK extracted GLB: " + shorten(slpkExtractedGlbPath, 72)
+                + "\nSLPK package/glb bytes: " + slpkPackageBytes + "/" + slpkGlbBytes
+                + "\nSLPK chunks/materials/textures: " + slpkChunkCount + "/" + slpkMaterialCount + "/" + slpkTextureRefCount
+                + "\nSLPK chunk types: " + shorten(slpkChunkTypes, 96)
                 + "\nLoad: " + loadStatus
                 + "\nSource: " + shorten(modelSourcePath, 72)
                 + "\nCopied: " + shorten(modelCopiedPath, 72)

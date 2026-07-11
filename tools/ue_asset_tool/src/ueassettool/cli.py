@@ -12,6 +12,12 @@ from .properties import PropertyParser
 from .compression import build_bundled_ooz, decompress_compressed_buffer, write_verified_output
 from .blueprint import BlueprintGraphDecoder
 from .extract import extract_verified
+from .mesh import export_static_mesh, validate_glb
+from .contracts import (
+    export_auto_contract, export_blueprint_contract, export_metasound_contract,
+    export_niagara_contract, verify_package,
+)
+from .media import export_media
 
 
 def _json_dump(data: object, path: str | None) -> None:
@@ -19,7 +25,9 @@ def _json_dump(data: object, path: str | None) -> None:
     if path:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding="utf-8")
+        temporary = target.with_name(target.name + ".tmp")
+        temporary.write_text(text, encoding="utf-8")
+        temporary.replace(target)
     else:
         sys.stdout.write(text)
 
@@ -55,6 +63,32 @@ def build_parser() -> argparse.ArgumentParser:
     extract.add_argument("asset")
     extract.add_argument("-d", "--output-dir", required=True)
     extract.add_argument("-o", "--manifest", help="write extraction manifest JSON")
+    extract.add_argument("--max-output", type=int, default=2 * 1024 * 1024 * 1024)
+    mesh = sub.add_parser("export-mesh", help="export a structurally verified StaticMesh to GLB")
+    mesh.add_argument("asset")
+    mesh.add_argument("-o", "--output", required=True)
+    mesh.add_argument("--manifest", help="write mesh/export verification JSON")
+    mesh.add_argument("--max-output", type=int, default=2 * 1024 * 1024 * 1024)
+    glb = sub.add_parser("validate-glb", help="validate GLB structure, chunk and buffer bounds")
+    glb.add_argument("glb")
+    verify = sub.add_parser("verify", help="verify package ranges, companions and package trailer")
+    verify.add_argument("asset")
+    verify.add_argument("-o", "--output")
+    for command, kind in (("export-texture", "texture"), ("export-audio", "audio")):
+        media = sub.add_parser(command, help=f"export one strictly verified {kind} payload")
+        media.add_argument("asset")
+        media.add_argument("-o", "--output", required=True)
+        media.add_argument("--manifest")
+        media.add_argument("--max-output", type=int, default=2 * 1024 * 1024 * 1024)
+    for command, help_text in (
+        ("export-blueprint", "export Blueprint properties and graph contract"),
+        ("export-niagara", "export Niagara parameters, curves and graph contract"),
+        ("export-metasound", "export MetaSound property/reference contract"),
+        ("contract", "auto-detect and export the strongest truthful asset contract"),
+    ):
+        contract = sub.add_parser(command, help=help_text)
+        contract.add_argument("asset")
+        contract.add_argument("-o", "--output")
     return parser
 
 
@@ -108,8 +142,35 @@ def main(argv: list[str] | None = None) -> int:
                 _json_dump(data, args.output)
                 return 0
         if args.command == "extract":
-            data = extract_verified(args.asset, args.output_dir)
+            data = extract_verified(args.asset, args.output_dir, max_output=args.max_output)
             _json_dump(data, args.manifest)
+            return 0
+        if args.command == "export-mesh":
+            data = export_static_mesh(args.asset, args.output, max_output=args.max_output)
+            data["glb_validation"] = validate_glb(args.output)
+            _json_dump(data, args.manifest)
+            return 0
+        if args.command == "validate-glb":
+            _json_dump(validate_glb(args.glb), None)
+            return 0
+        if args.command == "verify":
+            _json_dump(verify_package(args.asset), args.output)
+            return 0
+        if args.command in ("export-texture", "export-audio"):
+            kind = "texture" if args.command == "export-texture" else "audio"
+            _json_dump(export_media(args.asset, args.output, kind=kind, max_output=args.max_output), args.manifest)
+            return 0
+        if args.command == "export-blueprint":
+            _json_dump(export_blueprint_contract(args.asset), args.output)
+            return 0
+        if args.command == "export-niagara":
+            _json_dump(export_niagara_contract(args.asset), args.output)
+            return 0
+        if args.command == "export-metasound":
+            _json_dump(export_metasound_contract(args.asset), args.output)
+            return 0
+        if args.command == "contract":
+            _json_dump(export_auto_contract(args.asset), args.output)
             return 0
     except (UEAssetError, OSError) as exc:
         print(f"uex: {type(exc).__name__}: {exc}", file=sys.stderr)

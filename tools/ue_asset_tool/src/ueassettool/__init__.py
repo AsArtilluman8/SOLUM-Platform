@@ -3,5 +3,4 @@
 from .package import UnrealPackage
 
 __all__ = ["UnrealPackage"]
-__version__ = "0.1.0"
-
+__version__ = "0.2.0"

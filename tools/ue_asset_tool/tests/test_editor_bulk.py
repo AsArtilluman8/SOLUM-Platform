@@ -5,9 +5,11 @@ from pathlib import Path
 
 from ueassettool.binary import BinaryReader
 from ueassettool.editor_bulk import (
+    LEGACY_PAYLOAD_AT_END,
     STORED_IN_PACKAGE_TRAILER,
     match_trailer_entry,
     parse_editor_bulk_data,
+    parse_legacy_bulk_data,
     parse_mesh_description_bulk_data,
 )
 from ueassettool.errors import FormatError, UnsupportedError
@@ -15,6 +17,18 @@ from ueassettool.trailer import PackageTrailer, TrailerEntry
 
 
 class EditorBulkDataTests(unittest.TestCase):
+    def test_legacy_bulk_metadata_uses_declared_widths(self) -> None:
+        raw = struct.pack("<Iiiq", LEGACY_PAYLOAD_AT_END, 28792, 28792, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy-bulk.bin"
+            path.write_bytes(raw)
+            with BinaryReader(path) as reader:
+                parsed = parse_legacy_bulk_data(reader)
+        self.assertEqual(parsed.metadata_size, 20)
+        self.assertEqual(parsed.element_count, 28792)
+        self.assertEqual(parsed.size_on_disk, 28792)
+        self.assertEqual(parsed.flag_names, ("PayloadAtEndOfFile",))
+
     def test_exact_mesh_bulk_and_trailer_identity(self) -> None:
         bulk_id = bytes(range(1, 17))
         payload_id = bytes(range(20, 40))

@@ -215,9 +215,120 @@ class PropertyParser:
     def _struct_name(self, node: TypeNode) -> str | None:
         return node.parameters[0].name if node.parameters else None
 
+    def _decode_expression_input(self, r: BinaryReader) -> dict[str, Any]:
+        """Decode the native FExpressionInput layout from MaterialShared.cpp.
+
+        UE serializes the referenced expression, output index, input FName and
+        five int32 component-mask fields.  The resulting 36-byte structure is
+        the authoritative edge record for editor material graphs.
+        """
+        expression_index = r.i32()
+        return {
+            "kind": "expression_input",
+            "expression": {
+                "package_index": expression_index,
+                "object": self.package.object_path(expression_index),
+            },
+            "output_index": r.i32(),
+            "input_name": self._fname(r).display,
+            "mask": {
+                "enabled": r.i32(),
+                "r": r.i32(),
+                "g": r.i32(),
+                "b": r.i32(),
+                "a": r.i32(),
+            },
+        }
+
+    def _decode_material_input(self, r: BinaryReader, name: str) -> dict[str, Any]:
+        """Decode FMaterialInput descendants using their native serializers."""
+        result = self._decode_expression_input(r)
+        result["kind"] = "material_input"
+        if name == "MaterialAttributesInput":
+            return result
+
+        result["use_constant"] = r.boolean32()
+        if name == "ColorMaterialInput":
+            b, g, red, a = r.u8(), r.u8(), r.u8(), r.u8()
+            result["constant"] = {"r": red, "g": g, "b": b, "a": a}
+        elif name == "ScalarMaterialInput":
+            result["constant"] = _safe_float(r.f32())
+        elif name == "VectorMaterialInput":
+            result["constant"] = {k: _safe_float(r.f32()) for k in ("x", "y", "z")}
+        elif name == "Vector2MaterialInput":
+            result["constant"] = {k: _safe_float(r.f32()) for k in ("x", "y")}
+        elif name in ("ShadingModelMaterialInput", "SubstrateMaterialInput"):
+            result["constant"] = r.u32()
+        else:  # pragma: no cover - guarded by the caller's exact name set
+            raise UnsupportedError(f"material input struct {name} is not verified")
+        return result
+
+    def _read_legacy_array_struct_tag(self, r: BinaryReader, end: int) -> tuple[TypeNode, dict[str, Any]]:
+        """Read the inner FPropertyTag written for pre-complete-type arrays.
+
+        FArrayProperty::SerializeItem writes this tag after the element count
+        for arrays of structs from VER_UE4_INNER_ARRAY_TAG_INFO until UE5's
+        complete property type names.  Its declared size covers all elements.
+        """
+        start = r.position
+        property_name = self._fname(r).display
+        type_name = self._fname(r).display
+        size = r.i32()
+        array_index = r.i32()
+        if type_name != "StructProperty":
+            raise UnsupportedError(f"legacy array inner tag is {type_name}, expected StructProperty")
+        struct_name = self._fname(r).display
+        struct_guid = (
+            r.guid() if self.summary.file_version_ue4 >= ver.UE4_STRUCT_GUID_IN_PROPERTY_TAG else None
+        )
+        property_guid = None
+        if self.summary.file_version_ue4 >= ver.UE4_PROPERTY_GUID_IN_PROPERTY_TAG:
+            has_guid = r.flag8()
+            property_guid = r.guid() if has_guid else None
+        extensions: dict[str, Any] | None = None
+        if self.summary.file_version_ue5 >= ver.UE5_PROPERTY_TAG_EXTENSION:
+            extension_flags = r.u8()
+            if extension_flags & ~0x03:
+                raise UnsupportedError(f"unknown legacy inner-tag extensions 0x{extension_flags:02x}")
+            extensions = {"flags": extension_flags}
+            if extension_flags & EXT_OVERRIDABLE_INFORMATION:
+                extensions["override_operation"] = r.u8()
+                extensions["experimental_overridable_logic"] = r.boolean32()
+        if size < 0 or r.position + size > end:
+            raise BoundsError(
+                f"legacy array inner tag declares {size} bytes at 0x{r.position:x}, boundary 0x{end:x}"
+            )
+        metadata: dict[str, Any] = {
+            "physical_offset": start,
+            "header_size": r.position - start,
+            "property_name": property_name,
+            "type": type_name,
+            "struct_name": struct_name,
+            "struct_guid": struct_guid,
+            "array_index": array_index,
+            "declared_elements_size": size,
+            "property_guid": property_guid,
+        }
+        if extensions is not None:
+            metadata["extensions"] = extensions
+        return TypeNode("StructProperty", [TypeNode(struct_name)]), metadata
+
     def _decode_struct(self, r: BinaryReader, node: TypeNode, end: int) -> Any:
         name = self._struct_name(node)
         size = end - r.position
+        if name == "ExpressionInput" and size == 36:
+            return self._decode_expression_input(r)
+        material_input_sizes = {
+            "MaterialAttributesInput": 36,
+            "ColorMaterialInput": 44,
+            "ScalarMaterialInput": 44,
+            "VectorMaterialInput": 52,
+            "Vector2MaterialInput": 48,
+            "ShadingModelMaterialInput": 44,
+            "SubstrateMaterialInput": 44,
+        }
+        if name in material_input_sizes and size == material_input_sizes[name]:
+            return self._decode_material_input(r, name)
         if name in ("Guid", "FGuid") and size == 16:
             return r.guid()
         if name in ("LinearColor", "Float16Color") and size == 16:
@@ -269,6 +380,8 @@ class PropertyParser:
 
     def _decode_fixed_item(self, r: BinaryReader, node: TypeNode, end: int, remaining_items: int) -> Any:
         name = node.name
+        if name == "BoolProperty":
+            return r.flag8()
         if name in ("Int8Property",):
             return r.i8()
         if name in ("ByteProperty", "UInt8Property"):
@@ -303,7 +416,11 @@ class PropertyParser:
             struct_name = self._struct_name(node)
             fixed = {"Guid": 16, "FGuid": 16, "LinearColor": 16, "Color": 4, "Vector2f": 8,
                      "Vector2D": 16, "Vector2d": 16, "Vector3f": 12, "Vector3d": 24,
-                     "RichCurveKey": 27, "IntPoint": 8, "IntVector": 12}
+                     "RichCurveKey": 27, "IntPoint": 8, "IntVector": 12,
+                     "ExpressionInput": 36, "MaterialAttributesInput": 36,
+                     "ColorMaterialInput": 44, "ScalarMaterialInput": 44,
+                     "VectorMaterialInput": 52, "Vector2MaterialInput": 48,
+                     "ShadingModelMaterialInput": 44, "SubstrateMaterialInput": 44}
             if struct_name not in fixed:
                 raise UnsupportedError(f"array element struct {struct_name} has no verified boundary")
             item_end = r.position + fixed[struct_name]
@@ -340,6 +457,9 @@ class PropertyParser:
             if struct_name in {
                 "Guid", "FGuid", "LinearColor", "Color", "Vector2f", "Vector2D", "Vector2d",
                 "Vector3f", "Vector3d", "RichCurveKey", "IntPoint", "IntVector",
+                "ExpressionInput", "MaterialAttributesInput", "ColorMaterialInput",
+                "ScalarMaterialInput", "VectorMaterialInput", "Vector2MaterialInput",
+                "ShadingModelMaterialInput", "SubstrateMaterialInput",
             }:
                 return self._decode_fixed_item(r, node, end, 1)
             item = self._read_property_list(r, end)
@@ -407,17 +527,37 @@ class PropertyParser:
             if not node.parameters:
                 raise UnsupportedError("ArrayProperty lacks its inner type")
             inner = node.parameters[0]
+            inner_tag: dict[str, Any] | None = None
+            if (
+                inner.name == "StructProperty"
+                and self._struct_name(inner) is None
+                and self.summary.file_version_ue5 < ver.UE5_PROPERTY_TAG_COMPLETE_TYPE_NAME
+                and self.summary.file_version_ue4 >= ver.UE4_ARRAY_PROPERTY_INNER_TAGS
+            ):
+                inner, inner_tag = self._read_legacy_array_struct_tag(r, end)
             values = []
             # Enum-backed TArray<TEnumAsByte<...>> values are serialized as
             # FName even though the legacy tag only records ByteProperty.
             if inner.name == "ByteProperty" and end - r.position == count * 8:
-                return {"count": count, "items": [self._fname(r).display for _ in range(count)]}
+                result = {"count": count, "items": [self._fname(r).display for _ in range(count)]}
+                if inner_tag is not None:
+                    result["inner_tag"] = inner_tag
+                return result
             for i in range(count):
                 if inner.name == "StructProperty":
                     values.append(self._decode_container_item(r, inner, end, f"array struct element {i}"))
                 else:
                     values.append(self._decode_fixed_item(r, inner, end, count - i))
-            return {"count": count, "items": values}
+            result = {"count": count, "items": values}
+            if inner_tag is not None:
+                consumed = r.position - (inner_tag["physical_offset"] + inner_tag["header_size"])
+                if consumed != inner_tag["declared_elements_size"]:
+                    raise UnsupportedError(
+                        f"legacy array elements consumed {consumed} of "
+                        f"{inner_tag['declared_elements_size']} declared bytes"
+                    )
+                result["inner_tag"] = inner_tag
+            return result
         if name == "SetProperty":
             if not node.parameters:
                 raise UnsupportedError("SetProperty lacks its element type")

@@ -16,6 +16,7 @@ from .editor_bulk import (
     LEGACY_OPTIONAL_PAYLOAD,
     LEGACY_PAYLOAD_AT_END,
     LEGACY_SEPARATE_FILE,
+    match_trailer_entry,
     parse_editor_bulk_data,
     parse_legacy_bulk_data,
 )
@@ -23,6 +24,7 @@ from .errors import BoundsError, FormatError, UnsupportedError
 from .extract import extract_verified
 from .package import UnrealPackage
 from .properties import PropertyParser
+from .trailer import load_local_payload, read_package_trailer
 
 
 GUID_UE5_MAIN = "697dd581-e64f41ab-aa4a51ec-beb7b628"
@@ -220,6 +222,95 @@ def _encode_source_png(raw: bytes, width: int, height: int, source_format: str) 
     return b"\x89PNG\r\n\x1a\n" + _png_chunk(b"IHDR", ihdr) + _png_chunk(b"IDAT", zlib.compress(scanlines, 9)) + _png_chunk(b"IEND", b"")
 
 
+def _decode_uedelta_bgra8(
+    payload: bytes,
+    *,
+    width: int,
+    height: int,
+    source_format: str,
+    num_mips: int,
+    num_slices: int,
+    layer_color_info: Any,
+) -> tuple[bytes, dict[str, Any]]:
+    """Invert UE ImageCore's byte delta for a bounded one-mip 8-bit image.
+
+    ImageCore resets its vertical byte predictor every 32 rows.  This path is
+    deliberately restricted to the exact BGRA8/RGBA8 one-layer layout proven
+    by the source metadata.  Decoded channel extrema must match UE's serialized
+    FTextureSourceLayerColorInfo before the pixels may be emitted.
+    """
+    if width <= 0 or height <= 0:
+        raise FormatError(f"invalid TSCF_UEDELTA dimensions {width}x{height}")
+    if source_format not in ("TSF_BGRA8", "TSF_RGBA8"):
+        raise UnsupportedError(f"TSCF_UEDELTA {source_format} needs a format-specific inverse")
+    if num_mips != 1 or num_slices != 1:
+        raise UnsupportedError("TSCF_UEDELTA currently requires exactly one mip and one slice")
+    expected = width * height * 4
+    if len(payload) != expected:
+        raise FormatError(f"TSCF_UEDELTA payload {len(payload)} != {width}x{height}x4 ({expected})")
+    if not isinstance(layer_color_info, dict):
+        raise UnsupportedError("TSCF_UEDELTA requires serialized LayerColorInfo for independent validation")
+    items = layer_color_info.get("items")
+    if not isinstance(items, list) or len(items) != 1:
+        raise UnsupportedError("TSCF_UEDELTA requires exactly one LayerColorInfo entry")
+    color_fields = _nested_values(items[0])
+    declared_min = color_fields.get("ColorMin")
+    declared_max = color_fields.get("ColorMax")
+    if not isinstance(declared_min, dict) or not isinstance(declared_max, dict):
+        raise UnsupportedError("TSCF_UEDELTA LayerColorInfo lacks ColorMin/ColorMax")
+    if any(
+        channel not in declared_min
+        or channel not in declared_max
+        or not isinstance(declared_min[channel], (int, float))
+        or not isinstance(declared_max[channel], (int, float))
+        for channel in ("r", "g", "b", "a")
+    ):
+        raise UnsupportedError("TSCF_UEDELTA LayerColorInfo has incomplete channel extrema")
+
+    decoded = bytearray(payload)
+    stride = width * 4
+    for tile_start in range(0, height, 32):
+        tile_end = min(tile_start + 32, height)
+        for y in range(tile_start + 1, tile_end):
+            row = y * stride
+            previous = row - stride
+            for x in range(stride):
+                decoded[row + x] = (decoded[row + x] + decoded[previous + x]) & 0xFF
+
+    raw_channels = [decoded[channel::4] for channel in range(4)]
+    order = ("b", "g", "r", "a") if source_format == "TSF_BGRA8" else ("r", "g", "b", "a")
+    extrema = {
+        name: {"min": min(values), "max": max(values)}
+        for name, values in zip(order, raw_channels)
+    }
+    tolerance = 0.5 / 255.0 + 1e-7
+    mismatches = []
+    for channel in ("r", "g", "b", "a"):
+        actual_min = extrema[channel]["min"] / 255.0
+        actual_max = extrema[channel]["max"] / 255.0
+        expected_min = float(declared_min[channel])
+        expected_max = float(declared_max[channel])
+        if abs(actual_min - expected_min) > tolerance or abs(actual_max - expected_max) > tolerance:
+            mismatches.append({
+                "channel": channel,
+                "actual": [actual_min, actual_max],
+                "declared": [expected_min, expected_max],
+            })
+    if mismatches:
+        raise FormatError(f"TSCF_UEDELTA inverse does not match LayerColorInfo: {mismatches}")
+    return bytes(decoded), {
+        "status": "VERIFIED",
+        "transform": "TSCF_UEDELTA vertical byte inverse",
+        "predictor_reset_rows": 32,
+        "stored_size": len(payload),
+        "stored_sha256": hashlib.sha256(payload).hexdigest(),
+        "decoded_size": len(decoded),
+        "decoded_sha256": hashlib.sha256(decoded).hexdigest(),
+        "channel_extrema_u8": extrema,
+        "layer_color_info_match": True,
+    }
+
+
 def _exact_texture_source(
     asset: Path,
     output: Path,
@@ -264,23 +355,62 @@ def _exact_texture_source(
                     raise UnsupportedError("Texture2D is cooked; editor TextureSource path is unavailable")
                 if reader.position != end:
                     raise FormatError(f"Texture2D native suffix leaves {end - reader.position} bytes")
-        if bulk.offset_in_file is None:
-            raise UnsupportedError(f"TextureSource payload storage {bulk.storage} needs a different resolver")
-        payload_offset = bulk.offset_in_file
-        header = read_compressed_buffer_header(source_path, payload_offset)
-        if header.total_raw_size != bulk.payload_size:
-            raise FormatError(
-                f"TextureSource size {bulk.payload_size} != FCompressedBuffer raw size {header.total_raw_size}"
+        trailer_info: dict[str, Any] | None = None
+        if bulk.storage == "package-trailer":
+            trailer = read_package_trailer(
+                source_path,
+                offset=package.summary.payload_toc_offset if package.summary.payload_toc_offset >= 0 else None,
             )
-        if header.raw_hash[:40] != bulk.payload_content_id:
-            raise FormatError("TextureSource PayloadContentId does not match FCompressedBuffer raw hash")
-        raw_header, raw = decompress_compressed_buffer(source_path, payload_offset, max_output=max_output)
+            entry = match_trailer_entry(bulk, trailer)
+            raw = load_local_payload(source_path, entry, max_output=max_output)
+            payload_offset = entry.absolute_offset
+            compressed_size = entry.compressed_size
+            trailer_info = {
+                "trailer_offset": trailer.offset,
+                "trailer_version": trailer.version,
+                "entry": {
+                    "identifier": entry.identifier,
+                    "offset": entry.offset,
+                    "absolute_offset": entry.absolute_offset,
+                    "compressed_size": entry.compressed_size,
+                    "raw_size": entry.raw_size,
+                    "payload_flags": entry.payload_flags,
+                    "filter_flags": entry.filter_flags,
+                    "access_mode": entry.access_mode,
+                },
+            }
+        elif bulk.offset_in_file is not None:
+            payload_offset = bulk.offset_in_file
+            header = read_compressed_buffer_header(source_path, payload_offset)
+            if header.total_raw_size != bulk.payload_size:
+                raise FormatError(
+                    f"TextureSource size {bulk.payload_size} != FCompressedBuffer raw size {header.total_raw_size}"
+                )
+            if header.raw_hash[:40] != bulk.payload_content_id:
+                raise FormatError("TextureSource PayloadContentId does not match FCompressedBuffer raw hash")
+            raw_header, raw = decompress_compressed_buffer(source_path, payload_offset, max_output=max_output)
+            compressed_size = raw_header.total_compressed_size
+        else:
+            raise UnsupportedError(f"TextureSource payload storage {bulk.storage} needs a different resolver")
+        stored_payload = raw
         compression = str(source["CompressionFormat"])
         source_format = str(source["Format"])
+        source_transform: dict[str, Any] | None = None
         if compression == "TSCF_PNG":
             image, suffix = raw, ".png"
         elif compression == "TSCF_JPEG":
             image, suffix = raw, ".jpg"
+        elif compression == "TSCF_UEDELTA":
+            raw, source_transform = _decode_uedelta_bgra8(
+                raw,
+                width=width,
+                height=height,
+                source_format=source_format,
+                num_mips=int(source["NumMips"]),
+                num_slices=int(source.get("NumSlices", 1)),
+                layer_color_info=source.get("LayerColorInfo_LockProtected"),
+            )
+            image, suffix = _encode_source_png(raw, width, height, source_format), ".png"
         elif compression in ("TSCF_None", "None"):
             image, suffix = _encode_source_png(raw, width, height, source_format), ".png"
         else:
@@ -312,11 +442,13 @@ def _exact_texture_source(
                 **bulk.to_dict(),
                 "source_file": str(source_path),
                 "compressed_buffer_offset": payload_offset,
-                "compressed_size": raw_header.total_compressed_size,
-                "raw_size": len(raw),
-                "raw_sha256": hashlib.sha256(raw).hexdigest(),
+                "compressed_size": compressed_size,
+                "raw_size": len(stored_payload),
+                "raw_sha256": hashlib.sha256(stored_payload).hexdigest(),
                 "content_id_match": True,
+                "package_trailer": trailer_info,
             },
+            "source_transform": source_transform,
             "native_layout": {
                 "texture_strip_flags": texture_strip,
                 "texture2d_strip_flags": texture2d_strip,

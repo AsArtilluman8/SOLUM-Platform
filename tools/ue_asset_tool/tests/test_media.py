@@ -3,7 +3,7 @@ import unittest
 import zlib
 
 from ueassettool.errors import FormatError
-from ueassettool.media import validate_jpeg, validate_png, validate_wav
+from ueassettool.media import _decode_uedelta_bgra8, validate_jpeg, validate_png, validate_wav
 
 
 def png_chunk(kind: bytes, payload: bytes) -> bytes:
@@ -11,6 +11,47 @@ def png_chunk(kind: bytes, payload: bytes) -> bytes:
 
 
 class MediaTests(unittest.TestCase):
+    def test_uedelta_inverse_resets_every_32_rows_and_checks_extrema(self) -> None:
+        width, height = 2, 33
+        raw = bytearray()
+        for y in range(height):
+            for x in range(width):
+                raw.extend(((10 + y + x) & 255, (20 + y) & 255, (30 + x) & 255, 255))
+        delta = bytearray(raw)
+        stride = width * 4
+        for y in range(height):
+            if y % 32 == 0:
+                continue
+            row, previous = y * stride, (y - 1) * stride
+            for x in range(stride):
+                delta[row + x] = (raw[row + x] - raw[previous + x]) & 255
+        color_info = {
+            "items": [{
+                "properties": [
+                    {
+                        "name": "ColorMin", "decode_status": "decoded",
+                        "value": {"r": 30 / 255, "g": 20 / 255, "b": 10 / 255, "a": 1.0},
+                    },
+                    {
+                        "name": "ColorMax", "decode_status": "decoded",
+                        "value": {"r": 31 / 255, "g": 52 / 255, "b": 43 / 255, "a": 1.0},
+                    },
+                ]
+            }]
+        }
+        decoded, validation = _decode_uedelta_bgra8(
+            bytes(delta), width=width, height=height, source_format="TSF_BGRA8",
+            num_mips=1, num_slices=1, layer_color_info=color_info,
+        )
+        self.assertEqual(decoded, bytes(raw))
+        self.assertTrue(validation["layer_color_info_match"])
+        color_info["items"][0]["properties"][0]["value"]["b"] = 0.0
+        with self.assertRaisesRegex(FormatError, "does not match LayerColorInfo"):
+            _decode_uedelta_bgra8(
+                bytes(delta), width=width, height=height, source_format="TSF_BGRA8",
+                num_mips=1, num_slices=1, layer_color_info=color_info,
+            )
+
     def test_jpeg_sof_dimensions(self) -> None:
         sof = bytes((8,)) + struct.pack(">HHB", 1, 2, 3)
         sof += bytes((1, 0x11, 0, 2, 0x11, 1, 3, 0x11, 1))

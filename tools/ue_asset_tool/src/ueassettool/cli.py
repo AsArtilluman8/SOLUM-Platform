@@ -15,8 +15,9 @@ from .bytecode import StructScriptDecoder
 from .extract import extract_verified
 from .mesh import export_static_mesh, validate_glb
 from .contracts import (
-    export_auto_contract, export_blueprint_contract, export_metasound_contract,
-    export_niagara_contract, verify_package,
+    export_auto_contract, export_blueprint_contract, export_curve_contract,
+    export_material_contract, export_metasound_contract, export_niagara_contract,
+    verify_package,
 )
 from .media import export_media
 
@@ -88,6 +89,8 @@ def build_parser() -> argparse.ArgumentParser:
         ("export-blueprint", "export Blueprint properties and graph contract"),
         ("export-niagara", "export Niagara parameters, curves and graph contract"),
         ("export-metasound", "export MetaSound property/reference contract"),
+        ("export-material", "export exact Material/Material Function expression graph contract"),
+        ("export-curve", "export exact CurveFloat/Vector/LinearColor keys"),
         ("contract", "auto-detect and export the strongest truthful asset contract"),
     ):
         contract = sub.add_parser(command, help=help_text)
@@ -179,6 +182,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "export-metasound":
             _json_dump(export_metasound_contract(args.asset), args.output)
             return 0
+        if args.command == "export-material":
+            _json_dump(export_material_contract(args.asset), args.output)
+            return 0
+        if args.command == "export-curve":
+            data = export_curve_contract(args.asset)
+            _json_dump(data, args.output)
+            return 0 if data["status"] == "VERIFIED" else 3
         if args.command == "contract":
             _json_dump(export_auto_contract(args.asset), args.output)
             return 0

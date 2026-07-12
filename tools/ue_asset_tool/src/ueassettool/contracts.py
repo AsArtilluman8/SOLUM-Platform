@@ -7,7 +7,9 @@ from typing import Any, Callable
 
 from .blueprint import BlueprintGraphDecoder
 from .bytecode import StructScriptDecoder
+from .curve import CURVE_CLASSES, export_curve_contract
 from .errors import UEAssetError
+from .material import MATERIAL_ROOT_CLASSES, export_material_contract
 from .package import UnrealPackage
 from .properties import PropertyParser
 from .trailer import read_package_trailer
@@ -199,7 +201,15 @@ def _niagara_system_summary(package: UnrealPackage) -> list[dict[str, Any]]:
 def export_blueprint_contract(path: str | Path) -> dict[str, Any]:
     with UnrealPackage(path) as package:
         classes = ("Blueprint", "BlueprintGeneratedClass", "EdGraph", "EdGraphSchema", "Function", "TimelineTemplate", "SimpleConstructionScript", "SCS_Node")
-        exports = _exports(package, lambda _i, cls, _p: cls.startswith("K2Node_") or cls in classes)
+        exports = _exports(
+            package,
+            lambda _i, cls, _p: (
+                cls.startswith("K2Node_")
+                or cls in classes
+                or cls.endswith("Blueprint")
+                or cls.endswith("BlueprintGeneratedClass")
+            ),
+        )
         graph = BlueprintGraphDecoder(package).decode(include_niagara=False)
         bytecode = StructScriptDecoder(package).decode_functions()
         return {
@@ -282,8 +292,17 @@ def export_auto_contract(path: str | Path) -> dict[str, Any]:
         return export_niagara_contract(path)
     if any("MetaSound" in value or "Metasound" in value for value in classes):
         return export_metasound_contract(path)
-    if any(value in ("Blueprint", "BlueprintGeneratedClass") for value in classes):
+    if any(
+        value in ("Blueprint", "BlueprintGeneratedClass")
+        or value.endswith("Blueprint")
+        or value.endswith("BlueprintGeneratedClass")
+        for value in classes
+    ):
         return export_blueprint_contract(path)
+    if any(value in MATERIAL_ROOT_CLASSES or value.startswith("MaterialExpression") for value in classes):
+        return export_material_contract(path)
+    if any(value in CURVE_CLASSES for value in classes):
+        return export_curve_contract(path)
     with UnrealPackage(path) as package:
         return {
             "schema": "ueassettool.asset-contract/v1", "status": "RAW_VERIFIED",

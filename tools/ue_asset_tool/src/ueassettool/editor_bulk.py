@@ -41,6 +41,55 @@ KNOWN_FLAGS = sum(FLAG_NAMES)
 TRANSIENT_FLAGS = HAS_REGISTERED | IS_TORN_OFF | WAS_DETACHED
 REFERENCES_BY_PACKAGE_PATH = REFERENCES_LEGACY_FILE | REFERENCES_WORKSPACE_DOMAIN
 
+LEGACY_PAYLOAD_AT_END = 1 << 0
+LEGACY_COMPRESSED_ZLIB = 1 << 1
+LEGACY_FORCE_SINGLE_ELEMENT = 1 << 2
+LEGACY_SINGLE_USE = 1 << 3
+LEGACY_UNUSED = 1 << 5
+LEGACY_FORCE_INLINE = 1 << 6
+LEGACY_FORCE_STREAM = 1 << 7
+LEGACY_SEPARATE_FILE = 1 << 8
+LEGACY_COMPRESSED_BIT_WINDOW = 1 << 9
+LEGACY_FORCE_NOT_INLINE = 1 << 10
+LEGACY_OPTIONAL_PAYLOAD = 1 << 11
+LEGACY_MEMORY_MAPPED = 1 << 12
+LEGACY_SIZE_64_BIT = 1 << 13
+LEGACY_DUPLICATE_NON_OPTIONAL = 1 << 14
+LEGACY_BAD_DATA_VERSION = 1 << 15
+LEGACY_NO_OFFSET_FIXUP = 1 << 16
+LEGACY_WORKSPACE_DOMAIN = 1 << 17
+LEGACY_LAZY_LOADABLE = 1 << 18
+LEGACY_ALWAYS_ALLOW_DISCARD = 1 << 28
+LEGACY_ASYNC_READ_PENDING = 1 << 29
+LEGACY_DATA_IS_MEMORY_MAPPED = 1 << 30
+LEGACY_USES_IO_DISPATCHER = 1 << 31
+
+LEGACY_FLAG_NAMES = {
+    LEGACY_PAYLOAD_AT_END: "PayloadAtEndOfFile",
+    LEGACY_COMPRESSED_ZLIB: "SerializeCompressedZLIB",
+    LEGACY_FORCE_SINGLE_ELEMENT: "ForceSingleElementSerialization",
+    LEGACY_SINGLE_USE: "SingleUse",
+    LEGACY_UNUSED: "Unused",
+    LEGACY_FORCE_INLINE: "ForceInlinePayload",
+    LEGACY_FORCE_STREAM: "ForceStreamPayload",
+    LEGACY_SEPARATE_FILE: "PayloadInSeparateFile",
+    LEGACY_COMPRESSED_BIT_WINDOW: "SerializeCompressedBitWindow",
+    LEGACY_FORCE_NOT_INLINE: "ForceNotInlinePayload",
+    LEGACY_OPTIONAL_PAYLOAD: "OptionalPayload",
+    LEGACY_MEMORY_MAPPED: "MemoryMappedPayload",
+    LEGACY_SIZE_64_BIT: "Size64Bit",
+    LEGACY_DUPLICATE_NON_OPTIONAL: "DuplicateNonOptionalPayload",
+    LEGACY_BAD_DATA_VERSION: "BadDataVersion",
+    LEGACY_NO_OFFSET_FIXUP: "NoOffsetFixUp",
+    LEGACY_WORKSPACE_DOMAIN: "WorkspaceDomainPayload",
+    LEGACY_LAZY_LOADABLE: "LazyLoadable",
+    LEGACY_ALWAYS_ALLOW_DISCARD: "AlwaysAllowDiscard",
+    LEGACY_ASYNC_READ_PENDING: "HasAsyncReadPending",
+    LEGACY_DATA_IS_MEMORY_MAPPED: "DataIsMemoryMapped",
+    LEGACY_USES_IO_DISPATCHER: "UsesIoDispatcher",
+}
+LEGACY_KNOWN_FLAGS = sum(LEGACY_FLAG_NAMES)
+
 
 def _guid(raw: bytes) -> str:
     a, b, c, d = struct.unpack("<IIII", raw)
@@ -86,7 +135,25 @@ class MeshDescriptionBulkData:
         return asdict(self)
 
 
-def parse_editor_bulk_data(reader: BinaryReader) -> EditorBulkData:
+@dataclass(frozen=True)
+class LegacyBulkData:
+    metadata_offset: int
+    metadata_size: int
+    metadata_sha256: str
+    flags: int
+    flag_names: tuple[str, ...]
+    element_count: int
+    size_on_disk: int
+    offset_in_file: int
+    duplicate_flags: int | None = None
+    duplicate_size_on_disk: int | None = None
+    duplicate_offset_in_file: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def parse_editor_bulk_data(reader: BinaryReader, *, allow_legacy_registered_flag: bool = False) -> EditorBulkData:
     """Parse the persistent UE5 FEditorBulkData layout used by UE 5.5.
 
     This mirrors FEditorBulkData::Serialize: EFlags, FGuid, FIoHash, int64,
@@ -98,8 +165,11 @@ def parse_editor_bulk_data(reader: BinaryReader) -> EditorBulkData:
     unknown = flags & ~KNOWN_FLAGS
     if unknown:
         raise UnsupportedError(f"FEditorBulkData has unknown flags 0x{unknown:08x} at 0x{start:x}")
-    if flags & TRANSIENT_FLAGS:
-        raise FormatError(f"FEditorBulkData persisted transient flags 0x{flags & TRANSIENT_FLAGS:08x} at 0x{start:x}")
+    persisted_transient = flags & TRANSIENT_FLAGS
+    if persisted_transient and not (
+        allow_legacy_registered_flag and persisted_transient == HAS_REGISTERED
+    ):
+        raise FormatError(f"FEditorBulkData persisted transient flags 0x{persisted_transient:08x} at 0x{start:x}")
     if flags & IS_VIRTUALIZED and flags & REFERENCES_BY_PACKAGE_PATH:
         raise FormatError("FEditorBulkData cannot be both virtualized and package-path referenced")
     if flags & LEGACY_FILE_IS_COMPRESSED and not flags & REFERENCES_LEGACY_FILE:
@@ -152,6 +222,53 @@ def parse_editor_bulk_data(reader: BinaryReader) -> EditorBulkData:
         payload_size=payload_size,
         offset_in_file=offset_in_file,
         storage=storage,
+    )
+
+
+def parse_legacy_bulk_data(reader: BinaryReader) -> LegacyBulkData:
+    """Read FBulkMetaResource exactly as serialized by UE's FByteBulkData."""
+    start = reader.position
+    flags = reader.u32()
+    unknown = flags & ~LEGACY_KNOWN_FLAGS
+    if unknown:
+        raise UnsupportedError(f"FByteBulkData has unknown flags 0x{unknown:08x} at 0x{start:x}")
+    if flags & LEGACY_SIZE_64_BIT:
+        element_count, size_on_disk, offset = reader.i64(), reader.i64(), reader.i64()
+    else:
+        element_count, size_on_disk, offset = reader.i32(), reader.i32(), reader.i64()
+    if element_count < 0 or size_on_disk < 0:
+        raise FormatError(
+            f"negative FByteBulkData count/size {element_count}/{size_on_disk} at 0x{start:x}"
+        )
+    if flags & LEGACY_BAD_DATA_VERSION:
+        reader.u16()
+    duplicate_flags = duplicate_size = duplicate_offset = None
+    if flags & LEGACY_DUPLICATE_NON_OPTIONAL:
+        duplicate_flags = reader.u32()
+        if duplicate_flags & ~LEGACY_KNOWN_FLAGS:
+            raise UnsupportedError(f"duplicate FByteBulkData has unknown flags 0x{duplicate_flags:08x}")
+        duplicate_size = reader.i64() if flags & LEGACY_SIZE_64_BIT else reader.i32()
+        duplicate_offset = reader.i64()
+        if duplicate_size < 0:
+            raise FormatError("negative duplicate FByteBulkData size")
+    if flags & LEGACY_FORCE_INLINE and flags & LEGACY_PAYLOAD_AT_END:
+        raise FormatError("FByteBulkData cannot be both inline and at end of file")
+    if flags & LEGACY_OPTIONAL_PAYLOAD and not flags & LEGACY_SEPARATE_FILE:
+        raise FormatError("optional FByteBulkData is not marked as a separate payload")
+    end = reader.position
+    raw = _serialized_bytes(reader, start, end)
+    return LegacyBulkData(
+        metadata_offset=start,
+        metadata_size=end - start,
+        metadata_sha256=hashlib.sha256(raw).hexdigest(),
+        flags=flags,
+        flag_names=tuple(name for bit, name in LEGACY_FLAG_NAMES.items() if flags & bit),
+        element_count=element_count,
+        size_on_disk=size_on_disk,
+        offset_in_file=offset,
+        duplicate_flags=duplicate_flags,
+        duplicate_size_on_disk=duplicate_size,
+        duplicate_offset_in_file=duplicate_offset,
     )
 
 

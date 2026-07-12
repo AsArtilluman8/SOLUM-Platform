@@ -20,7 +20,7 @@ def _kind(data: bytes) -> tuple[str, str] | None:
     return None
 
 
-def extract_verified(path: str | Path, output_dir: str | Path) -> dict[str, object]:
+def extract_verified(path: str | Path, output_dir: str | Path, *, max_output: int = 2 * 1024 * 1024 * 1024) -> dict[str, object]:
     """Carve only self-describing payloads whose length/hash can be verified."""
     source, target = Path(path), Path(output_dir)
     blob = source.read_bytes()
@@ -34,7 +34,7 @@ def extract_verified(path: str | Path, output_dir: str | Path) -> dict[str, obje
     while (offset := blob.find(needle, cursor)) >= 0:
         cursor = offset + 1
         try:
-            header, raw = decompress_compressed_buffer(source, offset)
+            header, raw = decompress_compressed_buffer(source, offset, max_output=max_output)
         except Exception as exc:
             items.append({"offset": offset, "status": "rejected_candidate", "reason": str(exc)})
             continue

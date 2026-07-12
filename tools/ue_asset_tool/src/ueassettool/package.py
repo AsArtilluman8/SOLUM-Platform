@@ -22,12 +22,16 @@ class UnrealPackage:
         self.path = Path(path)
         self.issues: list[dict[str, Any]] = []
         self.reader = BinaryReader(self.path)
-        self.summary = self._read_summary()
-        self._validate_summary()
-        self.names = self._read_names()
-        self.imports = self._read_imports()
-        self.exports = self._read_exports()
-        self._resolve_exports()
+        try:
+            self.summary = self._read_summary()
+            self._validate_summary()
+            self.names = self._read_names()
+            self.imports = self._read_imports()
+            self.exports = self._read_exports()
+            self._resolve_exports()
+        except Exception:
+            self.reader.close()
+            raise
 
     def close(self) -> None:
         self.reader.close()
@@ -197,13 +201,23 @@ class UnrealPackage:
                 raise FormatError(f"invalid {label} count {count}")
         for label, offset in (
             ("summary end", s.summary_end),
-            ("total header", s.total_header_size),
             ("name map", s.name_offset),
             ("import map", s.import_offset),
             ("export map", s.export_offset),
         ):
             if not 0 <= offset <= size:
                 raise BoundsError(f"{label} offset 0x{offset:x} outside file size 0x{size:x}")
+        if not 0 <= s.total_header_size <= size:
+            # A partial upload/package is still inspectable if its summary and
+            # maps are present. Record truncation and let per-export resolution
+            # enumerate unavailable byte ranges; never seek to this value.
+            self.issues.append({
+                "code": "DECLARED_HEADER_EXCEEDS_FILE",
+                "severity": "error",
+                "declared_total_header_size": s.total_header_size,
+                "actual_file_size": size,
+                "minimum_missing_bytes": max(0, s.total_header_size - size),
+            })
         if s.summary_end > s.name_offset:
             raise FormatError(
                 f"summary ends at 0x{s.summary_end:x}, after name map at 0x{s.name_offset:x}"

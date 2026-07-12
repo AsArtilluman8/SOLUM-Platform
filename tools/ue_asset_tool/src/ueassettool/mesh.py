@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .editor_bulk import match_trailer_entry, parse_mesh_description_bulk_data
 from .errors import BoundsError, FormatError, UnsupportedError
 from .package import UnrealPackage
 from .properties import PropertyParser
@@ -469,7 +470,6 @@ def mesh_description_to_glb(mesh: MeshDescription, *, source: dict[str, Any]) ->
 
 
 def _matching_mesh_payload(package: UnrealPackage, trailer: PackageTrailer, *, max_output: int) -> tuple[TrailerEntry, bytes, dict[str, Any]]:
-    entries = {bytes.fromhex(entry.identifier): entry for entry in trailer.entries}
     parser = PropertyParser(package)
     matches: list[tuple[TrailerEntry, dict[str, Any]]] = []
     for index, export in enumerate(package.exports, 1):
@@ -480,12 +480,18 @@ def _matching_mesh_payload(package: UnrealPackage, trailer: PackageTrailer, *, m
         if not trailing:
             continue
         offset = int(trailing["physical_offset"])
-        size = int(trailing["size"])
+        end = offset + int(trailing["size"])
         package.reader.seek(offset)
-        raw = package.reader.read(size)
-        for identifier, entry in entries.items():
-            if identifier in raw:
-                matches.append((entry, {"export_index": index, "object": decoded["object"], "class": decoded["class"], "metadata_offset": offset, "metadata_size": size}))
+        metadata = parse_mesh_description_bulk_data(package.reader, end=end)
+        if metadata.editor_bulk.payload_size == 0:
+            continue
+        entry = match_trailer_entry(metadata.editor_bulk, trailer)
+        matches.append((entry, {
+            "export_index": index,
+            "object": decoded["object"],
+            "class": decoded["class"],
+            "metadata": metadata.to_dict(),
+        }))
     unique = {(entry.identifier, meta["export_index"]): (entry, meta) for entry, meta in matches}
     if len(unique) != 1:
         raise FormatError(f"expected exactly one mesh bulk/trailer identity match, found {len(unique)}")

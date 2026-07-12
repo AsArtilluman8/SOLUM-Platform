@@ -27,6 +27,7 @@ BLUEPRINT_ADVANCED_CONTAINER_SUPPORT = 5
 BLUEPRINT_EDGRAPH_PIN_OPTIMIZED = 3
 EDITOR_CULTURE_INVARIANT_TEXT_KEY_STABILITY = 31
 FORTNITE_TEXT_DEV_NOTES = 259
+UE4_MEMBERREFERENCE_IN_PINTYPE = 355
 
 CONTAINER_NAMES = {0: "none", 1: "array", 2: "set", 3: "map"}
 DIRECTION_NAMES = {0: "input", 1: "output"}
@@ -173,8 +174,7 @@ class BlueprintGraphDecoder:
             result["container"] = "array" if is_array else "set" if is_set else "map" if is_map else "none"
         result["is_reference"] = r.boolean32()
         result["is_weak_pointer"] = r.boolean32()
-        # All provided UE5 packages are newer than MEMBERREFERENCE_IN_PINTYPE.
-        if self.package.summary.file_version_ue4 >= 0:
+        if self.package.summary.file_version_ue4 >= UE4_MEMBERREFERENCE_IN_PINTYPE:
             result["member_reference"] = self._simple_member_reference(r)
         result["is_const"] = r.boolean32()
         if self.release >= RELEASE_PIN_TYPE_UOBJECT_WRAPPER:
@@ -298,12 +298,21 @@ class BlueprintGraphDecoder:
         indices = [i for i, item in enumerate(self.package.exports, 1) if is_node(item.class_name)]
         nodes = [self.parse_node(i) for i in indices if self.package.exports[i - 1].payload_availability == "available"]
         pin_lookup: dict[tuple[int, str], dict[str, Any]] = {}
+        duplicate_pin_ids = 0
+        owner_mismatches = 0
         for node in nodes:
             for pin in node["pins"]:
                 if pin:
-                    pin_lookup[(node["export_index"], pin["reference"]["pin_id"])] = pin
+                    key = (node["export_index"], pin["reference"]["pin_id"])
+                    if key in pin_lookup:
+                        duplicate_pin_ids += 1
+                    else:
+                        pin_lookup[key] = pin
+                    if pin["reference"]["owning_node_index"] != node["export_index"]:
+                        owner_mismatches += 1
         edges: list[dict[str, Any]] = []
         seen: set[tuple[tuple[int, str], tuple[int, str]]] = set()
+        directed_links: set[tuple[tuple[int, str], tuple[int, str]]] = set()
         for node in nodes:
             for pin in node["pins"]:
                 if not pin:
@@ -313,6 +322,7 @@ class BlueprintGraphDecoder:
                     if not link:
                         continue
                     target_key = (link["owning_node_index"], link["pin_id"])
+                    directed_links.add((source_key, target_key))
                     canonical = tuple(sorted((source_key, target_key)))
                     if canonical in seen:
                         continue
@@ -325,19 +335,36 @@ class BlueprintGraphDecoder:
                         "target_resolved": target is not None,
                     })
         graphs: dict[str, dict[str, Any]] = {}
+        node_lookup = {node["export_index"]: node for node in nodes}
         for node in nodes:
             graph = graphs.setdefault(node["graph"], {"graph": node["graph"], "nodes": [], "edges": []})
             graph["nodes"].append(node)
         for edge in edges:
-            source_node = next((n for n in nodes if n["export_index"] == edge["from_node"]), None)
+            source_node = node_lookup.get(edge["from_node"])
             if source_node:
                 graphs[source_node["graph"]]["edges"].append(edge)
+        decoded_nodes = sum(x["pin_decode_status"] == "decoded" for x in nodes)
+        dangling_links = sum(target not in pin_lookup for _source, target in directed_links)
+        asymmetric_links = sum((target, source) not in directed_links for source, target in directed_links)
+        self_links = sum(source == target for source, target in directed_links)
+        verified = bool(nodes) and decoded_nodes == len(nodes) and not any((
+            duplicate_pin_ids, owner_mismatches, dangling_links, asymmetric_links, self_links,
+        ))
         return {
             "schema": "ueassettool.graph-contract/v1",
+            "status": "VERIFIED" if verified else "RAW_VERIFIED" if nodes else "UNSUPPORTED",
             "package": self.package.summary.package_name,
             "node_count": len(nodes),
-            "decoded_pin_node_count": sum(x["pin_decode_status"] == "decoded" for x in nodes),
+            "decoded_pin_node_count": decoded_nodes,
+            "pin_count": len(pin_lookup),
             "edge_count": len(edges),
+            "integrity": {
+                "duplicate_pin_id_count": duplicate_pin_ids,
+                "pin_owner_mismatch_count": owner_mismatches,
+                "directed_link_count": len(directed_links),
+                "dangling_link_count": dangling_links,
+                "asymmetric_link_count": asymmetric_links,
+                "self_link_count": self_links,
+            },
             "graphs": list(graphs.values()),
         }
-

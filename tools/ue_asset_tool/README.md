@@ -19,7 +19,7 @@ PYTHONPATH=src python3 -m ueassettool export-blueprint Blueprint.uasset -o bluep
 PYTHONPATH=src python3 -m ueassettool export-metasound Source.uasset -o metasound.json
 ```
 
-The reader verifies package bounds, companions and UE5 package trailers; preserves unsupported native bytes; reconstructs serialized K2/Niagara node and pin links; decodes tagged properties and Niagara rich curves; and extracts bounded RIFF or UE5 FCompressedBuffer payloads. UE5 editor `FMeshDescription` payloads can be exported to structurally checked GLB with positions, indices, normals, valid tangents, UVs, vertex colors and polygon-group primitives. None/LZ4 are built in. Oodle requires an executable supplied through `UEASSET_OODLE_HELPER`; no GPL decoder is vendored into this Apache-2.0 repository.
+The reader verifies package bounds, companions and UE5 package trailers; preserves unsupported native bytes; reconstructs serialized K2/Niagara node and pin links; decodes tagged properties and Niagara rich curves; and extracts bounded RIFF or UE5 FCompressedBuffer payloads. K2 graph verification checks unique pin GUIDs, owning-node references, resolved targets and reciprocal links. UE5 editor `FMeshDescription` payloads can be exported to structurally checked GLB with positions, indices, normals, valid tangents, UVs, vertex colors and polygon-group primitives. Its `FEditorBulkData` metadata is decoded field-by-field and must match one trailer payload by exact IoHash and raw size; byte-pattern scanning is not used for mesh identity. None/LZ4 are built in. Oodle requires an executable supplied through `UEASSET_OODLE_HELPER`; no GPL decoder is vendored into this Apache-2.0 repository.
 
 ## Truth policy
 
@@ -29,4 +29,4 @@ The reader verifies package bounds, companions and UE5 package trailers; preserv
 - Unversioned packages require explicit version/schema support.
 - Paid Marketplace assets and generated reports stay outside Git.
 
-Validated locally against the maintainer-provided UDS sample set: package maps and package trailer, a real Nebula Sphere GLB (3,840 vertex instances / 1,280 triangles), Niagara curves/graph contract, a 2048x2048 PNG with per-chunk CRC validation, and PCM WAV extraction. The samples themselves are intentionally not committed. Split packages remain `MISSING_INPUT` until their matching `.uexp`/`.ubulk` is present.
+Validated locally against the maintainer-provided UDS sample set: package maps and package trailer, a real Nebula Sphere GLB (3,840 vertex instances / 1,280 triangles), Niagara curves/graph contract, a 2048x2048 PNG with per-chunk CRC validation, and PCM WAV extraction. P56 complete Blueprints verify 12,149 Sky, 7,172 Weather and 901 Configuration Manager node pin streams with no duplicate IDs, owner mismatches, dangling links or asymmetric links. The samples and derived full reports are intentionally not committed. Split packages remain `MISSING_INPUT` until their matching `.uexp`/`.ubulk` is present.

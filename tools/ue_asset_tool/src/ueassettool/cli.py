@@ -11,6 +11,7 @@ from .package import UnrealPackage
 from .properties import PropertyParser
 from .compression import build_bundled_ooz, decompress_compressed_buffer, write_verified_output
 from .blueprint import BlueprintGraphDecoder
+from .bytecode import StructScriptDecoder
 from .extract import extract_verified
 from .mesh import export_static_mesh, validate_glb
 from .contracts import (
@@ -59,6 +60,9 @@ def build_parser() -> argparse.ArgumentParser:
     graph.add_argument("asset")
     graph.add_argument("-o", "--output", help="write graph contract JSON")
     graph.add_argument("--include-niagara", action="store_true")
+    bytecode = sub.add_parser("bytecode", help="decode and validate serialized UFunction Kismet bytecode")
+    bytecode.add_argument("asset")
+    bytecode.add_argument("-o", "--output", help="write exact bytecode contract JSON")
     extract = sub.add_parser("extract", help="automatically extract strictly verified embedded payloads")
     extract.add_argument("asset")
     extract.add_argument("-d", "--output-dir", required=True)
@@ -141,6 +145,12 @@ def main(argv: list[str] | None = None) -> int:
                 data["source_sha256"] = package.sha256
                 _json_dump(data, args.output)
                 return 0
+        if args.command == "bytecode":
+            with UnrealPackage(args.asset) as package:
+                data = StructScriptDecoder(package).decode_functions()
+                data["source"] = {"path": str(package.path), "sha256": package.sha256}
+                _json_dump(data, args.output)
+                return 0 if data["status"] == "VERIFIED" else 3
         if args.command == "extract":
             data = extract_verified(args.asset, args.output_dir, max_output=args.max_output)
             _json_dump(data, args.manifest)

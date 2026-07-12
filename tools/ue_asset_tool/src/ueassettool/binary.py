@@ -31,6 +31,11 @@ class BinaryReader:
     def position(self) -> int:
         return self._file.tell()
 
+    @property
+    def limit(self) -> int:
+        """Current inclusive read boundary for provenance-aware decoders."""
+        return self._limit
+
     def seek(self, offset: int, whence: int = 0) -> int:
         if whence == 0 and not 0 <= offset <= self._limit:
             raise BoundsError(f"seek 0x{offset:x} outside 0..0x{self._limit:x} in {self.path}")
@@ -147,4 +152,3 @@ class BinaryReader:
             yield
         finally:
             self._limit = old
-

@@ -20,6 +20,8 @@ TAG_BOOL_TRUE = 0x10
 TAG_SKIPPED = 0x20
 TAG_KNOWN_MASK = 0x3F
 EXT_OVERRIDABLE_INFORMATION = 0x02
+GUID_NIAGARA = "fcf57afa-50764283-b9a9e658-ffa02d32"
+NIAGARA_VARIABLES_USE_TYPEDEF_REGISTRY = 64
 
 
 @dataclass
@@ -310,6 +312,42 @@ class PropertyParser:
             return self._decode_struct(r, node, item_end)
         raise UnsupportedError(f"array item type {node.display} is not verified")
 
+    def _decode_container_item(self, r: BinaryReader, node: TypeNode, end: int, label: str) -> Any:
+        if node.name == "StructProperty":
+            struct_name = self._struct_name(node)
+            if struct_name in ("NiagaraVariable", "NiagaraVariableBase", "NiagaraVariableWithOffset"):
+                if self.package.custom_version(GUID_NIAGARA) < NIAGARA_VARIABLES_USE_TYPEDEF_REGISTRY:
+                    raise UnsupportedError(
+                        f"{struct_name} predates VariablesUseTypeDefRegistry and needs its legacy decoder"
+                    )
+                variable_name = self._fname(r).display
+                type_definition = self._read_property_list(r, end)
+                if not type_definition["terminated"]:
+                    raise UnsupportedError(f"{struct_name} type definition lacks a None terminator")
+                result: dict[str, Any] = {
+                    "name": variable_name,
+                    "type_definition": type_definition,
+                }
+                if struct_name == "NiagaraVariable":
+                    count = r.count("Niagara variable data", maximum=1 << 30)
+                    data = r.read(count)
+                    result["data_size"] = count
+                    result["data_hex"] = data.hex()
+                    result["data_sha256"] = hashlib.sha256(data).hexdigest()
+                elif struct_name == "NiagaraVariableWithOffset":
+                    result["offset"] = r.i32()
+                return result
+            if struct_name in {
+                "Guid", "FGuid", "LinearColor", "Color", "Vector2f", "Vector2D", "Vector2d",
+                "Vector3f", "Vector3d", "RichCurveKey", "IntPoint", "IntVector",
+            }:
+                return self._decode_fixed_item(r, node, end, 1)
+            item = self._read_property_list(r, end)
+            if not item["terminated"]:
+                raise UnsupportedError(f"{label} struct value lacks a None terminator")
+            return item
+        return self._decode_fixed_item(r, node, end, 1)
+
     def _decode_value(self, r: BinaryReader, node: TypeNode, end: int, meta: dict[str, Any]) -> Any:
         name = node.name
         size = end - r.position
@@ -370,9 +408,60 @@ class PropertyParser:
                 raise UnsupportedError("ArrayProperty lacks its inner type")
             inner = node.parameters[0]
             values = []
+            # Enum-backed TArray<TEnumAsByte<...>> values are serialized as
+            # FName even though the legacy tag only records ByteProperty.
+            if inner.name == "ByteProperty" and end - r.position == count * 8:
+                return {"count": count, "items": [self._fname(r).display for _ in range(count)]}
             for i in range(count):
-                values.append(self._decode_fixed_item(r, inner, end, count - i))
+                if inner.name == "StructProperty":
+                    values.append(self._decode_container_item(r, inner, end, f"array struct element {i}"))
+                else:
+                    values.append(self._decode_fixed_item(r, inner, end, count - i))
             return {"count": count, "items": values}
+        if name == "SetProperty":
+            if not node.parameters:
+                raise UnsupportedError("SetProperty lacks its element type")
+            element = node.parameters[0]
+            removed_count = r.i32()
+            if not 0 <= removed_count <= 10_000_000:
+                raise FormatError(f"invalid SetProperty removed count {removed_count}")
+            removed = [
+                self._decode_container_item(r, element, end, f"set removed element {i}")
+                for i in range(removed_count)
+            ]
+            count = r.i32()
+            if not 0 <= count <= 10_000_000:
+                raise FormatError(f"invalid SetProperty element count {count}")
+            items = [
+                self._decode_container_item(r, element, end, f"set element {i}")
+                for i in range(count)
+            ]
+            return {"removed_count": removed_count, "removed": removed, "count": count, "items": items}
+        if name == "MapProperty":
+            if len(node.parameters) != 2:
+                raise UnsupportedError("MapProperty lacks key/value types")
+            key_node, value_node = node.parameters
+            removed_count = r.i32()
+            replace = removed_count == -1
+            if not replace and not 0 <= removed_count <= 10_000_000:
+                raise FormatError(f"invalid MapProperty removed count {removed_count}")
+            removed = [] if replace else [
+                self._decode_container_item(r, key_node, end, f"map removed key {i}")
+                for i in range(removed_count)
+            ]
+            count = r.i32()
+            if not 0 <= count <= 10_000_000:
+                raise FormatError(f"invalid MapProperty entry count {count}")
+            entries = []
+            for i in range(count):
+                entries.append({
+                    "key": self._decode_container_item(r, key_node, end, f"map key {i}"),
+                    "value": self._decode_container_item(r, value_node, end, f"map value {i}"),
+                })
+            return {
+                "replace": replace, "removed_count": 0 if replace else removed_count,
+                "removed": removed, "count": count, "entries": entries,
+            }
         if name in ("EnumProperty",):
             if size == 1:
                 return r.u8()

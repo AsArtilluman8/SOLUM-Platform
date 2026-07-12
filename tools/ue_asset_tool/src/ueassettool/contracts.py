@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import struct
 from pathlib import Path
 from typing import Any, Callable
 
 from .blueprint import BlueprintGraphDecoder
+from .bytecode import StructScriptDecoder
 from .errors import UEAssetError
 from .package import UnrealPackage
 from .properties import PropertyParser
@@ -78,14 +80,131 @@ def _aggregate_status(exports: list[dict[str, Any]]) -> str:
     return "VERIFIED" if exports else "UNSUPPORTED"
 
 
+def _decoded_values(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, Any] = {}
+    for prop in value.get("properties", []):
+        if str(prop.get("decode_status", "")).startswith("decoded"):
+            result[str(prop["name"])] = prop.get("value")
+    return result
+
+
+def _niagara_type(variable: dict[str, Any]) -> dict[str, Any]:
+    fields = _decoded_values(variable.get("type_definition"))
+    class_value = fields.get("ClassStructOrEnum")
+    return {
+        "object": class_value.get("object") if isinstance(class_value, dict) else None,
+        "package_index": class_value.get("package_index") if isinstance(class_value, dict) else None,
+        "underlying_type": fields.get("UnderlyingType"),
+        "flags": fields.get("Flags"),
+    }
+
+
+def _niagara_scalar(data: bytes, offset: int, type_object: str | None) -> dict[str, Any]:
+    short = (type_object or "").rsplit(".", 1)[-1]
+    formats = {
+        "NiagaraFloat": ("<f", "float"),
+        "NiagaraInt32": ("<i", "int32"),
+        "NiagaraBool": ("<i", "bool32"),
+        "NiagaraVec2": ("<2f", "float2"),
+        "NiagaraVec3": ("<3f", "float3"),
+        "NiagaraPosition": ("<3f", "position3f"),
+        "NiagaraVec4": ("<4f", "float4"),
+        "NiagaraColor": ("<4f", "color4f"),
+        "NiagaraQuat": ("<4f", "quat4f"),
+    }
+    if short not in formats:
+        return {"status": "RAW_VERIFIED", "reason": f"no scalar decoder for {short or '<unknown>'}"}
+    fmt, kind = formats[short]
+    size = struct.calcsize(fmt)
+    if offset < 0 or offset + size > len(data):
+        return {"status": "UNSUPPORTED", "reason": f"offset {offset}+{size} exceeds ParameterData {len(data)}"}
+    raw = data[offset:offset + size]
+    values = struct.unpack(fmt, raw)
+    value: Any = values[0] if len(values) == 1 else list(values)
+    if kind == "bool32":
+        value = bool(value)
+    return {"status": "VERIFIED", "kind": kind, "value": value, "raw_hex": raw.hex()}
+
+
+def _niagara_system_summary(package: UnrealPackage) -> list[dict[str, Any]]:
+    parser = PropertyParser(package)
+    systems: list[dict[str, Any]] = []
+    for index, export in enumerate(package.exports, 1):
+        if export.class_name != "NiagaraSystem" or export.payload_availability != "available":
+            continue
+        decoded = parser.parse_export(index)
+        values = _decoded_values({"properties": decoded.get("properties", [])})
+        emitters = []
+        emitter_value = values.get("EmitterHandles")
+        if isinstance(emitter_value, dict):
+            for item in emitter_value.get("items", []):
+                fields = _decoded_values(item)
+                versioned = _decoded_values(fields.get("VersionedInstance"))
+                emitters.append({
+                    "name": fields.get("Name"), "id": fields.get("Id"), "id_name": fields.get("IdName"),
+                    "enabled": fields.get("bIsEnabled"), "mode": fields.get("EmitterMode"),
+                    "emitter": versioned.get("Emitter"), "version": versioned.get("Version"),
+                    "stateless_emitter": fields.get("StatelessEmitter"),
+                })
+        exposed = _decoded_values(values.get("ExposedParameters"))
+        parameter_bytes = bytes(exposed.get("ParameterData", {}).get("items", [])) if isinstance(exposed.get("ParameterData"), dict) else b""
+        data_interfaces = exposed.get("DataInterfaces", {}).get("items", []) if isinstance(exposed.get("DataInterfaces"), dict) else []
+        uobjects = exposed.get("UObjects", {}).get("items", []) if isinstance(exposed.get("UObjects"), dict) else []
+        parameters = []
+        sorted_offsets = exposed.get("SortedParameterOffsets")
+        if isinstance(sorted_offsets, dict):
+            for variable in sorted_offsets.get("items", []):
+                type_info = _niagara_type(variable)
+                offset = int(variable.get("offset", -1))
+                type_object = type_info.get("object") or ""
+                if "NiagaraDataInterface" in type_object:
+                    resolved = data_interfaces[offset] if 0 <= offset < len(data_interfaces) else None
+                    value = {
+                        "status": "VERIFIED" if resolved is not None else "UNSUPPORTED",
+                        "kind": "data_interface", "index": offset, "object": resolved,
+                    }
+                elif type_info.get("underlying_type") == 1:
+                    resolved = uobjects[offset] if 0 <= offset < len(uobjects) else None
+                    value = {
+                        "status": "VERIFIED" if resolved is not None else "UNSUPPORTED",
+                        "kind": "uobject", "index": offset, "object": resolved,
+                    }
+                else:
+                    value = _niagara_scalar(parameter_bytes, offset, type_object)
+                parameters.append({
+                    "name": variable.get("name"), "type": type_info, "offset": offset, "value": value,
+                })
+        redirects = []
+        redirect_map = exposed.get("UserParameterRedirects")
+        if isinstance(redirect_map, dict):
+            redirects = [
+                {"source": item["key"].get("name"), "target": item["value"].get("name")}
+                for item in redirect_map.get("entries", [])
+            ]
+        systems.append({
+            "export_index": index, "object": package.object_path(index),
+            "emitters": emitters, "emitter_count": len(emitters),
+            "exposed_parameters": parameters, "exposed_parameter_count": len(parameters),
+            "user_parameter_redirects": redirects,
+            "parameter_data": {
+                "size": len(parameter_bytes), "sha256": hashlib.sha256(parameter_bytes).hexdigest(),
+                "data_interface_count": len(data_interfaces), "uobject_count": len(uobjects),
+            },
+        })
+    return systems
+
+
 def export_blueprint_contract(path: str | Path) -> dict[str, Any]:
     with UnrealPackage(path) as package:
         classes = ("Blueprint", "BlueprintGeneratedClass", "EdGraph", "EdGraphSchema", "Function", "TimelineTemplate", "SimpleConstructionScript", "SCS_Node")
         exports = _exports(package, lambda _i, cls, _p: cls.startswith("K2Node_") or cls in classes)
         graph = BlueprintGraphDecoder(package).decode(include_niagara=False)
+        bytecode = StructScriptDecoder(package).decode_functions()
         return {
             "schema": "ueassettool.blueprint-contract/v1", "status": _aggregate_status(exports),
-            "source": _source(package), "exports": exports, "graph": graph,
+            "source": _source(package), "exports": exports, "graph": graph, "bytecode": bytecode,
             "dependencies": _dependencies(package),
             "semantics": "Serialized editor graph/default contract; not decompiled C++.",
         }
@@ -95,9 +214,10 @@ def export_niagara_contract(path: str | Path) -> dict[str, Any]:
     with UnrealPackage(path) as package:
         exports = _exports(package, lambda _i, cls, obj: "Niagara" in cls or cls.startswith("EdGraph") or "Niagara" in obj)
         graph = BlueprintGraphDecoder(package).decode(include_niagara=True)
+        systems = _niagara_system_summary(package)
         return {
             "schema": "ueassettool.niagara-contract/v1", "status": _aggregate_status(exports),
-            "source": _source(package), "exports": exports, "graph": graph,
+            "source": _source(package), "exports": exports, "systems": systems, "graph": graph,
             "dependencies": _dependencies(package),
             "semantics": "Serialized parameters, curves, data interfaces and editor links; unsupported native/script bytes retain provenance.",
         }
@@ -106,9 +226,20 @@ def export_niagara_contract(path: str | Path) -> dict[str, Any]:
 def export_metasound_contract(path: str | Path) -> dict[str, Any]:
     with UnrealPackage(path) as package:
         exports = _exports(package, lambda _i, cls, obj: "metasound" in cls.lower() or "metasound" in obj.lower())
+        audio_references = [
+            {
+                "import_index": -index,
+                "object": package.object_path(-index),
+                "class": item.class_name.display,
+                "embedded": False,
+                "availability": "referenced-asset-not-contained-in-this-package",
+            }
+            for index, item in enumerate(package.imports, 1)
+            if item.class_name.display in ("SoundWave", "MetaSoundSource")
+        ]
         return {
             "schema": "ueassettool.metasound-contract/v1", "status": _aggregate_status(exports),
-            "source": _source(package), "exports": exports,
+            "source": _source(package), "exports": exports, "audio_references": audio_references,
             "dependencies": _dependencies(package),
             "semantics": "Serialized MetaSound properties/references; unknown frontend native data remains RAW_VERIFIED.",
         }

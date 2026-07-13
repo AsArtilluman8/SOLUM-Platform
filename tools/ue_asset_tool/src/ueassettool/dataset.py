@@ -627,7 +627,7 @@ def build_dataset(archive: Path, dataset: Path, repo: Path) -> dict[str, Any]:
         paid_asset_policy_check(repo),
     ]
     integrity = validate_dataset(dataset)
-    checks.append({"name": "canonical_dataset_integrity", "passed": integrity["status"] == "VERIFIED", "details": integrity})
+    checks.append({"name": "html_dataset_integrity", "passed": integrity["status"] == "VERIFIED", "details": integrity})
     package_statuses = Counter(item.get("status") for item in file_records if item.get("kind") == "package")
     blockers = [
         {"asset_id": item.get("asset_id"), "source_file": item.get("source_file"), "status": item.get("status"), "reason": item.get("reason"), "region": item.get("region"), "json_path": item.get("json_path")}

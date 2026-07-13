@@ -73,6 +73,24 @@ class PackageFoundationTests(unittest.TestCase):
         self.assertEqual(value["soft_object_path_index"], 0)
         self.assertEqual(value["object_path"], "/Game/Exact.Asset:Node")
 
+    def test_soft_object_path_struct_uses_same_header_contract(self) -> None:
+        package = SimpleNamespace(
+            summary=SimpleNamespace(file_version_ue4=522, file_version_ue5=1013),
+            soft_object_paths=[{
+                "package": "/Game/Exact", "asset": "Asset", "sub_path": "",
+                "object_path": "/Game/Exact.Asset",
+                "provenance": {"physical_offset": 40, "size": 20, "sha256": "a" * 64},
+            }],
+        )
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "soft_struct.bin"
+            path.write_bytes(struct.pack("<i", 0))
+            with BinaryReader(path) as reader:
+                value = PropertyParser(package)._decode_struct(
+                    reader, TypeNode("StructProperty", [TypeNode("SoftObjectPath")]), 4
+                )
+        self.assertEqual(value["object_path"], "/Game/Exact.Asset")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -320,7 +320,7 @@ class MaterialContractDecoder:
             issues.append("expression reference is not a local export")
         if connected and not str(target_class or "").startswith("MaterialExpression"):
             issues.append(f"target class is {target_class or '<unresolved>'}, not MaterialExpression")
-        if int(value["output_index"]) < 0:
+        if connected and int(value["output_index"]) < 0:
             issues.append("negative output index")
         mask = value.get("mask", {})
         if any(mask.get(name) not in (0, 1) for name in ("enabled", "r", "g", "b", "a")):

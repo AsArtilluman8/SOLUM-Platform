@@ -6,6 +6,7 @@ import functools
 import json
 import os
 import shutil
+import subprocess
 import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -81,6 +82,30 @@ def build_frontend(dataset: Path, html: Path, gate: dict) -> Path:
     return html / "index.html"
 
 
+def validate_frontend(dataset: Path, html: Path, gate: dict) -> dict:
+    errors = []
+    inventory = json.loads((dataset / "inventory.json").read_text(encoding="utf-8"))
+    index = json.loads((html / "data" / "index.json").read_text(encoding="utf-8"))
+    if index.get("asset_count") != inventory.get("totals", {}).get("assets"):
+        errors.append("frontend/inventory asset count mismatch")
+    if index.get("package_count") != gate.get("total_packages"):
+        errors.append("frontend/gate package count mismatch")
+    forbidden = ("mockData", "demoData", "fakeSky", "placeholderGeometry", "silentWav")
+    for name in ("index.html", "app.css", "app.js"):
+        text = (html / name).read_text(encoding="utf-8")
+        for marker in forbidden:
+            if marker.lower() in text.lower():
+                errors.append(f"forbidden frontend marker {marker} in {name}")
+        if "p59-" in text:
+            errors.append(f"hardcoded P59 asset id in {name}")
+    node = shutil.which("node")
+    if node:
+        process = subprocess.run([node, "--check", str(html / "app.js")], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if process.returncode:
+            errors.append("JavaScript syntax: " + process.stdout.strip())
+    return {"name": "frontend_dataset_integrity", "passed": not errors, "errors": errors}
+
+
 class LogHandler(SimpleHTTPRequestHandler):
     log_path: Path
 
@@ -104,6 +129,13 @@ def main() -> int:
         print(json.dumps({"gate": gate["gate_status"], "integrity": integrity}, ensure_ascii=False, indent=2))
         return 0
     index_path = build_frontend(args.dataset.resolve(), args.html.resolve(), gate)
+    frontend_check = validate_frontend(args.dataset.resolve(), args.html.resolve(), gate)
+    if not frontend_check["passed"]:
+        raise RuntimeError("frontend integrity failed: " + "; ".join(frontend_check["errors"]))
+    gate["test_results"] = [
+        item for item in gate.get("test_results", []) if item.get("name") != frontend_check["name"]
+    ] + [frontend_check]
+    write_json(args.dataset.resolve() / "EXTRACTION_GATE.json", gate)
     inventory = json.loads((args.dataset / "inventory.json").read_text(encoding="utf-8"))
     log_path = args.dataset / "reports" / "server.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)

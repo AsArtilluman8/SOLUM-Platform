@@ -316,6 +316,8 @@ class PropertyParser:
     def _decode_struct(self, r: BinaryReader, node: TypeNode, end: int) -> Any:
         name = self._struct_name(node)
         size = end - r.position
+        if name == "SoftObjectPath":
+            return self._decode_soft_object_path(r, end, "SoftObjectPath")
         if name == "ExpressionInput" and size == 36:
             return self._decode_expression_input(r)
         material_input_sizes = {
@@ -429,6 +431,46 @@ class PropertyParser:
             return self._decode_struct(r, node, item_end)
         raise UnsupportedError(f"array item type {node.display} is not verified")
 
+    def _decode_soft_object_path(self, r: BinaryReader, end: int, label: str) -> dict[str, Any]:
+        size = end - r.position
+        soft_paths = getattr(self.package, "soft_object_paths", [])
+        if soft_paths:
+            if size != 4:
+                raise UnsupportedError(
+                    f"{label} uses a header soft-path table but value size is {size}, expected 4"
+                )
+            index = r.i32()
+            if not 0 <= index < len(soft_paths):
+                raise FormatError(
+                    f"{label} index {index} outside header soft-path table 0..{len(soft_paths) - 1}"
+                )
+            path = soft_paths[index]
+            return {
+                "soft_object_path_index": index,
+                "package": path["package"],
+                "asset": path["asset"],
+                "sub_path": path["sub_path"],
+                "object_path": path["object_path"],
+                "header_provenance": path["provenance"],
+            }
+        if self.summary.file_version_ue5 >= ver.UE5_FSOFTOBJECTPATH_REMOVE_ASSET_PATH_FNAMES:
+            package_name = self._fname(r).display
+            asset_name = self._fname(r).display
+            sub_path = r.fstring()
+            return {
+                "package": package_name,
+                "asset": asset_name,
+                "sub_path": sub_path,
+                "object_path": f"{package_name}.{asset_name}{':' + sub_path if sub_path else ''}",
+            }
+        asset_path = self._fname(r).display
+        sub_path = r.fstring()
+        return {
+            "asset_path": asset_path,
+            "sub_path": sub_path,
+            "object_path": f"{asset_path}{':' + sub_path if sub_path else ''}",
+        }
+
     def _decode_container_item(self, r: BinaryReader, node: TypeNode, end: int, label: str) -> Any:
         if node.name == "StructProperty":
             struct_name = self._struct_name(node)
@@ -511,33 +553,7 @@ class PropertyParser:
             index = r.i32()
             return {"package_index": index, "object": self.package.object_path(index)}
         if name in ("SoftObjectProperty", "SoftClassProperty"):
-            soft_paths = getattr(self.package, "soft_object_paths", [])
-            if soft_paths:
-                if size != 4:
-                    raise UnsupportedError(
-                        f"{name} uses a header soft-path table but value size is {size}, expected 4"
-                    )
-                index = r.i32()
-                if not 0 <= index < len(soft_paths):
-                    raise FormatError(
-                        f"{name} index {index} outside header soft-path table 0..{len(soft_paths) - 1}"
-                    )
-                path = soft_paths[index]
-                return {
-                    "soft_object_path_index": index,
-                    "package": path["package"],
-                    "asset": path["asset"],
-                    "sub_path": path["sub_path"],
-                    "object_path": path["object_path"],
-                    "header_provenance": path["provenance"],
-                }
-            if self.summary.file_version_ue5 >= ver.UE5_FSOFTOBJECTPATH_REMOVE_ASSET_PATH_FNAMES:
-                package_name = self._fname(r).display
-                asset_name = self._fname(r).display
-                sub_path = r.fstring()
-                return {"package": package_name, "asset": asset_name, "sub_path": sub_path}
-            asset_path = self._fname(r).display
-            return {"asset_path": asset_path, "sub_path": r.fstring()}
+            return self._decode_soft_object_path(r, end, name)
         if name == "StructProperty":
             return self._decode_struct(r, node, end)
         if name == "ArrayProperty":

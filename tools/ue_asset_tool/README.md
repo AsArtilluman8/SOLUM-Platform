@@ -53,3 +53,22 @@ Validated locally against the maintainer-provided UDS sample set: package maps a
 P58 verifies 20/20 Material and Material Function graphs containing 971 expression nodes, 970 serialized links, 115 parameters and 34 function calls with zero invalid links. Five Curve assets verify 115 rich-curve keys. Three additional editor meshes export as GLB; six SoundWave assets export as metadata-matched stereo PCM WAV; and three Texture2D sources export as verified PNG. Two of those textures exercise trailer-backed UEDELTA source data at 16384x128 and 4096x64. The samples and derived full reports are intentionally not committed. Split packages remain `MISSING_INPUT` until their matching `.uexp`/`.ubulk` is present.
 
 P59 broadens the proof set to 341 packages. It verifies all 174 Material-family assets (including 59 Material Instances and three Material Parameter Collections), exports all 38 Texture2D/TextureCube/VolumeTexture sources as PNG/HDR/NPY, verifies 20 Niagara script summaries plus two Niagara Parameter Collections containing 106 byte-matched defaults, verifies graph or truthful data-only status for 23 Blueprint-family packages, and verifies eight curve contracts. All nine StaticMesh fixtures produce real GLB geometry (5,715 validated indices); two use the legacy disk-backed editor-bulk layout. Four short mono PCM SoundWave sources export as exact WAV, and the MetaSound fixture resolves 30 referenced audio assets. Paid samples and derived reports remain outside Git.
+
+## P59 UDS canonical truth dataset
+
+The P59 pipeline writes private generated data outside Git and refuses to build
+the frontend unless `EXTRACTION_GATE.json` is `PASSED`:
+
+```bash
+python3 tools/ue_asset_tool/scripts/build_and_serve_uds_truth.py --extract --extract-only
+python3 tools/ue_asset_tool/scripts/build_and_serve_uds_truth.py
+```
+
+The default URL is `http://127.0.0.1:8765/SOLUM_UDS_FINAL_TRUTH_HTML/`.
+Stop the server with `Ctrl-C`. The canonical dataset and frontend remain
+separate under `/mnt/shared/Download/SOLUM_UDS_FINAL_TRUTH` and
+`/mnt/shared/Download/SOLUM_UDS_FINAL_TRUTH_HTML`.
+
+The HTML application loads inventory, asset contracts, graphs and verified
+media lazily. It does not synthesize shaders, particles, transforms, models,
+textures, sound or UDS runtime state.

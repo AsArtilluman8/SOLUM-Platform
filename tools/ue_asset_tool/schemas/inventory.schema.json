@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solum.uds-truth.inventory/v1",
+  "type": "object",
+  "required": ["schema_version", "source_archive", "totals", "files", "assets", "reference_roots"],
+  "properties": {
+    "schema_version": {"const": "solum.uds-truth/v1"},
+    "files": {"type": "array"},
+    "assets": {"type": "array"},
+    "reference_roots": {"type": "array"}
+  }
+}

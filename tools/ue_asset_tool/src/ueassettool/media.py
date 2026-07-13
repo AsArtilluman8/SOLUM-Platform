@@ -1122,7 +1122,11 @@ def _exact_soundwave(asset: Path, output: Path, *, max_output: int) -> dict[str,
                 "raw_sha256": hashlib.sha256(raw).hexdigest(),
             },
             "validation": validation,
-            "output": {"path": str(output), "size": len(raw), "sha256": hashlib.sha256(raw).hexdigest()},
+            "output": {
+                "path": str(output),
+                "size": len(raw),
+                "sha256": hashlib.sha256(raw).hexdigest(),
+            },
         }
 
 

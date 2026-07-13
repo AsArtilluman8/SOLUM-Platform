@@ -297,7 +297,7 @@ class MaterialContractDecoder:
             issues.append("expression reference is not a local export")
         if connected and not str(target_class or "").startswith("MaterialExpression"):
             issues.append(f"target class is {target_class or '<unresolved>'}, not MaterialExpression")
-        if int(value["output_index"]) < 0:
+        if connected and int(value["output_index"]) < 0:
             issues.append("negative output index")
         mask = value.get("mask", {})
         if any(mask.get(name) not in (0, 1) for name in ("enabled", "r", "g", "b", "a")):
@@ -617,9 +617,15 @@ class MaterialContractDecoder:
             "parameter_state_id": _decoded_property(properties.get("ParameterStateId")),
             "dynamic_parameters": parameters,
             "dynamic_parameter_count": len(parameters),
+            "scalar_parameters": [item for item in parameters if item["kind"] == "scalar"],
+            "vector_parameters": [item for item in parameters if item["kind"] == "vector"],
+            "texture_parameters": [item for item in parameters if item["kind"] == "texture"],
             "duplicate_dynamic_parameters": duplicates,
             "static_parameters": static_parameters,
             "static_parameter_count": len(static_parameters),
+            "static_switch_parameters": [
+                item for item in static_parameters if item["kind"] == "static_switch"
+            ],
             "duplicate_static_parameters": static_duplicates,
             "static_sources": static_sources,
             "base_property_overrides": base_overrides,
@@ -693,6 +699,8 @@ class MaterialContractDecoder:
             "state_id": state_id,
             "parameters": parameters,
             "parameter_count": len(parameters),
+            "scalar_parameters": [item for item in parameters if item["kind"] == "scalar"],
+            "vector_parameters": [item for item in parameters if item["kind"] == "vector"],
             "scalar_parameter_count": sum(item["kind"] == "scalar" for item in parameters),
             "vector_parameter_count": sum(item["kind"] == "vector" for item in parameters),
             "duplicate_names": duplicate_names,
@@ -758,11 +766,15 @@ class MaterialContractDecoder:
                         "provenance": _provenance(failed),
                     })
             if export.class_name in MATERIAL_ROOT_CLASSES:
+                root_properties = decoded.get("properties", [])
                 roots.append({
                     "export_index": index,
                     "object": package.object_path(index),
                     "class": export.class_name,
-                    "attributes": _attributes(decoded.get("properties", [])),
+                    "attributes": _attributes(root_properties),
+                    "attribute_provenance": {
+                        key: _provenance(item) for key, item in _property_keys(root_properties)
+                    },
                     "parse_status": decoded.get("parse_status"),
                 })
             if "EditorOnlyData" in str(export.class_name or ""):
@@ -824,6 +836,9 @@ class MaterialContractDecoder:
                 },
                 "description": attrs.get("Desc") or attrs.get("Text"),
                 "attributes": attrs,
+                "attribute_provenance": {
+                    key: _provenance(item) for key, item in _property_keys(properties)
+                },
                 "inputs": inputs,
                 "references": references,
                 "parse_status": decoded.get("parse_status"),
@@ -1041,6 +1056,7 @@ class MaterialContractDecoder:
             "function_outputs": function_outputs,
             "function_calls": function_calls,
             "material_instances": instance_contracts,
+            "parameter_collections": collection_contracts,
             "material_parameter_collections": collection_contracts,
             "references": all_references,
             "dependencies": dependencies,

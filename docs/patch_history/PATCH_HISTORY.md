@@ -2436,6 +2436,44 @@ If P06 build/runtime succeeds: P07 — vertex buffer + simple mesh upload path.
 
 ---
 
+## Patch P59 — UE Asset Truth Reader 0.6.0
+
+### Goal
+
+Broaden the offline reader from selected UE5.5 fixtures to a 341-package UE4/UE5 editor corpus while preserving strict provenance and refusing invented output.
+
+### Changed
+
+- Added exact Material Instance and Material Parameter Collection contracts alongside Material/Material Function graphs.
+- Added modern/legacy Niagara variable decoding, script summaries, VM/executable hashes, function-call dependencies and exact parameter-store default validation.
+- Added legacy and trailer-backed TextureSource bulk paths, BLAKE3 `TextureSource.Id` proof, more UEDELTA source formats, HDR and lossless NPY outputs.
+- Added UE5.0/5.1 disk-backed `FEditorBulkData` mesh resolution.
+- Strengthened GLB validation for buffer declarations, views, accessors, min/max, attribute counts and index ranges.
+- Added uncompressed zero-exponent `FCompressedBuffer` and legacy chunked-zlib decoding.
+- Added `FCompressedBuffer` header CRC/BLAKE3 checks and strict PNG IDAT plus Ogg Vorbis/Opus container validation.
+- Preserved exact Blueprint/Kismet, Curve, SoundWave and MetaSound contracts and expanded regression fixtures.
+
+### Private fixture result
+
+```text
+Material family: 174/174 VERIFIED
+Texture sources: 38/38 VERIFIED
+Niagara scripts: 20/20 VERIFIED summaries
+Niagara parameter collections: 2/2, 106 defaults byte-matched
+Blueprint family: 18 graph-bearing VERIFIED, 5 data-only identified
+Curves: 8/8 VERIFIED
+StaticMesh: 9/9 real GLB, 5715 indices validated
+SoundWave: 4/4 exact PCM WAV
+MetaSound: 30 referenced audio assets resolved
+Unit tests: 33/33 PASS
+```
+
+### Truth boundary
+
+Cooked render data, cooked BCn platform mips, streaming codecs, unversioned packages without schema, IoStore/Zen and remote virtualized payloads remain unsupported until matching legal fixtures and companions are available. No Marketplace asset or derived full report is committed.
+
+---
+
 ## Patch P27B — Universal Material Role + Transparent Glass Routing Fix
 
 ### Goal

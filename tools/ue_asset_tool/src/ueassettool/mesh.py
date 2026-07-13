@@ -4,10 +4,12 @@ import hashlib
 import json
 import math
 import struct
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from .binary import BinaryReader
+from .compression import decompress_compressed_buffer, read_compressed_buffer_header
 from .editor_bulk import match_trailer_entry, parse_mesh_description_bulk_data
 from .errors import BoundsError, FormatError, UnsupportedError
 from .package import UnrealPackage
@@ -350,6 +352,8 @@ def mesh_description_to_glb(mesh: MeshDescription, *, source: dict[str, Any]) ->
         raise FormatError("mesh contains non-finite UV values")
     if not all(len(color) == 4 and all(math.isfinite(x) for x in color) for color in out_colors):
         raise FormatError("mesh contains invalid vertex colors")
+    if not all(all(0.0 <= x <= 1.0 for x in color) for color in out_colors):
+        raise UnsupportedError("mesh vertex colors leave glTF's normalized 0..1 range")
 
     # The axis reflection converts UE's left-handed winding into glTF's
     # right-handed winding. Preserve the serialized triangle order; reversing
@@ -380,6 +384,8 @@ def mesh_description_to_glb(mesh: MeshDescription, *, source: dict[str, Any]) ->
         raise FormatError("mesh contains a mixture of invalid/non-unit vertex-instance tangents")
     if has_tangents and max(tangent_normal_dot, default=0.0) > 1e-3:
         raise FormatError("mesh tangent is not orthogonal to normal")
+    if has_tangents and any(abs(abs(value[3]) - 1.0) > 1e-5 for value in out_tangents):
+        raise FormatError("mesh tangent handedness is not -1 or +1")
 
     def subtract(a: tuple[float, float, float], b: tuple[float, float, float]) -> tuple[float, float, float]:
         return tuple(x - y for x, y in zip(a, b))  # type: ignore[return-value]
@@ -393,7 +399,11 @@ def mesh_description_to_glb(mesh: MeshDescription, *, source: dict[str, Any]) ->
             ia, ib, ic = indices[start:start + 3]
             face = cross(subtract(out_positions[ib], out_positions[ia]), subtract(out_positions[ic], out_positions[ia]))
             average = tuple((out_normals[ia][axis] + out_normals[ib][axis] + out_normals[ic][axis]) / 3.0 for axis in range(3))
-            alignment = sum(x * y for x, y in zip(face, average))
+            face_length = math.sqrt(sum(value * value for value in face))
+            average_length = math.sqrt(sum(value * value for value in average))
+            if face_length <= 1e-20 or average_length <= 1e-20:
+                raise FormatError("mesh contains a degenerate triangle or zero averaged normal")
+            alignment = sum(x * y for x, y in zip(face, average)) / (face_length * average_length)
             if not math.isfinite(alignment) or alignment <= 0.0:
                 raise FormatError("triangle winding disagrees with serialized normals")
             alignments.append(alignment)
@@ -499,24 +509,104 @@ def _matching_mesh_payload(package: UnrealPackage, trailer: PackageTrailer, *, m
     return entry, load_local_payload(package.path, entry, max_output=max_output), meta
 
 
+def _matching_legacy_mesh_payload(
+    package: UnrealPackage, *, max_output: int,
+) -> tuple[bytes, dict[str, Any]]:
+    """Resolve UE5.0/5.1 disk-backed FEditorBulkData without a trailer.
+
+    These packages persist the historical HasRegistered flag and point at an
+    FCompressedBuffer later in the package (or in .upayload). Identity is
+    proven by both payload size and the serialized FIoHash/RawHash prefix.
+    """
+    parser = PropertyParser(package)
+    matches: list[tuple[bytes, dict[str, Any]]] = []
+    for index, export in enumerate(package.exports, 1):
+        if export.class_name != "StaticMeshDescriptionBulkData":
+            continue
+        decoded = parser.parse_export(index)
+        trailing = decoded.get("trailing_native")
+        if not trailing:
+            continue
+        source = Path(export.payload_source or package.path)
+        start = int(trailing["physical_offset"])
+        end = start + int(trailing["size"])
+        with BinaryReader(source) as reader:
+            reader.seek(start)
+            version = package.summary.saved_by_engine_version
+            metadata = parse_mesh_description_bulk_data(
+                reader,
+                end=end,
+                allow_legacy_registered_flag=bool(
+                    version and version.major == 5 and version.minor <= 1
+                ),
+            )
+        bulk = metadata.editor_bulk
+        if bulk.payload_size == 0:
+            continue
+        if bulk.storage == "payload-sidecar":
+            payload_source = package.path.with_suffix(".upayload")
+        elif bulk.storage == "inline-or-end-of-package":
+            payload_source = package.path
+        else:
+            raise UnsupportedError(
+                f"legacy mesh FEditorBulkData storage {bulk.storage} needs a different resolver"
+            )
+        if bulk.offset_in_file is None:
+            raise FormatError("disk-backed mesh FEditorBulkData has no offset")
+        if not payload_source.is_file():
+            raise UnsupportedError(f"mesh payload sidecar is missing: {payload_source}")
+        header = read_compressed_buffer_header(payload_source, bulk.offset_in_file)
+        if header.total_raw_size != bulk.payload_size:
+            raise FormatError(
+                f"mesh FEditorBulkData size {bulk.payload_size} != compressed raw size {header.total_raw_size}"
+            )
+        if header.raw_hash[:40] != bulk.payload_content_id:
+            raise FormatError("mesh PayloadContentId does not match FCompressedBuffer RawHash")
+        verified_header, payload = decompress_compressed_buffer(
+            payload_source, bulk.offset_in_file, max_output=max_output,
+        )
+        matches.append((payload, {
+            "export_index": index, "object": decoded["object"], "class": decoded["class"],
+            "metadata": metadata.to_dict(), "payload_source": str(payload_source),
+            "compressed_buffer": asdict(verified_header),
+        }))
+    if len(matches) != 1:
+        raise FormatError(f"expected exactly one non-empty legacy mesh payload, found {len(matches)}")
+    return matches[0]
+
+
 def export_static_mesh(asset: str | Path, output: str | Path, *, max_output: int = 2 * 1024 * 1024 * 1024) -> dict[str, Any]:
     with UnrealPackage(asset) as package:
         static_meshes = [(i, e) for i, e in enumerate(package.exports, 1) if e.class_name == "StaticMesh" and e.is_asset]
         if len(static_meshes) != 1:
             raise FormatError(f"expected one top-level StaticMesh export, found {len(static_meshes)}")
         export_index, export = static_meshes[0]
-        if package.summary.payload_toc_offset < 0:
-            raise UnsupportedError("StaticMesh has no package trailer; cooked render-data path is not implemented yet")
-        trailer = read_package_trailer(package.path, offset=package.summary.payload_toc_offset)
-        entry, payload, bulk_meta = _matching_mesh_payload(package, trailer, max_output=max_output)
+        trailer = None
+        if package.summary.payload_toc_offset >= 0:
+            trailer = read_package_trailer(package.path, offset=package.summary.payload_toc_offset)
+            entry, payload, bulk_meta = _matching_mesh_payload(package, trailer, max_output=max_output)
+            payload_identifier = entry.identifier
+            payload_offset = entry.absolute_offset
+            payload_compressed_size = entry.compressed_size
+            payload_raw_size = entry.raw_size
+            payload_layout = "package-trailer"
+        else:
+            payload, bulk_meta = _matching_legacy_mesh_payload(package, max_output=max_output)
+            compressed = bulk_meta["compressed_buffer"]
+            payload_identifier = bulk_meta["metadata"]["editor_bulk"]["payload_content_id"]
+            payload_offset = compressed["offset"]
+            payload_compressed_size = compressed["total_compressed_size"]
+            payload_raw_size = compressed["total_raw_size"]
+            payload_layout = "disk-backed-editor-bulk"
         mesh = parse_mesh_description(payload)
         source = {
             "status": "VERIFIED", "path": str(package.path), "sha256": package.sha256,
             "engine": package.summary.saved_by_engine_version.display if package.summary.saved_by_engine_version else None,
             "file_version_ue4": package.summary.file_version_ue4, "file_version_ue5": package.summary.file_version_ue5,
             "export_index": export_index, "object_name": export.object_name.display, "class": export.class_name,
-            "payload_identifier": entry.identifier, "payload_offset": entry.absolute_offset,
-            "payload_compressed_size": entry.compressed_size, "payload_raw_size": entry.raw_size,
+            "payload_identifier": payload_identifier, "payload_offset": payload_offset,
+            "payload_compressed_size": payload_compressed_size, "payload_raw_size": payload_raw_size,
+            "payload_layout": payload_layout,
             "mesh_bulk_export": bulk_meta,
         }
         glb, geometry = mesh_description_to_glb(mesh, source=source)
@@ -527,7 +617,7 @@ def export_static_mesh(asset: str | Path, output: str | Path, *, max_output: int
         temporary.replace(target)
         return {
             "schema": "ueassettool.mesh-export/v1", "status": "VERIFIED", "source": source,
-            "trailer": trailer.to_dict(), "mesh_description": mesh.summary(),
+            "trailer": trailer.to_dict() if trailer else None, "mesh_description": mesh.summary(),
             "geometry": geometry, "output": str(target),
         }
 
@@ -542,6 +632,7 @@ def validate_glb(path: str | Path) -> dict[str, Any]:
     position = 12
     chunks: list[tuple[str, int]] = []
     document = None
+    binary = None
     while position < len(raw):
         if position + 8 > len(raw):
             raise BoundsError("truncated GLB chunk header")
@@ -553,13 +644,164 @@ def validate_glb(path: str | Path) -> dict[str, Any]:
         position += size
         chunks.append((kind.decode("ascii", "replace"), size))
         if kind == b"JSON":
-            document = json.loads(payload.decode("utf-8"))
-    if position != len(raw) or document is None:
+            if document is not None:
+                raise FormatError("GLB contains more than one JSON chunk")
+            try:
+                document = json.loads(payload.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise FormatError(f"GLB JSON chunk is invalid: {exc}") from exc
+        elif kind == b"BIN\0":
+            if binary is not None:
+                raise FormatError("GLB contains more than one BIN chunk")
+            binary = payload
+        if size % 4:
+            raise FormatError("GLB chunk length is not four-byte aligned")
+    if position != len(raw) or not isinstance(document, dict):
         raise FormatError("GLB chunks do not consume file or JSON chunk is absent")
-    bin_size = next((size for kind, size in chunks if kind == "BIN\x00"), None)
-    if bin_size is None:
+    if not chunks or chunks[0][0] != "JSON":
+        raise FormatError("GLB JSON is not the first chunk")
+    if binary is None:
         raise FormatError("GLB BIN chunk is absent")
-    for view in document.get("bufferViews", []):
-        if view.get("byteOffset", 0) + view["byteLength"] > bin_size:
-            raise BoundsError("GLB bufferView exceeds BIN chunk")
-    return {"status": "VERIFIED", "size": len(raw), "sha256": hashlib.sha256(raw).hexdigest(), "chunks": chunks, "meshes": len(document.get("meshes", [])), "accessors": len(document.get("accessors", []))}
+    buffers = document.get("buffers", [])
+    if (
+        not isinstance(buffers, list) or len(buffers) != 1
+        or not isinstance(buffers[0], dict)
+        or not isinstance(buffers[0].get("byteLength"), int)
+        or "uri" in buffers[0]
+    ):
+        raise FormatError("GLB must declare exactly one embedded buffer")
+    declared_buffer_size = buffers[0]["byteLength"]
+    if declared_buffer_size < 0 or not declared_buffer_size <= len(binary) <= declared_buffer_size + 3:
+        raise BoundsError(
+            f"GLB BIN size {len(binary)} does not match declared buffer {declared_buffer_size} plus padding"
+        )
+    if any(binary[declared_buffer_size:]):
+        raise FormatError("GLB BIN padding contains nonzero bytes")
+
+    views = document.get("bufferViews", [])
+    if not isinstance(views, list) or any(not isinstance(view, dict) for view in views):
+        raise FormatError("GLB bufferViews is not an object array")
+    for index, view in enumerate(views):
+        if view.get("buffer") != 0:
+            raise FormatError(f"bufferView {index} does not reference embedded buffer 0")
+        offset = view.get("byteOffset", 0)
+        length = view.get("byteLength")
+        stride = view.get("byteStride")
+        if not isinstance(offset, int) or not isinstance(length, int) or offset < 0 or length < 0:
+            raise FormatError(f"bufferView {index} has invalid offset/length")
+        if offset + length > declared_buffer_size:
+            raise BoundsError(f"bufferView {index} exceeds declared BIN buffer")
+        if stride is not None and (not isinstance(stride, int) or not 4 <= stride <= 252 or stride % 4):
+            raise FormatError(f"bufferView {index} has invalid byteStride {stride}")
+
+    component_formats = {
+        5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2),
+        5123: ("H", 2), 5125: ("I", 4), 5126: ("f", 4),
+    }
+    type_widths = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT2": 4, "MAT3": 9, "MAT4": 16}
+    accessors = document.get("accessors", [])
+    if not isinstance(accessors, list) or any(not isinstance(item, dict) for item in accessors):
+        raise FormatError("GLB accessors is not an object array")
+    decoded_accessors: list[list[tuple[int | float, ...]]] = []
+    for index, accessor in enumerate(accessors):
+        if "sparse" in accessor:
+            raise UnsupportedError(f"GLB accessor {index} uses unsupported sparse storage")
+        view_index = accessor.get("bufferView")
+        component_type = accessor.get("componentType")
+        kind = accessor.get("type")
+        count = accessor.get("count")
+        accessor_offset = accessor.get("byteOffset", 0)
+        if not isinstance(view_index, int) or not 0 <= view_index < len(views):
+            raise FormatError(f"accessor {index} has invalid bufferView")
+        if component_type not in component_formats or kind not in type_widths:
+            raise UnsupportedError(f"accessor {index} component/type is not in the verified set")
+        if not isinstance(count, int) or count < 0 or not isinstance(accessor_offset, int) or accessor_offset < 0:
+            raise FormatError(f"accessor {index} has invalid count/byteOffset")
+        fmt, component_size = component_formats[component_type]
+        width = type_widths[kind]
+        element_size = component_size * width
+        view = views[view_index]
+        stride = view.get("byteStride", element_size)
+        base = view.get("byteOffset", 0) + accessor_offset
+        if stride < element_size or base % component_size:
+            raise FormatError(f"accessor {index} has invalid stride/alignment")
+        required = 0 if count == 0 else (count - 1) * stride + element_size
+        if accessor_offset + required > view["byteLength"]:
+            raise BoundsError(f"accessor {index} exceeds bufferView {view_index}")
+        values = [
+            struct.unpack_from("<" + fmt * width, binary, base + item * stride)
+            for item in range(count)
+        ]
+        if any(any(isinstance(value, float) and not math.isfinite(value) for value in row) for row in values):
+            raise FormatError(f"accessor {index} contains non-finite values")
+        decoded_accessors.append(values)
+        for label, fn in (("min", min), ("max", max)):
+            declared = accessor.get(label)
+            if declared is None:
+                continue
+            if not isinstance(declared, list) or len(declared) != width or not values:
+                raise FormatError(f"accessor {index} has invalid {label}")
+            actual = [fn(row[axis] for row in values) for axis in range(width)]
+            for expected, observed in zip(declared, actual):
+                if component_type == 5126:
+                    tolerance = max(1e-6, abs(float(observed)) * 1e-6)
+                    if abs(float(expected) - float(observed)) > tolerance:
+                        raise FormatError(f"accessor {index} {label} does not match payload")
+                elif expected != observed:
+                    raise FormatError(f"accessor {index} {label} does not match payload")
+
+    validated_indices = 0
+    meshes = document.get("meshes", [])
+    materials = document.get("materials", [])
+    if not isinstance(meshes, list) or any(not isinstance(item, dict) for item in meshes):
+        raise FormatError("GLB meshes is not an object array")
+    if not meshes:
+        raise FormatError("GLB has no mesh")
+    if not isinstance(materials, list):
+        raise FormatError("GLB materials is not an array")
+    for mesh_index, mesh_document in enumerate(meshes):
+        primitives = mesh_document.get("primitives", [])
+        if not isinstance(primitives, list) or any(not isinstance(item, dict) for item in primitives):
+            raise FormatError(f"mesh {mesh_index} primitives is not an object array")
+        for primitive_index, primitive in enumerate(primitives):
+            if primitive.get("mode", 4) != 4:
+                raise UnsupportedError(f"mesh {mesh_index} primitive {primitive_index} is not TRIANGLES")
+            attributes = primitive.get("attributes", {})
+            if not isinstance(attributes, dict):
+                raise FormatError(
+                    f"mesh {mesh_index} primitive {primitive_index} attributes is not an object"
+                )
+            position_index = attributes.get("POSITION")
+            if not isinstance(position_index, int) or not 0 <= position_index < len(accessors):
+                raise FormatError(f"mesh {mesh_index} primitive {primitive_index} lacks POSITION")
+            if "min" not in accessors[position_index] or "max" not in accessors[position_index]:
+                raise FormatError("POSITION accessor lacks mandatory min/max")
+            vertex_count = accessors[position_index]["count"]
+            for semantic, accessor_index in attributes.items():
+                if not isinstance(accessor_index, int) or not 0 <= accessor_index < len(accessors):
+                    raise FormatError(f"attribute {semantic} references invalid accessor")
+                if accessors[accessor_index]["count"] != vertex_count:
+                    raise FormatError(f"attribute {semantic} count differs from POSITION")
+            index_accessor = primitive.get("indices")
+            if not isinstance(index_accessor, int) or not 0 <= index_accessor < len(accessors):
+                raise FormatError("triangle primitive lacks a valid index accessor")
+            index_meta = accessors[index_accessor]
+            if index_meta.get("type") != "SCALAR" or index_meta.get("componentType") not in (5121, 5123, 5125):
+                raise FormatError("index accessor is not an unsigned scalar")
+            indices = [int(row[0]) for row in decoded_accessors[index_accessor]]
+            if len(indices) % 3 or any(value < 0 or value >= vertex_count for value in indices):
+                raise BoundsError("triangle index accessor contains invalid indices")
+            validated_indices += len(indices)
+            material_index = primitive.get("material")
+            if material_index is not None and (
+                not isinstance(material_index, int) or not 0 <= material_index < len(materials)
+            ):
+                raise FormatError("triangle primitive references an invalid material")
+    if not validated_indices:
+        raise FormatError("GLB has no validated triangle indices")
+    return {
+        "status": "VERIFIED", "size": len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
+        "chunks": chunks, "meshes": len(meshes),
+        "accessors": len(accessors), "buffer_views": len(views),
+        "validated_index_count": validated_indices,
+    }

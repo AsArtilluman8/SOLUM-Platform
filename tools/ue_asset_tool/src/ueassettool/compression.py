@@ -8,10 +8,12 @@ import shutil
 import struct
 import subprocess
 import tempfile
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
 from .errors import BoundsError, FormatError, UnsupportedError
+from .hashes import blake3_digest
 
 
 COMPRESSED_BUFFER_MAGIC = 0xB7756362
@@ -33,7 +35,11 @@ class CompressedBufferHeader:
 
     @property
     def block_size(self) -> int:
-        return 1 << self.block_size_exponent
+        return self.total_raw_size if self.block_size_exponent == 0 else 1 << self.block_size_exponent
+
+    @property
+    def block_table_size(self) -> int:
+        return 0 if self.block_size_exponent == 0 else 4 * self.block_count
 
 
 def read_compressed_buffer_header(path: str | Path, offset: int) -> CompressedBufferHeader:
@@ -52,22 +58,39 @@ def read_compressed_buffer_header(path: str | Path, offset: int) -> CompressedBu
         total_raw = int.from_bytes(raw[16:24], "big")
         total_compressed = int.from_bytes(raw[24:32], "big")
         raw_hash = raw[32:64].hex()
-        if not 0 < exponent < 63:
-            raise FormatError(f"invalid FCompressedBuffer block exponent {exponent}")
         if not 0 < block_count <= 1_000_000:
             raise FormatError(f"invalid FCompressedBuffer block count {block_count}")
-        expected_blocks = (total_raw + (1 << exponent) - 1) >> exponent
-        if block_count != expected_blocks:
-            raise FormatError(f"block count {block_count} != ceil(raw/block) {expected_blocks}")
-        if total_compressed < 64 + 4 * block_count or offset + total_compressed > size:
+        uncompressed_single_block = exponent == 0
+        if uncompressed_single_block:
+            if method != 0 or block_count != 1 or total_compressed != 64 + total_raw:
+                raise FormatError(
+                    "zero-exponent FCompressedBuffer is not the exact uncompressed single-block layout"
+                )
+        else:
+            if not 0 < exponent < 63:
+                raise FormatError(f"invalid FCompressedBuffer block exponent {exponent}")
+            expected_blocks = (total_raw + (1 << exponent) - 1) >> exponent
+            if block_count != expected_blocks:
+                raise FormatError(f"block count {block_count} != ceil(raw/block) {expected_blocks}")
+        table_size = 0 if uncompressed_single_block else 4 * block_count
+        if total_compressed < 64 + table_size or offset + total_compressed > size:
             raise BoundsError(
                 f"compressed buffer declares {total_compressed} bytes at 0x{offset:x}, file size is 0x{size:x}"
             )
-        table = f.read(4 * block_count)
-        block_sizes = tuple(int.from_bytes(table[i:i + 4], "big") for i in range(0, len(table), 4))
+        table = f.read(table_size)
+        actual_crc = zlib.crc32(raw[8:] + table) & 0xFFFFFFFF
+        if actual_crc != crc:
+            raise FormatError(
+                f"FCompressedBuffer header CRC32 0x{actual_crc:08x} != serialized 0x{crc:08x}"
+            )
+        block_sizes = (
+            (total_raw,)
+            if uncompressed_single_block
+            else tuple(int.from_bytes(table[i:i + 4], "big") for i in range(0, len(table), 4))
+        )
         if any(value <= 0 for value in block_sizes):
             raise FormatError("FCompressedBuffer contains a zero-sized block")
-        if 64 + 4 * block_count + sum(block_sizes) != total_compressed:
+        if 64 + table_size + sum(block_sizes) != total_compressed:
             raise FormatError("FCompressedBuffer block sizes do not sum to TotalCompressedSize")
     return CompressedBufferHeader(
         offset, crc, method, compressor, level, exponent, block_count,
@@ -208,7 +231,7 @@ def decompress_compressed_buffer(
         raise BoundsError(
             f"refusing {header.total_raw_size} output bytes; increase --max-output explicitly"
         )
-    data_start = offset + 64 + 4 * header.block_count
+    data_start = offset + 64 + header.block_table_size
     output = bytearray()
     helper = find_oodle_helper() if header.method == 3 else None
     with Path(path).open("rb") as f:
@@ -233,7 +256,85 @@ def decompress_compressed_buffer(
             remaining -= raw_size
     if remaining != 0 or len(output) != header.total_raw_size:
         raise FormatError("decompressed FCompressedBuffer length invariant failed")
+    actual_hash = blake3_digest(bytes(output)).hex()
+    if actual_hash != header.raw_hash:
+        raise FormatError(
+            f"FCompressedBuffer BLAKE3 {actual_hash} != serialized RawHash {header.raw_hash}"
+        )
     return header, bytes(output)
+
+
+def decompress_legacy_chunked_zlib(
+    path: str | Path,
+    offset: int,
+    stored_size: int,
+    expected_size: int,
+    *,
+    max_output: int = 2 * 1024 * 1024 * 1024,
+) -> tuple[dict[str, object], bytes]:
+    """Decode UE4 ``SerializeCompressed`` chunked-zlib with exact bounds."""
+    if expected_size < 0 or expected_size > max_output:
+        raise BoundsError(
+            f"refusing {expected_size} legacy-zlib output bytes; increase --max-output explicitly"
+        )
+    source = Path(path)
+    if offset < 0 or stored_size < 32 or offset + stored_size > source.stat().st_size:
+        raise BoundsError("legacy chunked-zlib range leaves its payload file")
+    with source.open("rb") as handle:
+        handle.seek(offset)
+        header = handle.read(32)
+        tag, reserved = struct.unpack_from("<II", header)
+        chunk_size, total_compressed, total_raw = struct.unpack_from("<QQQ", header, 8)
+        if tag != 0x9E2A83C1 or reserved != 0:
+            raise FormatError("legacy chunked-zlib package tag/reserved field is invalid")
+        if not chunk_size or total_raw != expected_size:
+            raise FormatError(
+                f"legacy chunked-zlib raw size {total_raw} != bulk element count {expected_size}"
+            )
+        chunk_count = (total_raw + chunk_size - 1) // chunk_size
+        if not 0 < chunk_count <= 1_000_000:
+            raise FormatError(f"legacy chunked-zlib chunk count {chunk_count} is invalid")
+        table = handle.read(16 * chunk_count)
+        if len(table) != 16 * chunk_count:
+            raise BoundsError("legacy chunked-zlib table is truncated")
+        chunks = [struct.unpack_from("<QQ", table, index * 16) for index in range(chunk_count)]
+        if sum(item[0] for item in chunks) != total_compressed:
+            raise FormatError("legacy chunked-zlib compressed chunk sizes do not sum to total")
+        if sum(item[1] for item in chunks) != total_raw:
+            raise FormatError("legacy chunked-zlib raw chunk sizes do not sum to total")
+        header_size = 32 + len(table)
+        if header_size + total_compressed != stored_size:
+            raise FormatError(
+                f"legacy chunked-zlib header+chunks {header_size + total_compressed} != bulk size {stored_size}"
+            )
+        output = bytearray()
+        compressed_sha256 = hashlib.sha256()
+        for compressed_size, raw_size in chunks:
+            compressed = handle.read(compressed_size)
+            if len(compressed) != compressed_size:
+                raise BoundsError("legacy chunked-zlib chunk is truncated")
+            compressed_sha256.update(compressed)
+            decoder = zlib.decompressobj()
+            raw = decoder.decompress(compressed, raw_size + 1)
+            raw += decoder.flush()
+            if decoder.unused_data or decoder.unconsumed_tail or not decoder.eof:
+                raise FormatError("legacy chunked-zlib stream has trailing or unconsumed data")
+            if len(raw) != raw_size:
+                raise FormatError(f"legacy zlib chunk decoded {len(raw)} bytes, expected {raw_size}")
+            output.extend(raw)
+    if len(output) != expected_size:
+        raise FormatError(f"legacy zlib output {len(output)} != expected {expected_size}")
+    return {
+        "format": "UE4 SerializeCompressed zlib",
+        "offset": offset,
+        "stored_size": stored_size,
+        "chunk_size": chunk_size,
+        "chunk_count": chunk_count,
+        "total_compressed_size": total_compressed,
+        "total_raw_size": total_raw,
+        "compressed_chunks_sha256": compressed_sha256.hexdigest(),
+        "raw_sha256": hashlib.sha256(output).hexdigest(),
+    }, bytes(output)
 
 
 def write_verified_output(path: str | Path, data: bytes) -> dict[str, object]:
@@ -241,4 +342,3 @@ def write_verified_output(path: str | Path, data: bytes) -> dict[str, object]:
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
     return {"path": str(target), "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
-

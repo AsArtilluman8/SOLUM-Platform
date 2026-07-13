@@ -272,14 +272,21 @@ def parse_legacy_bulk_data(reader: BinaryReader) -> LegacyBulkData:
     )
 
 
-def parse_mesh_description_bulk_data(reader: BinaryReader, *, end: int) -> MeshDescriptionBulkData:
+def parse_mesh_description_bulk_data(
+    reader: BinaryReader,
+    *,
+    end: int,
+    allow_legacy_registered_flag: bool = False,
+) -> MeshDescriptionBulkData:
     """Parse current FMeshDescriptionBulkData and require exact stream use."""
     start = reader.position
     if end - start < 68:
         raise UnsupportedError(
             f"mesh bulk metadata is {end - start} bytes; current FEditorBulkData layout needs 68"
         )
-    editor_bulk = parse_editor_bulk_data(reader)
+    editor_bulk = parse_editor_bulk_data(
+        reader, allow_legacy_registered_flag=allow_legacy_registered_flag,
+    )
     mesh_guid_raw = reader.read(16)
     guid_is_hash = reader.boolean32()
     if reader.position != end:

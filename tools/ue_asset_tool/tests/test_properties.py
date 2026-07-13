@@ -6,14 +6,15 @@ import unittest
 
 from ueassettool.binary import BinaryReader
 from ueassettool.model import FNameRef
-from ueassettool.properties import PropertyParser, TypeNode
+from ueassettool.properties import GUID_EDITOR, GUID_NIAGARA, PropertyParser, TypeNode
 
 
 class _Package:
-    names = ("None", "InputPin", "Keys", "StructProperty", "RichCurveKey")
+    names = ("None", "InputPin", "Keys", "StructProperty", "RichCurveKey", "VariableName")
 
-    def __init__(self, *, ue5: int = 1013):
+    def __init__(self, *, ue5: int = 1013, custom_versions: dict[str, int] | None = None):
         self.summary = SimpleNamespace(file_version_ue4=522, file_version_ue5=ue5)
+        self.custom_versions = custom_versions or {}
 
     def fname(self, raw: tuple[int, int]) -> FNameRef:
         index, number = raw
@@ -23,9 +24,19 @@ class _Package:
     def object_path(index: int) -> str:
         return "None" if index == 0 else f"Object[{index}]"
 
+    def custom_version(self, guid: str, default: int = -1) -> int:
+        return self.custom_versions.get(guid, default)
+
     @staticmethod
-    def custom_version(_guid: str, default: int = -1) -> int:
-        return default
+    def soft_object_path(index: int) -> dict[str, object]:
+        if index not in (0, 1):
+            raise AssertionError(index)
+        return {
+            "table_index": index,
+            "package": None if index == 0 else "/Game/Textures/T_Test",
+            "asset": None if index == 0 else "T_Test",
+            "sub_path": "",
+        }
 
 
 class ContainerPropertyTests(unittest.TestCase):
@@ -78,6 +89,74 @@ class ContainerPropertyTests(unittest.TestCase):
         self.assertEqual(value["mask"], {"enabled": 1, "r": 1, "g": 0, "b": 1, "a": 0})
         self.assertTrue(material["use_constant"])
         self.assertEqual(material["constant"], 0.75)
+
+    def test_base_text_array_item_consumes_exactly(self) -> None:
+        def fstring(value: str) -> bytes:
+            encoded = value.encode("utf-8") + b"\0"
+            return struct.pack("<i", len(encoded)) + encoded
+
+        item = struct.pack("<Ib", 0, 0)
+        item += fstring("") + fstring("0123456789ABCDEF") + fstring("Weather")
+        raw = struct.pack("<i", 1) + item
+        node = TypeNode("ArrayProperty", [TypeNode("TextProperty")])
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "text_array.bin"
+            path.write_bytes(raw)
+            with BinaryReader(path) as reader:
+                value = PropertyParser(_Package())._decode_value(reader, node, len(raw), {})
+                self.assertEqual(reader.position, len(raw))
+        self.assertEqual(value["count"], 1)
+        self.assertEqual(value["items"][0], {
+            "flags": 0,
+            "history_type": "Base",
+            "namespace": "",
+            "key": "0123456789ABCDEF",
+            "source": "Weather",
+        })
+
+    def test_modern_empty_text_reads_culture_invariant_marker(self) -> None:
+        raw = struct.pack("<IbI", 0, -1, 0)
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "empty_text.bin"
+            path.write_bytes(raw)
+            with BinaryReader(path) as reader:
+                value = PropertyParser(_Package(custom_versions={GUID_EDITOR: 31}))._decode_text(reader)
+                self.assertEqual(reader.position, len(raw))
+        self.assertEqual(value, {
+            "flags": 0, "history_type": "None", "culture_invariant_present": False,
+        })
+
+    def test_modern_niagara_variable_native_serializer(self) -> None:
+        raw = struct.pack("<ii", 5, 0)  # variable FName
+        raw += struct.pack("<ii", 0, 0)  # empty tagged type definition, None terminator
+        raw += struct.pack("<i", 4) + struct.pack("<f", 1.25)
+        node = TypeNode("StructProperty", [TypeNode("NiagaraVariable")])
+        package = _Package(custom_versions={GUID_NIAGARA: 64})
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "niagara_variable.bin"
+            path.write_bytes(raw)
+            with BinaryReader(path) as reader:
+                value = PropertyParser(package)._decode_struct(reader, node, len(raw))
+                self.assertEqual(reader.position, len(raw))
+        self.assertEqual(value["serialization"], "type-definition-registry")
+        self.assertEqual(value["name"], "VariableName")
+        self.assertEqual(value["data_hex"], struct.pack("<f", 1.25).hex())
+
+    def test_deduplicated_soft_object_path_index(self) -> None:
+        raw = struct.pack("<i", 1)
+        node = TypeNode("SoftObjectProperty")
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "soft_path.bin"
+            path.write_bytes(raw)
+            with BinaryReader(path) as reader:
+                value = PropertyParser(_Package(ue5=1013))._decode_value(reader, node, len(raw), {})
+                self.assertEqual(reader.position, len(raw))
+        self.assertEqual(value, {
+            "table_index": 1,
+            "package": "/Game/Textures/T_Test",
+            "asset": "T_Test",
+            "sub_path": "",
+        })
 
     def test_legacy_struct_array_inner_tag_and_rich_keys(self) -> None:
         key_a = struct.pack("<BBBffffff", 2, 0, 0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0)

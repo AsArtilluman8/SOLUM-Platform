@@ -305,7 +305,15 @@ def _reference_match(source: Path, relative: Path) -> list[dict[str, Any]]:
 
 
 def _run_check(command: list[str], cwd: Path, log: Path, name: str) -> dict[str, Any]:
-    process = subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    environment = os.environ.copy()
+    source_root = str(cwd / "tools" / "ue_asset_tool" / "src")
+    environment["PYTHONPATH"] = os.pathsep.join(
+        item for item in (source_root, environment.get("PYTHONPATH", "")) if item
+    )
+    process = subprocess.run(
+        command, cwd=cwd, env=environment, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    )
     text = process.stdout
     with log.open("a", encoding="utf-8") as target:
         target.write(f"\n$ {' '.join(command)}\n{text}")

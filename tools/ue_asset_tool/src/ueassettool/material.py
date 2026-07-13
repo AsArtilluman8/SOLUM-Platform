@@ -17,6 +17,19 @@ MATERIAL_ROOT_CLASSES = {
     "MaterialParameterCollection",
 }
 
+MATERIAL_INSTANCE_CLASSES = {"MaterialInstance", "MaterialInstanceConstant"}
+
+MATERIAL_PARAMETER_ARRAYS = {
+    "ScalarParameterValues": ("scalar", ("ParameterValue",)),
+    "VectorParameterValues": ("vector", ("ParameterValue",)),
+    "DoubleVectorParameterValues": ("double_vector", ("ParameterValue",)),
+    "TextureParameterValues": ("texture", ("ParameterValue",)),
+    "TextureCollectionParameterValues": ("texture_collection", ("ParameterValue",)),
+    "RuntimeVirtualTextureParameterValues": ("runtime_virtual_texture", ("ParameterValue",)),
+    "SparseVolumeTextureParameterValues": ("sparse_volume_texture", ("ParameterValue",)),
+    "FontParameterValues": ("font", ("FontValue", "FontPage")),
+}
+
 
 def _source(package: UnrealPackage) -> dict[str, Any]:
     version = package.summary.saved_by_engine_version
@@ -172,6 +185,89 @@ def _decoded_fields(value: Any) -> dict[str, Any]:
     }
 
 
+def _field_properties(value: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, dict) or not isinstance(value.get("properties"), list):
+        return {}
+    return {key: item for key, item in _property_keys(value["properties"])}
+
+
+def _decoded_property(item: dict[str, Any] | None) -> Any:
+    if item is None or not str(item.get("decode_status", "")).startswith("decoded"):
+        return None
+    return item.get("value")
+
+
+def _guid_valid(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    parts = value.split("-")
+    return len(parts) == 4 and all(len(part) == 8 and all(c in "0123456789abcdefABCDEF" for c in part) for part in parts)
+
+
+def _finite_serialized_value(value: Any) -> bool:
+    if isinstance(value, list):
+        return all(_finite_serialized_value(item) for item in value)
+    if not isinstance(value, dict):
+        return True
+    if "non_finite" in value:
+        return False
+    return all(_finite_serialized_value(item) for item in value.values())
+
+
+def _item_provenance(
+    container: dict[str, Any], index: int, fields: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "container": _provenance(container),
+        "element_index": index,
+        "fields": {name: _provenance(item) for name, item in fields.items()},
+    }
+
+
+def _parameter_info(fields: dict[str, dict[str, Any]]) -> tuple[dict[str, Any], list[str]]:
+    issues: list[str] = []
+    info_property = fields.get("ParameterInfo")
+    info_fields = _field_properties(_decoded_property(info_property))
+    name = _decoded_property(info_fields.get("Name"))
+    association = _decoded_property(info_fields.get("Association"))
+    index = _decoded_property(info_fields.get("Index"))
+    if not isinstance(name, str) or not name:
+        issues.append("ParameterInfo.Name is missing or not a non-empty FName")
+    if not isinstance(association, (str, int)):
+        issues.append("ParameterInfo.Association is missing or not decoded")
+    if not isinstance(index, int):
+        issues.append("ParameterInfo.Index is missing or not int32")
+    return {
+        "name": name,
+        "association": association,
+        "index": index,
+        "provenance": _provenance(info_property) if info_property else None,
+        "field_provenance": {key: _provenance(item) for key, item in info_fields.items()},
+    }, issues
+
+
+def _iter_nested_unsupported(value: Any, path: str = "") -> Iterator[tuple[str, dict[str, Any]]]:
+    if not isinstance(value, dict):
+        return
+    properties = value.get("properties")
+    if isinstance(properties, list):
+        for key, item in _property_keys(properties):
+            nested = f"{path}.{key}" if path else key
+            if not str(item.get("decode_status", "")).startswith("decoded"):
+                yield nested, item
+            else:
+                yield from _iter_nested_unsupported(item.get("value"), nested)
+    items = value.get("items")
+    if isinstance(items, list):
+        for index, item in enumerate(items):
+            yield from _iter_nested_unsupported(item, f"{path}[{index}]")
+    entries = value.get("entries")
+    if isinstance(entries, list):
+        for index, entry in enumerate(entries):
+            yield from _iter_nested_unsupported(entry.get("key"), f"{path}[{index}].key")
+            yield from _iter_nested_unsupported(entry.get("value"), f"{path}[{index}].value")
+
+
 class MaterialContractDecoder:
     """Build an exact editor material graph contract from serialized inputs."""
 
@@ -239,6 +335,372 @@ class MaterialContractDecoder:
             }
         return item, link
 
+    def _decode_native_tail(
+        self, index: int, decoded: dict[str, Any], properties: dict[str, dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        tail = decoded.get("trailing_native")
+        if not tail:
+            return None
+        export = self.package.exports[index - 1]
+        size = int(tail.get("size", -1))
+        preview = str(tail.get("preview_hex", ""))
+        try:
+            raw = bytes.fromhex(preview)
+        except ValueError:
+            raw = b""
+        if len(raw) != size or size % 4:
+            return {"status": "RAW_VERIFIED", "class": export.class_name, **tail}
+
+        labels: list[str] = []
+        if export.class_name in MATERIAL_INSTANCE_CLASSES:
+            # UMaterialInterface::Serialize and UMaterialInstance::Serialize
+            # both gained cached-data bool32 values in UE5.  An instance with
+            # a static permutation then appends SerializeInlineShaderMaps'
+            # int32 resource count.  Editor saves in this corpus contain no
+            # cached data or inline shader resources.
+            if self.package.summary.file_version_ue5:
+                labels.extend(("saved_cached_expression_data", "saved_cached_instance_data"))
+            if _decoded_property(properties.get("bHasStaticPermutationResource")) is True:
+                labels.append("inline_shader_map_count")
+        elif export.class_name == "Material":
+            version = self.package.summary.saved_by_engine_version
+            if self.package.summary.file_version_ue5 and version and version.major == 5 and version.minor >= 5:
+                labels.extend((
+                    "saved_cached_expression_data",
+                    "inline_shader_map_count",
+                    "force_nanite_usage",
+                ))
+            elif self.package.summary.file_version_ue5 and version and version.major == 5 and version.minor <= 1:
+                labels.extend((
+                    "inline_shader_map_count",
+                    "saved_cached_expression_data_deprecated",
+                ))
+            elif not self.package.summary.file_version_ue5:
+                labels.append("inline_shader_map_count")
+            else:
+                return {
+                    "status": "RAW_VERIFIED", "class": export.class_name,
+                    "reason": "material native layout is not pinned for this saved engine version",
+                    **tail,
+                }
+        elif export.class_name in ("MaterialEditorOnlyData", "MaterialInstanceEditorOnlyData"):
+            # UMaterialInterfaceEditorOnlyData::Serialize always appends this
+            # bool32 after its tagged properties.
+            labels.append("saved_cached_expression_editor_data")
+        else:
+            return {"status": "RAW_VERIFIED", "class": export.class_name, **tail}
+
+        if len(labels) * 4 != size:
+            return {
+                "status": "RAW_VERIFIED", "class": export.class_name,
+                "reason": f"expected {len(labels) * 4} native bytes from verified source path, found {size}",
+                **tail,
+            }
+        fields = []
+        issues: list[str] = []
+        for position, label in enumerate(labels):
+            value = int.from_bytes(raw[position * 4:position * 4 + 4], "little", signed=True)
+            if label.endswith("count"):
+                if value != 0:
+                    issues.append(f"{label}={value} requires shader-map payload decoding")
+            elif value not in (0, 1):
+                issues.append(f"{label} bool32 is {value}, expected 0 or 1")
+            elif value:
+                issues.append(f"{label}=true requires cached tagged-struct decoding")
+            fields.append({
+                "name": label,
+                "value": bool(value) if not label.endswith("count") else value,
+                "physical_offset": int(tail["physical_offset"]) + position * 4,
+                "size": 4,
+            })
+        return {
+            "status": "VERIFIED" if not issues else "RAW_VERIFIED",
+            "class": export.class_name,
+            "physical_offset": tail.get("physical_offset"),
+            "size": size,
+            "sha256": tail.get("sha256"),
+            "fields": fields,
+            "issues": issues,
+            "source_layouts": [
+                "UMaterialInterface::Serialize",
+                "UMaterialInstance::Serialize" if export.class_name in MATERIAL_INSTANCE_CLASSES
+                else "UMaterial::Serialize" if export.class_name == "Material"
+                else "UMaterialInterfaceEditorOnlyData::Serialize",
+                *( ["SerializeInlineShaderMaps"] if "inline_shader_map_count" in labels else [] ),
+            ],
+        }
+
+    def _material_instance_contract(
+        self, root_index: int, decoded_by_index: dict[int, dict[str, Any]],
+    ) -> dict[str, Any]:
+        package = self.package
+        decoded = decoded_by_index[root_index]
+        properties = _field_properties(decoded)
+        issues: list[str] = []
+        parent_property = properties.get("Parent")
+        parent = _decoded_property(parent_property)
+        if not isinstance(parent, dict) or not isinstance(parent.get("package_index"), int):
+            issues.append("Parent object reference is missing or not decoded")
+
+        parameters: list[dict[str, Any]] = []
+        identities: Counter[tuple[Any, ...]] = Counter()
+        for property_name, (kind, value_fields) in MATERIAL_PARAMETER_ARRAYS.items():
+            container = properties.get(property_name)
+            if container is None:
+                continue
+            value = _decoded_property(container)
+            if not isinstance(value, dict) or not isinstance(value.get("items"), list):
+                issues.append(f"{property_name} is not a decoded array")
+                continue
+            if value.get("count") != len(value["items"]):
+                issues.append(f"{property_name} count does not match decoded items")
+            for element_index, item in enumerate(value["items"]):
+                fields = _field_properties(item)
+                info, item_issues = _parameter_info(fields)
+                values = {name: _simple_value(_decoded_property(fields.get(name))) for name in value_fields}
+                if any(fields.get(name) is None for name in value_fields):
+                    item_issues.append(f"missing value field(s): {', '.join(value_fields)}")
+                if any(
+                    fields.get(name) is not None
+                    and not str(fields[name].get("decode_status", "")).startswith("decoded")
+                    for name in value_fields
+                ):
+                    item_issues.append("one or more parameter values are not decoded")
+                if not _finite_serialized_value(values):
+                    item_issues.append("parameter contains a non-finite numeric value")
+                expression_guid = _decoded_property(fields.get("ExpressionGUID"))
+                if expression_guid is not None and not _guid_valid(expression_guid):
+                    item_issues.append("ExpressionGUID is not a serialized FGuid")
+                identity = (kind, info["association"], info["index"], info["name"])
+                identities[identity] += 1
+                parameters.append({
+                    "kind": kind,
+                    **{key: info[key] for key in ("name", "association", "index")},
+                    "value": values[value_fields[0]] if len(value_fields) == 1 else values,
+                    "expression_guid": expression_guid,
+                    "status": "VERIFIED" if not item_issues else "UNSUPPORTED",
+                    "issues": item_issues,
+                    "provenance": _item_provenance(container, element_index, fields),
+                })
+        duplicates = [
+            {"kind": key[0], "association": key[1], "index": key[2], "name": key[3], "count": count}
+            for key, count in identities.items() if count > 1
+        ]
+        if duplicates:
+            issues.append("duplicate dynamic parameter identities")
+
+        static_parameters: list[dict[str, Any]] = []
+        static_sources: list[dict[str, Any]] = []
+        source_values: list[tuple[int, str, dict[str, Any], dict[str, Any]]] = []
+        for property_name in ("StaticParametersRuntime", "StaticParameters"):
+            prop = properties.get(property_name)
+            struct = _decoded_property(prop)
+            if prop is not None and isinstance(struct, dict):
+                source_values.append((root_index, property_name, prop, struct))
+
+        editor_ref = _decoded_property(properties.get("EditorOnlyData"))
+        editor_indices = {
+            int(editor_ref["package_index"])
+            for _ in (0,)
+            if isinstance(editor_ref, dict) and int(editor_ref.get("package_index", 0)) > 0
+        }
+        editor_indices.update(
+            index for index, export in enumerate(package.exports, 1)
+            if "MaterialInstanceEditorOnlyData" in str(export.class_name or "")
+            and export.outer_index == root_index
+        )
+        for editor_index in sorted(editor_indices):
+            editor = decoded_by_index.get(editor_index)
+            if not editor:
+                issues.append(f"EditorOnlyData export {editor_index} is not available")
+                continue
+            editor_properties = _field_properties(editor)
+            prop = editor_properties.get("StaticParameters")
+            struct = _decoded_property(prop)
+            if prop is not None and isinstance(struct, dict):
+                source_values.append((editor_index, "StaticParameters", prop, struct))
+
+        static_identities: Counter[tuple[Any, ...]] = Counter()
+        for source_index, source_name, source_property, struct in source_values:
+            struct_fields = _field_properties(struct)
+            static_sources.append({
+                "export_index": source_index,
+                "object": package.object_path(source_index),
+                "property": source_name,
+                "provenance": _provenance(source_property),
+            })
+            for array_name, container in struct_fields.items():
+                array_value = _decoded_property(container)
+                if not isinstance(array_value, dict) or not isinstance(array_value.get("items"), list):
+                    issues.append(f"{source_name}.{array_name} is not a decoded array")
+                    continue
+                for element_index, item in enumerate(array_value["items"]):
+                    fields = _field_properties(item)
+                    info, item_issues = _parameter_info(fields)
+                    expression_guid = _decoded_property(fields.get("ExpressionGUID"))
+                    if expression_guid is not None and not _guid_valid(expression_guid):
+                        item_issues.append("ExpressionGUID is not a serialized FGuid")
+                    override = _decoded_property(fields.get("bOverride"))
+                    if override is not None and not isinstance(override, bool):
+                        item_issues.append("bOverride is not bool")
+                    serialized_value = {
+                        name: _simple_value(_decoded_property(prop))
+                        for name, prop in fields.items()
+                        if name not in ("ParameterInfo", "ExpressionGUID", "bOverride")
+                    }
+                    if not _finite_serialized_value(serialized_value):
+                        item_issues.append("static parameter contains a non-finite numeric value")
+                    kind = {
+                        "StaticSwitchParameters": "static_switch",
+                        "StaticComponentMaskParameters": "static_component_mask",
+                        "TerrainLayerWeightParameters": "terrain_layer_weight",
+                        "MaterialLayersParameters": "material_layers",
+                    }.get(array_name, array_name)
+                    identity = (kind, info["association"], info["index"], info["name"])
+                    static_identities[identity] += 1
+                    static_parameters.append({
+                        "kind": kind,
+                        **{key: info[key] for key in ("name", "association", "index")},
+                        "value": serialized_value,
+                        "override": override,
+                        "expression_guid": expression_guid,
+                        "status": "VERIFIED" if not item_issues else "UNSUPPORTED",
+                        "issues": item_issues,
+                        "source_export": source_index,
+                        "source_property": source_name,
+                        "provenance": _item_provenance(container, element_index, fields),
+                    })
+        static_duplicates = [
+            {"kind": key[0], "association": key[1], "index": key[2], "name": key[3], "count": count}
+            for key, count in static_identities.items() if count > 1
+        ]
+        if static_duplicates:
+            issues.append("duplicate static parameter identities")
+
+        base_property = properties.get("BasePropertyOverrides")
+        base_fields = _field_properties(_decoded_property(base_property))
+        base_overrides = {
+            "serialized_fields": {
+                name: _simple_value(_decoded_property(item)) for name, item in base_fields.items()
+            },
+            "override_flags": {
+                name: _decoded_property(item) for name, item in base_fields.items()
+                if name.startswith("bOverride_")
+            },
+            "provenance": {
+                "container": _provenance(base_property) if base_property else None,
+                "fields": {name: _provenance(item) for name, item in base_fields.items()},
+            },
+            "semantics": "Serialized fields are reported exactly; a value is active only when its matching bOverride_* flag says so.",
+        }
+
+        native = self._decode_native_tail(root_index, decoded, properties)
+        editor_native = []
+        for editor_index in sorted(editor_indices):
+            editor = decoded_by_index.get(editor_index)
+            if editor:
+                record = self._decode_native_tail(editor_index, editor, _field_properties(editor))
+                if record:
+                    editor_native.append({"export_index": editor_index, **record})
+        native_records = ([{"export_index": root_index, **native}] if native else []) + editor_native
+        if any(item["status"] != "VERIFIED" for item in native_records):
+            issues.append("one or more native serialization suffixes remain raw")
+        if any(item["status"] != "VERIFIED" for item in parameters + static_parameters):
+            issues.append("one or more parameter records failed validation")
+        return {
+            "status": "VERIFIED" if not issues else "RAW_VERIFIED",
+            "export_index": root_index,
+            "object": package.object_path(root_index),
+            "class": package.exports[root_index - 1].class_name,
+            "parent": parent,
+            "parent_provenance": _provenance(parent_property) if parent_property else None,
+            "parameter_state_id": _decoded_property(properties.get("ParameterStateId")),
+            "dynamic_parameters": parameters,
+            "dynamic_parameter_count": len(parameters),
+            "duplicate_dynamic_parameters": duplicates,
+            "static_parameters": static_parameters,
+            "static_parameter_count": len(static_parameters),
+            "duplicate_static_parameters": static_duplicates,
+            "static_sources": static_sources,
+            "base_property_overrides": base_overrides,
+            "native_serialization": native_records,
+            "issues": issues,
+            "semantics": "Exact serialized local overrides; effective inherited values require resolving the parent material chain.",
+        }
+
+    def _parameter_collection_contract(
+        self, root_index: int, decoded: dict[str, Any],
+    ) -> dict[str, Any]:
+        properties = _field_properties(decoded)
+        issues: list[str] = []
+        state_id = _decoded_property(properties.get("StateId"))
+        if not _guid_valid(state_id):
+            issues.append("StateId is not a serialized FGuid")
+        parameters: list[dict[str, Any]] = []
+        names: Counter[str] = Counter()
+        ids: Counter[str] = Counter()
+        for property_name, kind in (("ScalarParameters", "scalar"), ("VectorParameters", "vector")):
+            container = properties.get(property_name)
+            value = _decoded_property(container)
+            if container is None:
+                continue
+            if not isinstance(value, dict) or not isinstance(value.get("items"), list):
+                issues.append(f"{property_name} is not a decoded array")
+                continue
+            if value.get("count") != len(value["items"]):
+                issues.append(f"{property_name} count does not match decoded items")
+            for element_index, item in enumerate(value["items"]):
+                fields = _field_properties(item)
+                item_issues: list[str] = []
+                name = _decoded_property(fields.get("ParameterName"))
+                identifier = _decoded_property(fields.get("Id"))
+                default = _decoded_property(fields.get("DefaultValue"))
+                if not isinstance(name, str) or not name:
+                    item_issues.append("ParameterName is missing or empty")
+                if not _guid_valid(identifier):
+                    item_issues.append("Id is not a serialized FGuid")
+                if fields.get("DefaultValue") is None:
+                    item_issues.append("DefaultValue is missing")
+                elif not str(fields["DefaultValue"].get("decode_status", "")).startswith("decoded"):
+                    item_issues.append("DefaultValue is not decoded")
+                if not _finite_serialized_value(default):
+                    item_issues.append("DefaultValue contains a non-finite number")
+                if isinstance(name, str):
+                    names[name] += 1
+                if isinstance(identifier, str):
+                    ids[identifier] += 1
+                parameters.append({
+                    "kind": kind,
+                    "name": name,
+                    "id": identifier,
+                    "default_value": _simple_value(default),
+                    "status": "VERIFIED" if not item_issues else "UNSUPPORTED",
+                    "issues": item_issues,
+                    "provenance": _item_provenance(container, element_index, fields),
+                })
+        duplicate_names = sorted(name for name, count in names.items() if count > 1)
+        duplicate_ids = sorted(identifier for identifier, count in ids.items() if count > 1)
+        if duplicate_names:
+            issues.append("duplicate collection parameter names")
+        if duplicate_ids:
+            issues.append("duplicate collection parameter IDs")
+        if any(item["status"] != "VERIFIED" for item in parameters):
+            issues.append("one or more collection parameters failed validation")
+        return {
+            "status": "VERIFIED" if not issues else "RAW_VERIFIED",
+            "export_index": root_index,
+            "object": self.package.object_path(root_index),
+            "state_id": state_id,
+            "parameters": parameters,
+            "parameter_count": len(parameters),
+            "scalar_parameter_count": sum(item["kind"] == "scalar" for item in parameters),
+            "vector_parameter_count": sum(item["kind"] == "vector" for item in parameters),
+            "duplicate_names": duplicate_names,
+            "duplicate_ids": duplicate_ids,
+            "issues": issues,
+            "semantics": "Exact serialized names, stable IDs and defaults; runtime values are supplied by the owning world.",
+        }
+
     def decode(self) -> dict[str, Any]:
         package = self.package
         expression_indices = [
@@ -265,6 +727,7 @@ class MaterialContractDecoder:
                 or export.class_name in MATERIAL_ROOT_CLASSES
                 or "MaterialEditorOnlyData" in str(export.class_name or "")
                 or "MaterialFunctionEditorOnlyData" in str(export.class_name or "")
+                or "MaterialInstanceEditorOnlyData" in str(export.class_name or "")
             )
         ]
         for index in relevant_indices:
@@ -278,16 +741,21 @@ class MaterialContractDecoder:
                     "class": export.class_name,
                     **decoded["trailing_native"],
                 })
-            for item in decoded.get("properties", []):
+            for key, item in _property_keys(decoded.get("properties", [])):
+                failures = []
                 if not str(item.get("decode_status", "")).startswith("decoded"):
+                    failures.append((key, item))
+                else:
+                    failures.extend(_iter_nested_unsupported(item.get("value"), key))
+                for property_path, failed in failures:
                     unsupported.append({
                         "export_index": index,
                         "object": package.object_path(index),
                         "class": export.class_name,
-                        "property": item.get("name"),
-                        "type": item.get("type", {}).get("display"),
-                        "reason": item.get("decode_note"),
-                        "provenance": _provenance(item),
+                        "property": property_path,
+                        "type": failed.get("type", {}).get("display"),
+                        "reason": failed.get("decode_note"),
+                        "provenance": _provenance(failed),
                     })
             if export.class_name in MATERIAL_ROOT_CLASSES:
                 roots.append({
@@ -433,6 +901,10 @@ class MaterialContractDecoder:
         invalid_links = [item for item in links if item["validation"] != "VERIFIED"]
         input_count = sum(len(node["inputs"]) for node in nodes) + len(material_outputs)
         connected_input_count = len(links)
+        graph_applicable = bool(expression_indices) or any(
+            root["class"] in ("Material", "MaterialFunction", "MaterialFunctionInstance")
+            for root in roots
+        )
         graph_verified = (
             bool(nodes)
             and not unsupported
@@ -493,16 +965,60 @@ class MaterialContractDecoder:
             }
             for index, item in enumerate(package.imports, 1)
         ]
-        overall_status = "UNSUPPORTED" if not nodes else "RAW_VERIFIED" if trailing_native else "VERIFIED"
-        if unsupported:
-            overall_status = "RAW_VERIFIED"
+        instance_contracts = [
+            self._material_instance_contract(index, decoded_by_index)
+            for index in relevant_indices
+            if package.exports[index - 1].class_name in MATERIAL_INSTANCE_CLASSES
+        ]
+        collection_contracts = [
+            self._parameter_collection_contract(index, decoded_by_index[index])
+            for index in relevant_indices
+            if package.exports[index - 1].class_name == "MaterialParameterCollection"
+        ]
+        native_serialization = []
+        for item in trailing_native:
+            export_index = int(item["export_index"])
+            decoded = decoded_by_index[export_index]
+            record = self._decode_native_tail(export_index, decoded, _field_properties(decoded))
+            if record:
+                native_serialization.append({"export_index": export_index, **record})
+        native_verified_indices = {
+            int(item["export_index"])
+            for item in native_serialization
+            if item["status"] == "VERIFIED"
+        }
+        unresolved_trailing_native = [
+            item for item in trailing_native if int(item["export_index"]) not in native_verified_indices
+        ]
+        if instance_contracts:
+            asset_kind = "material_instance"
+            overall_status = (
+                "VERIFIED"
+                if all(item["status"] == "VERIFIED" for item in instance_contracts)
+                and not unsupported and not unresolved_trailing_native
+                else "RAW_VERIFIED"
+            )
+        elif collection_contracts:
+            asset_kind = "material_parameter_collection"
+            overall_status = (
+                "VERIFIED"
+                if all(item["status"] == "VERIFIED" for item in collection_contracts)
+                and not unsupported and not unresolved_trailing_native
+                else "RAW_VERIFIED"
+            )
+        else:
+            asset_kind = "material_graph"
+            overall_status = "UNSUPPORTED" if not nodes else "VERIFIED"
+            if unsupported or unresolved_trailing_native or not graph_verified:
+                overall_status = "RAW_VERIFIED"
         return {
             "schema": "ueassettool.material-contract/v1",
             "status": overall_status,
+            "asset_kind": asset_kind,
             "source": _source(package),
             "roots": roots,
             "graph": {
-                "status": "VERIFIED" if graph_verified else "UNSUPPORTED",
+                "status": "VERIFIED" if graph_verified else "UNSUPPORTED" if graph_applicable else "NOT_APPLICABLE",
                 "node_count": len(nodes),
                 "input_count": input_count,
                 "connected_input_count": connected_input_count,
@@ -524,10 +1040,13 @@ class MaterialContractDecoder:
             "function_inputs": function_inputs,
             "function_outputs": function_outputs,
             "function_calls": function_calls,
+            "material_instances": instance_contracts,
+            "material_parameter_collections": collection_contracts,
             "references": all_references,
             "dependencies": dependencies,
             "unsupported": unsupported,
-            "trailing_native": trailing_native,
+            "native_serialization": native_serialization,
+            "trailing_native": unresolved_trailing_native,
             "semantics": (
                 "Exact serialized editor material expression graph and defaults. "
                 "This is not generated HLSL and does not claim cooked shader bytecode."

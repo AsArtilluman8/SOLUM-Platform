@@ -21,7 +21,9 @@ TAG_SKIPPED = 0x20
 TAG_KNOWN_MASK = 0x3F
 EXT_OVERRIDABLE_INFORMATION = 0x02
 GUID_NIAGARA = "fcf57afa-50764283-b9a9e658-ffa02d32"
+GUID_EDITOR = "e4b068ed-f49442e9-a231da0b-2e46bb41"
 NIAGARA_VARIABLES_USE_TYPEDEF_REGISTRY = 64
+EDITOR_CULTURE_INVARIANT_TEXT_KEY_STABILITY = 31
 
 
 @dataclass
@@ -263,6 +265,35 @@ class PropertyParser:
             raise UnsupportedError(f"material input struct {name} is not verified")
         return result
 
+    def _decode_text(self, r: BinaryReader) -> dict[str, Any]:
+        """Decode the self-delimiting serialized ``FText`` histories we prove.
+
+        ``FText::SerializeText`` writes a uint32 flags value followed by an
+        int8 ``ETextHistoryType``.  The base history then contains namespace,
+        key and source ``FString`` values.  Other histories have materially
+        different layouts and deliberately remain unsupported until their
+        individual serializers are implemented.
+        """
+        flags = r.u32()
+        history_type = r.i8()
+        if history_type == -1:
+            result: dict[str, Any] = {"flags": flags, "history_type": "None"}
+            if self.package.custom_version(GUID_EDITOR) >= EDITOR_CULTURE_INVARIANT_TEXT_KEY_STABILITY:
+                present = r.boolean32()
+                result["culture_invariant_present"] = present
+                if present:
+                    result["source"] = r.fstring()
+            return result
+        if history_type == 0:
+            return {
+                "flags": flags,
+                "history_type": "Base",
+                "namespace": r.fstring(),
+                "key": r.fstring(),
+                "source": r.fstring(),
+            }
+        raise UnsupportedError(f"FText history type {history_type} has no verified decoder")
+
     def _read_legacy_array_struct_tag(self, r: BinaryReader, end: int) -> tuple[TypeNode, dict[str, Any]]:
         """Read the inner FPropertyTag written for pre-complete-type arrays.
 
@@ -313,9 +344,44 @@ class PropertyParser:
             metadata["extensions"] = extensions
         return TypeNode("StructProperty", [TypeNode(struct_name)]), metadata
 
+    def _decode_niagara_variable(self, r: BinaryReader, struct_name: str, end: int) -> dict[str, Any]:
+        """Decode the exact FNiagaraVariable serializers from NiagaraModule.cpp.
+
+        Modern Niagara writes FName, FNiagaraTypeDefinitionHandle and then
+        VarData/Offset. Older packages return false from the native serializer
+        and therefore use the self-delimiting tagged struct fallback.
+        """
+        if self.package.custom_version(GUID_NIAGARA) < NIAGARA_VARIABLES_USE_TYPEDEF_REGISTRY:
+            tagged = self._read_property_list(r, end)
+            if not tagged["terminated"]:
+                raise UnsupportedError(f"legacy {struct_name} lacks a None terminator")
+            return {"serialization": "legacy-tagged", **tagged}
+        variable_name = self._fname(r).display
+        type_definition = self._read_property_list(r, end)
+        if not type_definition["terminated"]:
+            raise UnsupportedError(f"{struct_name} type definition lacks a None terminator")
+        result: dict[str, Any] = {
+            "serialization": "type-definition-registry",
+            "name": variable_name,
+            "type_definition": type_definition,
+        }
+        if struct_name == "NiagaraVariable":
+            count = r.count("Niagara variable data", maximum=1 << 30)
+            data = r.read(count)
+            result.update(
+                data_size=count,
+                data_hex=data.hex(),
+                data_sha256=hashlib.sha256(data).hexdigest(),
+            )
+        elif struct_name == "NiagaraVariableWithOffset":
+            result["offset"] = r.i32()
+        return result
+
     def _decode_struct(self, r: BinaryReader, node: TypeNode, end: int) -> Any:
         name = self._struct_name(node)
         size = end - r.position
+        if name in ("NiagaraVariable", "NiagaraVariableBase", "NiagaraVariableWithOffset"):
+            return self._decode_niagara_variable(r, name, end)
         if name == "ExpressionInput" and size == 36:
             return self._decode_expression_input(r)
         material_input_sizes = {
@@ -366,6 +432,13 @@ class PropertyParser:
                 "leave_tangent": _safe_float(r.f32()),
                 "leave_tangent_weight": _safe_float(r.f32()),
             }
+        if name == "SoftObjectPath":
+            if self.summary.file_version_ue5 >= ver.UE5_ADD_SOFTOBJECTPATH_LIST:
+                if size != 4:
+                    raise UnsupportedError(f"deduplicated SoftObjectPath size {size}, expected 4")
+                return self.package.soft_object_path(r.i32())
+            asset_path = self._fname(r).display
+            return {"asset_path": None if asset_path == "None" else asset_path, "sub_path": r.fstring()}
         if name in ("RichCurve", "RuntimeFloatCurve"):
             return self._read_nested_properties(r, end)
 
@@ -412,6 +485,8 @@ class PropertyParser:
             return {"package_index": index, "object": self.package.object_path(index)}
         if name in ("StrProperty", "StringProperty"):
             return r.fstring()
+        if name == "TextProperty":
+            return self._decode_text(r)
         if name == "StructProperty":
             struct_name = self._struct_name(node)
             fixed = {"Guid": 16, "FGuid": 16, "LinearColor": 16, "Color": 4, "Vector2f": 8,
@@ -433,27 +508,7 @@ class PropertyParser:
         if node.name == "StructProperty":
             struct_name = self._struct_name(node)
             if struct_name in ("NiagaraVariable", "NiagaraVariableBase", "NiagaraVariableWithOffset"):
-                if self.package.custom_version(GUID_NIAGARA) < NIAGARA_VARIABLES_USE_TYPEDEF_REGISTRY:
-                    raise UnsupportedError(
-                        f"{struct_name} predates VariablesUseTypeDefRegistry and needs its legacy decoder"
-                    )
-                variable_name = self._fname(r).display
-                type_definition = self._read_property_list(r, end)
-                if not type_definition["terminated"]:
-                    raise UnsupportedError(f"{struct_name} type definition lacks a None terminator")
-                result: dict[str, Any] = {
-                    "name": variable_name,
-                    "type_definition": type_definition,
-                }
-                if struct_name == "NiagaraVariable":
-                    count = r.count("Niagara variable data", maximum=1 << 30)
-                    data = r.read(count)
-                    result["data_size"] = count
-                    result["data_hex"] = data.hex()
-                    result["data_sha256"] = hashlib.sha256(data).hexdigest()
-                elif struct_name == "NiagaraVariableWithOffset":
-                    result["offset"] = r.i32()
-                return result
+                return self._decode_niagara_variable(r, struct_name, end)
             if struct_name in {
                 "Guid", "FGuid", "LinearColor", "Color", "Vector2f", "Vector2D", "Vector2d",
                 "Vector3f", "Vector3d", "RichCurveKey", "IntPoint", "IntVector",
@@ -502,6 +557,8 @@ class PropertyParser:
             return self._fname(r).display
         if name in ("StrProperty", "StringProperty"):
             return r.fstring()
+        if name == "TextProperty":
+            return self._decode_text(r)
         if name in (
             "ObjectProperty", "ObjectPtrProperty", "ClassProperty", "ClassPtrProperty", "InterfaceProperty",
             "WeakObjectProperty", "LazyObjectProperty",
@@ -511,13 +568,12 @@ class PropertyParser:
             index = r.i32()
             return {"package_index": index, "object": self.package.object_path(index)}
         if name in ("SoftObjectProperty", "SoftClassProperty"):
-            if self.summary.file_version_ue5 >= ver.UE5_FSOFTOBJECTPATH_REMOVE_ASSET_PATH_FNAMES:
-                package_name = self._fname(r).display
-                asset_name = self._fname(r).display
-                sub_path = r.fstring()
-                return {"package": package_name, "asset": asset_name, "sub_path": sub_path}
+            if self.summary.file_version_ue5 >= ver.UE5_ADD_SOFTOBJECTPATH_LIST:
+                if size != 4:
+                    raise UnsupportedError(f"deduplicated {name} size {size}, expected 4")
+                return self.package.soft_object_path(r.i32())
             asset_path = self._fname(r).display
-            return {"asset_path": asset_path, "sub_path": r.fstring()}
+            return {"asset_path": None if asset_path == "None" else asset_path, "sub_path": r.fstring()}
         if name == "StructProperty":
             return self._decode_struct(r, node, end)
         if name == "ArrayProperty":

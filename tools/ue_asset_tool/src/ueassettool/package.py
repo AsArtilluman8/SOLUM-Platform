@@ -26,6 +26,7 @@ class UnrealPackage:
             self.summary = self._read_summary()
             self._validate_summary()
             self.names = self._read_names()
+            self.soft_object_paths = self._read_soft_object_paths()
             self.imports = self._read_imports()
             self.exports = self._read_exports()
             self._resolve_exports()
@@ -264,6 +265,39 @@ class UnrealPackage:
             result.append(ObjectImport(class_package, class_name, outer_index, object_name, package_name, optional))
         return result
 
+    def _read_soft_object_paths(self) -> list[dict[str, Any]]:
+        """Read UE5's package-level FSoftObjectPath deduplication table."""
+        s, r = self.summary, self.reader
+        if s.file_version_ue5 < ver.UE5_ADD_SOFTOBJECTPATH_LIST or not s.soft_object_paths_count:
+            return []
+        if s.soft_object_paths_offset <= 0 or s.soft_object_paths_offset >= r.size:
+            raise BoundsError(
+                f"soft object path table offset 0x{s.soft_object_paths_offset:x} is outside package"
+            )
+        old = r.position
+        r.seek(s.soft_object_paths_offset)
+        result: list[dict[str, Any]] = []
+        try:
+            for _ in range(s.soft_object_paths_count):
+                package_name = self.fname(r.fname_raw()).display
+                asset_name = self.fname(r.fname_raw()).display
+                sub_path = r.fstring()
+                result.append({
+                    "package": None if package_name == "None" else package_name,
+                    "asset": None if asset_name == "None" else asset_name,
+                    "sub_path": sub_path,
+                })
+        finally:
+            r.seek(old)
+        return result
+
+    def soft_object_path(self, index: int) -> dict[str, Any]:
+        if not 0 <= index < len(self.soft_object_paths):
+            raise FormatError(
+                f"soft object path index {index} outside 0..{len(self.soft_object_paths) - 1}"
+            )
+        return {"table_index": index, **self.soft_object_paths[index]}
+
     def _read_exports(self) -> list[ObjectExport]:
         r, s = self.reader, self.summary
         r.seek(s.export_offset)
@@ -422,6 +456,7 @@ class UnrealPackage:
             },
             "summary": to_plain(self.summary),
             "names": [to_plain(x) for x in self.names],
+            "soft_object_paths": self.soft_object_paths,
             "imports": [to_plain(x) for x in self.imports],
             "exports": [to_plain(x) for x in self.exports],
         }

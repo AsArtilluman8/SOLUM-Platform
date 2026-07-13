@@ -3,7 +3,11 @@ import unittest
 import zlib
 
 from ueassettool.errors import FormatError
-from ueassettool.media import _decode_uedelta_bgra8, validate_jpeg, validate_png, validate_wav
+from ueassettool.media import (
+    _decode_uedelta_bgra8, _encode_source_hdr, _encode_source_npy,
+    _ogg_crc32, validate_hdr, validate_jpeg, validate_npy, validate_ogg,
+    validate_png, validate_wav,
+)
 
 
 def png_chunk(kind: bytes, payload: bytes) -> bytes:
@@ -11,6 +15,18 @@ def png_chunk(kind: bytes, payload: bytes) -> bytes:
 
 
 class MediaTests(unittest.TestCase):
+    def test_ogg_opus_pages_require_crc_sequence_and_eos(self) -> None:
+        packet = b"OpusHead" + bytes((1, 2)) + struct.pack("<HIhB", 312, 48000, 0, 0)
+        page = bytearray(b"OggS" + bytes((0, 0x06)))
+        page += struct.pack("<QII", 0, 0x12345678, 0)
+        page += b"\0\0\0\0" + bytes((1, len(packet))) + packet
+        page[22:26] = struct.pack("<I", _ogg_crc32(page))
+        result = validate_ogg(bytes(page))
+        self.assertEqual((result["codec"], result["channels"]), ("Opus", 2))
+        page[-1] ^= 1
+        with self.assertRaisesRegex(FormatError, "page CRC32"):
+            validate_ogg(bytes(page))
+
     def test_uedelta_inverse_resets_every_32_rows_and_checks_extrema(self) -> None:
         width, height = 2, 33
         raw = bytearray()
@@ -61,6 +77,48 @@ class MediaTests(unittest.TestCase):
         result = validate_jpeg(raw)
         self.assertEqual((result["width"], result["height"], result["components"]), (2, 1, 3))
 
+    def test_bgre8_uedelta_selects_unique_source_verified_reset(self) -> None:
+        width, height = 8, 64
+        raw = bytearray()
+        for y in range(height):
+            for x in range(width):
+                raw.extend((205 + (x % 2), 203 + (y % 3), 207 + (y % 4), 127))
+        delta = bytearray(raw)
+        stride = width * 4
+        for y in range(1, height):
+            row, previous = y * stride, (y - 1) * stride
+            for x in range(stride):
+                delta[row + x] = (raw[row + x] - raw[previous + x]) & 255
+        scale = 2.0 ** (127 - 136)
+        color_info = {
+            "items": [{"properties": [
+                {"name": "ColorMin", "decode_status": "decoded", "value": {
+                    "r": (207.5) * scale, "g": (203.5) * scale,
+                    "b": (205.5) * scale, "a": 1.0,
+                }},
+                {"name": "ColorMax", "decode_status": "decoded", "value": {
+                    "r": (210.5) * scale, "g": (205.5) * scale,
+                    "b": (206.5) * scale, "a": 1.0,
+                }},
+            ]}]
+        }
+        decoded, validation = _decode_uedelta_bgra8(
+            bytes(delta), width=width, height=height, source_format="TSF_BGRE8",
+            num_mips=1, num_slices=1, layer_color_info=color_info,
+        )
+        self.assertEqual(decoded, bytes(raw))
+        self.assertEqual(validation["predictor_reset_rows"], 64)
+        hdr = _encode_source_hdr(decoded, width, height, "TSF_BGRE8")
+        self.assertEqual(validate_hdr(hdr)["channels"], "RGBE")
+
+    def test_volume_npy_layout_and_length(self) -> None:
+        raw = bytes((3, 2, 1, 4, 7, 6, 5, 8))
+        encoded, layout = _encode_source_npy(raw, 2, 1, 1, "TSF_BGRA8")
+        validation = validate_npy(encoded)
+        self.assertEqual(validation["shape"], [1, 1, 2, 4])
+        self.assertEqual(layout["channel_order"], "RGBA")
+        self.assertTrue(encoded.endswith(bytes((1, 2, 3, 4, 5, 6, 7, 8))))
+
     def test_png_crc_and_dimensions(self) -> None:
         data = b"\x89PNG\r\n\x1a\n"
         data += png_chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 0, 0, 0, 0))
@@ -79,6 +137,10 @@ class MediaTests(unittest.TestCase):
         wav = b"RIFF" + struct.pack("<I", len(body) + 4) + b"WAVE" + body
         result = validate_wav(wav)
         self.assertEqual(result["sample_rate"], 44100)
+        bad_rate = bytearray(wav)
+        struct.pack_into("<I", bad_rate, 28, 1)
+        with self.assertRaisesRegex(FormatError, "byte rate"):
+            validate_wav(bytes(bad_rate))
         with self.assertRaisesRegex(FormatError, "RIFF length"):
             validate_wav(wav + b"x")
 

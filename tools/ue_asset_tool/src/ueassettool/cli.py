@@ -87,9 +87,9 @@ def build_parser() -> argparse.ArgumentParser:
         media.add_argument("--max-output", type=int, default=2 * 1024 * 1024 * 1024)
     for command, help_text in (
         ("export-blueprint", "export Blueprint properties and graph contract"),
-        ("export-niagara", "export Niagara parameters, curves and graph contract"),
+        ("export-niagara", "export Niagara scripts, parameters, dependencies and graph contract"),
         ("export-metasound", "export MetaSound property/reference contract"),
-        ("export-material", "export exact Material/Material Function expression graph contract"),
+        ("export-material", "export exact Material/Function/Instance/Parameter Collection contract"),
         ("export-curve", "export exact CurveFloat/Vector/LinearColor keys"),
         ("contract", "auto-detect and export the strongest truthful asset contract"),
     ):

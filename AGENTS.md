@@ -35,10 +35,61 @@ Tools skipped: reason.
 - не добавлять visual features до control truth;
 - не раскрывать private user/device/account details.
 
+## Cortex bootstrap
+
+Для любой нетривиальной задачи по SOLUM, UDS, renderer, assets, VFX, editor, diagnostics или architecture используй Cortex как проектный memory/router, если он доступен.
+
+1. Найди Cortex через `CORTEX_ROOT`, соседний repo `../cortex-memory-ultimate` или известный Android/Termux workspace path.
+2. Запусти один route-запрос:
+
+```bash
+python "$CORTEX_ROOT/scripts/cortex.py" route "<user request>" --json
+```
+
+3. Прочитай возвращённый project `state.md`, затем максимум два дополнительных memory/skill файла.
+4. Для SOLUM загружай `PROJECTS/solum/state.md`; для UDS также `PROJECTS/uds/state.md`.
+5. Не читай весь Cortex vault и не копируй полный чат в память.
+6. Текущий repo, текущие artifacts и свежие tests важнее Cortex summary.
+7. Если Cortex недоступен или сломан, не имитируй его использование. Укажи это в PRE-PATCH CHECK/RESULT и продолжай по локальным docs.
+
+Разрешён read-only доступ к явно найденному Cortex repo для routing/memory/skills. Редактирование вне текущего repo запрещено без прямой cross-repo команды пользователя.
+
+После проверенного этапа предлагай/update Cortex state только если результат подтверждён source evidence, tests и, когда разрешено, logical commit. Не сохраняй неподтверждённые гипотезы как durable truth.
+
+## Mandatory Codex model decision
+
+Перед тем как принять или сформировать нетривиальную Codex-задачу, прочитай:
+
+```text
+docs/CODEX_MODEL_SELECTION.md
+```
+
+Каждая задача обязана начинаться с:
+
+```text
+MODEL DECISION
+- Recommended model:
+- Reasoning effort:
+- Why this configuration:
+- Cheaper acceptable fallback:
+- When to switch/restart with another model:
+- Subagents/Ultra:
+- Android/usage risk:
+```
+
+Правила выбора:
+
+- Sol high/xhigh: architecture, unknown UE/binary layouts, renderer truth, difficult root cause, multi-system UDS/VFX/material work, final high-risk audit.
+- Terra medium/high: bounded implementation, refactor, build repair, tests, UI/editor code по зрелому контракту.
+- Luna low/medium: deterministic extraction, classification, fixtures, manifests, reports, repetitive conversions.
+- Не назначай максимальную модель автоматически.
+- Делай mixed work отдельными verified phases и меняй модель между фазами вручную.
+- Не предполагай, что текущий Codex может сам выполнить `/model` внутри своей интерактивной сессии.
+- Nested Codex, Ultra и subagents по умолчанию выключены на Android для memory-heavy parsing/builds и общих файлов.
+
 ## Low-Chatter Mode
 
 Если пользователь включает LOW-CHATTER MODE:
-
 - не писать длинные объяснения во время работы;
 - писать только короткие milestone строки;
 - подробный отчёт давать только в финальном `RESULT`;
@@ -63,19 +114,24 @@ Tools skipped: reason.
 4. docs/ARCHITECTURE_RULES.md
 5. docs/UX_AND_WORKFLOW_RULES.md
 6. docs/PATCH_ROADMAP.md
+7. docs/CODEX_MODEL_SELECTION.md
 
 Для Vulkan/render/build/runtime задач также:
-7. docs/RENDERING_TARGET_SPEC.md
-8. docs/errors/ERROR_KNOWLEDGE_BASE.md
-9. docs/BUILD_ENV_SPEC.md
-10. docs/DIAGNOSTICS_SPEC.md
-11. docs/PERFORMANCE_BUDGETS.md
+8. docs/RENDERING_TARGET_SPEC.md
+9. docs/errors/ERROR_KNOWLEDGE_BASE.md
+10. docs/BUILD_ENV_SPEC.md
+11. docs/DIAGNOSTICS_SPEC.md
+12. docs/PERFORMANCE_BUDGETS.md
+
+Для SOLUM/UDS renderer, atmosphere, performance, asset format, cluster renderer, VFX или engine-roadmap задач также:
+13. docs/SOLUM_UDS_RENDERER_WORKING_PLAN.md
 
 Перед изменениями сначала выведи PRE-PATCH CHECK:
-Stage / Patch, Docs read, Scope, Out of scope, Evidence plan, Risk.
+Stage / Patch, Docs read, Cortex route/state, Model decision, Scope, Out of scope, Evidence plan, Risk.
 
 Разрешено:
-- читать/редактировать файлы только внутри текущего repo;
+- читать/редактировать файлы внутри текущего repo;
+- читать явно найденный Cortex repo только для routing/memory/skills;
 - писать отчёты в _work/agent_reports;
 - запускать bash tools/agent_build_runner.sh;
 - запускать git status --short, git diff --stat, git diff;
@@ -96,7 +152,7 @@ Stage / Patch, Docs read, Scope, Out of scope, Evidence plan, Risk.
 - запускать curl | bash;
 - автоустанавливать APK;
 - fake/throwaway production systems;
-- OpenGL/Canvas/fake renderer вместо Vulkan target.
+- OpenGL/Canvas/fake renderer вместо Vulkan/Filament target.
 
 Build/test:
 - используй только bash tools/agent_build_runner.sh.
@@ -128,7 +184,7 @@ Use them when relevant:
 - solum-code-reviewer: review changes before final result.
 - solum-github-pr-worker: branch/commit/push/PR workflow.
 - solum-mobile-ux-designer: UI/UX/design/mobile editor work.
-- solum-vulkan-architecture-guard: Vulkan/render/material/shadow/engine architecture.
+- solum-vulkan-architecture-guard: Vulkan/Filament/render/material/shadow/engine architecture.
 - solum-autopilot-work-session: longer bounded work sessions.
 
 Default work mode:

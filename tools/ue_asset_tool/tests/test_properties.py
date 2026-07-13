@@ -40,6 +40,26 @@ class _Package:
 
 
 class ContainerPropertyTests(unittest.TestCase):
+    def test_transform3f_and_transform3d_consume_exact_serialized_widths(self) -> None:
+        transform3f = struct.pack("<10f", *(float(value) for value in range(10)))
+        transform3d = struct.pack("<10d", *(float(value) for value in range(10)))
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "transforms.bin"
+            path.write_bytes(transform3f + transform3d)
+            with BinaryReader(path) as reader:
+                single = PropertyParser(_Package())._decode_struct(
+                    reader, TypeNode("StructProperty", [TypeNode("FTransform3f")]), len(transform3f)
+                )
+                double = PropertyParser(_Package())._decode_struct(
+                    reader, TypeNode("StructProperty", [TypeNode("FTransform3d")]),
+                    len(transform3f) + len(transform3d),
+                )
+                self.assertEqual(reader.position, len(transform3f) + len(transform3d))
+        self.assertEqual(single["serialization_variant"], "FTransform3f")
+        self.assertEqual(single["rotation"]["w"], 3.0)
+        self.assertEqual(double["serialization_variant"], "FTransform3d")
+        self.assertEqual(double["scale"]["z"], 9.0)
+
     def test_map_replacement_entries_consume_exactly(self) -> None:
         raw = struct.pack("<iiifif", -1, 2, 7, 1.5, 9, -2.0)
         node = TypeNode("MapProperty", [TypeNode("IntProperty"), TypeNode("FloatProperty")])

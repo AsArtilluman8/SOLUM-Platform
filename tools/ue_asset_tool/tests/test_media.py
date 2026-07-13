@@ -4,7 +4,8 @@ import zlib
 
 from ueassettool.errors import FormatError
 from ueassettool.media import (
-    _decode_uedelta_bgra8, _encode_source_hdr, _encode_source_npy,
+    _decode_uedelta_bgra8, _decode_uedelta_texture_source, _uedelta_view_rectangles,
+    _encode_source_hdr, _encode_source_npy, blake3_digest,
     _ogg_crc32, validate_hdr, validate_jpeg, validate_npy, validate_ogg,
     validate_png, validate_wav,
 )
@@ -15,6 +16,38 @@ def png_chunk(kind: bytes, payload: bytes) -> bytes:
 
 
 class MediaTests(unittest.TestCase):
+    def test_multi_mip_uedelta_uses_exact_split_rectangles_and_texture_source_guid(self) -> None:
+        width, height = 140, 500
+        raw = bytearray()
+        for mip_width, mip_height in ((140, 500), (70, 250)):
+            for y in range(mip_height):
+                for x in range(mip_width):
+                    raw.extend(((x + y) & 255, (y * 3) & 255, (x * 5) & 255, 255))
+        delta = bytearray(raw)
+        offset = 0
+        for mip_width, mip_height in ((140, 500), (70, 250)):
+            stride = mip_width * 4
+            for start_x, rect_width, start_y, rect_height in _uedelta_view_rectangles(mip_width, mip_height, 4):
+                byte_x, byte_width = start_x * 4, rect_width * 4
+                for local_y in range(rect_height - 1, 0, -1):
+                    row = offset + (start_y + local_y) * stride + byte_x
+                    previous = row - stride
+                    for x in range(byte_width):
+                        delta[row + x] = (raw[row + x] - raw[previous + x]) & 255
+            offset += mip_width * mip_height * 4
+        digest = blake3_digest(bytes(raw))[:16]
+        source_id = "-".join(
+            f"{int.from_bytes(digest[index:index + 4], 'little'):08x}"
+            for index in range(0, 16, 4)
+        )
+        decoded, contract = _decode_uedelta_texture_source(
+            bytes(delta), width=width, height=height, source_format="TSF_BGRA8",
+            num_mips=2, num_slices=1, source_id=source_id,
+        )
+        self.assertEqual(decoded, bytes(raw))
+        self.assertTrue(contract["texture_source_id_match"])
+        self.assertGreater(len(contract["mips"][0]["split_rectangles"]), 1)
+
     def test_ogg_opus_pages_require_crc_sequence_and_eos(self) -> None:
         packet = b"OpusHead" + bytes((1, 2)) + struct.pack("<HIhB", 312, 48000, 0, 0)
         page = bytearray(b"OggS" + bytes((0, 0x06)))

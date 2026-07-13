@@ -408,16 +408,30 @@ class PropertyParser:
             return {"x": _safe_float(r.f32()), "y": _safe_float(r.f32())}
         if name in ("Vector2D", "Vector2d") and size == 16:
             return {"x": _safe_float(r.f64()), "y": _safe_float(r.f64())}
-        if name in ("Vector3f", "Vector", "Rotator") and size == 12:
-            labels = ("pitch", "yaw", "roll") if name == "Rotator" else ("x", "y", "z")
+        if name in ("Vector3f", "Vector", "Rotator", "Rotator3f") and size == 12:
+            labels = ("pitch", "yaw", "roll") if name in ("Rotator", "Rotator3f") else ("x", "y", "z")
             return {k: _safe_float(r.f32()) for k in labels}
-        if name in ("Vector", "Vector3d", "Rotator") and size == 24:
-            labels = ("pitch", "yaw", "roll") if name == "Rotator" else ("x", "y", "z")
+        if name in ("Vector", "Vector3d", "Rotator", "Rotator3d") and size == 24:
+            labels = ("pitch", "yaw", "roll") if name in ("Rotator", "Rotator3d") else ("x", "y", "z")
             return {k: _safe_float(r.f64()) for k in labels}
         if name in ("Vector4f", "Quat4f", "Quat") and size == 16:
             return {k: _safe_float(r.f32()) for k in ("x", "y", "z", "w")}
         if name in ("Vector4", "Vector4d", "Quat", "Quat4d") and size == 32:
             return {k: _safe_float(r.f64()) for k in ("x", "y", "z", "w")}
+        if name in ("Transform3f", "FTransform3f") and size == 40:
+            return {
+                "serialization_variant": "FTransform3f",
+                "rotation": {k: _safe_float(r.f32()) for k in ("x", "y", "z", "w")},
+                "translation": {k: _safe_float(r.f32()) for k in ("x", "y", "z")},
+                "scale": {k: _safe_float(r.f32()) for k in ("x", "y", "z")},
+            }
+        if name in ("Transform", "FTransform", "Transform3d", "FTransform3d") and size == 80:
+            return {
+                "serialization_variant": "FTransform3d",
+                "rotation": {k: _safe_float(r.f64()) for k in ("x", "y", "z", "w")},
+                "translation": {k: _safe_float(r.f64()) for k in ("x", "y", "z")},
+                "scale": {k: _safe_float(r.f64()) for k in ("x", "y", "z")},
+            }
         if name in ("IntPoint", "IntVector2") and size == 8:
             return {"x": r.i32(), "y": r.i32()}
         if name in ("IntVector", "IntVector3") and size == 12:
@@ -493,6 +507,9 @@ class PropertyParser:
             struct_name = self._struct_name(node)
             fixed = {"Guid": 16, "FGuid": 16, "LinearColor": 16, "Color": 4, "Vector2f": 8,
                      "Vector2D": 16, "Vector2d": 16, "Vector3f": 12, "Vector3d": 24,
+                     "Rotator3f": 12, "Rotator3d": 24, "Transform3f": 40,
+                     "FTransform3f": 40, "Transform": 80, "FTransform": 80,
+                     "Transform3d": 80, "FTransform3d": 80,
                      "RichCurveKey": 27, "IntPoint": 8, "IntVector": 12,
                      "ExpressionInput": 36, "MaterialAttributesInput": 36,
                      "ColorMaterialInput": 44, "ScalarMaterialInput": 44,
@@ -561,7 +578,9 @@ class PropertyParser:
                 return self._decode_niagara_variable(r, struct_name, end)
             if struct_name in {
                 "Guid", "FGuid", "LinearColor", "Color", "Vector2f", "Vector2D", "Vector2d",
-                "Vector3f", "Vector3d", "RichCurveKey", "IntPoint", "IntVector",
+                "Vector3f", "Vector3d", "Rotator3f", "Rotator3d", "Transform3f",
+                "FTransform3f", "Transform", "FTransform", "Transform3d", "FTransform3d",
+                "RichCurveKey", "IntPoint", "IntVector",
                 "ExpressionInput", "MaterialAttributesInput", "ColorMaterialInput",
                 "ScalarMaterialInput", "VectorMaterialInput", "Vector2MaterialInput",
                 "ShadingModelMaterialInput", "SubstrateMaterialInput",

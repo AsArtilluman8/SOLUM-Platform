@@ -746,16 +746,141 @@ def _decode_uedelta_bgra8(
     }
 
 
+def _uedelta_view_rectangles(width: int, height: int, bytes_per_pixel: int) -> list[tuple[int, int, int, int]]:
+    """Reproduce UE ImageCoreDelta's machine-independent split rectangles."""
+    if width <= 0 or height <= 0 or bytes_per_pixel <= 0:
+        raise FormatError("invalid UEDELTA image dimensions")
+    if width * height <= 136 * 136:
+        return [(0, width, 0, height)]
+
+    def rows_per_cut(size_x: int, size_y: int) -> int:
+        pixels = size_x * size_y
+        cuts = 1 if pixels <= 32768 else pixels // 32768
+        while cuts > 512:
+            cuts >>= 1
+        return (size_y + cuts - 1) // cuts
+
+    stride = width * bytes_per_pixel
+    rectangles: list[tuple[int, int, int, int]] = []
+    if stride <= 4096:
+        rows = rows_per_cut(width, height)
+        for start_y in range(0, height, rows):
+            rectangles.append((0, width, start_y, min(rows, height - start_y)))
+        return rectangles
+
+    horizontal_parts = (stride + 4095) // 4096
+    part_bytes = (stride + horizontal_parts // 2) // horizontal_parts
+    part_bytes = (part_bytes + 63) & ~63
+    part_pixels = part_bytes // bytes_per_pixel
+    for start_x in range(0, width, part_pixels):
+        strip_width = min(part_pixels, width - start_x)
+        rows = rows_per_cut(strip_width, height)
+        for start_y in range(0, height, rows):
+            rectangles.append((start_x, strip_width, start_y, min(rows, height - start_y)))
+    return rectangles
+
+
+def _decode_uedelta_texture_source(
+    payload: bytes,
+    *,
+    width: int,
+    height: int,
+    source_format: str,
+    num_mips: int,
+    num_slices: int,
+    source_id: str | None,
+) -> tuple[bytes, dict[str, Any]]:
+    """Invert UE's exact multi-mip FTextureSource UEDELTA transform.
+
+    Layout and split constants follow ImageCoreDelta.cpp and Texture.cpp.  A
+    BLAKE3-derived TextureSource.Id is required so a decoded byte stream cannot
+    be accepted merely because its dimensions look plausible.
+    """
+    bytes_per_pixel = {
+        "TSF_G8": 1, "TSF_BGRA8": 4, "TSF_RGBA8": 4, "TSF_BGRE8": 4,
+        "TSF_G16": 2, "TSF_RGBA16": 8,
+    }.get(source_format)
+    if bytes_per_pixel is None:
+        raise UnsupportedError(f"TSCF_UEDELTA {source_format} needs a format-specific inverse")
+    if num_mips <= 0 or num_slices <= 0:
+        raise FormatError("UEDELTA mip/slice count must be positive")
+    if source_id is None:
+        raise UnsupportedError("multi-mip UEDELTA requires serialized bGuidIsHash TextureSource.Id")
+
+    mip_layout: list[dict[str, Any]] = []
+    expected = 0
+    for mip in range(num_mips):
+        mip_width = max(1, width >> mip)
+        mip_height = max(1, height >> mip)
+        slice_size = mip_width * mip_height * bytes_per_pixel
+        mip_layout.append({
+            "mip": mip, "width": mip_width, "height": mip_height,
+            "slices": num_slices, "offset": expected,
+            "size": slice_size * num_slices,
+        })
+        expected += slice_size * num_slices
+    if len(payload) != expected:
+        raise FormatError(f"UEDELTA payload {len(payload)} != calculated mip chain {expected}")
+
+    output = bytearray(payload)
+    for mip in mip_layout:
+        mip_width = int(mip["width"])
+        mip_height = int(mip["height"])
+        stride = mip_width * bytes_per_pixel
+        slice_size = stride * mip_height
+        rectangles = _uedelta_view_rectangles(mip_width, mip_height, bytes_per_pixel)
+        mip["split_rectangles"] = [list(item) for item in rectangles]
+        for slice_index in range(num_slices):
+            base = int(mip["offset"]) + slice_index * slice_size
+            for start_x, rect_width, start_y, rect_height in rectangles:
+                byte_x = start_x * bytes_per_pixel
+                byte_width = rect_width * bytes_per_pixel
+                for local_y in range(1, rect_height):
+                    row = base + (start_y + local_y) * stride + byte_x
+                    previous = row - stride
+                    for x in range(byte_width):
+                        output[row + x] = (output[row + x] + output[previous + x]) & 0xFF
+
+    parts = source_id.split("-")
+    if len(parts) != 4 or any(len(part) != 8 for part in parts):
+        raise FormatError(f"TextureSource.Id {source_id!r} is not an FGuid")
+    try:
+        expected_guid = b"".join(int(part, 16).to_bytes(4, "little") for part in parts)
+    except ValueError as exc:
+        raise FormatError(f"TextureSource.Id {source_id!r} is not hexadecimal") from exc
+    decoded_blake3 = blake3_digest(bytes(output))
+    if decoded_blake3[:16] != expected_guid:
+        raise FormatError("UEDELTA decoded mip chain does not match TextureSource.Id")
+    return bytes(output), {
+        "status": "VERIFIED",
+        "transform": "FImageCoreDelta exact multi-mip inverse",
+        "authority": [
+            "Engine/Source/Runtime/ImageCore/Private/ImageCoreDelta.cpp",
+            "Engine/Source/Runtime/Engine/Private/Texture.cpp:FTextureSource::DoUEDeltaTransform",
+        ],
+        "stored_size": len(payload),
+        "stored_sha256": hashlib.sha256(payload).hexdigest(),
+        "decoded_size": len(output),
+        "decoded_sha256": hashlib.sha256(output).hexdigest(),
+        "decoded_blake3": decoded_blake3.hex(),
+        "texture_source_id": source_id,
+        "texture_source_id_match": True,
+        "mips": mip_layout,
+    }
+
+
 def _exact_texture_source(
     asset: Path,
     output: Path,
     *,
     max_output: int,
+    export_index: int | None = None,
 ) -> dict[str, Any]:
     with UnrealPackage(asset) as package:
         candidates = [
             (index, export) for index, export in enumerate(package.exports, 1)
-            if export.class_name in ("Texture2D", "TextureCube", "VolumeTexture") and export.is_asset
+            if export.class_name in ("Texture2D", "TextureCube", "VolumeTexture")
+            and (index == export_index if export_index is not None else export.is_asset)
         ]
         if len(candidates) != 1:
             raise UnsupportedError(
@@ -917,16 +1042,28 @@ def _exact_texture_source(
                 raise UnsupportedError("JPEG TextureSource is only verified for one slice/mip")
             image, suffix = raw, ".jpg"
         elif compression == "TSCF_UEDELTA":
-            raw, source_transform = _decode_uedelta_bgra8(
-                raw,
-                width=width,
-                height=height,
-                source_format=source_format,
-                num_mips=num_mips,
-                num_slices=num_slices,
-                layer_color_info=source.get("LayerColorInfo_LockProtected"),
-                source_id=str(source.get("Id")) if source.get("bGuidIsHash") is True else None,
-            )
+            source_id = str(source.get("Id")) if source.get("bGuidIsHash") is True else None
+            if num_mips == 1 and num_slices == 1:
+                raw, source_transform = _decode_uedelta_bgra8(
+                    raw,
+                    width=width,
+                    height=height,
+                    source_format=source_format,
+                    num_mips=num_mips,
+                    num_slices=num_slices,
+                    layer_color_info=source.get("LayerColorInfo_LockProtected"),
+                    source_id=source_id,
+                )
+            else:
+                raw, source_transform = _decode_uedelta_texture_source(
+                    raw,
+                    width=width,
+                    height=height,
+                    source_format=source_format,
+                    num_mips=num_mips,
+                    num_slices=num_slices,
+                    source_id=source_id,
+                )
             if source_format == "TSF_BGRE8":
                 image, suffix = _encode_source_hdr(raw, width, height, source_format), ".hdr"
             else:
@@ -1130,12 +1267,21 @@ def _exact_soundwave(asset: Path, output: Path, *, max_output: int) -> dict[str,
         }
 
 
-def export_media(asset: str | Path, output: str | Path, *, kind: str, max_output: int = 2 * 1024 * 1024 * 1024) -> dict[str, Any]:
+def export_media(
+    asset: str | Path,
+    output: str | Path,
+    *,
+    kind: str,
+    max_output: int = 2 * 1024 * 1024 * 1024,
+    export_index: int | None = None,
+) -> dict[str, Any]:
     source_asset, target_output = Path(asset), Path(output)
     exact_error: str | None = None
     try:
         if kind == "texture":
-            return _exact_texture_source(source_asset, target_output, max_output=max_output)
+            return _exact_texture_source(
+                source_asset, target_output, max_output=max_output, export_index=export_index,
+            )
         if kind == "audio":
             return _exact_soundwave(source_asset, target_output, max_output=max_output)
     except UnsupportedError as exc:

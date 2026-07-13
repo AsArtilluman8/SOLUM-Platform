@@ -20,6 +20,8 @@ from .contracts import (
     verify_package,
 )
 from .media import export_media
+from .map import MapContractBuilder, inventory_maps
+from .source import PackageIndex, prepare_source_roots
 
 
 def _json_dump(data: object, path: str | None) -> None:
@@ -85,6 +87,27 @@ def build_parser() -> argparse.ArgumentParser:
         media.add_argument("-o", "--output", required=True)
         media.add_argument("--manifest")
         media.add_argument("--max-output", type=int, default=2 * 1024 * 1024 * 1024)
+    maps = sub.add_parser(
+        "inventory-maps",
+        help="inventory .umap candidates with exact package-table evidence",
+    )
+    maps.add_argument("roots", nargs="+", help=".umap files or roots to search")
+    maps.add_argument("-o", "--output", help="write candidate contract JSON")
+    export_map = sub.add_parser(
+        "export-map",
+        help="build an exact UWorld/ULevel actor and transform contract",
+    )
+    source = export_map.add_mutually_exclusive_group(required=True)
+    source.add_argument("--source-root", help="directory root or ZIP source")
+    source.add_argument("--source-manifest", help="JSON source-root/file manifest")
+    source.add_argument("--map", dest="map_path", help="direct .umap source")
+    export_map.add_argument("--dataset", required=True, help="P61 dataset/cache output root")
+    export_map.add_argument("-o", "--output", help="map contract path (default: <dataset>/maps/<name>.json)")
+    export_map.add_argument(
+        "--dependency-closure", action="store_true",
+        help="also write exact package-reference closure and missing dependencies",
+    )
+    export_map.add_argument("--incremental", action="store_true", help="reuse hash-matching ZIP cache files")
     for command, help_text in (
         ("export-blueprint", "export Blueprint properties and graph contract"),
         ("export-niagara", "export Niagara scripts, parameters, dependencies and graph contract"),
@@ -168,6 +191,47 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "verify":
             _json_dump(verify_package(args.asset), args.output)
+            return 0
+        if args.command == "inventory-maps":
+            _json_dump(inventory_maps(args.roots, args.output), None if args.output else None)
+            return 0
+        if args.command == "export-map":
+            source_manifest = prepare_source_roots(
+                source_root=args.source_root,
+                source_manifest=args.source_manifest,
+                map_path=args.map_path,
+                dataset=args.dataset,
+                incremental=args.incremental,
+            )
+            direct = [Path(item) for item in source_manifest["direct_files"] if Path(item).suffix.lower() == ".umap"]
+            candidates = inventory_maps(direct or source_manifest["roots"])
+            selected = candidates.get("selected_map")
+            if not isinstance(selected, str):
+                raise UEAssetError("map source does not resolve to one exact UWorld/ULevel candidate")
+            contract = MapContractBuilder(selected).build()
+            dataset = Path(args.dataset)
+            output = Path(args.output) if args.output else dataset / "maps" / f"{Path(selected).stem}.json"
+            _json_dump(contract, str(output))
+            result: dict[str, object] = {
+                "schema": "ueassettool.export-map/v1",
+                "source_manifest": source_manifest,
+                "map_candidates": candidates,
+                "map_contract": str(output),
+                "map_sha256": contract["source"]["sha256"],
+            }
+            if args.dependency_closure:
+                index = PackageIndex(source_manifest["roots"], cache_root=dataset / "cache")
+                package_index = index.build()
+                closure = index.dependency_closure(selected)
+                package_index_path = dataset / "dependencies" / "package_index.json"
+                closure_path = dataset / "dependencies" / "dependency_closure.json"
+                missing_path = dataset / "dependencies" / "missing_dependencies.json"
+                _json_dump(package_index, str(package_index_path))
+                _json_dump(closure, str(closure_path))
+                _json_dump({"schema": "ueassettool.missing-dependencies/v1", "missing": closure["missing"]}, str(missing_path))
+                result["dependency_closure"] = str(closure_path)
+                result["missing_dependencies"] = str(missing_path)
+            _json_dump(result, None)
             return 0
         if args.command in ("export-texture", "export-audio"):
             kind = "texture" if args.command == "export-texture" else "audio"

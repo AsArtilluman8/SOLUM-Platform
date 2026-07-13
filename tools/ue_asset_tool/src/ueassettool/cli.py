@@ -22,6 +22,7 @@ from .contracts import (
 from .media import export_media
 from .map import MapContractBuilder, build_map_gate, inventory_maps
 from .source import PackageIndex, prepare_source_roots
+from .refine import refine_existing_map_gate, refresh_refinement_reports
 
 
 def _json_dump(data: object, path: str | None) -> None:
@@ -108,6 +109,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="also write exact package-reference closure and missing dependencies",
     )
     export_map.add_argument("--incremental", action="store_true", help="reuse hash-matching ZIP cache files")
+    refine = sub.add_parser("refine-map-gate", help="refine saved P61 resolver outputs without exporting a map")
+    refine.add_argument("--dataset", required=True)
+    reports = sub.add_parser("refresh-map-reports", help="refresh reports from completed resolver outputs")
+    reports.add_argument("--dataset", required=True)
     for command, help_text in (
         ("export-blueprint", "export Blueprint properties and graph contract"),
         ("export-niagara", "export Niagara scripts, parameters, dependencies and graph contract"),
@@ -233,6 +238,12 @@ def main(argv: list[str] | None = None) -> int:
                 result["dependency_closure"] = str(closure_path)
                 result["missing_dependencies"] = str(missing_path)
             _json_dump(result, None)
+            return 0
+        if args.command == "refine-map-gate":
+            _json_dump(refine_existing_map_gate(args.dataset), None)
+            return 0
+        if args.command == "refresh-map-reports":
+            _json_dump(refresh_refinement_reports(args.dataset), None)
             return 0
         if args.command in ("export-texture", "export-audio"):
             kind = "texture" if args.command == "export-texture" else "audio"

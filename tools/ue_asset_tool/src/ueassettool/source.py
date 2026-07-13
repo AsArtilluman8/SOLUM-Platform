@@ -143,10 +143,35 @@ def prepare_source_roots(
 
 
 def _package_name_from_object_path(value: str) -> str | None:
+    value = value.strip("'\"")
+    if "'" in value and value.endswith("'"):
+        value = value.split("'", 1)[1][:-1]
     if not value.startswith("/"):
         return None
     package = value.split(":", 1)[0].split(".", 1)[0]
     return package if package.startswith(("/Game/", "/Engine/", "/Script/")) else None
+
+
+def normalize_object_reference(value: str) -> dict[str, Any]:
+    """Separate a UE object/subobject/class path without inventing a package."""
+    raw = value
+    value = value.strip("'\"")
+    if "'" in value and value.endswith("'"):
+        value = value.split("'", 1)[1][:-1]
+    package = _package_name_from_object_path(value)
+    before_subobject, _, subobject = value.partition(":")
+    object_name = before_subobject.split(".", 1)[1] if "." in before_subobject else None
+    kind = "PACKAGE_OR_OBJECT"
+    if subobject:
+        kind = "SUBOBJECT"
+    package_leaf = package.rsplit("/", 1)[-1] if package else None
+    generated = bool(object_name and (
+        object_name.startswith("Default__") or object_name == f"{package_leaf}_C"
+    ))
+    if generated and not subobject:
+        kind = "GENERATED_CLASS_OR_CDO"
+    return {"raw": raw, "package": package, "object": object_name,
+            "subobject": subobject or None, "generated_class_or_cdo": generated, "kind": kind}
 
 
 class PackageIndex:
@@ -181,48 +206,69 @@ class PackageIndex:
         })
 
     def build(self) -> dict[str, Any]:
-        for path in self.package_files():
+        files = self.package_files()
+        deferred: list[tuple[Path, dict[str, Any]]] = []
+        mounts: dict[Path, set[str]] = {root.resolve(): set() for root in self.roots if root.is_dir()}
+        for path in files:
             try:
                 with UnrealPackage(path) as package:
                     name = package.summary.package_name
+                    base = {
+                        "path": str(path), "size": path.stat().st_size, "sha256": package.sha256,
+                        "file_version_ue4": package.summary.file_version_ue4,
+                        "file_version_ue5": package.summary.file_version_ue5,
+                        "engine": package.summary.saved_by_engine_version.display if package.summary.saved_by_engine_version else None,
+                        "asset_classes": sorted({item.class_name for item in package.exports if item.is_asset and item.class_name}),
+                        "integrity": {"exports": len(package.exports), "missing_exports": sum(
+                            item.payload_availability not in ("available", "empty") for item in package.exports)},
+                    }
                     if not name or not name.startswith("/"):
-                        raise ValueError("package summary has no canonical package name")
+                        deferred.append((path, base))
+                        continue
+                    for root in mounts:
+                        if path.is_relative_to(root):
+                            suffix = "/" + path.relative_to(root).with_suffix("").as_posix()
+                            if name.endswith(suffix): mounts[root].add(name[:-len(suffix)])
                     if name in self.packages and self.packages[name]["path"] != str(path):
                         self.errors.append({
                             "status": "AMBIGUOUS_PACKAGE", "package": name,
                             "paths": [self.packages[name]["path"], str(path)],
                         })
                         continue
-                    record = {
-                        "package_name": name,
-                        "path": str(path),
-                        "size": path.stat().st_size,
-                        "sha256": package.sha256,
-                        "file_version_ue4": package.summary.file_version_ue4,
-                        "file_version_ue5": package.summary.file_version_ue5,
-                        "engine": (
-                            package.summary.saved_by_engine_version.display
-                            if package.summary.saved_by_engine_version else None
-                        ),
-                        "integrity": {
-                            "exports": len(package.exports),
-                            "missing_exports": sum(
-                                item.payload_availability not in ("available", "empty")
-                                for item in package.exports
-                            ),
-                        },
-                    }
+                    record = {"package_name": name, "package_name_basis": "PACKAGE_SUMMARY", **base}
                     self.packages[name] = record
                     self._cache_record(record)
             except (UEAssetError, OSError, ValueError) as exc:
                 self.errors.append({
-                    "status": "PACKAGE_INDEX_ERROR", "path": str(path),
+                    "status": "PARSE_ERROR", "terminal_status": "PARSE_ERROR", "path": str(path),
+                    "sha256": sha256_file(path), "sidecars": self._sidecars(path),
                     "reason": f"{type(exc).__name__}: {exc}",
                 })
+        for path, base in deferred:
+            roots = [root for root in mounts if path.is_relative_to(root)]
+            candidates = []
+            for root in roots:
+                for mount in mounts[root]:
+                    candidates.append(mount + "/" + path.relative_to(root).with_suffix("").as_posix())
+            candidates = sorted(set(candidates))
+            if len(candidates) != 1:
+                self.errors.append({"status": "AMBIGUOUS", "terminal_status": "AMBIGUOUS",
+                    "path": str(path), "sha256": base["sha256"], "sidecars": self._sidecars(path),
+                    "reason": "source-root mount mapping is not unique", "candidates": candidates})
+                continue
+            name = candidates[0]
+            if name in self.packages:
+                self.errors.append({"status": "AMBIGUOUS", "terminal_status": "AMBIGUOUS",
+                    "path": str(path), "sha256": base["sha256"], "sidecars": self._sidecars(path),
+                    "reason": "derived package name duplicates indexed package", "package": name})
+                continue
+            record = {"package_name": name, "package_name_basis": "PROVEN_SOURCE_ROOT_MOUNT", **base}
+            self.packages[name] = record
+            self._cache_record(record)
         return {
             "schema": "ueassettool.package-index/v1",
             "roots": [str(path) for path in self.roots],
-            "file_count": len(self.package_files()),
+            "file_count": len(files),
             "package_count": len(self.packages),
             "packages": sorted(self.packages.values(), key=lambda item: item["package_name"]),
             "errors": self.errors,
@@ -300,6 +346,18 @@ class PackageIndex:
                  "sha256": sha256_file(path.with_suffix(suffix)) if path.with_suffix(suffix).is_file() else None}
                 for suffix in SIDECAR_SUFFIXES]
 
+    def _resolve_package(self, package_name: str) -> tuple[dict[str, Any] | None, str | None]:
+        target = self.packages.get(package_name)
+        if target:
+            return target, None
+        aliases: list[tuple[str, str]] = []
+        if package_name.endswith("_C"):
+            aliases.append((package_name[:-2], "GENERATED_CLASS_SUFFIX"))
+        if "/Default__" in package_name:
+            aliases.append((package_name.replace("/Default__", "/").removesuffix("_C"), "CDO_PATH"))
+        matches = [(self.packages[name], basis) for name, basis in aliases if name in self.packages]
+        return matches[0] if len(matches) == 1 else (None, None)
+
     def dependency_closure(self, start: str | Path) -> dict[str, Any]:
         start_path = Path(start)
         with UnrealPackage(start_path) as start_package:
@@ -340,14 +398,15 @@ class PackageIndex:
                 })
                 continue
             for reference in references:
-                target_name = reference["target_package"]
-                target = self.packages.get(target_name)
+                normalized = normalize_object_reference(reference["target_object"])
+                target_name = normalized["package"] or reference["target_package"]
+                target, alias_basis = self._resolve_package(target_name)
                 if target:
-                    status = "RESOLVED"
+                    status = "REDIRECTOR" if "ObjectRedirector" in target.get("asset_classes", []) else "RESOLVED"
                     resolved = target["path"]
                     target_hash = target["sha256"]
                     sidecars = self._sidecars(Path(resolved))
-                    if target_name not in visited:
+                    if status == "RESOLVED" and target_name not in visited:
                         queue.append(target_name)
                 elif target_name.startswith("/Script/"):
                     status = "EXTERNAL_SCRIPT_PACKAGE"
@@ -372,6 +431,8 @@ class PackageIndex:
                     "source_package": source_name,
                     "target_object_path": reference["target_object"],
                     "target_package": target_name,
+                    "target_path_normalization": normalized,
+                    "resolution_alias_basis": alias_basis,
                     "reference_type": reference["reference_type"],
                     "resolved_local_file": resolved,
                     "source_sha256": source_record["sha256"],
@@ -379,6 +440,8 @@ class PackageIndex:
                     "required_sidecars": sidecars,
                     "terminal_status": status,
                     "reason": None if status == "RESOLVED" else (
+                        "indexed target is an ObjectRedirector; destination is not yet proven"
+                        if status == "REDIRECTOR" else
                         "native script package is not a supplied content package"
                         if status == "EXTERNAL_SCRIPT_PACKAGE"
                         else "no exact package-name match in indexed local roots"
@@ -387,6 +450,11 @@ class PackageIndex:
                 edges.append(edge)
                 if status == "MISSING_PACKAGE":
                     missing.append(edge)
+        for item in edges:
+            if item["terminal_status"] == "REDIRECTOR":
+                item["dependency_classification"] = {"classification": "REDIRECTOR", "basis": "indexed asset class is ObjectRedirector"}
+            elif item["terminal_status"] not in ("RESOLVED", "EXTERNAL_SCRIPT_PACKAGE", "EXTERNAL_ENGINE_PACKAGE"):
+                item["dependency_classification"] = classify_dependency(item)
         unique = {(item["source_package"], item["source_object"], item["source_property"], item["target_package"], item["target_object_path"], item["reference_type"]): item for item in edges}
         status_counts: dict[str, int] = {}
         type_counts: dict[str, int] = {}
@@ -411,3 +479,41 @@ class PackageIndex:
             "edges": edges,
             "missing": missing,
         }
+
+
+CLASSIFICATIONS = {
+    "REQUIRED_FOR_RENDERED_SCENE", "REQUIRED_FOR_TRANSFORM", "REQUIRED_FOR_MATERIAL",
+    "REQUIRED_FOR_LANDSCAPE", "OPTIONAL_RUNTIME", "EDITOR_ONLY", "STALE_SOFT_REFERENCE",
+    "SUBOBJECT_ALREADY_CONTAINED", "GENERATED_CLASS_OR_CDO", "REDIRECTOR", "AMBIGUOUS",
+    "TRUE_MISSING_INPUT", "PARSE_ERROR",
+}
+
+
+def classify_dependency(edge: dict[str, Any]) -> dict[str, str]:
+    target = str(edge.get("target_object_path", ""))
+    package = str(edge.get("target_package", ""))
+    source = str(edge.get("source_object", ""))
+    prop = str(edge.get("source_property") or "")
+    ref_type = str(edge.get("reference_type", ""))
+    normalized = normalize_object_reference(target)
+    if normalized["kind"] == "SUBOBJECT" and package == edge.get("source_package"):
+        value, basis = "SUBOBJECT_ALREADY_CONTAINED", "subobject belongs to the serialized source package"
+    elif normalized["kind"] == "GENERATED_CLASS_OR_CDO":
+        value, basis = "GENERATED_CLASS_OR_CDO", "object name is a generated class or Default__ CDO"
+    elif any(token in target or token in source for token in ("/Editor_UI/", "/Textures/Icons/", "/README", "/Tools/")):
+        value, basis = "EDITOR_ONLY", "path is in an explicit editor/tool/icon/readme namespace"
+    elif any(token in prop for token in ("RootComponent", "AttachParent", "RelativeLocation", "RelativeRotation", "RelativeScale")):
+        value, basis = "REQUIRED_FOR_TRANSFORM", "serialized property participates in ownership/transform composition"
+    elif "Landscape" in source + target or any(token in prop for token in ("Heightmap", "Weightmap")):
+        value, basis = "REQUIRED_FOR_LANDSCAPE", "landscape actor/component dependency"
+    elif any(token in prop for token in ("StaticMesh", "SkeletalMesh")) or "/Meshes/" in target:
+        value, basis = "REQUIRED_FOR_RENDERED_SCENE", "geometry package is referenced by scene data"
+    elif any(token in prop for token in ("Material", "Texture")) or any(token in target for token in ("/Materials/", "/Textures/")):
+        value, basis = "REQUIRED_FOR_MATERIAL", "material or texture dependency"
+    elif any(token in target for token in ("/Sound/", "/Particles/", "/Weather_Presets/", "/Climate_Presets/")):
+        value, basis = "OPTIONAL_RUNTIME", "runtime weather/audio/VFX branch is not required for static verified subset"
+    elif ref_type in ("SOFT_OBJECT_PATH_TABLE", "SOFT_PACKAGE_REFERENCE_TABLE"):
+        value, basis = "STALE_SOFT_REFERENCE", "unresolved soft reference has no selected-scene hard/property proof"
+    else:
+        value, basis = "TRUE_MISSING_INPUT", "unresolved hard/property package reference remains after normalization"
+    return {"classification": value, "basis": basis}

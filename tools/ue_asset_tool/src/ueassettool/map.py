@@ -189,10 +189,13 @@ def _relative_transform(
     owner_class: str,
     properties: dict[str, dict[str, Any]],
     exact_default_profile: str | None,
+    inherited_properties: dict[str, dict[str, Any]] | None = None,
+    inheritance_chain: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    location_prop = properties.get("RelativeLocation")
-    rotation_prop = properties.get("RelativeRotation")
-    scale_prop = properties.get("RelativeScale3D")
+    inherited_properties = inherited_properties or {}
+    location_prop = properties.get("RelativeLocation") or inherited_properties.get("RelativeLocation")
+    rotation_prop = properties.get("RelativeRotation") or inherited_properties.get("RelativeRotation")
+    scale_prop = properties.get("RelativeScale3D") or inherited_properties.get("RelativeScale3D")
     location = _safe_vector(location_prop.get("value") if location_prop else None, ("x", "y", "z"))
     rotation = _safe_vector(
         rotation_prop.get("value") if rotation_prop else None, ("pitch", "yaw", "roll")
@@ -275,6 +278,7 @@ def _relative_transform(
             "RelativeRotation": _property_provenance(rotation_prop) if rotation_prop else None,
             "RelativeScale3D": _property_provenance(scale_prop) if scale_prop else None,
             "native_defaults": defaults,
+            "serialized_inheritance_chain": inheritance_chain or [],
         },
     }
 
@@ -457,15 +461,34 @@ class MapContractBuilder:
                 if not typed and (not export.class_name or not export.class_name.endswith("Component")):
                     continue
                 props = _decoded_properties(decoded[index])
+                inherited: dict[str, dict[str, Any]] = {}
+                inheritance_chain: list[dict[str, Any]] = []
+                template = export.template_index
+                seen_templates: set[int] = set()
+                while template > 0 and template not in seen_templates:
+                    seen_templates.add(template)
+                    template_export = package.exports[template - 1]
+                    template_props = _decoded_properties(decoded[template])
+                    for field in ("RelativeLocation", "RelativeRotation", "RelativeScale3D"):
+                        if field not in inherited and field in template_props:
+                            inherited[field] = template_props[field]
+                    inheritance_chain.append({
+                        "export_index": template, "object_path": package.object_path(template),
+                        "class": template_export.class_name,
+                        "provenance": _region(Path(template_export.payload_source or package.path),
+                            int(template_export.payload_physical_offset or 0), template_export.serial_size),
+                    })
+                    template = template_export.template_index
                 exact_profile = None
                 owner_class = package.exports[owner - 1].class_name
                 if owner_class == "Landscape":
                     exact_profile = "LANDSCAPE_ROOT" if index == _object_index(
                         _decoded_properties(decoded[owner]).get("RootComponent")
-                    ) else "NATIVE_SCENE_COMPONENT"
+                    ) else None
                 transform = _relative_transform(
                     owner_object=package.object_path(index), owner_class=export.class_name,
                     properties=props, exact_default_profile=exact_profile,
+                    inherited_properties=inherited, inheritance_chain=inheritance_chain,
                 )
                 attach = _object_index(props.get("AttachParent"))
                 component = {
@@ -762,19 +785,56 @@ def inventory_maps(roots: Iterable[str | Path], output: str | Path | None = None
     return result
 
 
-def build_map_gate(contract: dict[str, Any], package_index: dict[str, Any], closure: dict[str, Any]) -> dict[str, Any]:
+def build_renderable_candidates(contract: dict[str, Any], closure: dict[str, Any]) -> dict[str, Any]:
+    by_source: dict[str, list[dict[str, Any]]] = {}
+    for edge in closure.get("unique_edges", closure.get("edges", [])):
+        by_source.setdefault(str(edge.get("source_object")), []).append(edge)
+    candidates = []
+    for component in contract["components"]:
+        world = component.get("world_transform")
+        if not isinstance(world, dict) or world.get("status") != "VERIFIED":
+            continue
+        geometry = [edge for edge in by_source.get(component["object_path"], [])
+                    if "/Meshes/" in str(edge.get("target_package")) or "Mesh" in str(edge.get("source_property"))]
+        resolved = [edge for edge in geometry if edge.get("terminal_status") == "RESOLVED"]
+        status = "VERIFIED_RENDERABLE" if resolved else (
+            "BLOCKED_GEOMETRY_DEPENDENCY" if geometry else "NON_RENDERABLE_NO_GEOMETRY_REFERENCE")
+        candidates.append({
+            "component": component["object_path"], "component_export_index": component["export_index"],
+            "owner_actor": component["owner_actor"], "world_transform": world,
+            "renderer_transform": world.get("renderer") or renderer_transform(world),
+            "geometry_dependencies": geometry, "resolved_geometry_dependencies": resolved,
+            "status": status, "provenance": component["provenance"],
+        })
+    return {"schema": "ueassettool.renderable-scene-candidates/v1",
+            "candidate_count": len(candidates),
+            "verified_renderable_count": sum(c["status"] == "VERIFIED_RENDERABLE" for c in candidates),
+            "non_renderable_count": sum(c["status"] != "VERIFIED_RENDERABLE" for c in candidates),
+            "candidates": candidates}
+
+
+def build_map_gate(contract: dict[str, Any], package_index: dict[str, Any], closure: dict[str, Any],
+                   renderable: dict[str, Any] | None = None) -> dict[str, Any]:
     validation = contract["validation"]
     local, world = validation["local_transform_counts"], validation["world_transform_counts"]
     blockers: list[str] = []
-    if contract["status"] != "VERIFIED": blockers.append(f"map contract is {contract['status']}")
     if validation["actor_component_membership_errors"]: blockers.append("actor component membership is unresolved")
-    if world["PARTIAL"] or world["INVALID"] or world["MISSING"]: blockers.append("displayable component world transforms are incomplete")
-    if package_index["errors"]: blockers.append("package-index errors are present")
-    if closure["unique_missing_package_count"]: blockers.append("local dependency packages remain unresolved")
+    if validation["unresolved_parents"] or validation["attachment_cycles"]: blockers.append("attachment graph is unresolved")
+    blocking_classes = {"REQUIRED_FOR_RENDERED_SCENE", "REQUIRED_FOR_TRANSFORM"}
+    required_missing = [e for e in closure.get("unique_edges", [])
+                        if e.get("terminal_status") == "MISSING_PACKAGE"
+                        and e.get("dependency_classification", {}).get("classification") in blocking_classes]
+    blocking_errors = [e for e in package_index["errors"]
+                       if e.get("dependency_classification", "PARSE_ERROR") not in ("EDITOR_ONLY", "OPTIONAL_RUNTIME")]
+    if blocking_errors: blockers.append("blocking package-index errors remain")
+    if required_missing: blockers.append("required rendered-scene/transform dependencies remain unresolved")
+    if renderable is not None and renderable["verified_renderable_count"] == 0:
+        blockers.append("no verified component has a resolved geometry dependency")
     return {
         "schema": "ueassettool.map-gate/v1", "selected_map": contract["source"],
         "source_roots": package_index["roots"], "package_index_file_count": package_index["file_count"],
         "indexed_package_count": package_index["package_count"], "package_index_errors": package_index["errors"],
+        "aggregate_map_status": contract["status"], "gate_scope": "VERIFIED_SCENE_SUBSET",
         "world_count": validation["world_count"], "level_count": validation["level_count"],
         "actor_count": validation["actor_count"], "component_count": validation["component_count"],
         "local_transforms": local, "world_transforms": world,
@@ -783,6 +843,11 @@ def build_map_gate(contract: dict[str, Any], package_index: dict[str, Any], clos
         "dependency_edge_occurrences": closure["edge_count"], "dependency_unique_edges": closure["unique_edge_count"],
         "dependency_counts_by_status": closure["counts_by_status"],
         "uds_local_missing_package_count": closure["unique_missing_package_count"],
+        "required_missing_dependencies": required_missing,
+        "blocking_package_index_errors": blocking_errors,
+        "renderable_scene_candidates": None if renderable is None else {
+            "candidate_count": renderable["candidate_count"],
+            "verified_renderable_count": renderable["verified_renderable_count"]},
         "engine_external_missing_count": closure["counts_by_status"].get("EXTERNAL_ENGINE_PACKAGE", 0),
         "landscape_status": "DATA_ONLY" if contract["landscapes"] else "ABSENT",
         "blockers": blockers, "test_results": "external test runner required", "gate_status": "PASS" if not blockers else "FAIL",

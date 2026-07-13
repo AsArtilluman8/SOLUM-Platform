@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solum.uds-truth.asset/v1",
+  "type": "object",
+  "required": [
+    "schema_version", "asset_id", "package_path", "source_file", "source_sha256",
+    "asset_class", "package_version", "custom_versions", "extraction_status",
+    "verified_fields", "raw_verified_regions", "unsupported_regions", "missing_inputs",
+    "imports", "exports", "dependencies", "generated_outputs",
+    "generated_output_sha256", "provenance", "validation_results"
+  ],
+  "properties": {
+    "schema_version": {"const": "solum.uds-truth/v1"},
+    "asset_id": {"type": "string", "minLength": 1},
+    "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "extraction_status": {
+      "enum": [
+        "VERIFIED", "PARTIAL_VERIFIED", "RAW_VERIFIED", "MISSING_INPUT",
+        "MISSING_SIDECAR", "UNSUPPORTED_VERSION", "UNSUPPORTED_FORMAT",
+        "DECODE_ERROR", "INTEGRITY_ERROR"
+      ]
+    },
+    "custom_versions": {"type": "array"},
+    "raw_verified_regions": {"type": "array"},
+    "unsupported_regions": {"type": "array"},
+    "missing_inputs": {"type": "array"},
+    "imports": {"type": "array"},
+    "exports": {"type": "array"},
+    "generated_outputs": {"type": "array"},
+    "generated_output_sha256": {"type": "array"}
+  }
+}

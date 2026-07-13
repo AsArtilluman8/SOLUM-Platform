@@ -162,6 +162,17 @@ def ue_to_renderer_position(value: Iterable[float]) -> list[float]:
     return [y * 0.01, z * 0.01, -x * 0.01]
 
 
+def renderer_transform(transform: dict[str, Any]) -> dict[str, Any] | None:
+    if transform.get("status") != "VERIFIED":
+        return None
+    return {
+        "coordinate_system": "right-handed meters; UE left-handed centimeters converted as [Y,Z,-X]",
+        "translation": ue_to_renderer_position(transform["translation"]),
+        "quaternion": transform["quaternion"], "scale": transform["scale"],
+        "source_chain": transform.get("sources", [transform.get("owner_object")]),
+    }
+
+
 def _property_provenance(prop: dict[str, Any]) -> dict[str, Any] | None:
     raw = prop.get("raw")
     if not isinstance(raw, dict):
@@ -429,11 +440,21 @@ class MapContractBuilder:
                         break
                     current = package.exports[current - 1].outer_index
 
+            typed_members: set[int] = set()
+            for actor_index in actor_indices:
+                actor_props = _decoded_properties(decoded[actor_index])
+                typed_members.update(_object_array(actor_props.get("InstanceComponents")))
+                typed_members.update(_object_array(actor_props.get("BlueprintCreatedComponents")))
+                root = _object_index(actor_props.get("RootComponent"))
+                if root:
+                    typed_members.add(root)
+
             components: list[dict[str, Any]] = []
             component_by_index: dict[int, dict[str, Any]] = {}
             for index, owner in sorted(actor_for_export.items()):
                 export = package.exports[index - 1]
-                if not export.class_name or not export.class_name.endswith("Component"):
+                typed = index in typed_members
+                if not typed and (not export.class_name or not export.class_name.endswith("Component")):
                     continue
                 props = _decoded_properties(decoded[index])
                 exact_profile = None
@@ -451,6 +472,7 @@ class MapContractBuilder:
                     "export_index": index,
                     "object_path": package.object_path(index),
                     "class": export.class_name,
+                    "inclusion_basis": "typed actor component reference" if typed else "class name suffix",
                     "owner_actor_index": owner,
                     "owner_actor": package.object_path(owner),
                     "outer_index": export.outer_index,
@@ -465,6 +487,7 @@ class MapContractBuilder:
                     "mobility": props.get("Mobility", {}).get("value"),
                     "local_transform": transform,
                     "world_transform": None,
+                    "renderer_local_transform": renderer_transform(transform),
                     "provenance": _region(
                         Path(export.payload_source or package.path),
                         int(export.payload_physical_offset or 0), export.serial_size,
@@ -503,6 +526,7 @@ class MapContractBuilder:
                     return None
                 world = compose_transforms(parent_world, local)
                 world["owner_object"] = component["object_path"]
+                world["renderer"] = renderer_transform(world)
                 component["world_transform"] = world
                 return world
 
@@ -524,6 +548,7 @@ class MapContractBuilder:
                 if isinstance(root, int):
                     member_component_set.add(root)
                 member_components = sorted(member_component_set)
+                unresolved_members = [member for member in member_components if member not in component_by_index]
                 actors.append({
                     "export_index": index,
                     "object_path": package.object_path(index),
@@ -533,6 +558,10 @@ class MapContractBuilder:
                     "root_component_index": root,
                     "root_component": package.object_path(root) if root else None,
                     "component_indices": member_components,
+                    "component_membership": {
+                        "status": "VERIFIED" if not unresolved_members else "TERMINAL_UNRESOLVED",
+                        "unresolved_indices": unresolved_members,
+                    },
                     "tags": props.get("Tags", {}).get("value"),
                     "actor_label": props.get("ActorLabel", {}).get("value"),
                     "hidden": props.get("bHidden", {}).get("value"),
@@ -588,14 +617,23 @@ class MapContractBuilder:
                     "components": component_records,
                 })
 
-            verified_transforms = sum(
-                item["world_transform"] is not None
-                and item["world_transform"].get("status") == "VERIFIED"
-                for item in components
-            )
+            def transform_counts(key: str) -> dict[str, int]:
+                counts = {"VERIFIED": 0, "PARTIAL": 0, "INVALID": 0, "MISSING": 0}
+                for item in components:
+                    value = item.get(key)
+                    status = value.get("status") if isinstance(value, dict) else "MISSING"
+                    counts[status if status in counts else "MISSING"] += 1
+                return counts
+            local_counts, world_counts = transform_counts("local_transform"), transform_counts("world_transform")
+            membership_errors = [
+                {"actor": actor["object_path"], "indices": actor["component_membership"]["unresolved_indices"]}
+                for actor in actors if actor["component_membership"]["unresolved_indices"]
+            ]
+            layout_gate = package.summary.file_version_ue4 == 522 and package.summary.file_version_ue5 == 1013
+            aggregate_status = "PARTIAL_VERIFIED" if (membership_errors or world_counts["PARTIAL"] or world_counts["MISSING"]) else "VERIFIED"
             contract = {
                 "schema": MAP_SCHEMA,
-                "status": "VERIFIED",
+                "status": aggregate_status,
                 "source": {
                     "path": str(package.path), "size": package.path.stat().st_size,
                     "sha256": package.sha256, "package_name": package.summary.package_name,
@@ -613,6 +651,7 @@ class MapContractBuilder:
                     "ue_source_revision": UE_SOURCE_REVISION,
                     "world": UE_WORLD_AUTHORITY, "level": UE_LEVEL_AUTHORITY,
                 },
+                "layout_gate": {"status": "VERIFIED" if layout_gate else "UNSUPPORTED", "ue4": 522, "ue5": 1013},
                 "world": {
                     "export_index": world_index, "object_path": package.object_path(world_index),
                     "persistent_level": persistent,
@@ -627,7 +666,9 @@ class MapContractBuilder:
                 "validation": {
                     "world_count": len(worlds), "level_count": len(levels),
                     "actor_count": len(actors), "component_count": len(components),
-                    "verified_world_transform_count": verified_transforms,
+                    "local_transform_counts": local_counts,
+                    "world_transform_counts": world_counts,
+                    "actor_component_membership_errors": membership_errors,
                     "unresolved_parents": unresolved_parents,
                     "attachment_cycles": cycles,
                     "actor_array_exact_serialized_basis": True,
@@ -719,3 +760,30 @@ def inventory_maps(roots: Iterable[str | Path], output: str | Path | None = None
     if output:
         write_json(Path(output), result)
     return result
+
+
+def build_map_gate(contract: dict[str, Any], package_index: dict[str, Any], closure: dict[str, Any]) -> dict[str, Any]:
+    validation = contract["validation"]
+    local, world = validation["local_transform_counts"], validation["world_transform_counts"]
+    blockers: list[str] = []
+    if contract["status"] != "VERIFIED": blockers.append(f"map contract is {contract['status']}")
+    if validation["actor_component_membership_errors"]: blockers.append("actor component membership is unresolved")
+    if world["PARTIAL"] or world["INVALID"] or world["MISSING"]: blockers.append("displayable component world transforms are incomplete")
+    if package_index["errors"]: blockers.append("package-index errors are present")
+    if closure["unique_missing_package_count"]: blockers.append("local dependency packages remain unresolved")
+    return {
+        "schema": "ueassettool.map-gate/v1", "selected_map": contract["source"],
+        "source_roots": package_index["roots"], "package_index_file_count": package_index["file_count"],
+        "indexed_package_count": package_index["package_count"], "package_index_errors": package_index["errors"],
+        "world_count": validation["world_count"], "level_count": validation["level_count"],
+        "actor_count": validation["actor_count"], "component_count": validation["component_count"],
+        "local_transforms": local, "world_transforms": world,
+        "actor_component_membership_errors": validation["actor_component_membership_errors"],
+        "unresolved_attachment_parents": validation["unresolved_parents"], "attachment_cycles": validation["attachment_cycles"],
+        "dependency_edge_occurrences": closure["edge_count"], "dependency_unique_edges": closure["unique_edge_count"],
+        "dependency_counts_by_status": closure["counts_by_status"],
+        "uds_local_missing_package_count": closure["unique_missing_package_count"],
+        "engine_external_missing_count": closure["counts_by_status"].get("EXTERNAL_ENGINE_PACKAGE", 0),
+        "landscape_status": "DATA_ONLY" if contract["landscapes"] else "ABSENT",
+        "blockers": blockers, "test_results": "external test runner required", "gate_status": "PASS" if not blockers else "FAIL",
+    }

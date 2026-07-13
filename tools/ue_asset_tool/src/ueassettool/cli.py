@@ -20,7 +20,7 @@ from .contracts import (
     verify_package,
 )
 from .media import export_media
-from .map import MapContractBuilder, inventory_maps
+from .map import MapContractBuilder, build_map_gate, inventory_maps
 from .source import PackageIndex, prepare_source_roots
 
 
@@ -97,10 +97,10 @@ def build_parser() -> argparse.ArgumentParser:
         "export-map",
         help="build an exact UWorld/ULevel actor and transform contract",
     )
-    source = export_map.add_mutually_exclusive_group(required=True)
-    source.add_argument("--source-root", help="directory root or ZIP source")
+    source = export_map.add_mutually_exclusive_group()
     source.add_argument("--source-manifest", help="JSON source-root/file manifest")
-    source.add_argument("--map", dest="map_path", help="direct .umap source")
+    export_map.add_argument("--source-root", action="append", default=[], help="dependency root or ZIP source; repeatable")
+    export_map.add_argument("--map", dest="map_path", required=True, help="direct selected .umap source")
     export_map.add_argument("--dataset", required=True, help="P61 dataset/cache output root")
     export_map.add_argument("-o", "--output", help="map contract path (default: <dataset>/maps/<name>.json)")
     export_map.add_argument(
@@ -229,6 +229,7 @@ def main(argv: list[str] | None = None) -> int:
                 _json_dump(package_index, str(package_index_path))
                 _json_dump(closure, str(closure_path))
                 _json_dump({"schema": "ueassettool.missing-dependencies/v1", "missing": closure["missing"]}, str(missing_path))
+                _json_dump(build_map_gate(contract, package_index, closure), str(dataset / "MAP_GATE.json"))
                 result["dependency_closure"] = str(closure_path)
                 result["missing_dependencies"] = str(missing_path)
             _json_dump(result, None)

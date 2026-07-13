@@ -10,6 +10,7 @@ from typing import Any, Iterable
 from .dataset import sha256_file, write_json
 from .errors import UEAssetError
 from .package import UnrealPackage
+from .properties import PropertyParser
 
 
 SOURCE_SCHEMA = "ueassettool.source-manifest/v1"
@@ -91,7 +92,7 @@ def load_source_manifest(path: Path) -> list[Path]:
 
 def prepare_source_roots(
     *,
-    source_root: str | Path | None = None,
+    source_root: str | Path | Iterable[str | Path] | None = None,
     source_manifest: str | Path | None = None,
     map_path: str | Path | None = None,
     dataset: str | Path,
@@ -100,7 +101,8 @@ def prepare_source_roots(
     dataset_path = Path(dataset)
     inputs: list[Path] = []
     if source_root:
-        inputs.append(Path(source_root))
+        values = (source_root,) if isinstance(source_root, (str, Path)) else source_root
+        inputs.extend(Path(value) for value in values)
     if source_manifest:
         inputs.extend(load_source_manifest(Path(source_manifest)))
     if map_path:
@@ -220,6 +222,7 @@ class PackageIndex:
         return {
             "schema": "ueassettool.package-index/v1",
             "roots": [str(path) for path in self.roots],
+            "file_count": len(self.package_files()),
             "package_count": len(self.packages),
             "packages": sorted(self.packages.values(), key=lambda item: item["package_name"]),
             "errors": self.errors,
@@ -256,6 +259,47 @@ class PackageIndex:
             unique[(item["target_object"], item["target_package"], item["reference_type"])] = item
         return list(unique.values())
 
+    @staticmethod
+    def _property_references(package: UnrealPackage) -> list[dict[str, Any]]:
+        """Return only object paths emitted by decoded serialized properties."""
+        refs: list[dict[str, Any]] = []
+        parser = PropertyParser(package)
+        for index in range(1, len(package.exports) + 1):
+            try:
+                decoded = parser.parse_export(index)
+            except UEAssetError:
+                continue
+            for prop in decoded.get("properties", []):
+                if not str(prop.get("decode_status", "")).startswith("decoded"):
+                    continue
+                stack = [prop.get("value")]
+                while stack:
+                    value = stack.pop()
+                    if isinstance(value, dict):
+                        object_path = value.get("object") or value.get("object_path")
+                        if isinstance(object_path, str):
+                            package_name = _package_name_from_object_path(object_path)
+                            if package_name:
+                                refs.append({
+                                    "source_object": package.object_path(index),
+                                    "source_export": index,
+                                    "source_property": prop.get("name"),
+                                    "source_property_provenance": prop.get("raw"),
+                                    "target_object": object_path,
+                                    "target_package": package_name,
+                                    "reference_type": "DECODED_PROPERTY",
+                                })
+                        stack.extend(value.values())
+                    elif isinstance(value, list):
+                        stack.extend(value)
+        return refs
+
+    @staticmethod
+    def _sidecars(path: Path) -> list[dict[str, Any]]:
+        return [{"path": str(path.with_suffix(suffix)), "present": path.with_suffix(suffix).is_file(),
+                 "sha256": sha256_file(path.with_suffix(suffix)) if path.with_suffix(suffix).is_file() else None}
+                for suffix in SIDECAR_SUFFIXES]
+
     def dependency_closure(self, start: str | Path) -> dict[str, Any]:
         start_path = Path(start)
         with UnrealPackage(start_path) as start_package:
@@ -284,6 +328,11 @@ class PackageIndex:
             try:
                 with UnrealPackage(source_record["path"]) as package:
                     references = self._header_references(package)
+                    # Step 2 requires decoded actor/component/object edges from the
+                    # selected map.  Transitive packages remain table-closed here;
+                    # recursively decoding all editor exports is a later contract.
+                    if source_name == start_name:
+                        references += self._property_references(package)
             except (UEAssetError, OSError) as exc:
                 missing.append({
                     "source_package": source_name, "status": "DECODE_ERROR",
@@ -297,18 +346,29 @@ class PackageIndex:
                     status = "RESOLVED"
                     resolved = target["path"]
                     target_hash = target["sha256"]
+                    sidecars = self._sidecars(Path(resolved))
                     if target_name not in visited:
                         queue.append(target_name)
                 elif target_name.startswith("/Script/"):
                     status = "EXTERNAL_SCRIPT_PACKAGE"
                     resolved = None
                     target_hash = None
+                    sidecars = []
+                elif target_name.startswith("/Engine/"):
+                    status = "EXTERNAL_ENGINE_PACKAGE"
+                    resolved = None
+                    target_hash = None
+                    sidecars = []
                 else:
                     status = "MISSING_PACKAGE"
                     resolved = None
                     target_hash = None
+                    sidecars = []
                 edge = {
-                    "source_object": source_name,
+                    "source_object": reference.get("source_object", source_name),
+                    "source_export": reference.get("source_export"),
+                    "source_property": reference.get("source_property"),
+                    "source_property_provenance": reference.get("source_property_provenance"),
                     "source_package": source_name,
                     "target_object_path": reference["target_object"],
                     "target_package": target_name,
@@ -316,7 +376,7 @@ class PackageIndex:
                     "resolved_local_file": resolved,
                     "source_sha256": source_record["sha256"],
                     "target_sha256": target_hash,
-                    "required_sidecars": [],
+                    "required_sidecars": sidecars,
                     "terminal_status": status,
                     "reason": None if status == "RESOLVED" else (
                         "native script package is not a supplied content package"
@@ -327,6 +387,12 @@ class PackageIndex:
                 edges.append(edge)
                 if status == "MISSING_PACKAGE":
                     missing.append(edge)
+        unique = {(item["source_package"], item["source_object"], item["source_property"], item["target_package"], item["target_object_path"], item["reference_type"]): item for item in edges}
+        status_counts: dict[str, int] = {}
+        type_counts: dict[str, int] = {}
+        for item in unique.values():
+            status_counts[item["terminal_status"]] = status_counts.get(item["terminal_status"], 0) + 1
+            type_counts[item["reference_type"]] = type_counts.get(item["reference_type"], 0) + 1
         return {
             "schema": DEPENDENCY_SCHEMA,
             "root_package": start_name,
@@ -334,8 +400,14 @@ class PackageIndex:
             "root_sha256": start_hash,
             "visited_package_count": len(visited),
             "edge_count": len(edges),
+            "unique_edge_count": len(unique),
             "resolved_count": sum(item["terminal_status"] == "RESOLVED" for item in edges),
             "missing_count": sum(item["terminal_status"] == "MISSING_PACKAGE" for item in edges),
+            "unique_missing_package_count": len({item["target_package"] for item in unique.values() if item["terminal_status"] == "MISSING_PACKAGE"}),
+            "unique_resolved_package_count": len({item["target_package"] for item in unique.values() if item["terminal_status"] == "RESOLVED"}),
+            "counts_by_status": status_counts,
+            "counts_by_reference_type": type_counts,
+            "unique_edges": list(unique.values()),
             "edges": edges,
             "missing": missing,
         }

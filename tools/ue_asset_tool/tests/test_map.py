@@ -3,7 +3,7 @@ import unittest
 
 from ueassettool.errors import FormatError
 from ueassettool.map import (
-    MAP_SCHEMA,
+    MAP_SCHEMA, build_map_gate,
     compose_transforms,
     detect_attachment_cycles,
     quaternion_norm,
@@ -56,6 +56,21 @@ class MapContractTests(unittest.TestCase):
         ])
         self.assertEqual(len(cycles), 1)
         self.assertEqual(set(cycles[0]), {1, 2, 3})
+
+    def test_map_gate_fails_for_partial_transform_and_missing_dependency(self) -> None:
+        gate = build_map_gate(
+            {"source": {}, "status": "PARTIAL_VERIFIED", "landscapes": [], "validation": {
+                "world_count": 1, "level_count": 1, "actor_count": 1, "component_count": 1,
+                "local_transform_counts": {"VERIFIED": 1, "PARTIAL": 0, "INVALID": 0, "MISSING": 0},
+                "world_transform_counts": {"VERIFIED": 0, "PARTIAL": 1, "INVALID": 0, "MISSING": 0},
+                "actor_component_membership_errors": [], "unresolved_parents": [], "attachment_cycles": [],
+            }},
+            {"roots": ["/exact"], "file_count": 2, "package_count": 2, "errors": []},
+            {"edge_count": 1, "unique_edge_count": 1, "unique_missing_package_count": 1,
+             "counts_by_status": {"MISSING_PACKAGE": 1}},
+        )
+        self.assertEqual(gate["gate_status"], "FAIL")
+        self.assertIn("local dependency packages remain unresolved", gate["blockers"])
 
 
 if __name__ == "__main__":

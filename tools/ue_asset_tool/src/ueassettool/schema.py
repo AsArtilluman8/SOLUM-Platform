@@ -71,4 +71,3 @@ def validate_json_file(path: Path, schema_path: Path) -> list[str]:
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return [f"{path}: {type(exc).__name__}: {exc}"]
     return validate_schema(value, schema)
-

@@ -2,6 +2,13 @@
 
 SOLUM is a mobile-first game engine and creative toolchain for building AAA-style games directly on Android.
 
+This file is a high-level roadmap, not a locked implementation schedule. Complex renderer, UDS, VFX, asset-format, editor, and optimization stages must be discussed, prototyped, measured, and refined before they become exact patch tasks.
+
+Current working architecture notes:
+
+- [`docs/SOLUM_UDS_RENDERER_WORKING_PLAN.md`](docs/SOLUM_UDS_RENDERER_WORKING_PLAN.md)
+- [`docs/CODEX_MODEL_SELECTION.md`](docs/CODEX_MODEL_SELECTION.md)
+
 ## Stage 1 — Public OSS foundation
 
 - Public repository.
@@ -15,18 +22,27 @@ SOLUM is a mobile-first game engine and creative toolchain for building AAA-styl
 
 ## Stage 2 — Renderer and tooling foundation
 
-- Filament as primary renderer.
+- Filament as primary renderer and maintained extension/fork point.
 - GLB/glTF import and preview.
 - HDR/IBL environment loading.
 - Render Control Center.
 - Camera and model transform tools.
 - Material/glass/debug tabs.
-- Honest FPS, frame time, jank, and runtime diagnostics.
+- Honest FPS, frame time, jank, rendered/presented frame, and runtime diagnostics.
+- Internal renderer/pass telemetry where supported.
 - Mobile-safe defaults.
 
 Rule: SSR is manual-only and must never be part of default presets, not even Ultra.
 
-## Stage 3 — Material and asset tooling
+## Stage 3 — UDS/UDW system truth and environment lighting
+
+- Reconstruct UDS/UDW controls, Blueprint/Kismet paths, curves, materials, MPCs, textures, Niagara, audio, weather transitions, and runtime capability status.
+- Keep map/geometry reconstruction separate from system reconstruction.
+- Separate visible sky, direct sun/moon lights, environmental lighting, and local reflections.
+- Explore UDS-driven HDR environment capture, diffuse irradiance, and prefiltered specular IBL for Filament.
+- Build mobile quality/update strategies before enabling dynamic capture broadly.
+
+## Stage 4 — Material and asset tooling
 
 - Material slot inspector.
 - Material override system.
@@ -35,10 +51,11 @@ Rule: SSR is manual-only and must never be part of default presets, not even Ult
 - KTX2/Basis/ASTC compression workflow.
 - ORM packing and deduplication.
 - Asset manifest system.
+- Refine SLPK as a package, provenance, dependency, and streaming layer.
 
-## Stage 4 — Procedural Asset Economy
+## Stage 5 — Procedural Asset Economy and perceptual rendering
 
-Goal: make large worlds from small high-quality bases.
+Goal: make large worlds from small high-quality bases and spend quality where it is visible.
 
 - Reusable texture sets.
 - Reusable modular meshes.
@@ -49,8 +66,10 @@ Goal: make large worlds from small high-quality bases.
 - NPC modular generator.
 - Mask painter foundation.
 - LOD and collision generation.
+- Research cluster/meshlet visibility, cluster LOD, HZB occlusion, streaming, and attention-based shading/update quality.
+- Do not claim optimization gains before honest renderer telemetry is validated.
 
-## Stage 5 — Physical Material System
+## Stage 6 — Physical Material System
 
 Goal: materials should define behavior, not only appearance.
 
@@ -60,18 +79,24 @@ Goal: materials should define behavior, not only appearance.
 - Buoyancy and floating/sinking prototypes.
 - Impact energy, dent, crack, splinter, shatter, and sound routing.
 
-## Stage 6 — VFX and world reaction
+## Stage 7 — VFX and world reaction
 
-- SOLUM VFX core runtime.
+- SOLUM-owned VFX intermediate representation.
+- Systems, emitters, ordered modules, parameters, events, and renderer adapters.
 - Filament VFX adapter.
 - Magic impact VFX.
 - Terrain impact and crater events.
 - Grass, mud, snow, sand, water, and prop reactions.
 - Water/liquid master system.
-- Weather and atmosphere.
+- Weather and atmosphere integration.
+- Niagara/UE source may inform behavior and serialization research, but SOLUM implementation must remain independent and license-safe.
 
-## Stage 7 — Gameplay/editor showcase
+## Stage 8 — Gameplay/editor showcase
 
+- Project and asset browser.
+- Scene hierarchy and inspector.
+- Selection, gizmo, undo/redo, save/load, and validation.
+- Material, lighting, post-process, VFX, landscape, and world tools in verified slices.
 - Playable showcase scene.
 - Character movement and camera.
 - Interactive props.
@@ -83,3 +108,11 @@ Goal: materials should define behavior, not only appearance.
 ## Long-term product vision
 
 SOLUM should become a practical open-source mobile creative platform for learning engine development, building mobile-first game prototypes, experimenting with assets/materials/VFX, and maintaining advanced Android creative tooling.
+
+Before an exact milestone begins:
+
+1. discuss the expected visible result and scope;
+2. inspect current code, prototypes, and evidence;
+3. define benchmarks and verification;
+4. select the Codex model/reasoning level using `docs/CODEX_MODEL_SELECTION.md`;
+5. write a bounded task with explicit out-of-scope items and stop conditions.

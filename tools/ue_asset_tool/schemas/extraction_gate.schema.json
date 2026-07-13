@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solum.uds-truth.extraction-gate/v1",
+  "type": "object",
+  "required": [
+    "schema_version", "gate_status", "ready_for_html", "total_input_files",
+    "total_packages", "complete_packages", "partial_packages", "failed_packages",
+    "counts_by_asset_class", "VERIFIED_count", "PARTIAL_VERIFIED_count",
+    "RAW_VERIFIED_count", "missing_input_count", "missing_sidecar_count",
+    "unsupported_count", "decode_error_count", "integrity_error_count",
+    "texture_outputs", "model_outputs", "audio_outputs", "Material_graph_count",
+    "Material_Function_count", "MIC_count", "MPC_count", "Curve_count",
+    "Curve_key_count", "Blueprint_graph_count", "function_count",
+    "bytecode_expression_count", "Niagara_system_count", "Niagara_emitter_count",
+    "Niagara_parameter_count", "map_actor_count", "verified_transform_count",
+    "test_results", "unresolved_blockers"
+  ],
+  "properties": {
+    "schema_version": {"const": "solum.uds-truth/v1"},
+    "gate_status": {"enum": ["PASSED", "FAILED"]},
+    "ready_for_html": {"type": "boolean"},
+    "test_results": {"type": "array"},
+    "unresolved_blockers": {"type": "array"}
+  }
+}

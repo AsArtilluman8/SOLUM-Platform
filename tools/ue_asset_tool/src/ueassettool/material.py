@@ -172,6 +172,125 @@ def _decoded_fields(value: Any) -> dict[str, Any]:
     }
 
 
+def _decoded_property_records(value: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, dict) or not isinstance(value.get("properties"), list):
+        return {}
+    return {
+        key: item
+        for key, item in _property_keys(value["properties"])
+        if str(item.get("decode_status", "")).startswith("decoded")
+    }
+
+
+def _verified_field(item: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not item:
+        return None
+    return {"value": _simple_value(item.get("value")), "provenance": _provenance(item)}
+
+
+def _parameter_info(item: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not item:
+        return None
+    fields = _decoded_property_records(item.get("value"))
+    return {
+        "name": _verified_field(fields.get("Name")),
+        "association": _verified_field(fields.get("Association")),
+        "index": _verified_field(fields.get("Index")),
+        "provenance": _provenance(item),
+    }
+
+
+def _parameter_array(
+    root_properties: dict[str, dict[str, Any]], property_name: str, *, value_name: str = "ParameterValue"
+) -> list[dict[str, Any]]:
+    container = root_properties.get(property_name)
+    value = container.get("value") if container else None
+    items = value.get("items", []) if isinstance(value, dict) else []
+    result = []
+    for index, entry in enumerate(items):
+        fields = _decoded_property_records(entry)
+        result.append({
+            "index": index,
+            "parameter_info": _parameter_info(fields.get("ParameterInfo")),
+            "value": _verified_field(fields.get(value_name)),
+            "override": _verified_field(fields.get("bOverride")),
+            "expression_guid": _verified_field(fields.get("ExpressionGUID")),
+            "entry_fields": {
+                key: _verified_field(item) for key, item in fields.items()
+                if key not in ("ParameterInfo", value_name, "bOverride", "ExpressionGUID")
+            },
+            "container_provenance": _provenance(container) if container else None,
+        })
+    return result
+
+
+def _material_instance_record(
+    package: UnrealPackage, index: int, decoded: dict[str, Any]
+) -> dict[str, Any]:
+    fields = {
+        key: item for key, item in _property_keys(decoded.get("properties", []))
+        if str(item.get("decode_status", "")).startswith("decoded")
+    }
+    static_fields = _decoded_property_records(
+        fields.get("StaticParametersRuntime", {}).get("value")
+    )
+    return {
+        "export_index": index,
+        "object": package.object_path(index),
+        "parent": _verified_field(fields.get("Parent")),
+        "scalar_parameters": _parameter_array(fields, "ScalarParameterValues"),
+        "vector_parameters": _parameter_array(fields, "VectorParameterValues"),
+        "double_vector_parameters": _parameter_array(fields, "DoubleVectorParameterValues"),
+        "texture_parameters": _parameter_array(fields, "TextureParameterValues"),
+        "texture_collection_parameters": _parameter_array(fields, "TextureCollectionParameterValues"),
+        "parameter_collection_parameters": _parameter_array(fields, "ParameterCollectionParameterValues"),
+        "runtime_virtual_texture_parameters": _parameter_array(fields, "RuntimeVirtualTextureParameterValues"),
+        "sparse_volume_texture_parameters": _parameter_array(fields, "SparseVolumeTextureParameterValues"),
+        "font_parameters": _parameter_array(fields, "FontParameterValues"),
+        "static_switch_parameters": _parameter_array(static_fields, "StaticSwitchParameters", value_name="Value"),
+        "base_property_overrides": _verified_field(fields.get("BasePropertyOverrides")),
+        "parse_status": decoded.get("parse_status"),
+        "trailing_native": decoded.get("trailing_native"),
+    }
+
+
+def _collection_parameters(
+    fields: dict[str, dict[str, Any]], property_name: str
+) -> list[dict[str, Any]]:
+    container = fields.get(property_name)
+    value = container.get("value") if container else None
+    items = value.get("items", []) if isinstance(value, dict) else []
+    result = []
+    for index, entry in enumerate(items):
+        entry_fields = _decoded_property_records(entry)
+        result.append({
+            "index": index,
+            "name": _verified_field(entry_fields.get("ParameterName")),
+            "id": _verified_field(entry_fields.get("Id")),
+            "default_value": _verified_field(entry_fields.get("DefaultValue")),
+            "container_provenance": _provenance(container) if container else None,
+        })
+    return result
+
+
+def _material_parameter_collection_record(
+    package: UnrealPackage, index: int, decoded: dict[str, Any]
+) -> dict[str, Any]:
+    fields = {
+        key: item for key, item in _property_keys(decoded.get("properties", []))
+        if str(item.get("decode_status", "")).startswith("decoded")
+    }
+    return {
+        "export_index": index,
+        "object": package.object_path(index),
+        "state_id": _verified_field(fields.get("StateId")),
+        "scalar_parameters": _collection_parameters(fields, "ScalarParameters"),
+        "vector_parameters": _collection_parameters(fields, "VectorParameters"),
+        "parse_status": decoded.get("parse_status"),
+        "trailing_native": decoded.get("trailing_native"),
+    }
+
+
 class MaterialContractDecoder:
     """Build an exact editor material graph contract from serialized inputs."""
 
@@ -255,6 +374,8 @@ class MaterialContractDecoder:
         trailing_native: list[dict[str, Any]] = []
         all_references: list[dict[str, Any]] = []
         material_outputs: list[dict[str, Any]] = []
+        material_instances: list[dict[str, Any]] = []
+        parameter_collections: list[dict[str, Any]] = []
 
         decoded_by_index: dict[int, dict[str, Any]] = {}
         relevant_indices = [
@@ -290,13 +411,23 @@ class MaterialContractDecoder:
                         "provenance": _provenance(item),
                     })
             if export.class_name in MATERIAL_ROOT_CLASSES:
+                root_properties = decoded.get("properties", [])
                 roots.append({
                     "export_index": index,
                     "object": package.object_path(index),
                     "class": export.class_name,
-                    "attributes": _attributes(decoded.get("properties", [])),
+                    "attributes": _attributes(root_properties),
+                    "attribute_provenance": {
+                        key: _provenance(item) for key, item in _property_keys(root_properties)
+                    },
                     "parse_status": decoded.get("parse_status"),
                 })
+                if export.class_name in ("MaterialInstance", "MaterialInstanceConstant"):
+                    material_instances.append(_material_instance_record(package, index, decoded))
+                elif export.class_name == "MaterialParameterCollection":
+                    parameter_collections.append(
+                        _material_parameter_collection_record(package, index, decoded)
+                    )
             if "EditorOnlyData" in str(export.class_name or ""):
                 editor_data.append((index, decoded))
 
@@ -356,6 +487,9 @@ class MaterialContractDecoder:
                 },
                 "description": attrs.get("Desc") or attrs.get("Text"),
                 "attributes": attrs,
+                "attribute_provenance": {
+                    key: _provenance(item) for key, item in _property_keys(properties)
+                },
                 "inputs": inputs,
                 "references": references,
                 "parse_status": decoded.get("parse_status"),
@@ -433,8 +567,10 @@ class MaterialContractDecoder:
         invalid_links = [item for item in links if item["validation"] != "VERIFIED"]
         input_count = sum(len(node["inputs"]) for node in nodes) + len(material_outputs)
         connected_input_count = len(links)
+        root_classes = {item["class"] for item in roots}
+        graph_required = bool(root_classes & {"Material", "MaterialFunction", "MaterialFunctionInstance"})
         graph_verified = (
-            bool(nodes)
+            (bool(nodes) or (graph_required and collection_available and not expression_collection))
             and not unsupported
             and not invalid_links
             and not collection_unknown
@@ -493,7 +629,12 @@ class MaterialContractDecoder:
             }
             for index, item in enumerate(package.imports, 1)
         ]
-        overall_status = "UNSUPPORTED" if not nodes else "RAW_VERIFIED" if trailing_native else "VERIFIED"
+        has_exact_non_graph_contract = bool(material_instances or parameter_collections)
+        overall_status = (
+            "UNSUPPORTED"
+            if not nodes and not has_exact_non_graph_contract
+            else "RAW_VERIFIED" if trailing_native else "VERIFIED"
+        )
         if unsupported:
             overall_status = "RAW_VERIFIED"
         return {
@@ -502,7 +643,11 @@ class MaterialContractDecoder:
             "source": _source(package),
             "roots": roots,
             "graph": {
-                "status": "VERIFIED" if graph_verified else "UNSUPPORTED",
+                "status": (
+                    "VERIFIED" if graph_verified else
+                    "NOT_APPLICABLE" if not graph_required and has_exact_non_graph_contract else
+                    "UNSUPPORTED"
+                ),
                 "node_count": len(nodes),
                 "input_count": input_count,
                 "connected_input_count": connected_input_count,
@@ -521,6 +666,8 @@ class MaterialContractDecoder:
                 "material_outputs": material_outputs,
             },
             "parameters": parameters,
+            "material_instances": material_instances,
+            "parameter_collections": parameter_collections,
             "function_inputs": function_inputs,
             "function_outputs": function_outputs,
             "function_calls": function_calls,

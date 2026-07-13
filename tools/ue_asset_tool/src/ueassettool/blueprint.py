@@ -239,6 +239,19 @@ class BlueprintGraphDecoder:
                 result[prop["name"]] = prop.get("value")
         return result
 
+    @staticmethod
+    def _property_provenance(properties: list[dict[str, Any]]) -> dict[str, Any]:
+        return {
+            str(prop.get("name")): {
+                "header_physical_offset": prop.get("header_physical_offset"),
+                "value_physical_offset": prop.get("raw", {}).get("physical_offset"),
+                "size": prop.get("raw", {}).get("size"),
+                "sha256": prop.get("raw", {}).get("sha256"),
+                "decode_status": prop.get("decode_status"),
+            }
+            for prop in properties
+        }
+
     def parse_node(self, export_index: int) -> dict[str, Any]:
         export = self.package.exports[export_index - 1]
         base = self.properties.parse_export(export_index)
@@ -249,6 +262,7 @@ class BlueprintGraphDecoder:
             "class": export.class_name,
             "graph": self.package.object_path(export.outer_index),
             "properties": self._properties_by_name(base.get("properties", [])),
+            "property_provenance": self._property_provenance(base.get("properties", [])),
             "pins": [],
             "pin_decode_status": "unavailable",
         }
@@ -268,12 +282,29 @@ class BlueprintGraphDecoder:
                 with r.bounded(end):
                     count = r.count("owning EdGraph pin", maximum=1_000_000)
                     pins: list[dict[str, Any] | None] = []
+                    pin_regions: list[tuple[dict[str, Any], int, int]] = []
                     for _ in range(count):
+                        pin_start = r.position
                         is_null = r.boolean32()
-                        pins.append(None if is_null else self._owning_pin(r))
+                        pin = None if is_null else self._owning_pin(r)
+                        pins.append(pin)
+                        if pin is not None:
+                            pin_regions.append((pin, pin_start, r.position))
                     tail_start = r.position
                     tail = r.read(end - tail_start)
             result["pins"] = pins
+            with source.open("rb") as handle:
+                for pin, pin_start, pin_end in pin_regions:
+                    handle.seek(pin_start)
+                    raw = handle.read(pin_end - pin_start)
+                    if len(raw) != pin_end - pin_start:
+                        raise BoundsError(f"pin region at 0x{pin_start:x} is truncated")
+                    pin["provenance"] = {
+                        "source_file": str(source),
+                        "physical_offset": pin_start,
+                        "size": len(raw),
+                        "sha256": hashlib.sha256(raw).hexdigest(),
+                    }
             result["pin_decode_status"] = "decoded"
             result["derived_native_tail"] = {
                 "physical_offset": tail_start,

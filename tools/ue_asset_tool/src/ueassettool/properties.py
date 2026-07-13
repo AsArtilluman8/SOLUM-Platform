@@ -511,6 +511,26 @@ class PropertyParser:
             index = r.i32()
             return {"package_index": index, "object": self.package.object_path(index)}
         if name in ("SoftObjectProperty", "SoftClassProperty"):
+            soft_paths = getattr(self.package, "soft_object_paths", [])
+            if soft_paths:
+                if size != 4:
+                    raise UnsupportedError(
+                        f"{name} uses a header soft-path table but value size is {size}, expected 4"
+                    )
+                index = r.i32()
+                if not 0 <= index < len(soft_paths):
+                    raise FormatError(
+                        f"{name} index {index} outside header soft-path table 0..{len(soft_paths) - 1}"
+                    )
+                path = soft_paths[index]
+                return {
+                    "soft_object_path_index": index,
+                    "package": path["package"],
+                    "asset": path["asset"],
+                    "sub_path": path["sub_path"],
+                    "object_path": path["object_path"],
+                    "header_provenance": path["provenance"],
+                }
             if self.summary.file_version_ue5 >= ver.UE5_FSOFTOBJECTPATH_REMOVE_ASSET_PATH_FNAMES:
                 package_name = self._fname(r).display
                 asset_name = self._fname(r).display

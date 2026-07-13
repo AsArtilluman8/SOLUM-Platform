@@ -139,6 +139,8 @@ class ObjectExport:
     payload_availability: str = "unknown"
     payload_source: str | None = None
     payload_physical_offset: int | None = None
+    payload_sha256: str | None = None
+    preload_dependencies: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
 
 def to_plain(value: Any) -> Any:

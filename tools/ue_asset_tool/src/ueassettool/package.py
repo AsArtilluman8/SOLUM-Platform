@@ -26,9 +26,14 @@ class UnrealPackage:
             self.summary = self._read_summary()
             self._validate_summary()
             self.names = self._read_names()
+            self.soft_object_paths = self._read_soft_object_paths()
             self.imports = self._read_imports()
             self.exports = self._read_exports()
             self._resolve_exports()
+            self.soft_package_references = self._read_soft_package_references()
+            self.depends_map = self._read_depends_map()
+            self.preload_dependencies = self._read_preload_dependencies()
+            self._resolve_preload_dependencies()
         except Exception:
             self.reader.close()
             raise
@@ -248,6 +253,67 @@ class UnrealPackage:
             raise FormatError("name map invariant failed: no canonical 'None' entry")
         return names
 
+    def _region(self, start: int, end: int) -> dict[str, Any]:
+        """Return immutable provenance for an exactly consumed header region."""
+        r = self.reader
+        if not 0 <= start <= end <= r.size:
+            raise BoundsError(
+                f"header region 0x{start:x}..0x{end:x} outside file size 0x{r.size:x}"
+            )
+        old = r.position
+        r.seek(start)
+        raw = r.read(end - start)
+        r.seek(old)
+        return {
+            "source_file": str(self.path),
+            "physical_offset": start,
+            "size": end - start,
+            "sha256": hashlib.sha256(raw).hexdigest(),
+        }
+
+    def _read_soft_object_paths(self) -> list[dict[str, Any]]:
+        """Read the UE5 header FSoftObjectPath table.
+
+        UE5 ADD_SOFTOBJECTPATH_LIST stores each path as FTopLevelAssetPath
+        (two FNames) plus the serialized sub-path string. Export properties then
+        contain a checked int32 index into this table.
+        """
+        r, s = self.reader, self.summary
+        if s.soft_object_paths_count == 0:
+            # A non-zero empty-table offset is legal; it points at the next
+            # header table and therefore has no byte region to validate.
+            if not 0 <= s.soft_object_paths_offset <= r.size:
+                raise BoundsError(
+                    f"soft object path offset 0x{s.soft_object_paths_offset:x} outside file"
+                )
+            return []
+        if s.file_version_ue5 < ver.UE5_ADD_SOFTOBJECTPATH_LIST:
+            raise FormatError("soft object path table present before its UE5 version gate")
+        if not 0 < s.soft_object_paths_offset < r.size:
+            raise BoundsError(
+                f"soft object path offset 0x{s.soft_object_paths_offset:x} outside file"
+            )
+        r.seek(s.soft_object_paths_offset)
+        result: list[dict[str, Any]] = []
+        for index in range(s.soft_object_paths_count):
+            start = r.position
+            package_name = self._read_fname()
+            asset_name = self._read_fname()
+            sub_path = r.fstring()
+            end = r.position
+            result.append({
+                "index": index,
+                "package": package_name.display,
+                "asset": asset_name.display,
+                "sub_path": sub_path,
+                "object_path": (
+                    f"{package_name.display}.{asset_name.display}"
+                    f"{':' + sub_path if sub_path else ''}"
+                ),
+                "provenance": self._region(start, end),
+            })
+        return result
+
     def _read_imports(self) -> list[ObjectImport]:
         r, s = self.reader, self.summary
         r.seek(s.import_offset)
@@ -305,6 +371,132 @@ class UnrealPackage:
                 )
             )
         return result
+
+    def _valid_package_index(self, index: int) -> bool:
+        return (
+            index == 0
+            or (index > 0 and index <= len(self.exports))
+            or (index < 0 and -index <= len(self.imports))
+        )
+
+    def _checked_dependency_index(self, r: BinaryReader, label: str) -> int:
+        offset = r.position
+        index = r.i32()
+        if index == 0 or not self._valid_package_index(index):
+            raise FormatError(
+                f"{label} package index {index} at 0x{offset:x} is outside "
+                f"imports={len(self.imports)}, exports={len(self.exports)}"
+            )
+        return index
+
+    def _read_soft_package_references(self) -> list[dict[str, Any]]:
+        r, s = self.reader, self.summary
+        if s.soft_package_references_count == 0:
+            if not 0 <= s.soft_package_references_offset <= r.size:
+                raise BoundsError("soft package references offset outside file")
+            return []
+        if not 0 < s.soft_package_references_offset < r.size:
+            raise BoundsError("soft package references offset outside file")
+        r.seek(s.soft_package_references_offset)
+        result = []
+        for index in range(s.soft_package_references_count):
+            start = r.position
+            name = self._read_fname()
+            result.append({
+                "index": index,
+                "package": name.display,
+                "provenance": self._region(start, r.position),
+            })
+        return result
+
+    def _read_depends_map(self) -> list[dict[str, Any]]:
+        """Read one TArray<FPackageIndex> for every export."""
+        r, s = self.reader, self.summary
+        if not self.exports:
+            return []
+        if not 0 < s.depends_offset < r.size:
+            raise BoundsError(f"depends map offset 0x{s.depends_offset:x} outside file")
+        r.seek(s.depends_offset)
+        result: list[dict[str, Any]] = []
+        maximum = len(self.imports) + len(self.exports)
+        for export_index in range(1, len(self.exports) + 1):
+            start = r.position
+            count = r.count(f"depends map export {export_index}", maximum=maximum)
+            dependencies = [
+                self._checked_dependency_index(r, f"depends map export {export_index}")
+                for _ in range(count)
+            ]
+            result.append({
+                "export_index": export_index,
+                "object": self.object_path(export_index),
+                "dependencies": [
+                    {"package_index": item, "object": self.object_path(item)}
+                    for item in dependencies
+                ],
+                "provenance": self._region(start, r.position),
+            })
+        return result
+
+    def _read_preload_dependencies(self) -> list[dict[str, Any]]:
+        r, s = self.reader, self.summary
+        if s.preload_dependency_count in (-1, 0):
+            if s.preload_dependency_count == 0 and not 0 <= s.preload_dependency_offset <= r.size:
+                raise BoundsError("preload dependency offset outside file")
+            return []
+        if s.preload_dependency_count < -1:
+            raise FormatError(f"invalid preload dependency count {s.preload_dependency_count}")
+        if not 0 < s.preload_dependency_offset < r.size:
+            raise BoundsError("preload dependency offset outside file")
+        r.seek(s.preload_dependency_offset)
+        result = []
+        for index in range(s.preload_dependency_count):
+            start = r.position
+            package_index = self._checked_dependency_index(r, f"preload dependency {index}")
+            result.append({
+                "index": index,
+                "package_index": package_index,
+                "object": self.object_path(package_index),
+                "provenance": self._region(start, r.position),
+            })
+        return result
+
+    def _resolve_preload_dependencies(self) -> None:
+        """Validate each FObjectExport's five contiguous preload blocks."""
+        total = len(self.preload_dependencies)
+        labels = (
+            "serialization_before_serialization",
+            "create_before_serialization",
+            "serialization_before_create",
+            "create_before_create",
+        )
+        for export_index, export in enumerate(self.exports, 1):
+            counts = (
+                export.serialization_before_serialization_dependencies,
+                export.create_before_serialization_dependencies,
+                export.serialization_before_create_dependencies,
+                export.create_before_create_dependencies,
+            )
+            if export.first_export_dependency == -1:
+                if any(counts):
+                    raise FormatError(
+                        f"export {export_index} has preload counts without FirstExportDependency"
+                    )
+                export.preload_dependencies = {label: [] for label in labels}
+                continue
+            if export.first_export_dependency < 0 or any(value < 0 for value in counts):
+                raise FormatError(f"export {export_index} has negative preload dependency metadata")
+            end = export.first_export_dependency + sum(counts)
+            if end > total:
+                raise BoundsError(
+                    f"export {export_index} preload range "
+                    f"{export.first_export_dependency}..{end} exceeds table count {total}"
+                )
+            cursor = export.first_export_dependency
+            groups: dict[str, list[dict[str, Any]]] = {}
+            for label, count in zip(labels, counts):
+                groups[label] = self.preload_dependencies[cursor:cursor + count]
+                cursor += count
+            export.preload_dependencies = groups
 
     def resolve_index_name(self, index: int) -> str:
         if index == 0:
@@ -391,6 +583,24 @@ class UnrealPackage:
                 "size": item.serial_size,
                 "required": str(sidecar),
             })
+        for item in self.exports:
+            if item.payload_availability not in ("available", "empty"):
+                continue
+            source = Path(item.payload_source or self.path)
+            offset = int(item.payload_physical_offset or 0)
+            digest = hashlib.sha256()
+            with source.open("rb") as handle:
+                handle.seek(offset)
+                remaining = item.serial_size
+                while remaining:
+                    chunk = handle.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        raise BoundsError(
+                            f"short export payload read at 0x{handle.tell():x} in {source}"
+                        )
+                    digest.update(chunk)
+                    remaining -= len(chunk)
+            item.payload_sha256 = digest.hexdigest()
 
     def inspect_dict(self) -> dict[str, Any]:
         available = sum(x.payload_availability in ("available", "empty") for x in self.exports)
@@ -422,6 +632,10 @@ class UnrealPackage:
             },
             "summary": to_plain(self.summary),
             "names": [to_plain(x) for x in self.names],
+            "soft_object_paths": self.soft_object_paths,
             "imports": [to_plain(x) for x in self.imports],
             "exports": [to_plain(x) for x in self.exports],
+            "soft_package_references": self.soft_package_references,
+            "depends_map": self.depends_map,
+            "preload_dependencies": self.preload_dependencies,
         }

@@ -418,6 +418,32 @@ def _write_atomic(path: Path, data: bytes) -> None:
     temporary.replace(path)
 
 
+def _verify_recovered_compressed_buffer_payload(
+    data: bytes, *, expected_size: int, expected_blake3: str,
+) -> dict[str, Any]:
+    """Prove an independently recovered raw buffer against UE metadata.
+
+    This is useful on hosts where an Oodle backend is unavailable.  It does
+    not trust the recovered filename or media appearance: both the exact raw
+    length and the serialized 256-bit FCompressedBuffer BLAKE3 must match.
+    """
+    if len(data) != expected_size:
+        raise BoundsError(
+            f"recovered payload size {len(data)} != serialized raw size {expected_size}"
+        )
+    actual = blake3_digest(data).hex()
+    if actual != expected_blake3:
+        raise FormatError(
+            f"recovered payload BLAKE3 {actual} != serialized RawHash {expected_blake3}"
+        )
+    return {
+        "status": "VERIFIED",
+        "basis": "exact FCompressedBuffer raw size and serialized BLAKE3",
+        "raw_size": len(data),
+        "raw_blake3": actual,
+    }
+
+
 def _property_values(decoded: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for prop in decoded.get("properties", []):
@@ -875,6 +901,7 @@ def _exact_texture_source(
     *,
     max_output: int,
     export_index: int | None = None,
+    recovered_source: Path | None = None,
 ) -> dict[str, Any]:
     with UnrealPackage(asset) as package:
         candidates = [
@@ -926,6 +953,7 @@ def _exact_texture_source(
                     raise FormatError(f"{export.class_name} native suffix leaves {end - reader.position} bytes")
         trailer_info: dict[str, Any] | None = None
         legacy_compression: dict[str, Any] | None = None
+        recovered_payload: dict[str, Any] | None = None
         if legacy_bulk:
             if bulk.flags & LEGACY_FORCE_INLINE or not bulk.flags & LEGACY_PAYLOAD_AT_END:
                 raise UnsupportedError("inline UE4 TextureSource FByteBulkData is not verified")
@@ -965,7 +993,23 @@ def _exact_texture_source(
                 offset=package.summary.payload_toc_offset if package.summary.payload_toc_offset >= 0 else None,
             )
             entry = match_trailer_entry(bulk, trailer)
-            raw = load_local_payload(source_path, entry, max_output=max_output)
+            try:
+                raw = load_local_payload(source_path, entry, max_output=max_output)
+            except UnsupportedError:
+                if recovered_source is None:
+                    raise
+                header = read_compressed_buffer_header(source_path, entry.absolute_offset)
+                if recovered_source.stat().st_size != header.total_raw_size:
+                    raise BoundsError(
+                        f"recovered payload size {recovered_source.stat().st_size} "
+                        f"!= serialized raw size {header.total_raw_size}"
+                    )
+                raw = recovered_source.read_bytes()
+                recovered_payload = _verify_recovered_compressed_buffer_payload(
+                    raw,
+                    expected_size=header.total_raw_size,
+                    expected_blake3=header.raw_hash,
+                )
             payload_offset = entry.absolute_offset
             compressed_size = entry.compressed_size
             trailer_info = {
@@ -1003,9 +1047,25 @@ def _exact_texture_source(
                 )
             if header.raw_hash[:40] != bulk.payload_content_id:
                 raise FormatError("TextureSource PayloadContentId does not match FCompressedBuffer raw hash")
-            raw_header, raw = decompress_compressed_buffer(
-                payload_source, payload_offset, max_output=max_output,
-            )
+            try:
+                raw_header, raw = decompress_compressed_buffer(
+                    payload_source, payload_offset, max_output=max_output,
+                )
+            except UnsupportedError:
+                if recovered_source is None:
+                    raise
+                if recovered_source.stat().st_size != header.total_raw_size:
+                    raise BoundsError(
+                        f"recovered payload size {recovered_source.stat().st_size} "
+                        f"!= serialized raw size {header.total_raw_size}"
+                    )
+                raw = recovered_source.read_bytes()
+                recovered_payload = _verify_recovered_compressed_buffer_payload(
+                    raw,
+                    expected_size=header.total_raw_size,
+                    expected_blake3=header.raw_hash,
+                )
+                raw_header = header
             compressed_size = raw_header.total_compressed_size
         else:
             raise UnsupportedError(f"TextureSource payload storage {bulk.storage} needs a different resolver")
@@ -1127,6 +1187,7 @@ def _exact_texture_source(
                 "legacy_compression": legacy_compression,
             },
             "source_transform": source_transform,
+            "recovered_payload": recovered_payload,
             "array_layout": array_layout,
             "native_layout": {
                 "texture_strip_flags": texture_strip,
@@ -1274,6 +1335,7 @@ def export_media(
     kind: str,
     max_output: int = 2 * 1024 * 1024 * 1024,
     export_index: int | None = None,
+    recovered_source: str | Path | None = None,
 ) -> dict[str, Any]:
     source_asset, target_output = Path(asset), Path(output)
     exact_error: str | None = None
@@ -1281,6 +1343,7 @@ def export_media(
         if kind == "texture":
             return _exact_texture_source(
                 source_asset, target_output, max_output=max_output, export_index=export_index,
+                recovered_source=Path(recovered_source) if recovered_source is not None else None,
             )
         if kind == "audio":
             return _exact_soundwave(source_asset, target_output, max_output=max_output)

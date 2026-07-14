@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solum.uds-visual-capabilities/v1",
+  "title": "SOLUM UDS browser capabilities",
+  "type": "object",
+  "required": ["schema_version", "renderer", "offline", "cdn", "network_requests", "mobile_ui", "controls", "systems"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": "solum.uds-visual/v1"},
+    "renderer": {"const": "WebGL2"},
+    "offline": {"const": true},
+    "cdn": {"const": false},
+    "network_requests": {"type": "array"},
+    "mobile_ui": {"type": "object"},
+    "controls": {"type": "array"},
+    "systems": {"type": "array", "minItems": 14}
+  }
+}

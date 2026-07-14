@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solum.uds-visual-build-report/v1",
+  "title": "SOLUM UDS visual build report",
+  "type": "object",
+  "required": ["schema_version", "result", "roots", "parameters", "weather_presets", "curves", "material_contracts", "mpc", "niagara_contracts", "niagara_parameters", "audio_assets", "texture_assets", "unavailable_texture_sources", "template_files", "data_sha256", "deterministic_build", "host_paths_persisted"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": "solum.uds-visual/v1"},
+    "result": {"const": "BUILT"},
+    "roots": {"type": "integer", "minimum": 6},
+    "parameters": {"type": "integer", "minimum": 1},
+    "weather_presets": {"type": "integer", "minimum": 1},
+    "curves": {"type": "integer", "minimum": 1},
+    "curve_keys": {"type": "integer", "minimum": 1},
+    "material_contracts": {"type": "integer", "minimum": 1},
+    "mpc": {"type": "integer", "minimum": 1},
+    "niagara_contracts": {"type": "integer", "minimum": 1},
+    "niagara_parameters": {"type": "integer", "minimum": 1},
+    "audio_assets": {"type": "integer", "minimum": 0},
+    "texture_assets": {"type": "integer", "minimum": 0},
+    "unavailable_texture_sources": {"type": "integer", "minimum": 1},
+    "active_controls": {"type": "array"},
+    "active_uds_visual_systems": {"type": "array"},
+    "blocked_uds_visual_systems": {"type": "array"},
+    "template_files": {"type": "array"},
+    "data_sha256": {"type": "object"},
+    "deterministic_build": {"const": true},
+    "host_paths_persisted": {"const": false},
+    "visual_claim": {"type": "string"}
+  }
+}

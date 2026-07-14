@@ -6,7 +6,8 @@ from ueassettool.errors import FormatError
 from ueassettool.media import (
     _decode_uedelta_bgra8, _decode_uedelta_texture_source, _uedelta_view_rectangles,
     _encode_source_hdr, _encode_source_npy, blake3_digest,
-    _ogg_crc32, validate_hdr, validate_jpeg, validate_npy, validate_ogg,
+    _ogg_crc32, _verify_recovered_compressed_buffer_payload,
+    validate_hdr, validate_jpeg, validate_npy, validate_ogg,
     validate_png, validate_wav,
 )
 
@@ -16,6 +17,18 @@ def png_chunk(kind: bytes, payload: bytes) -> bytes:
 
 
 class MediaTests(unittest.TestCase):
+    def test_recovered_payload_requires_full_serialized_hash_and_size(self) -> None:
+        raw = b"exact recovered TextureSource bytes"
+        expected = blake3_digest(raw).hex()
+        result = _verify_recovered_compressed_buffer_payload(
+            raw, expected_size=len(raw), expected_blake3=expected,
+        )
+        self.assertEqual(result["status"], "VERIFIED")
+        with self.assertRaisesRegex(FormatError, "serialized RawHash"):
+            _verify_recovered_compressed_buffer_payload(
+                raw + b"!", expected_size=len(raw) + 1, expected_blake3=expected,
+            )
+
     def test_multi_mip_uedelta_uses_exact_split_rectangles_and_texture_source_guid(self) -> None:
         width, height = 140, 500
         raw = bytearray()

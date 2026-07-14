@@ -88,6 +88,11 @@ def build_parser() -> argparse.ArgumentParser:
         media.add_argument("-o", "--output", required=True)
         media.add_argument("--manifest")
         media.add_argument("--max-output", type=int, default=2 * 1024 * 1024 * 1024)
+        if kind == "texture":
+            media.add_argument(
+                "--recovered-source",
+                help="independently recovered raw TextureSource; accepted only on exact serialized BLAKE3 match",
+            )
     maps = sub.add_parser(
         "inventory-maps",
         help="inventory .umap candidates with exact package-table evidence",
@@ -247,7 +252,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command in ("export-texture", "export-audio"):
             kind = "texture" if args.command == "export-texture" else "audio"
-            _json_dump(export_media(args.asset, args.output, kind=kind, max_output=args.max_output), args.manifest)
+            _json_dump(
+                export_media(
+                    args.asset, args.output, kind=kind, max_output=args.max_output,
+                    recovered_source=getattr(args, "recovered_source", None),
+                ),
+                args.manifest,
+            )
             return 0
         if args.command == "export-blueprint":
             _json_dump(export_blueprint_contract(args.asset), args.output)

@@ -102,6 +102,29 @@ def _aggregate_status(exports: list[dict[str, Any]]) -> str:
     return "VERIFIED" if exports else "UNSUPPORTED"
 
 
+def _is_blueprint_contract_export(class_name: str, object_path: str) -> bool:
+    """Select graph objects and the generated class default object.
+
+    Blueprint CDO exports use the project-specific generated class name (for
+    example ``Ultra_Dynamic_Sky_C``), so class-name-only selection silently
+    discarded the serialized defaults that drive user-visible controls.
+    ``Default__`` is Unreal's serialized CDO identity and does not select
+    arbitrary generated-class instances.
+    """
+    classes = (
+        "Blueprint", "BlueprintGeneratedClass", "EdGraph", "EdGraphSchema",
+        "Function", "TimelineTemplate", "SimpleConstructionScript", "SCS_Node",
+    )
+    object_name = object_path.rsplit(".", 1)[-1]
+    return (
+        class_name.startswith("K2Node_")
+        or class_name in classes
+        or class_name.endswith("Blueprint")
+        or class_name.endswith("BlueprintGeneratedClass")
+        or object_name.startswith("Default__")
+    )
+
+
 def _decoded_values(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {}
@@ -661,15 +684,9 @@ def _niagara_scripts(package: UnrealPackage, graph_contract: dict[str, Any]) -> 
 
 def export_blueprint_contract(path: str | Path) -> dict[str, Any]:
     with UnrealPackage(path) as package:
-        classes = ("Blueprint", "BlueprintGeneratedClass", "EdGraph", "EdGraphSchema", "Function", "TimelineTemplate", "SimpleConstructionScript", "SCS_Node")
         exports = _exports(
             package,
-            lambda _i, cls, _p: (
-                cls.startswith("K2Node_")
-                or cls in classes
-                or cls.endswith("Blueprint")
-                or cls.endswith("BlueprintGeneratedClass")
-            ),
+            lambda _i, cls, path: _is_blueprint_contract_export(cls, path),
         )
         graph = BlueprintGraphDecoder(package).decode(include_niagara=False)
         bytecode = StructScriptDecoder(package).decode_functions()

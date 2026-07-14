@@ -30,6 +30,11 @@ PYTHONPATH=src python3 -m ueassettool export-material Material.uasset -o materia
 PYTHONPATH=src python3 -m ueassettool export-curve Curve.uasset -o curve.json
 ```
 
+If an Oodle backend is unavailable, `export-texture --recovered-source <file>`
+can validate independently recovered raw `TextureSource` bytes. The candidate
+is accepted only when its exact length and full 256-bit BLAKE3 match the
+serialized `FCompressedBuffer`; its name or visual appearance is never trusted.
+
 The reader verifies package bounds, companions and UE5 package trailers; preserves unsupported native bytes; reconstructs serialized K2/Niagara node and pin links; decodes tagged properties and Niagara rich curves; and extracts bounded media payloads. K2 graph verification checks unique pin GUIDs, owning-node references, resolved targets and reciprocal links. The `bytecode` path follows UE 5.5 `UStruct::Serialize`, serialized `FProperty` fields, `FPropertyProxyArchive` field paths, `ScriptSerialization.h` expressions and the `UFunction` footer; it requires exact serialized-storage and loaded-VM byte counts and labels the result as Kismet bytecode, never decompiled C++.
 
 UE5 editor `FMeshDescription` payloads can be exported to structurally checked GLB with positions, indices, normals, valid tangents, UVs, vertex colors and polygon-group primitives. Both package-trailer payloads and the verified UE5.0/5.1 disk-backed `FEditorBulkData` layout are resolved by exact content identity and raw size. GLB validation checks every view/accessor, declared min/max, attribute count, index range and triangle primitive.

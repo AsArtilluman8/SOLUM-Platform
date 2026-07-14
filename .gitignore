@@ -7,6 +7,7 @@ _build/
 !private_assets/README.md
 /_private_assets/
 /local_assets/
+/generated_local/
 /apps/engine/src/main/assets/private_env/
 /apps/engine/src/main/assets/private_weather/
 /apps/engine/src/main/assets/private_premium/

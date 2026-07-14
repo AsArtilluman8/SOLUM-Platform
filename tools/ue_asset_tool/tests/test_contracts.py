@@ -3,6 +3,7 @@ import struct
 import unittest
 
 from ueassettool.contracts import (
+    _is_blueprint_contract_export,
     _niagara_compile_hash, _niagara_parameter_store, _niagara_scalar,
     _niagara_variable_summary,
 )
@@ -33,6 +34,19 @@ def _offset_variable(name: str, object_path: str, offset: int) -> dict[str, obje
 
 
 class NiagaraContractTests(unittest.TestCase):
+    def test_blueprint_contract_includes_cdo_not_generated_instances(self) -> None:
+        self.assertTrue(_is_blueprint_contract_export(
+            "Ultra_Dynamic_Sky_C",
+            "/Game/UDS/Ultra_Dynamic_Sky.Default__Ultra_Dynamic_Sky_C",
+        ))
+        self.assertFalse(_is_blueprint_contract_export(
+            "Ultra_Dynamic_Sky_C",
+            "/Game/UDS/Map.Ultra_Dynamic_Sky_C_0",
+        ))
+        self.assertTrue(_is_blueprint_contract_export(
+            "K2Node_CallFunction", "/Game/UDS/BP.Graph.K2Node_CallFunction_0",
+        ))
+
     def test_bool_and_compile_hash_require_official_value_widths(self) -> None:
         invalid_bool = _niagara_scalar(struct.pack("<i", 2), 0, "/Script/Niagara.NiagaraBool")
         self.assertEqual(invalid_bool["status"], "RAW_VERIFIED")

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solum.uds-visual-contract/v1",
+  "title": "SOLUM UDS visual contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source_truth", "browser_adapter_mapping", "actual_visual_capability", "missing_or_unsupported", "scenarios", "map_gate"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": "solum.uds-visual/v1"},
+    "source_truth": {"type": "object"},
+    "browser_adapter_mapping": {"type": "object"},
+    "actual_visual_capability": {"type": "array"},
+    "missing_or_unsupported": {"type": "array"},
+    "scenarios": {"type": "array"},
+    "map_gate": {
+      "type": "object",
+      "required": ["unchanged", "demo_map_rendered"],
+      "properties": {
+        "status": {"type": ["string", "null"]},
+        "unchanged": {"const": true},
+        "demo_map_rendered": {"const": false}
+      }
+    }
+  }
+}

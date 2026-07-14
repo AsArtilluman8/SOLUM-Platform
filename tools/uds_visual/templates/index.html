@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#0b1017">
+  <title>SOLUM — UDS Visual Truth P62</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <canvas id="viewport" aria-label="Нейтральная диагностическая 3D-сцена"></canvas>
+  <header id="topbar">
+    <div>
+      <strong>UDS / UDW · P62</strong>
+      <span id="scene-note">нейтральная сцена · DemoMap не используется</span>
+    </div>
+    <div class="chips">
+      <span class="chip partial">SOURCE-VERIFIED ADAPTER</span>
+      <span class="chip fail" id="gate-chip">GATE …</span>
+    </div>
+  </header>
+  <button id="panel-toggle" type="button" aria-controls="panel" aria-expanded="true">Скрыть панель</button>
+  <aside id="panel" aria-label="Управление и точность">
+    <nav id="tabs" aria-label="Разделы">
+      <button type="button" data-tab="state" class="active">Состояние</button>
+      <button type="button" data-tab="accuracy">Точность</button>
+      <button type="button" data-tab="scenarios">Сценарии</button>
+      <button type="button" data-tab="evidence">Источники</button>
+    </nav>
+    <div id="panel-scroll">
+      <section data-page="state" class="page active">
+        <p class="notice">Изменяются только доказанные исходные состояния. Неполные визуальные связи заблокированы.</p>
+        <label class="control">
+          <span>Время суток <output id="time-value">—</output></span>
+          <input id="time" type="range" step="1" disabled>
+          <small id="time-note"></small>
+        </label>
+        <label class="control">
+          <span>Weather State</span>
+          <select id="weather" disabled></select>
+          <small>Сериализованные UDS_Weather_Settings_C; визуальные VFX не запускаются.</small>
+        </label>
+        <div id="state-values" class="value-grid"></div>
+        <h2>Системы</h2>
+        <div id="system-controls" class="system-controls"></div>
+        <div class="actions">
+          <button id="reset" type="button">Полный сброс</button>
+          <button id="export-json" type="button">Экспорт JSON</button>
+          <button id="export-text" type="button">Экспорт TXT</button>
+        </div>
+      </section>
+      <section data-page="accuracy" class="page">
+        <div id="accuracy-list"></div>
+      </section>
+      <section data-page="scenarios" class="page">
+        <p class="notice">Сценарии фиксируют точные входы и blockers; заблокированные эффекты не исполняются.</p>
+        <div id="scenario-list"></div>
+      </section>
+      <section data-page="evidence" class="page">
+        <div id="summary"></div>
+        <details>
+          <summary>Текущий source state</summary>
+          <pre id="state-json"></pre>
+        </details>
+      </section>
+    </div>
+  </aside>
+  <div id="fatal" role="alert" hidden></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

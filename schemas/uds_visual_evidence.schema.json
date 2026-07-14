@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solum.uds-visual-evidence/v1",
+  "title": "SOLUM UDS visual evidence",
+  "type": "object",
+  "required": ["schema_version", "roots", "parameters", "blueprint_variable_metadata", "time_animation_logic", "transition_logic", "curves", "material_contracts", "material_parameter_collections", "niagara_contracts", "source_dataset"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": "solum.uds-visual/v1"},
+    "roots": {"type": "array", "minItems": 6},
+    "parameters": {"type": "array"},
+    "blueprint_variable_metadata": {"type": "array"},
+    "time_animation_logic": {"type": "object"},
+    "transition_logic": {"type": "object"},
+    "curves": {"type": "array"},
+    "material_contracts": {"type": "array"},
+    "material_parameter_collections": {"type": "array"},
+    "niagara_contracts": {"type": "array"},
+    "source_dataset": {"type": "object"}
+  }
+}

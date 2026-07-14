@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solum.uds-visual-assets/v1",
+  "title": "SOLUM UDS browser asset manifest",
+  "type": "object",
+  "required": ["schema_version", "assets", "texture_assets", "unavailable_texture_sources", "proprietary_bytes_git_policy"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": "solum.uds-visual/v1"},
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "browser_path", "output_sha256", "size", "format", "payload_status", "event_binding_status", "browser_active"]
+      }
+    },
+    "texture_assets": {"type": "array"},
+    "unavailable_texture_sources": {"type": "array"},
+    "texture_blocker": {"type": "string"},
+    "proprietary_bytes_git_policy": {"type": "string"}
+  }
+}

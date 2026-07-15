@@ -1,0 +1,18 @@
+{
+  "schema": "solum.environment.capture-scenarios",
+  "schemaVersion": 1,
+  "stage": "env/p63/p63_environment_stage.glb",
+  "deviceVerificationRequired": true,
+  "scenarios": [
+    {"id":"clear_noon","preset":"Clear_Skies","time":1200,"inspect":["sun disk and directional shadows","metal/glass/water IBL"]},
+    {"id":"sunset","preset":"Clear_Skies","time":1800,"inspect":["horizon scattering","sun tint","sunset IBL"]},
+    {"id":"clear_night","preset":"Clear_Skies","time":0,"inspect":["moon crater and phase","moon light","non-square star geometry"]},
+    {"id":"cloudy","preset":"Cloudy","time":1050,"inspect":["cloud variation","fog poles","light attenuation"]},
+    {"id":"rain_doorway","preset":"Rain","time":1450,"inspect":["rain outside","no rain in roof volume","dry interior floor","wet ground ripples"]},
+    {"id":"thunderstorm","preset":"Rain_Thunderstorm","time":1700,"inspect":["bolt geometry","transient point light","metal and wet specular response","delayed thunder"]},
+    {"id":"light_snow","preset":"Snow_Light","time":900,"inspect":["irregular multi-size flakes","surface snow"]},
+    {"id":"blizzard","preset":"Snow_Blizzard","time":800,"inspect":["wind drift","particle budget","no interior snow"]},
+    {"id":"sandstorm","preset":"Sand_Dust_Storm","time":1500,"inspect":["world-space dust","wind flag","dust tint and drying"]},
+    {"id":"wet_after_rain","preset":"Clear_Skies","time":1300,"precondition":"hold Rain for 25 seconds","inspect":["gradual drying","wet vs covered response","puddle drain"]}
+  ]
+}

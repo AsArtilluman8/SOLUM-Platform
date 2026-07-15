@@ -1,0 +1,323 @@
+package com.solum.engine.environment.p63;
+
+import android.opengl.Matrix;
+
+import com.google.android.filament.Engine;
+import com.google.android.filament.EntityManager;
+import com.google.android.filament.LightManager;
+import com.google.android.filament.MaterialInstance;
+import com.google.android.filament.RenderableManager;
+import com.google.android.filament.TransformManager;
+import com.google.android.filament.View;
+import com.google.android.filament.gltfio.FilamentAsset;
+import com.google.android.filament.utils.ModelViewer;
+
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+
+public final class SolumFilamentEnvironmentAdapter {
+    private static final float[][] CLOUD_POSITIONS = {{-9,10,-8},{-5,11,-11},{-1,9,-9},{4,10,-12},{9,11,-8},{-8,12,-16},{-3,10,-17},{2,12,-16},{7,9,-17},{-6,8,-5},{0,11,-5},{7,10,-4}};
+    private static final float[][] RIPPLE_POSITIONS = {{-7,-1},{-5,4},{-2,1},{0,5},{2,-3},{7.5f,-3},{-8,6},{1,7}};
+    private static final String[] CLOUD_NAMES = indexedNames("P63_CLOUD_", 12);
+    private static final String[] STAR_NAMES = indexedNames("P63_STAR_GROUP_", 3);
+    private static final String[] RAIN_NAMES = cellNames("P63_RAIN_CELL_");
+    private static final String[] SNOW_NAMES = cellNames("P63_SNOW_CELL_");
+    private static final String[] DUST_NAMES = cellNames("P63_DUST_CELL_");
+    private static final String[] RIPPLE_NAMES = indexedNames("P63_RIPPLE_", 8);
+    public interface Host {
+        void applyPreparedIbl(String slot, long revision, float intensity, float blend);
+        void applyEnvironmentSkyColor(float red, float green, float blue, float lightningFlash);
+        void onEnvironmentAdapterStatus(String status);
+    }
+
+    private final ModelViewer viewer;
+    private final SolumEnvironmentController controller;
+    private final SolumEnvironmentAudioSystem audio;
+    private final Host host;
+    private final Map<String, Integer> stageEntities = new LinkedHashMap<>();
+    private final float[] transformScratch = new float[16];
+    private int moonLightEntity;
+    private int lightningLightEntity;
+    private long lastIblRevision = -1L;
+    private float rainPhase;
+    private float snowPhase;
+    private float dustPhase;
+    private float ripplePhase;
+    private float materialClock;
+    private String status = "created_not_bound";
+    private String materialStatus = "not_applied";
+    private boolean stageBound;
+
+    public SolumFilamentEnvironmentAdapter(ModelViewer viewer, SolumEnvironmentController controller,
+                                            SolumEnvironmentAudioSystem audio, Host host) {
+        if (viewer == null || controller == null) throw new IllegalArgumentException("filament_adapter_dependencies_missing");
+        this.viewer = viewer; this.controller = controller; this.audio = audio; this.host = host;
+        createLights();
+    }
+
+    public void bindStage(FilamentAsset asset) {
+        stageEntities.clear(); stageBound = false;
+        if (asset == null) { status = "stage_asset_missing_lights_fog_only"; notifyStatus(); return; }
+        int p63Count = 0;
+        for (int entity : asset.getRenderableEntities()) {
+            String name = asset.getName(entity);
+            if (name != null && !name.isEmpty()) {
+                stageEntities.put(name, entity);
+                if (name.startsWith("P63_")) p63Count++;
+            }
+        }
+        stageBound = p63Count >= 40;
+        status = stageBound ? "bound_p63_filament_stage_entities=" + p63Count : "asset_bound_without_p63_stage_entities=" + p63Count;
+        SolumEnvironmentState state = controller.getState();
+        state.stageStatus = status; state.adapterStatus = "filament_adapter_live";
+        state.setFeatureStatus("world_space_rain", stageBound ? EnvironmentFeatureStatus.PROTOTYPE : EnvironmentFeatureStatus.PLACEHOLDER);
+        state.setFeatureStatus("world_space_snow", stageBound ? EnvironmentFeatureStatus.PROTOTYPE : EnvironmentFeatureStatus.PLACEHOLDER);
+        notifyStatus();
+    }
+
+    public SolumEnvironmentState update(float deltaSeconds) {
+        float dt = Math.max(0.0f, Math.min(0.1f, deltaSeconds));
+        SolumEnvironmentState state = controller.update(dt);
+        applyLights(state);
+        applyFog(state);
+        if (host != null) {
+            if (lastIblRevision != state.lighting.iblRevision) {
+                lastIblRevision = state.lighting.iblRevision;
+                host.applyPreparedIbl(state.lighting.iblSlot, lastIblRevision, state.lighting.ambientIntensity, state.lighting.iblBlend);
+            } else {
+                host.applyPreparedIbl(state.lighting.iblSlot, lastIblRevision, state.lighting.ambientIntensity, state.lighting.iblBlend);
+            }
+            host.applyEnvironmentSkyColor(state.atmosphere.skyColor[0], state.atmosphere.skyColor[1], state.atmosphere.skyColor[2], state.lightning.flash);
+        }
+        if (stageBound) applyStage(state, dt);
+        if (audio != null) audio.update(state, dt);
+        state.adapterStatus = status + " material=" + materialStatus;
+        return state;
+    }
+
+    public void release() {
+        Engine engine = viewer.getEngine();
+        destroyLight(engine, moonLightEntity); moonLightEntity = 0;
+        destroyLight(engine, lightningLightEntity); lightningLightEntity = 0;
+        stageEntities.clear(); stageBound = false; status = "released";
+    }
+
+    public String getStatus() { return status + " material=" + materialStatus + " stageBound=" + stageBound; }
+
+    private void createLights() {
+        Engine engine = viewer.getEngine();
+        moonLightEntity = EntityManager.get().create();
+        new LightManager.Builder(LightManager.Type.DIRECTIONAL).castShadows(false).direction(0.0f, 1.0f, 0.0f)
+            .color(0.446f, 0.557f, 0.865f).intensity(0.0f).build(engine, moonLightEntity);
+        viewer.getScene().addEntity(moonLightEntity);
+        lightningLightEntity = EntityManager.get().create();
+        new LightManager.Builder(LightManager.Type.POINT).castShadows(false).position(0.0f, 8.0f, -8.0f)
+            .color(0.495f, 0.613f, 1.0f).intensity(0.0f).falloff(32.0f).build(engine, lightningLightEntity);
+        viewer.getScene().addEntity(lightningLightEntity);
+    }
+
+    private void applyLights(SolumEnvironmentState state) {
+        try {
+            LightManager manager = viewer.getEngine().getLightManager();
+            int sun = manager.getInstance(viewer.getLight());
+            if (sun != 0) {
+                manager.setDirection(sun, state.lighting.sunDirection[0], state.lighting.sunDirection[1], state.lighting.sunDirection[2]);
+                manager.setColor(sun, state.lighting.sunColor[0], state.lighting.sunColor[1], state.lighting.sunColor[2]);
+                manager.setIntensity(sun, Math.max(0.0f, state.lighting.sunLux));
+                manager.setShadowCaster(sun, state.lighting.sunLux > 0.05f);
+            }
+            int moon = manager.getInstance(moonLightEntity);
+            if (moon != 0) {
+                manager.setDirection(moon, state.lighting.moonDirection[0], state.lighting.moonDirection[1], state.lighting.moonDirection[2]);
+                manager.setColor(moon, state.lighting.moonColor[0], state.lighting.moonColor[1], state.lighting.moonColor[2]);
+                manager.setIntensity(moon, Math.max(0.0f, state.lighting.moonLux));
+            }
+            int lightning = manager.getInstance(lightningLightEntity);
+            if (lightning != 0) {
+                manager.setPosition(lightning, state.lightning.strikeX, 7.5f, state.lightning.strikeZ);
+                manager.setIntensity(lightning, Math.max(0.0f, state.lighting.lightningLumens));
+                manager.setFalloff(lightning, 30.0f + state.lightning.flash * 18.0f);
+            }
+        } catch (Throwable error) {
+            status = "light_apply_failed_" + safe(error);
+        }
+    }
+
+    private void applyFog(SolumEnvironmentState state) {
+        try {
+            View view = viewer.getView();
+            View.FogOptions fog = view.getFogOptions();
+            fog.enabled = state.fog.density > 0.006f;
+            fog.density = state.fog.density;
+            fog.distance = state.fog.distance;
+            fog.cutOffDistance = Math.max(80.0f, state.fog.distance + 100.0f);
+            fog.maximumOpacity = state.fog.maximumOpacity;
+            fog.height = state.fog.height;
+            fog.heightFalloff = state.fog.heightFalloff;
+            fog.color[0] = state.fog.color[0]; fog.color[1] = state.fog.color[1]; fog.color[2] = state.fog.color[2];
+            fog.fogColorFromIbl = true;
+            view.setFogOptions(fog);
+        } catch (Throwable error) {
+            status = "fog_apply_failed_" + safe(error);
+        }
+    }
+
+    private void applyStage(SolumEnvironmentState state, float dt) {
+        rainPhase = wrap(rainPhase + dt * (5.5f + state.wind.speed * 5.0f), 12.0f);
+        snowPhase = wrap(snowPhase + dt * (0.75f + state.wind.speed * 1.25f), 12.0f);
+        dustPhase = wrap(dustPhase + dt * (0.65f + state.wind.speed * 2.6f), 12.0f);
+        ripplePhase = wrap(ripplePhase + dt * (1.2f + state.weather.rain * 2.2f), 1.0f);
+        applyCelestialGeometry(state);
+        applyCloudGeometry(state);
+        applyPrecipitationGeometry(state);
+        applySurfaceGeometry(state);
+        applyLightningGeometry(state);
+        applyWindGeometry(state);
+        materialClock += dt;
+        if (materialClock >= 0.12f) { materialClock = 0.0f; applyMaterials(state); }
+    }
+
+    private void applyCelestialGeometry(SolumEnvironmentState state) {
+        float radius = 27.0f;
+        float sunX = -state.lighting.sunDirection[0] * radius;
+        float sunY = -state.lighting.sunDirection[1] * radius;
+        float sunZ = -state.lighting.sunDirection[2] * radius - 5.0f;
+        float moonX = -state.lighting.moonDirection[0] * radius;
+        float moonY = -state.lighting.moonDirection[1] * radius;
+        float moonZ = -state.lighting.moonDirection[2] * radius - 5.0f;
+        float sunScale = state.lighting.sunDiskBrightness > 0.01f ? 1.10f * controller.getSunDiskScale() : 0.001f;
+        float moonScale = state.lighting.moonDiskBrightness > 0.01f ? controller.getMoonDiskScale() : 0.001f;
+        setTransform("P63_SUN_DISK", sunX, sunY, sunZ, sunScale, sunScale, sunScale, 0, 0, 0);
+        setTransform("P63_MOON_DISK", moonX, moonY, moonZ, moonScale, moonScale, moonScale, 0, 0, 0);
+        float phase = state.lighting.moonPhase;
+        float shadowOffset = (phase - 0.5f) * 1.55f;
+        float shadowScaleX = 0.78f + Math.abs(phase - 0.5f) * 0.42f;
+        setTransform("P63_MOON_SHADOW", moonX + shadowOffset, moonY, moonZ + 0.035f, moonScale * shadowScaleX, moonScale, moonScale, 0, 0, 0);
+        float starScale = Math.max(0.001f, state.lighting.starVisibility);
+        float rotation = state.timeOfDay / 2400.0f * 360.0f;
+        int visibleGroups = Math.max(0, Math.min(3, (int) Math.ceil(controller.getStarDensity() * 3.0f)));
+        for (int i = 0; i < 3; i++) {
+            float groupScale = i < visibleGroups ? starScale : 0.001f;
+            setTransform(STAR_NAMES[i], 0, 0, 0, groupScale, groupScale, groupScale, rotation, 0, 0);
+        }
+    }
+
+    private void applyCloudGeometry(SolumEnvironmentState state) {
+        int requested = Math.min(state.clouds.visibleGroups, Math.max(0, (int) Math.ceil(state.clouds.coverage * 12.0f)));
+        for (int i = 0; i < CLOUD_POSITIONS.length; i++) {
+            boolean visible = i < requested && state.clouds.coverage > 0.015f;
+            float scale = visible ? 0.52f + state.clouds.density * 0.78f : 0.001f;
+            float x = wrapSigned(CLOUD_POSITIONS[i][0] + state.clouds.offsetX, 22.0f);
+            float z = CLOUD_POSITIONS[i][2] + wrapSigned(state.clouds.offsetZ, 18.0f);
+            setTransform(CLOUD_NAMES[i], x, CLOUD_POSITIONS[i][1], z, scale, 0.75f + state.clouds.thickness * 0.65f, scale, 0, 0, 0);
+        }
+    }
+
+    private void applyPrecipitationGeometry(SolumEnvironmentState state) {
+        int maxCells = state.precipitation.particleLimit <= 500 ? 9 : (state.precipitation.particleLimit <= 1200 ? 17 : 25);
+        int rainCells = Math.min(maxCells, (int) Math.ceil(maxCells * state.weather.rain));
+        int snowCells = Math.min(maxCells, (int) Math.ceil(maxCells * state.weather.snow));
+        int dustCells = Math.min(maxCells, (int) Math.ceil(maxCells * state.weather.dust));
+        for (int z = 0; z < 5; z++) for (int x = 0; x < 5; x++) {
+            int index = z * 5 + x;
+            float worldX = controller.getCameraX() + (x - 2) * 3.0f;
+            float worldZ = controller.getCameraZ() + (z - 2) * 3.0f;
+            boolean blocked = controller.getOcclusion().blocksPrecipitation(worldX, 1.5f, worldZ);
+            float rainVisible = !blocked && index < rainCells ? 1.0f : 0.001f;
+            float snowVisible = !blocked && index < snowCells ? 1.0f : 0.001f;
+            float dustVisible = !blocked && index < dustCells ? 1.0f : 0.001f;
+            float windX = state.wind.x * 1.8f;
+            float windZ = state.wind.z * 1.8f;
+            setTransform(RAIN_NAMES[index], worldX + windX, 6.0f - rainPhase + (index % 3) * 4.0f, worldZ + windZ, rainVisible, rainVisible, rainVisible, 0, 0, -state.wind.x * 10.0f);
+            setTransform(SNOW_NAMES[index], worldX + windX * 0.7f, 6.0f - snowPhase + (index % 3) * 4.0f, worldZ + windZ * 0.7f, snowVisible, snowVisible, snowVisible, state.wind.phase * 9.0f + index * 17.0f, 0, 0);
+            setTransform(DUST_NAMES[index], worldX + dustPhase + windX, 3.5f + (index % 2), worldZ + windZ, dustVisible, dustVisible, dustVisible, state.wind.phase * 3.0f, 0, 0);
+        }
+    }
+
+    private void applySurfaceGeometry(SolumEnvironmentState state) {
+        for (int i = 0; i < RIPPLE_POSITIONS.length; i++) {
+            boolean blocked = controller.getOcclusion().blocksPrecipitation(RIPPLE_POSITIONS[i][0], 0.1f, RIPPLE_POSITIONS[i][1]);
+            float pulse = (!blocked && state.weather.rain > 0.04f) ? (0.12f + ripplePhase * 0.65f) : 0.001f;
+            setTransform(RIPPLE_NAMES[i], RIPPLE_POSITIONS[i][0], 0.055f, RIPPLE_POSITIONS[i][1], pulse, 1.0f, pulse, i * 23.0f, 0, 0);
+        }
+    }
+
+    private void applyLightningGeometry(SolumEnvironmentState state) {
+        float visible = state.lightning.active && state.lightning.flash > 0.008f ? 1.0f : 0.001f;
+        setTransform("P63_LIGHTNING_BOLT", state.lightning.strikeX, 0.0f, state.lightning.strikeZ, visible, visible, visible, 0, 0, 0);
+    }
+
+    private void applyWindGeometry(SolumEnvironmentState state) {
+        float bend = state.wind.x * 16.0f + (float) Math.sin(state.wind.phase * 2.0f) * state.wind.gust * 11.0f;
+        setTransform("P63_FLAG", -7.25f, 3.8f, 3.5f, 0.75f, 1.0f, 0.55f, 0, 90.0f, bend);
+    }
+
+    private void applyMaterials(SolumEnvironmentState state) {
+        try {
+            float wet = state.surface.wetness;
+            setMaterial("P63_WET_SURFACE", "roughnessFactor", Math.max(0.04f, 0.78f - wet * 0.66f));
+            setMaterial4("P63_WET_SURFACE", "baseColorFactor", 0.085f * (1.0f - wet * 0.38f), 0.09f * (1.0f - wet * 0.38f), 0.095f * (1.0f - wet * 0.38f), 1.0f);
+            setMaterial("P63_PUDDLE", "roughnessFactor", Math.max(0.018f, 0.16f - state.surface.puddle * 0.13f));
+            setMaterial4("P63_PUDDLE", "baseColorFactor", 0.035f, 0.09f, 0.13f, Math.max(0.02f, state.surface.puddle * 0.88f));
+            float snow = state.surface.snowCover;
+            setMaterial4("P63_SNOW_SURFACE", "baseColorFactor", 0.26f + snow * 0.62f, 0.28f + snow * 0.64f, 0.30f + snow * 0.67f, 1.0f);
+            setMaterial("P63_SNOW_SURFACE", "roughnessFactor", 0.48f + snow * 0.36f);
+            float ice = state.surface.ice;
+            setMaterial4("P63_ICE_SURFACE", "baseColorFactor", 0.18f + ice * 0.24f, 0.25f + ice * 0.43f, 0.30f + ice * 0.48f, Math.max(0.08f, ice * 0.78f));
+            setMaterial("P63_ICE_SURFACE", "roughnessFactor", Math.max(0.05f, 0.42f - ice * 0.33f));
+            float flash = state.lightning.flash * 0.65f;
+            setMaterial4("P63_CLOUD_0", "baseColorFactor", Math.min(1.0f,state.clouds.color[0]+flash), Math.min(1.0f,state.clouds.color[1]+flash), Math.min(1.0f,state.clouds.color[2]+flash), 0.38f + state.clouds.density * 0.46f);
+            setMaterial4("P63_RAIN_CELL_0_0", "baseColorFactor", 0.42f, 0.62f, Math.min(1.0f, 0.82f + state.lightning.flash * 0.18f), 0.20f + state.weather.rain * 0.62f);
+            setMaterial4("P63_SNOW_CELL_0_0", "baseColorFactor", 0.92f, 0.96f, 1.0f, 0.28f + state.weather.snow * 0.68f);
+            setMaterial4("P63_DUST_CELL_0_0", "baseColorFactor", 0.62f, 0.38f, 0.18f, 0.12f + state.weather.dust * 0.48f);
+            setMaterial4("P63_SUN_DISK", "baseColorFactor", 1.0f, 0.64f + state.lighting.sunElevation * 0.25f, 0.22f, Math.min(1.0f, state.lighting.sunDiskBrightness));
+            setMaterial4("P63_MOON_DISK", "baseColorFactor", 0.72f, 0.78f, 0.90f, Math.min(1.0f, state.lighting.moonDiskBrightness));
+            materialStatus = "live_pbr_parameters_wet_snow_ice_cloud_precipitation";
+        } catch (Throwable error) {
+            materialStatus = "material_parameter_apply_failed_" + safe(error);
+        }
+    }
+
+    private void setMaterial(String name, String parameter, float value) {
+        MaterialInstance material = firstMaterial(name);
+        if (material != null) material.setParameter(parameter, value);
+    }
+
+    private void setMaterial4(String name, String parameter, float x, float y, float z, float w) {
+        MaterialInstance material = firstMaterial(name);
+        if (material != null) material.setParameter(parameter, x, y, z, w);
+    }
+
+    private MaterialInstance firstMaterial(String name) {
+        Integer entity = stageEntities.get(name);
+        if (entity == null) return null;
+        RenderableManager manager = viewer.getEngine().getRenderableManager();
+        int instance = manager.getInstance(entity);
+        return instance == 0 || manager.getPrimitiveCount(instance) == 0 ? null : manager.getMaterialInstanceAt(instance, 0);
+    }
+
+    private void setTransform(String name, float tx, float ty, float tz, float sx, float sy, float sz, float rotationY, float rotationX, float rotationZ) {
+        Integer entity = stageEntities.get(name); if (entity == null) return;
+        TransformManager manager = viewer.getEngine().getTransformManager();
+        int instance = manager.getInstance(entity); if (instance == 0) return;
+        Matrix.setIdentityM(transformScratch, 0); Matrix.translateM(transformScratch, 0, tx, ty, tz);
+        if (rotationY != 0.0f) Matrix.rotateM(transformScratch, 0, rotationY, 0, 1, 0);
+        if (rotationX != 0.0f) Matrix.rotateM(transformScratch, 0, rotationX, 1, 0, 0);
+        if (rotationZ != 0.0f) Matrix.rotateM(transformScratch, 0, rotationZ, 0, 0, 1);
+        Matrix.scaleM(transformScratch, 0, sx, sy, sz);
+        manager.setTransform(instance, transformScratch);
+    }
+
+    private void destroyLight(Engine engine, int entity) {
+        if (entity == 0) return;
+        try { viewer.getScene().removeEntity(entity); engine.getLightManager().destroy(entity); EntityManager.get().destroy(entity); } catch (Throwable ignored) { }
+    }
+
+    private void notifyStatus() { if (host != null) host.onEnvironmentAdapterStatus(status); }
+    private static String[] indexedNames(String prefix,int count){String[] out=new String[count];for(int i=0;i<count;i++)out[i]=prefix+i;return out;}
+    private static String[] cellNames(String prefix){String[] out=new String[25];for(int z=0;z<5;z++)for(int x=0;x<5;x++)out[z*5+x]=prefix+x+"_"+z;return out;}
+    private static float wrap(float value, float range) { float out=value%range;return out<0?out+range:out; }
+    private static float wrapSigned(float value, float range) { float out=(value+range*0.5f)%range;if(out<0)out+=range;return out-range*0.5f; }
+    private static String safe(Throwable error) { return error == null ? "unknown" : error.getClass().getSimpleName() + "_" + String.valueOf(error.getMessage()).replace(' ', '_').toLowerCase(Locale.US); }
+}

@@ -13,6 +13,14 @@ android {
         versionCode 4
         versionName '0.4.0'
     }
+
+    sourceSets {
+        main {
+            // Optional private P62B hit WAVs are packaged locally when present, but are never
+            // copied into public source. P63 always has SOLUM-native procedural audio fallback.
+            assets.srcDir "${rootProject.projectDir}/generated_local/uds_visual_preview/assets"
+        }
+    }
 }
 
 

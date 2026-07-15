@@ -71,6 +71,14 @@ import com.solum.engine.environment.EnvironmentApi;
 import com.solum.engine.environment.EnvironmentController;
 import com.solum.engine.environment.EnvironmentDiagnostics;
 import com.solum.engine.environment.EnvironmentSettings;
+import com.solum.engine.environment.p63.EnvironmentFeatureStatus;
+import com.solum.engine.environment.p63.SolumEnvironmentAudioSystem;
+import com.solum.engine.environment.p63.SolumEnvironmentController;
+import com.solum.engine.environment.p63.SolumEnvironmentPackage;
+import com.solum.engine.environment.p63.SolumEnvironmentPackageLoader;
+import com.solum.engine.environment.p63.SolumEnvironmentState;
+import com.solum.engine.environment.p63.SolumFilamentEnvironmentAdapter;
+import com.solum.engine.environment.p63.SolumWeatherState;
 import com.solum.engine.render.FilamentRenderController;
 import com.solum.engine.render.RenderCostDiagnostics;
 import com.solum.engine.render.RenderActualState;
@@ -186,12 +194,17 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String UDS_SUN_LUT_VOLUME_PATH = UDS_SKY_ROOT + "Sun_Atmosphere_LUT_Volume.png";
     private static final String UDS_LENS_FLARE_PATH = UDS_SKY_ROOT + "Prime_Flare.png";
     private static final String UDS_DEBUG_OVERLAY_LABEL = "debug_overlay_only_not_renderer_sky";
+    private static final String P63_STAGE_ASSET_PATH = "env/p63/p63_environment_stage.glb";
+    private static final String P63_IBL_ASSET_ROOT = "env/p63/p63_";
 
     private SurfaceView surfaceView;
     private SunGlareOverlayView sunGlareOverlayView;
     private ModelViewer modelViewer;
     private RenderControlApi renderControlApi;
     private EnvironmentApi environmentApi;
+    private SolumEnvironmentController p63EnvironmentController;
+    private SolumFilamentEnvironmentAdapter p63EnvironmentAdapter;
+    private SolumEnvironmentAudioSystem p63EnvironmentAudio;
     private final SceneRegistry sceneRegistry = new SceneRegistry();
     private IndirectLight indirectLight;
     private Skybox skybox;
@@ -242,6 +255,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private Button qualityTabButton;
     private Button materialTabButton;
     private Button debugTabButton;
+    private Button environmentTabButton;
     private LinearLayout workspacePanel;
     private LinearLayout tabRow;
     private LinearLayout assetsPanel;
@@ -259,6 +273,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     private LinearLayout qualityPanel;
     private LinearLayout materialPanel;
     private LinearLayout debugPanel;
+    private LinearLayout environmentPanel;
     private ScrollView workspaceScroll;
     private LinearLayout advancedValuesPanel;
     private TextView assetsSummaryView;
@@ -276,6 +291,12 @@ public class FilamentGlbPreviewActivity extends Activity {
     private TextView debugSummaryView;
     private TextView lastActionStatusView;
     private TextView environmentSummaryView;
+    private TextView p63EnvironmentSummaryView;
+    private TextView p63EnvironmentClassificationView;
+    private Button p63WeatherButton;
+    private Button p63TimePlayButton;
+    private Button p63QualityButton;
+    private Button p63AudioButton;
     private TextView sunSliderLabel;
     private TextView ambientSliderLabel;
     private TextView fillSliderLabel;
@@ -516,6 +537,18 @@ public class FilamentGlbPreviewActivity extends Activity {
     private String udsMoonPhaseStatus = "not_implemented_exact_uds_formula_not_decoded";
     private String udsSkyPerformanceStatus = "mobile_safe_filament_skybox_clear_no_volumetric_no_particles_no_weather";
     private String environmentApplyStatus = "not_applied";
+    private String p63EnvironmentLoadStatus = "not_loaded";
+    private String p63EnvironmentAdapterStatus = "not_created";
+    private String p63PreparedIblStatus = "not_requested";
+    private String p63PreparedIblSlot = "none";
+    private long p63PreparedIblRevision = -1L;
+    private float p63WeatherTransitionSeconds = 4.0f;
+    private boolean p63StageActive = false;
+    private boolean p63AudioMuted = false;
+    private int p63SunTintMode = 0;
+    private int p63MoonTintMode = 0;
+    private int p63CloudTintMode = 0;
+    private final float[] p63SkyColor = {0.02f, 0.05f, 0.12f, 1.0f};
     private float modelRotationX = 0.0f;
     private float modelRotationY = 0.0f;
     private float modelRotationZ = 0.0f;
@@ -597,6 +630,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         MODEL("Model"),
         MATERIAL("Material"),
         CONFIG("Config"),
+        ENVIRONMENT("Environment / Weather"),
         DEBUG("Debug");
 
         final String label;
@@ -902,6 +936,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         lightingTabButton = tabButton("Lighting", WorkspaceTab.LIGHTING);
         lightsTabButton = tabButton("Lights", WorkspaceTab.LIGHTS);
         iblTabButton = tabButton("Sky / IBL", WorkspaceTab.IBL);
+        environmentTabButton = tabButton("Environment", WorkspaceTab.ENVIRONMENT);
         shadowsTabButton = tabButton("Shadows", WorkspaceTab.SHADOWS);
         cameraTabButton = tabButton("Camera", WorkspaceTab.CAMERA);
         modelTabButton = tabButton("Model", WorkspaceTab.MODEL);
@@ -913,6 +948,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         tabRow.addView(renderTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(lightingTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(iblTabButton, new LinearLayout.LayoutParams(dp(100), LinearLayout.LayoutParams.WRAP_CONTENT));
+        tabRow.addView(environmentTabButton, new LinearLayout.LayoutParams(dp(118), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(postFxTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(colorTabButton, new LinearLayout.LayoutParams(dp(112), LinearLayout.LayoutParams.WRAP_CONTENT));
         tabRow.addView(cameraTabButton, new LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -960,6 +996,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         configPanel.setOrientation(LinearLayout.VERTICAL);
         debugPanel = new LinearLayout(this);
         debugPanel.setOrientation(LinearLayout.VERTICAL);
+        environmentPanel = new LinearLayout(this);
+        environmentPanel.setOrientation(LinearLayout.VERTICAL);
 
         Button importModelButton = button("Import Model");
         importModelButton.setOnClickListener(v -> chooseModelForImport());
@@ -1406,6 +1444,8 @@ public class FilamentGlbPreviewActivity extends Activity {
         });
         iblPanel.addView(iblSummaryView);
 
+        buildP63EnvironmentPanel();
+
         shadowSummaryView = overlayText(10.0f, 12);
         shadowSummaryView.setBackgroundColor(Color.TRANSPARENT);
         shadowsPanel.addView(shadowSummaryView);
@@ -1473,6 +1513,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         workspacePanel.addView(lightingPanel);
         workspacePanel.addView(lightsPanel);
         workspacePanel.addView(iblPanel);
+        workspacePanel.addView(environmentPanel);
         workspacePanel.addView(shadowsPanel);
         workspacePanel.addView(cameraPanel);
         workspacePanel.addView(modelPanel);
@@ -1509,6 +1550,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (p63EnvironmentAudio != null) p63EnvironmentAudio.resume();
         if (!destroying && !destroyed) startFrames();
     }
 
@@ -1516,6 +1558,7 @@ public class FilamentGlbPreviewActivity extends Activity {
     protected void onPause() {
         persistWorkspaceSettings();
         stopFrames("paused");
+        if (p63EnvironmentAudio != null) p63EnvironmentAudio.pause();
         super.onPause();
     }
 
@@ -1793,10 +1836,88 @@ public class FilamentGlbPreviewActivity extends Activity {
             applyLightingValues();
             applyCameraControls();
             updateAdvancedValuesVisibility();
+            setupP63EnvironmentRuntime();
             lifecycleStatus = "viewer_created";
         } catch (Throwable t) {
             lastLifecycleError = shortMessage(t);
             lifecycleStatus = "create_failed";
+        }
+    }
+
+    private void setupP63EnvironmentRuntime() {
+        ensureP63EnvironmentCore();
+        if (modelViewer == null || p63EnvironmentController == null || p63EnvironmentAdapter != null) return;
+        try {
+            p63EnvironmentAudio = new SolumEnvironmentAudioSystem(this);
+            p63EnvironmentAudio.initialize();
+            p63EnvironmentAdapter = new SolumFilamentEnvironmentAdapter(
+                modelViewer,
+                p63EnvironmentController,
+                p63EnvironmentAudio,
+                new SolumFilamentEnvironmentAdapter.Host() {
+                    @Override
+                    public void applyPreparedIbl(String slot, long revision, float intensity, float blend) {
+                        applyP63PreparedIbl(slot, revision, intensity, blend);
+                    }
+
+                    @Override
+                    public void applyEnvironmentSkyColor(float red, float green, float blue, float lightningFlash) {
+                        applyP63SkyColor(red, green, blue, lightningFlash);
+                    }
+
+                    @Override
+                    public void onEnvironmentAdapterStatus(String status) {
+                        p63EnvironmentAdapterStatus = status;
+                    }
+                }
+            );
+            p63EnvironmentAdapterStatus = "filament_adapter_created";
+        } catch (Throwable error) {
+            p63EnvironmentAdapterStatus = "failed_" + shortMessage(error);
+            lastLifecycleError = shortMessage(error);
+        }
+    }
+
+    private void updateP63Environment(long frameTimeNanos) {
+        if (p63EnvironmentAdapter == null || p63EnvironmentController == null) return;
+        float dt = rollingFrameMs > 0.0f ? Math.min(0.1f, rollingFrameMs / 1000.0f) : 1.0f / 60.0f;
+        p63EnvironmentController.setCameraPosition(cameraTargetX, 1.6f + cameraTargetY, cameraTargetZ);
+        SolumEnvironmentState state = p63EnvironmentAdapter.update(dt);
+        p63EnvironmentAdapterStatus = state.adapterStatus;
+    }
+
+    private void applyP63PreparedIbl(String slot, long revision, float intensity, float blend) {
+        if (modelViewer == null || slot == null || slot.isEmpty()) return;
+        try {
+            if (revision != p63PreparedIblRevision || !slot.equals(p63PreparedIblSlot)) {
+                File cached = copyAssetToCacheFile(P63_IBL_ASSET_ROOT + slot + ".hdr");
+                loadHdrIbl(cached, "p63_prepared_ibl_" + slot);
+                p63PreparedIblRevision = revision;
+                p63PreparedIblSlot = slot;
+                p63PreparedIblStatus = "true".equals(realIblReady)
+                    ? "functional_prepared_hdr_prefilter_slot=" + slot
+                    : "prepared_hdr_present_but_prefilter_not_ready_" + iblLoadStatus;
+            }
+            if (indirectLight != null) indirectLight.setIntensity(Math.max(0.0f, intensity * 30000.0f * blend));
+        } catch (Throwable error) {
+            p63PreparedIblStatus = "prepared_ibl_failed_" + shortMessage(error);
+            if (indirectLight == null || skybox == null) createEnvironmentFallback();
+        }
+    }
+
+    private void applyP63SkyColor(float red, float green, float blue, float lightningFlash) {
+        if (modelViewer == null) return;
+        float flash = Math.min(0.12f, Math.max(0.0f, lightningFlash) * 0.12f);
+        p63SkyColor[0]=clamp(red+flash,0.0f,1.0f);p63SkyColor[1]=clamp(green+flash,0.0f,1.0f);p63SkyColor[2]=clamp(blue+flash,0.0f,1.0f);p63SkyColor[3]=1.0f;
+        try {
+            if (skybox != null && !"true".equals(realIblReady)) skybox.setColor(p63SkyColor);
+            Renderer.ClearOptions clear = modelViewer.getRenderer().getClearOptions();
+            clear.clear = true;
+            clear.discard = true;
+            clear.clearColor = p63SkyColor;
+            modelViewer.getRenderer().setClearOptions(clear);
+        } catch (Throwable error) {
+            p63EnvironmentAdapterStatus = "sky_color_failed_" + shortMessage(error);
         }
     }
 
@@ -1836,6 +1957,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             long frameStartWallNs = System.nanoTime();
             updateFrameTiming(frameTimeNanos, frameStartWallNs);
             updateEnvironmentClock();
+            updateP63Environment(frameTimeNanos);
             if (modelViewer.getAnimator() != null && modelViewer.getAnimator().getAnimationCount() > 0) {
                 float seconds = frameTimeNanos / 1_000_000_000.0f;
                 modelViewer.getAnimator().applyAnimation(0, seconds);
@@ -2218,6 +2340,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         setPanelVisible(lightingPanel, activeTab == WorkspaceTab.LIGHTING && !panelCollapsed);
         setPanelVisible(lightsPanel, false);
         setPanelVisible(iblPanel, activeTab == WorkspaceTab.IBL && !panelCollapsed);
+        setPanelVisible(environmentPanel, activeTab == WorkspaceTab.ENVIRONMENT && !panelCollapsed);
         setPanelVisible(shadowsPanel, false);
         setPanelVisible(cameraPanel, activeTab == WorkspaceTab.CAMERA && !panelCollapsed);
         setPanelVisible(modelPanel, activeTab == WorkspaceTab.MODEL && !panelCollapsed);
@@ -2233,6 +2356,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         updateTabState(lightingTabButton, WorkspaceTab.LIGHTING);
         updateTabState(lightsTabButton, WorkspaceTab.LIGHTS);
         updateTabState(iblTabButton, WorkspaceTab.IBL);
+        updateTabState(environmentTabButton, WorkspaceTab.ENVIRONMENT);
         updateTabState(shadowsTabButton, WorkspaceTab.SHADOWS);
         updateTabState(cameraTabButton, WorkspaceTab.CAMERA);
         updateTabState(modelTabButton, WorkspaceTab.MODEL);
@@ -2390,42 +2514,50 @@ public class FilamentGlbPreviewActivity extends Activity {
         try {
             modelViewer.destroyModel();
             if (modelPath == null || modelPath.isEmpty()) {
-                loadStatus = "no_active_glb_or_gltf";
-                gltfioLoaded = "false";
-                sceneRegistry.clear();
-                refreshUiNow();
-                return;
-            }
-            File file = new File(modelPath);
-            if (!file.isFile()) {
-                loadStatus = "file_missing: " + modelPath;
-                gltfioLoaded = "false";
-                sceneRegistry.clear();
-                refreshUiNow();
-                return;
-            }
-            modelSourcePath = modelSourcePath.equals("none") ? file.getAbsolutePath() : modelSourcePath;
-            modelCopiedPath = file.getAbsolutePath();
-            ByteBuffer data = readFile(file);
-            String lower = file.getName().toLowerCase(Locale.US);
-            if (lower.endsWith(".glb")) {
-                modelViewer.loadModelGlb(data);
-            } else if (lower.endsWith(".gltf")) {
-                File baseDir = file.getParentFile();
-                modelViewer.loadModelGltf(data, (Function1<String, Buffer>) uri -> readSiblingResource(baseDir, uri));
+                ByteBuffer stageData = readAssetBuffer(P63_STAGE_ASSET_PATH);
+                modelViewer.loadModelGlb(stageData);
+                p63StageActive = true;
+                modelName = "P63 Environment Stage";
+                modelSourcePath = "asset://" + P63_STAGE_ASSET_PATH;
+                modelCopiedPath = modelSourcePath;
+                cameraDistance = 18.0f;
+                cameraTargetX = 0.0f;
+                cameraTargetY = 2.2f;
+                cameraTargetZ = -2.0f;
             } else {
-                loadStatus = "unsupported_extension_expected_glb_or_gltf";
-                gltfioLoaded = "false";
-                refreshUiNow();
-                return;
+                File file = new File(modelPath);
+                if (!file.isFile()) {
+                    loadStatus = "file_missing: " + modelPath;
+                    gltfioLoaded = "false";
+                    sceneRegistry.clear();
+                    refreshUiNow();
+                    return;
+                }
+                modelSourcePath = modelSourcePath.equals("none") ? file.getAbsolutePath() : modelSourcePath;
+                modelCopiedPath = file.getAbsolutePath();
+                ByteBuffer data = readFile(file);
+                String lower = file.getName().toLowerCase(Locale.US);
+                if (lower.endsWith(".glb")) {
+                    modelViewer.loadModelGlb(data);
+                } else if (lower.endsWith(".gltf")) {
+                    File baseDir = file.getParentFile();
+                    modelViewer.loadModelGltf(data, (Function1<String, Buffer>) uri -> readSiblingResource(baseDir, uri));
+                } else {
+                    loadStatus = "unsupported_extension_expected_glb_or_gltf";
+                    gltfioLoaded = "false";
+                    refreshUiNow();
+                    return;
+                }
+                p63StageActive = false;
+                modelViewer.transformToUnitCube(new Float3(0.0f, 0.0f, 0.0f));
+                applyModelTransform();
             }
-            modelViewer.transformToUnitCube(new Float3(0.0f, 0.0f, 0.0f));
-            applyModelTransform();
             applyCameraControls();
             cameraStatus = "orbit_drag_pinch_zoom_unit_cube_autofit_with_ui_pan";
-            loadStatus = "ok_loaded_with_gltfio";
+            loadStatus = p63StageActive ? "ok_p63_environment_stage_loaded_with_gltfio" : "ok_loaded_with_gltfio";
             gltfioLoaded = "true";
             syncSceneRegistryForActiveModel("loaded");
+            if (p63EnvironmentAdapter != null) p63EnvironmentAdapter.bindStage(modelViewer.getAsset());
             updateMaterialInspector();
             applyRenderableShadowMode();
         } catch (Throwable t) {
@@ -2435,6 +2567,13 @@ public class FilamentGlbPreviewActivity extends Activity {
             sceneRegistry.clear();
         }
         refreshUiNow();
+    }
+
+    private void loadP63EnvironmentStage() {
+        modelPath = "";
+        p63StageActive = true;
+        setLastAction("p63_stage_requested");
+        loadModel();
     }
 
     private void syncSceneRegistryForActiveModel(String status) {
@@ -2815,6 +2954,19 @@ public class FilamentGlbPreviewActivity extends Activity {
             int read;
             while ((read = input.read(chunk)) != -1) output.write(chunk, 0, read);
             return new String(output.toByteArray(), "UTF-8");
+        }
+    }
+
+    private ByteBuffer readAssetBuffer(String path) throws Exception {
+        try (InputStream input = getAssets().open(path); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] chunk = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(chunk)) != -1) output.write(chunk, 0, read);
+            byte[] data = output.toByteArray();
+            ByteBuffer buffer = ByteBuffer.allocateDirect(data.length);
+            buffer.put(data);
+            buffer.flip();
+            return buffer;
         }
     }
 
@@ -3767,6 +3919,14 @@ public class FilamentGlbPreviewActivity extends Activity {
         destroying = true;
         lifecycleStatus = "destroyed";
         try {
+            if (p63EnvironmentAdapter != null) {
+                p63EnvironmentAdapter.release();
+                p63EnvironmentAdapter = null;
+            }
+            if (p63EnvironmentAudio != null) {
+                p63EnvironmentAudio.release();
+                p63EnvironmentAudio = null;
+            }
             if (modelViewer != null) {
                 Engine engine = modelViewer.getEngine();
                 if (modelViewer.getScene() != null) {
@@ -4141,6 +4301,156 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
         buffer.flip();
         return buffer;
+    }
+
+    private void buildP63EnvironmentPanel() {
+        ensureP63EnvironmentCore();
+        environmentPanel.addView(sectionHeader("SOLUM Environment / Weather"));
+        LinearLayout stageRow = row();
+        stageRow.addView(button("Load P63 Stage", v -> loadP63EnvironmentStage()), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        stageRow.addView(button("Reset Environment", v -> {
+            if (p63EnvironmentController != null) {
+                p63EnvironmentController.resetManualOverrides();
+                p63EnvironmentController.selectWeather("Partly_Cloudy", p63WeatherTransitionSeconds);
+                p63EnvironmentController.transitionTime(960.0f, 1.5f);
+                p63EnvironmentController.setQuality("Medium");
+            }
+            setLastAction("p63_environment_reset");
+            refreshUiNow();
+        }), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        environmentPanel.addView(stageRow);
+
+        p63WeatherButton = button("Weather", v -> {
+            if (p63EnvironmentController != null) p63EnvironmentController.nextWeather(p63WeatherTransitionSeconds);
+            setLastAction("p63_weather_next");
+            refreshUiNow();
+        });
+        environmentPanel.addView(p63WeatherButton);
+        HorizontalScrollView presetScroll = new HorizontalScrollView(this);
+        presetScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout presetRow = row();
+        if (p63EnvironmentController != null) {
+            for (SolumWeatherState preset : p63EnvironmentController.getPackage().getPresets()) {
+                Button presetButton = button(preset.name, v -> {
+                    p63EnvironmentController.selectWeather(preset.id, p63WeatherTransitionSeconds);
+                    setLastAction("p63_weather_" + preset.id.toLowerCase(Locale.US));
+                    refreshUiNow();
+                });
+                presetRow.addView(presetButton, new LinearLayout.LayoutParams(dp(142), LinearLayout.LayoutParams.WRAP_CONTENT));
+            }
+        }
+        presetScroll.addView(presetRow, new HorizontalScrollView.LayoutParams(HorizontalScrollView.LayoutParams.WRAP_CONTENT, HorizontalScrollView.LayoutParams.WRAP_CONTENT));
+        environmentPanel.addView(presetScroll);
+        addLightingSlider(environmentPanel, "Weather Fade", 0.0f, 12.0f, 0.5f, p63WeatherTransitionSeconds, v -> p63WeatherTransitionSeconds = v);
+
+        environmentPanel.addView(sectionHeader("Time / Quality"));
+        p63TimePlayButton = button("Time", v -> {
+            if (p63EnvironmentController != null) {
+                boolean paused = p63EnvironmentController.getTimeSystem().isPaused();
+                p63EnvironmentController.setTimePaused(!paused);
+            }
+            refreshUiNow();
+        });
+        p63QualityButton = button("Environment Quality", v -> cycleP63EnvironmentQuality());
+        LinearLayout timeRow = row();
+        timeRow.addView(p63TimePlayButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        timeRow.addView(p63QualityButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        environmentPanel.addView(timeRow);
+        addLightingSlider(environmentPanel, "Time", 0.0f, 2400.0f, 5.0f, 960.0f, v -> {
+            if (p63EnvironmentController != null) p63EnvironmentController.transitionTime(v, 0.8f);
+        });
+        addLightingSlider(environmentPanel, "Time Speed", 0.0f, 8.0f, 0.25f, 1.0f, v -> {
+            if (p63EnvironmentController != null) p63EnvironmentController.setTimeSpeed(v);
+        });
+
+        environmentPanel.addView(sectionHeader("Sun / Moon / Stars"));
+        addLightingSlider(environmentPanel, "Sun", 0.0f, 1.0f, 0.02f, 1.0f, v -> { if (p63EnvironmentController != null) p63EnvironmentController.setSunScale(v); });
+        addLightingSlider(environmentPanel, "Sun Disk", 0.25f, 2.0f, 0.05f, 1.0f, v -> { if (p63EnvironmentController != null) p63EnvironmentController.setSunDiskScale(v); });
+        Button sunTint = button("Sun Tint: Physical", v -> {
+            p63SunTintMode = (p63SunTintMode + 1) % 3;
+            if (p63EnvironmentController != null) p63EnvironmentController.setSunTintMode(p63SunTintMode);
+            ((Button) v).setText("Sun Tint: " + (p63SunTintMode == 0 ? "Physical" : p63SunTintMode == 1 ? "Warm" : "Cool"));
+        });
+        environmentPanel.addView(sunTint);
+        addLightingSlider(environmentPanel, "Moon", 0.0f, 1.0f, 0.02f, 1.0f, v -> { if (p63EnvironmentController != null) p63EnvironmentController.setMoonScale(v); });
+        addLightingSlider(environmentPanel, "Moon Disk", 0.25f, 2.0f, 0.05f, 1.0f, v -> { if (p63EnvironmentController != null) p63EnvironmentController.setMoonDiskScale(v); });
+        addLightingSlider(environmentPanel, "Moon Phase", 0.0f, 1.0f, 0.02f, 0.62f, v -> { if (p63EnvironmentController != null) p63EnvironmentController.setMoonPhase(v); });
+        Button moonTint = button("Moon Material: SOLUM crater / Physical", v -> {
+            p63MoonTintMode = (p63MoonTintMode + 1) % 3;
+            if (p63EnvironmentController != null) p63EnvironmentController.setMoonTintMode(p63MoonTintMode);
+            ((Button) v).setText("Moon Material: SOLUM crater / " + (p63MoonTintMode == 0 ? "Physical" : p63MoonTintMode == 1 ? "Grey" : "Blue"));
+        });
+        environmentPanel.addView(moonTint);
+        addLightingSlider(environmentPanel, "Stars", 0.0f, 2.0f, 0.05f, 1.0f, v -> { if (p63EnvironmentController != null) p63EnvironmentController.setStarBrightness(v); });
+        addLightingSlider(environmentPanel, "Star Density", 0.0f, 1.0f, 0.05f, 1.0f, v -> { if (p63EnvironmentController != null) p63EnvironmentController.setStarDensity(v); });
+
+        environmentPanel.addView(sectionHeader("Cloud / Fog / Precipitation / Wind"));
+        addP63WeatherSlider("Cloud Coverage", "cloudCoverage", 0.0f, 1.0f, 0.02f, 0.42f);
+        addP63WeatherSlider("Cloud Density", "cloudDensity", 0.0f, 1.0f, 0.02f, 0.50f);
+        addLightingSlider(environmentPanel, "Cloud Speed", 0.0f, 2.0f, 0.05f, 1.0f, v -> { if (p63EnvironmentController != null) p63EnvironmentController.setCloudSpeedScale(v); });
+        environmentPanel.addView(button("Cloud Color: Physical", v -> {
+            p63CloudTintMode = (p63CloudTintMode + 1) % 3;
+            if (p63EnvironmentController != null) p63EnvironmentController.setCloudTintMode(p63CloudTintMode);
+            ((Button) v).setText("Cloud Color: " + (p63CloudTintMode == 0 ? "Physical" : p63CloudTintMode == 1 ? "Warm" : "Cold"));
+        }));
+        addP63WeatherSlider("Fog", "fogDensity", 0.0f, 1.0f, 0.02f, 0.05f);
+        addP63WeatherSlider("Rain", "rain", 0.0f, 1.0f, 0.02f, 0.0f);
+        addP63WeatherSlider("Snow", "snow", 0.0f, 1.0f, 0.02f, 0.0f);
+        addP63WeatherSlider("Wind", "windSpeed", 0.0f, 1.0f, 0.02f, 0.35f);
+        addP63WeatherSlider("Lightning", "lightningPotential", 0.0f, 1.0f, 0.02f, 0.0f);
+        environmentPanel.addView(button("Trigger Lightning + Thunder", v -> {
+            if (p63EnvironmentController != null) p63EnvironmentController.triggerLightning();
+            setLastAction("p63_lightning_manual_trigger");
+        }));
+
+        environmentPanel.addView(sectionHeader("Surface / IBL / Audio"));
+        addP63WeatherSlider("Wetness", "wetnessTarget", 0.0f, 1.0f, 0.02f, 0.0f);
+        addLightingSlider(environmentPanel, "Puddles", 0.0f, 1.0f, 0.02f, 0.0f, v -> { if (p63EnvironmentController != null) p63EnvironmentController.setManualPuddle(v); });
+        addLightingSlider(environmentPanel, "Surface Snow", 0.0f, 1.0f, 0.02f, 0.0f, v -> { if (p63EnvironmentController != null) p63EnvironmentController.setManualSnowCover(v); });
+        addLightingSlider(environmentPanel, "Ice", 0.0f, 1.0f, 0.02f, 0.0f, v -> { if (p63EnvironmentController != null) p63EnvironmentController.setManualIce(v); });
+        addLightingSlider(environmentPanel, "IBL", 0.0f, 2.0f, 0.05f, 1.0f, v -> { if (p63EnvironmentController != null) p63EnvironmentController.setIblIntensityScale(v); });
+        addLightingSlider(environmentPanel, "Volume", 0.0f, 1.0f, 0.02f, 0.45f, v -> { if (p63EnvironmentController != null) p63EnvironmentController.setAudioVolume(v); });
+        p63AudioButton = button("Audio", v -> {
+            p63AudioMuted = !p63AudioMuted;
+            if (p63EnvironmentController != null) p63EnvironmentController.setAudioMuted(p63AudioMuted);
+            refreshUiNow();
+        });
+        environmentPanel.addView(p63AudioButton);
+        p63EnvironmentSummaryView = overlayText(10.0f, 12);
+        p63EnvironmentSummaryView.setBackgroundColor(Color.TRANSPARENT);
+        environmentPanel.addView(p63EnvironmentSummaryView);
+        p63EnvironmentClassificationView = overlayText(10.0f, 60);
+        p63EnvironmentClassificationView.setBackgroundColor(Color.TRANSPARENT);
+        debugPanel.addView(sectionHeader("P63 Environment classification / runtime truth"));
+        debugPanel.addView(p63EnvironmentClassificationView);
+        updateP63EnvironmentUi();
+    }
+
+    private void addP63WeatherSlider(String label, String field, float min, float max, float step, float value) {
+        addLightingSlider(environmentPanel, label, min, max, step, value, v -> {
+            if (p63EnvironmentController != null) p63EnvironmentController.setWeatherValue(field, v);
+        });
+    }
+
+    private void ensureP63EnvironmentCore() {
+        if (p63EnvironmentController != null) return;
+        try {
+            SolumEnvironmentPackage environmentPackage = SolumEnvironmentPackageLoader.load(getAssets());
+            p63EnvironmentController = new SolumEnvironmentController(environmentPackage);
+            p63EnvironmentLoadStatus = "functional_package_loaded_presets=" + environmentPackage.getPresets().size();
+        } catch (Throwable error) {
+            p63EnvironmentLoadStatus = "failed_" + shortMessage(error);
+            lastLifecycleError = shortMessage(error);
+        }
+    }
+
+    private void cycleP63EnvironmentQuality() {
+        if (p63EnvironmentController == null) return;
+        String current = p63EnvironmentController.getState().quality;
+        String next = "Low".equals(current) ? "Medium" : ("Medium".equals(current) ? "High" : ("High".equals(current) ? "Manual" : "Low"));
+        p63EnvironmentController.setQuality(next);
+        setLastAction("p63_quality_" + next.toLowerCase(Locale.US));
+        refreshUiNow();
     }
 
     private void buildCameraPanel() {
@@ -4728,13 +5038,60 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
     }
 
+    private String p63PrimaryHudLine() {
+        if (p63EnvironmentController == null) return "SOLUM Filament | Environment unavailable | " + qualityProfile.label;
+        SolumEnvironmentState state = p63EnvironmentController.getState();
+        return formatP63Time(state.timeOfDay) + " | " + state.requestedPreset + " | Environment " + state.quality;
+    }
+
+    private void updateP63EnvironmentUi() {
+        if (p63EnvironmentController == null) {
+            if (p63EnvironmentSummaryView != null) p63EnvironmentSummaryView.setText("Environment unavailable: " + p63EnvironmentLoadStatus);
+            if (p63EnvironmentClassificationView != null) p63EnvironmentClassificationView.setText("P63 load=" + p63EnvironmentLoadStatus);
+            return;
+        }
+        SolumEnvironmentState state = p63EnvironmentController.getState();
+        if (p63WeatherButton != null) p63WeatherButton.setText("Weather: " + state.requestedPreset + (state.weatherTransitionActive ? "  " + Math.round(state.weatherTransitionAlpha * 100.0f) + "%" : ""));
+        if (p63TimePlayButton != null) p63TimePlayButton.setText("Time: " + formatP63Time(state.timeOfDay) + "  " + (p63EnvironmentController.getTimeSystem().isPaused() ? "Paused" : "Playing"));
+        if (p63QualityButton != null) p63QualityButton.setText("Environment Quality: " + state.quality);
+        if (p63AudioButton != null) p63AudioButton.setText("Audio: " + (state.audio.muted ? "Muted" : Math.round(state.audio.masterVolume * 100.0f) + "%"));
+        if (p63EnvironmentSummaryView != null) {
+            p63EnvironmentSummaryView.setText(
+                "Time " + formatP63Time(state.timeOfDay) + "  Weather " + state.requestedPreset + "  Quality " + state.quality
+                + "\nSun " + oneDecimal(state.lighting.sunLux) + " lux  Moon " + twoDecimal(state.lighting.moonLux) + " lux phase " + twoDecimal(state.lighting.moonPhase) + "  Stars " + twoDecimal(state.lighting.starVisibility)
+                + "\nCloud " + twoDecimal(state.clouds.coverage) + "/" + twoDecimal(state.clouds.density) + "  Fog " + threeDecimal(state.fog.density)
+                + "\nRain " + twoDecimal(state.weather.rain) + "  Snow " + twoDecimal(state.weather.snow) + "  Wind " + twoDecimal(state.wind.speed) + "  Lightning " + (state.lightning.active ? "active" : "ready")
+                + "\nWet " + twoDecimal(state.surface.wetness) + "  Puddles " + twoDecimal(state.surface.puddle) + "  Snow surface " + twoDecimal(state.surface.snowCover) + "  Ice " + twoDecimal(state.surface.ice)
+                + "\nIBL " + state.lighting.iblSlot + "  Audio " + state.audio.activeProfile + "  Interior/roof " + state.cameraInside + "/" + state.cameraUnderRoof
+            );
+        }
+        if (p63EnvironmentClassificationView != null) {
+            StringBuilder report = new StringBuilder();
+            report.append("Package: ").append(p63EnvironmentLoadStatus)
+                .append("\nStage: ").append(state.stageStatus)
+                .append("\nAdapter: ").append(p63EnvironmentAdapter == null ? p63EnvironmentAdapterStatus : p63EnvironmentAdapter.getStatus())
+                .append("\nIBL: ").append(p63PreparedIblStatus)
+                .append("\nAudio: ").append(p63EnvironmentAudio == null ? "not_created" : p63EnvironmentAudio.getStatus())
+                .append("\nOcclusion: blocked/exposed=").append(state.precipitation.blockedCells).append('/').append(state.precipitation.exposedCells)
+                .append("\n\nFeature classification:");
+            for (java.util.Map.Entry<String, EnvironmentFeatureStatus> entry : state.getFeatureStatus().entrySet()) {
+                report.append("\n").append(entry.getKey()).append(" = ").append(entry.getValue().name());
+            }
+            p63EnvironmentClassificationView.setText(report.toString());
+        }
+    }
+
+    private static String formatP63Time(float value) {
+        float wrapped = value % 2400.0f;
+        if (wrapped < 0.0f) wrapped += 2400.0f;
+        int hour = ((int) (wrapped / 100.0f)) % 24;
+        int minute = Math.min(59, Math.round((wrapped - hour * 100.0f) * 0.6f));
+        return String.format(Locale.US, "%02d:%02d", hour, minute);
+    }
+
     private void updateHud() {
         if (hudView != null) {
-            hudView.setText(primaryFpsHudTruthLine()
-                + " | " + oneDecimal(primaryFrameMs()) + "ms"
-                + " | " + renderHealthLabel()
-                + " | " + qualityProfile.label
-                + " | cause: " + fpsTruthCause());
+            hudView.setText(p63PrimaryHudLine());
         }
         if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
         if (assetsSummaryView != null) {
@@ -4747,15 +5104,11 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nCopy/import: " + importCopyStatus);
         }
         if (qualitySummaryView != null) {
-            qualitySummaryView.setText("FPS " + primaryFpsHud() + " / " + oneDecimal(primaryFrameMs()) + " ms / " + fpsConfidence
-                + "\nQuality requested=" + qualityProfile.name() + " status=" + qualityFeatureStatus
+            qualitySummaryView.setText("Quality requested=" + qualityProfile.name() + " status=" + qualityFeatureStatus
                 + "\nRender Scale " + twoDecimal(renderScale) + " dynamic=" + requestedDynamicResolution + "/" + actualDynamicResolution + " " + dynamicResolutionApplyStatus
                 + "\nMSAA req/actual " + requestedSampleCount + "x/" + actualSampleCount + "x " + msaaApplyStatus
                 + "\nFXAA=" + fxaaEnabled + " actualAA=" + actualAA + " TAA req/actual=" + requestedTaa + "/" + actualTaa + " " + taaApplyStatus
-                + "\nDithering=" + ditheringStatus + " manual=" + manualOverrideStatus
-                + "\n" + featureLine("msaa")
-                + "\n" + featureLine("taa")
-                + "\nCost: " + compactCostSummary());
+                + "\nDithering=" + ditheringStatus);
         }
         if (postFxSummaryView != null) {
             postFxSummaryView.setText("AO req/actual=" + requestedAoMode + "/" + actualAoMode + " " + aoApplyStatus
@@ -4824,6 +5177,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\n" + featureLine("skybox"));
         }
         updateEnvironmentControlLabels();
+        updateP63EnvironmentUi();
         if (shadowSummaryView != null) {
             shadowSummaryView.setText("shadowsSupported=true"
                 + "\nshadowsEnabled=" + shadowsEnabled + " shadowMode=" + shadowMode.name()
@@ -5118,11 +5472,7 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private void updateLiveHudOnly() {
         if (hudView != null) {
-            hudView.setText(primaryFpsHudTruthLine()
-                + " | " + oneDecimal(primaryFrameMs()) + "ms"
-                + " | " + renderHealthLabel()
-                + " | " + qualityProfile.label
-                + " | cause: " + fpsTruthCause());
+            hudView.setText(p63PrimaryHudLine());
         }
         if (lastActionStatusView != null) lastActionStatusView.setText("status: " + lastActionStatus);
     }

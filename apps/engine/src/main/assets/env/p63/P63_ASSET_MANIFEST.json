@@ -1,0 +1,17 @@
+{
+  "schema": "solum.environment.generated-assets",
+  "schemaVersion": 1,
+  "generator": "tools/generate_p63_environment_assets.py",
+  "seed": 1597463007,
+  "license": "SOLUM_NATIVE",
+  "files": [
+    "p63_day.hdr",
+    "p63_environment_stage.glb",
+    "p63_night.hdr",
+    "p63_overcast.hdr",
+    "p63_sand.hdr",
+    "p63_snow.hdr",
+    "p63_storm.hdr",
+    "p63_sunset.hdr"
+  ]
+}

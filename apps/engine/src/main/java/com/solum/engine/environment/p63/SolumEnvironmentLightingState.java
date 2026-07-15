@@ -1,0 +1,22 @@
+package com.solum.engine.environment.p63;
+
+public final class SolumEnvironmentLightingState {
+    public final float[] sunDirection = {0.0f, -1.0f, 0.0f};
+    public final float[] moonDirection = {0.0f, 1.0f, 0.0f};
+    public final float[] sunColor = {1.0f, 0.96f, 0.9f};
+    public final float[] moonColor = {0.446f, 0.557f, 0.865f};
+    public float sunElevation;
+    public float moonElevation;
+    public float sunLux;
+    public float moonLux;
+    public float sunDiskBrightness;
+    public float moonDiskBrightness;
+    public float moonPhase = 0.62f;
+    public float starVisibility;
+    public float ambientIntensity;
+    public float exposure = 1.0f;
+    public float lightningLumens;
+    public String iblSlot = "day";
+    public float iblBlend = 1.0f;
+    public long iblRevision;
+}

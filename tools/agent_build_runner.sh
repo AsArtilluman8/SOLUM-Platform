@@ -244,8 +244,22 @@ else
     short "aapt2=not found"
   fi
 
+  P63_TEST_CODE=0
+  if [ -f "tools/p63_environment_tests.py" ]; then
+    log "p63_test_command=python3 tools/p63_environment_tests.py"
+    set +e
+    python3 tools/p63_environment_tests.py 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL"
+    P63_TEST_CODE=${PIPESTATUS[0]}
+    set -e
+    if [ "$P63_TEST_CODE" -eq 0 ]; then
+      short "P63_ENVIRONMENT_TESTS=PASS"
+    else
+      short "P63_ENVIRONMENT_TESTS=FAILED"
+    fi
+  fi
+
   NATIVE_CODE=0
-  if [ -x "tools/build_native_engine.sh" ]; then
+  if [ "$P63_TEST_CODE" -eq 0 ] && [ -x "tools/build_native_engine.sh" ]; then
     log "native_command=bash tools/build_native_engine.sh"
     set +e
     bash tools/build_native_engine.sh 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL"
@@ -257,8 +271,11 @@ else
       short "NATIVE_ENGINE_BUILD=FAILED"
       short "Native build log=$OUTROOT/reports/latest/P04_native_build.log"
     fi
-  else
+  elif [ "$P63_TEST_CODE" -eq 0 ]; then
     short "NATIVE_ENGINE_BUILD=not_available"
+  else
+    NATIVE_CODE="$P63_TEST_CODE"
+    short "NATIVE_ENGINE_BUILD=skipped_p63_tests_failed"
   fi
 
   set +e

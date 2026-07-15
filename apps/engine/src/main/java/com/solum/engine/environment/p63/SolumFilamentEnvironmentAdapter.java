@@ -20,16 +20,19 @@ import java.util.Locale;
 import java.util.Map;
 
 public final class SolumFilamentEnvironmentAdapter {
-    private static final float[][] CLOUD_POSITIONS = {{-9,10,-8},{-5,11,-11},{-1,9,-9},{4,10,-12},{9,11,-8},{-8,12,-16},{-3,10,-17},{2,12,-16},{7,9,-17},{-6,8,-5},{0,11,-5},{7,10,-4}};
+    private static final float[][] CLOUD_POSITIONS = {{-13,11,-12},{-8,14,-17},{-3,12,-13},{3,15,-19},{9,13,-14},{14,16,-21},{-11,18,-27},{-5,16,-24},{1,19,-29},{7,17,-25},{12,20,-31},{-1,13,-21}};
     private static final float[][] RIPPLE_POSITIONS = {{-7,-1},{-5,4},{-2,1},{0,5},{2,-3},{7.5f,-3},{-8,6},{1,7}};
     private static final String[] CLOUD_NAMES = indexedNames("P63_CLOUD_", 12);
-    private static final String[] STAR_NAMES = indexedNames("P63_STAR_GROUP_", 3);
+    private static final String[] LEGACY_STAR_NAMES = indexedNames("P63_STAR_GROUP_", 3);
     private static final String[] RAIN_NAMES = cellNames("P63_RAIN_CELL_");
     private static final String[] SNOW_NAMES = cellNames("P63_SNOW_CELL_");
     private static final String[] DUST_NAMES = cellNames("P63_DUST_CELL_");
     private static final String[] RIPPLE_NAMES = indexedNames("P63_RIPPLE_", 8);
-    private static final int MOON_PHASE_STEPS = 33;
+    private static final int MOON_PHASE_STEPS = 65;
+    private static final int STAR_GROUP_COUNT = 8;
+    private static final int STAR_SIZE_LEVELS = 5;
     private static final String[] MOON_PHASE_NAMES = phaseNames();
+    private static final String[][] STAR_VARIANT_NAMES = starVariantNames();
     public interface Host {
         void applyPreparedIbl(String slot, long revision, float intensity, float blend);
         void applyEnvironmentSkyColor(float red, float green, float blue, float lightningFlash);
@@ -54,12 +57,15 @@ public final class SolumFilamentEnvironmentAdapter {
     private float dustPhase;
     private float ripplePhase;
     private float materialClock;
+    private float celestialAnimationTime;
     private String status = "created_not_bound";
     private String materialStatus = "not_applied";
     private boolean stageBound;
     private boolean celestialSkyVisible;
     private String celestialSkyStatus = "not_created";
     private int activeMoonPhaseIndex = -1;
+    private int activeStarSizeLevel = -1;
+    private int activeStarVisibleGroups = -1;
 
     public SolumFilamentEnvironmentAdapter(ModelViewer viewer, SolumEnvironmentController controller,
                                             SolumEnvironmentAudioSystem audio, Host host) {
@@ -84,7 +90,11 @@ public final class SolumFilamentEnvironmentAdapter {
             && stageEntities.containsKey("P63_MOON_PHASE_00") && stageEntities.containsKey("P63_STAGE_GROUND");
         stageBound = celestialStage || p63Count >= 40;
         activeMoonPhaseIndex = -1;
-        if (celestialStage) for (String name : MOON_PHASE_NAMES) setLayerVisible(name, false);
+        activeStarSizeLevel = -1; activeStarVisibleGroups = -1;
+        if (celestialStage) {
+            for (String name : MOON_PHASE_NAMES) setLayerVisible(name, false);
+            for (String[] sizeNames : STAR_VARIANT_NAMES) for (String name : sizeNames) setLayerVisible(name, false);
+        }
         status = stageBound ? "bound_p63_filament_stage_entities=" + p63Count : "asset_bound_without_p63_stage_entities=" + p63Count;
         SolumEnvironmentState state = controller.getState();
         state.stageStatus = status; state.adapterStatus = "filament_adapter_live";
@@ -202,6 +212,9 @@ public final class SolumFilamentEnvironmentAdapter {
         if (controller.isCelestialOnlyMode()) {
             applyAnalyticSky(state);
             applyCelestialGeometry(state);
+            applyStarGeometry(state);
+            applyCloudGeometry(state);
+            celestialAnimationTime += dt;
             materialClock += dt;
             if (materialClock >= 0.12f) { materialClock = 0.0f; applyMaterials(state); }
             return;
@@ -211,6 +224,7 @@ public final class SolumFilamentEnvironmentAdapter {
         dustPhase = wrap(dustPhase + dt * (0.65f + state.wind.speed * 2.6f), 12.0f);
         ripplePhase = wrap(ripplePhase + dt * (1.2f + state.weather.rain * 2.2f), 1.0f);
         applyCelestialGeometry(state);
+        applyStarGeometry(state);
         applyCloudGeometry(state);
         applyPrecipitationGeometry(state);
         applySurfaceGeometry(state);
@@ -244,11 +258,18 @@ public final class SolumFilamentEnvironmentAdapter {
         setBillboardTransform("P63_SUN_HALO", sunX, sunY, sunZ, state.lighting.sunVisualDirection,
             sunScale * (2.0f + controls.sunGlow * 2.5f + controls.sunEdgeSoftness * 0.8f),
             sunScale * (2.0f + controls.sunGlow * 2.5f + controls.sunEdgeSoftness * 0.8f), -0.045f);
+        setBillboardTransform("P63_SUN_HALO_OUTER", sunX, sunY, sunZ, state.lighting.sunVisualDirection,
+            sunScale * (4.2f + controls.sunGlow * 5.2f + controls.sunEdgeSoftness * 1.4f),
+            sunScale * (4.2f + controls.sunGlow * 5.2f + controls.sunEdgeSoftness * 1.4f), -0.070f);
+        setBillboardTransform("P63_SUN_GLOW_INNER", sunX, sunY, sunZ, state.lighting.sunVisualDirection,
+            sunScale * (1.25f + controls.sunGlow * 1.15f), sunScale * (1.25f + controls.sunGlow * 1.15f), -0.022f);
         setBillboardTransform("P63_SUN_DISK", sunX, sunY, sunZ, state.lighting.sunVisualDirection,
             sunScale, sunScale, 0.0f);
         setBillboardTransform("P63_MOON_HALO", moonX, moonY, moonZ, state.lighting.moonVisualDirection,
             moonScale * (1.8f + controls.moonGlow * 2.0f + controls.moonEdgeSoftness * 0.6f),
             moonScale * (1.8f + controls.moonGlow * 2.0f + controls.moonEdgeSoftness * 0.6f), -0.040f);
+        setBillboardTransform("P63_MOON_GLOW_INNER", moonX, moonY, moonZ, state.lighting.moonVisualDirection,
+            moonScale * (1.18f + controls.moonGlow * 0.9f), moonScale * (1.18f + controls.moonGlow * 0.9f), -0.020f);
         if (controller.isCelestialOnlyMode()) {
             int requestedPhase = Math.max(0, Math.min(MOON_PHASE_STEPS - 1,
                 Math.round(state.lighting.moonPhase * (MOON_PHASE_STEPS - 1))));
@@ -272,12 +293,38 @@ public final class SolumFilamentEnvironmentAdapter {
             moonY + billboardRightScratch[1] * shadowOffset,
             moonZ + billboardRightScratch[2] * shadowOffset,
             state.lighting.moonVisualDirection, shadowScale, shadowScale, 0.035f);
+    }
+
+    private void applyStarGeometry(SolumEnvironmentState state) {
+        if (controller.isCelestialOnlyMode()) {
+            SolumCelestialControlState controls = controller.getCelestialControls();
+            int sizeLevel = Math.max(0, Math.min(STAR_SIZE_LEVELS - 1,
+                Math.round((controls.starSize - 0.50f) / 1.30f * (STAR_SIZE_LEVELS - 1))));
+            int visibleGroups = controls.starsEnabled && controls.starDensity > 0.001f && state.lighting.starVisibility > 0.002f
+                ? Math.max(1, Math.min(STAR_GROUP_COUNT, (int)Math.ceil(controls.starDensity * STAR_GROUP_COUNT))) : 0;
+            if (sizeLevel != activeStarSizeLevel || visibleGroups != activeStarVisibleGroups) {
+                for (int size = 0; size < STAR_SIZE_LEVELS; size++) {
+                    for (int group = 0; group < STAR_GROUP_COUNT; group++) {
+                        setLayerVisible(STAR_VARIANT_NAMES[size][group], size == sizeLevel && group < visibleGroups);
+                    }
+                }
+                activeStarSizeLevel = sizeLevel;
+                activeStarVisibleGroups = visibleGroups;
+            }
+            float rotation = state.timeOfDay / 2400.0f * 360.0f;
+            for (int group = 0; group < visibleGroups; group++) {
+                setTransform(STAR_VARIANT_NAMES[sizeLevel][group], controller.getCameraX(), controller.getCameraY(),
+                    controller.getCameraZ(), 1, 1, 1,
+                    rotation + group * 0.32f, 0, 0);
+            }
+            return;
+        }
         float starScale = Math.max(0.001f, state.lighting.starVisibility);
         float rotation = state.timeOfDay / 2400.0f * 360.0f;
         int visibleGroups = Math.max(0, Math.min(3, (int) Math.ceil(controller.getStarDensity() * 3.0f)));
         for (int i = 0; i < 3; i++) {
             float groupScale = i < visibleGroups ? starScale : 0.001f;
-            setTransform(STAR_NAMES[i], 0, 0, 0, groupScale, groupScale, groupScale, rotation, 0, 0);
+            setTransform(LEGACY_STAR_NAMES[i], 0, 0, 0, groupScale, groupScale, groupScale, rotation, 0, 0);
         }
     }
 
@@ -285,10 +332,12 @@ public final class SolumFilamentEnvironmentAdapter {
         int requested = Math.min(state.clouds.visibleGroups, Math.max(0, (int) Math.ceil(state.clouds.coverage * 12.0f)));
         for (int i = 0; i < CLOUD_POSITIONS.length; i++) {
             boolean visible = i < requested && state.clouds.coverage > 0.015f;
-            float scale = visible ? 0.52f + state.clouds.density * 0.78f : 0.001f;
-            float x = wrapSigned(CLOUD_POSITIONS[i][0] + state.clouds.offsetX, 22.0f);
-            float z = CLOUD_POSITIONS[i][2] + wrapSigned(state.clouds.offsetZ, 18.0f);
-            setTransform(CLOUD_NAMES[i], x, CLOUD_POSITIONS[i][1], z, scale, 0.75f + state.clouds.thickness * 0.65f, scale, 0, 0, 0);
+            float scale = visible ? 0.54f + state.clouds.density * 0.82f : 0.001f;
+            float x = wrapSigned(CLOUD_POSITIONS[i][0] + state.clouds.offsetX, 34.0f);
+            float z = CLOUD_POSITIONS[i][2] + wrapSigned(state.clouds.offsetZ, 24.0f);
+            float vertical = visible ? 0.42f + state.clouds.density * 0.42f + (1.0f - state.clouds.softness) * 0.18f : 0.001f;
+            setTransform(CLOUD_NAMES[i], x, CLOUD_POSITIONS[i][1], z, scale, vertical, scale * 0.92f,
+                i * 17.0f, 0, 0);
         }
     }
 
@@ -351,9 +400,34 @@ public final class SolumFilamentEnvironmentAdapter {
                 float moonHalo = controls.moonGlowEnabled && state.lighting.moonAboveHorizon ? controls.moonGlow : 0.0f;
                 setMaterial4("P63_SUN_HALO", "baseColorFactor", controls.sunTint[0], controls.sunTint[1],
                     controls.sunTint[2], safeRange(sunHalo * 0.52f, 0.0f, 0.52f));
+                setMaterial4("P63_SUN_GLOW_INNER", "baseColorFactor", controls.sunTint[0], controls.sunTint[1],
+                    controls.sunTint[2], safeRange(sunHalo * 0.72f, 0.0f, 0.68f));
+                setMaterial4("P63_SUN_HALO_OUTER", "baseColorFactor", controls.sunTint[0], controls.sunTint[1] * 0.92f,
+                    controls.sunTint[2] * 0.82f, safeRange(sunHalo * 0.20f, 0.0f, 0.18f));
                 setMaterial4("P63_MOON_HALO", "baseColorFactor", controls.moonTint[0], controls.moonTint[1],
                     controls.moonTint[2], safeRange(moonHalo * 0.38f, 0.0f, 0.38f));
-                materialStatus = "p63_2a2_single_visible_moon_disc_analytic_terminator_no_occluder_safe_emissive_halos";
+                setMaterial4("P63_MOON_GLOW_INNER", "baseColorFactor", controls.moonTint[0], controls.moonTint[1],
+                    controls.moonTint[2], safeRange(moonHalo * 0.52f, 0.0f, 0.46f));
+                int starSizeLevel = activeStarSizeLevel < 0 ? 0 : activeStarSizeLevel;
+                for (int group = 0; group < STAR_GROUP_COUNT; group++) {
+                    String starNode = STAR_VARIANT_NAMES[starSizeLevel][group];
+                    float wave = (float)Math.sin(celestialAnimationTime * (1.55f + group * 0.11f) + group * 2.17f);
+                    float twinkle = 1.0f + wave * controls.starTwinkleAmount * 0.34f;
+                    float brightness = safeRange(state.lighting.starVisibility * twinkle, 0.0f, 1.35f);
+                    setMaterial4(starNode, "baseColorFactor", controls.starTint[0] * brightness,
+                        controls.starTint[1] * brightness, controls.starTint[2] * brightness, Math.min(1.0f, brightness));
+                    setMaterial3(starNode, "emissiveFactor", controls.starTint[0] * brightness * 1.4f,
+                        controls.starTint[1] * brightness * 1.4f, controls.starTint[2] * brightness * 1.4f);
+                }
+                float cloudAlpha = controls.cloudsEnabled
+                    ? safeRange((0.16f + controls.cloudDensity * 0.48f) * (0.68f + controls.cloudSoftness * 0.32f), 0.0f, 0.72f)
+                    : 0.0f;
+                for (String cloudNode : CLOUD_NAMES) {
+                    setMaterial4(cloudNode, "baseColorFactor", controls.cloudTint[0] * controls.cloudBrightness,
+                        controls.cloudTint[1] * controls.cloudBrightness, controls.cloudTint[2] * controls.cloudBrightness,
+                        cloudAlpha);
+                }
+                materialStatus = "p63_2b_curved_moon_layered_sun_filament_bloom_world_stars_layered_clouds";
                 return;
             }
             float wet = state.surface.wetness;
@@ -531,6 +605,7 @@ public final class SolumFilamentEnvironmentAdapter {
     private void notifyStatus() { if (host != null) host.onEnvironmentAdapterStatus(status); }
     private static String[] indexedNames(String prefix,int count){String[] out=new String[count];for(int i=0;i<count;i++)out[i]=prefix+i;return out;}
     private static String[] phaseNames(){String[] out=new String[MOON_PHASE_STEPS];for(int i=0;i<out.length;i++)out[i]=String.format(Locale.US,"P63_MOON_PHASE_%02d",i);return out;}
+    private static String[][] starVariantNames(){String[][] out=new String[STAR_SIZE_LEVELS][STAR_GROUP_COUNT];for(int size=0;size<STAR_SIZE_LEVELS;size++)for(int group=0;group<STAR_GROUP_COUNT;group++)out[size][group]=String.format(Locale.US,"P63_STAR_S%d_G%d",size,group);return out;}
     private static String[] cellNames(String prefix){String[] out=new String[25];for(int z=0;z<5;z++)for(int x=0;x<5;x++)out[z*5+x]=prefix+x+"_"+z;return out;}
     private static float wrap(float value, float range) { float out=value%range;return out<0?out+range:out; }
     private static float wrapSigned(float value, float range) { float out=(value+range*0.5f)%range;if(out<0)out+=range;return out-range*0.5f; }

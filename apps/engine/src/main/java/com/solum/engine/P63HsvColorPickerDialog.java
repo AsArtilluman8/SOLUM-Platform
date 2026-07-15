@@ -4,11 +4,11 @@ import android.app.Activity;
 import android.app.Dialog;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.ComposeShader;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
-import android.graphics.PorterDuff;
+import android.graphics.RadialGradient;
 import android.graphics.Shader;
+import android.graphics.SweepGradient;
 import android.os.Bundle;
 import android.view.MotionEvent;
 import android.view.View;
@@ -18,7 +18,7 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-/** Compact HSV picker shared by the Sun and Moon tabs. */
+/** Compact circular HSV picker shared by all P63.2B celestial color controls. */
 public final class P63HsvColorPickerDialog extends Dialog {
     public interface Listener { void onColorApplied(float red, float green, float blue); }
 
@@ -27,8 +27,8 @@ public final class P63HsvColorPickerDialog extends Dialog {
     private final Listener listener;
     private final float[] hsv = new float[3];
     private final float[] resetHsv = new float[3];
-    private HueBarView hueView;
-    private SaturationValueView saturationValueView;
+    private HueSaturationWheelView wheelView;
+    private ValueBarView valueView;
     private TextView preview;
 
     public P63HsvColorPickerDialog(Activity activity, String key, float[] initialRgb,
@@ -56,30 +56,32 @@ public final class P63HsvColorPickerDialog extends Dialog {
         root.setPadding(dp(16), dp(14), dp(16), dp(12));
         root.setBackgroundColor(Color.rgb(8, 24, 30));
 
-        TextView title = text(("sun".equals(key) ? "Sun" : "Moon") + " Color · HSV");
+        TextView title = text(displayName(key) + " Color · HSV Wheel");
         title.setTextSize(18.0f);
         root.addView(title);
 
-        saturationValueView = new SaturationValueView(activity);
-        saturationValueView.setTag("p63.color.sv." + key);
-        saturationValueView.setHue(hsv[0]);
-        saturationValueView.setSaturationValue(hsv[1], hsv[2]);
-        saturationValueView.setOnChanged((saturation, value) -> {
-            hsv[1] = saturation; hsv[2] = value; updatePreview();
+        wheelView = new HueSaturationWheelView(activity);
+        wheelView.setTag("p63.color.wheel." + key);
+        wheelView.setHueSaturation(hsv[0], hsv[1]);
+        wheelView.setOnChanged((hue, saturation) -> {
+            hsv[0] = hue; hsv[1] = saturation;
+            valueView.setHueSaturation(hue, saturation); updatePreview();
         });
-        root.addView(saturationValueView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(220)));
+        LinearLayout.LayoutParams wheelParams = new LinearLayout.LayoutParams(dp(232), dp(232));
+        wheelParams.gravity = android.view.Gravity.CENTER_HORIZONTAL;
+        root.addView(wheelView, wheelParams);
 
-        hueView = new HueBarView(activity);
-        hueView.setTag("p63.color.hue." + key);
-        hueView.setHue(hsv[0]);
-        hueView.setOnChanged(hue -> {
-            hsv[0] = hue; saturationValueView.setHue(hue); updatePreview();
+        valueView = new ValueBarView(activity);
+        valueView.setTag("p63.color.value." + key);
+        valueView.setHueSaturation(hsv[0], hsv[1]);
+        valueView.setValue(hsv[2]);
+        valueView.setOnChanged(value -> {
+            hsv[2] = value; updatePreview();
         });
-        LinearLayout.LayoutParams hueParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(42));
-        hueParams.topMargin = dp(10);
-        root.addView(hueView, hueParams);
+        LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(46));
+        valueParams.topMargin = dp(10);
+        root.addView(valueView, valueParams);
 
         preview = text("");
         preview.setTag("p63.color.preview." + key);
@@ -108,14 +110,15 @@ public final class P63HsvColorPickerDialog extends Dialog {
 
     public void setHueForTest(float hue) {
         hsv[0] = clamp(hue, 0.0f, 360.0f);
-        if (hueView != null) hueView.setHue(hsv[0]);
-        if (saturationValueView != null) saturationValueView.setHue(hsv[0]);
+        if (wheelView != null) wheelView.setHueSaturation(hsv[0], hsv[1]);
+        if (valueView != null) valueView.setHueSaturation(hsv[0], hsv[1]);
         updatePreview();
     }
 
     public void setSaturationValueForTest(float saturation, float value) {
         hsv[1] = clamp(saturation, 0.0f, 1.0f); hsv[2] = clamp(value, 0.0f, 1.0f);
-        if (saturationValueView != null) saturationValueView.setSaturationValue(hsv[1], hsv[2]);
+        if (wheelView != null) wheelView.setHueSaturation(hsv[0], hsv[1]);
+        if (valueView != null) { valueView.setHueSaturation(hsv[0], hsv[1]); valueView.setValue(hsv[2]); }
         updatePreview();
     }
 
@@ -132,11 +135,8 @@ public final class P63HsvColorPickerDialog extends Dialog {
 
     private void resetDraft() {
         System.arraycopy(resetHsv, 0, hsv, 0, 3);
-        if (hueView != null) hueView.setHue(hsv[0]);
-        if (saturationValueView != null) {
-            saturationValueView.setHue(hsv[0]);
-            saturationValueView.setSaturationValue(hsv[1], hsv[2]);
-        }
+        if (wheelView != null) wheelView.setHueSaturation(hsv[0], hsv[1]);
+        if (valueView != null) { valueView.setHueSaturation(hsv[0], hsv[1]); valueView.setValue(hsv[2]); }
         updatePreview();
     }
 
@@ -174,62 +174,85 @@ public final class P63HsvColorPickerDialog extends Dialog {
 
     private static float clamp(float value, float min, float max) { return Math.max(min, Math.min(max, value)); }
 
-    private interface HueChanged { void onChanged(float hue); }
-    private interface SaturationValueChanged { void onChanged(float saturation, float value); }
+    private static String displayName(String key) {
+        if ("sun".equals(key)) return "Sun";
+        if ("moon".equals(key)) return "Moon";
+        if ("stars".equals(key)) return "Stars";
+        if ("clouds".equals(key)) return "Clouds";
+        return "Celestial";
+    }
 
-    private static final class HueBarView extends View {
+    private interface HueSaturationChanged { void onChanged(float hue, float saturation); }
+    private interface ValueChanged { void onChanged(float value); }
+
+    private static final class HueSaturationWheelView extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private float hue;
-        private HueChanged listener;
+        private float saturation = 1.0f;
+        private HueSaturationChanged listener;
 
-        HueBarView(Activity context) { super(context); }
-        void setHue(float value) { hue = value; invalidate(); }
-        void setOnChanged(HueChanged value) { listener = value; }
+        HueSaturationWheelView(Activity context) { super(context); setLayerType(View.LAYER_TYPE_SOFTWARE, null); }
+        void setHueSaturation(float hue, float saturation) {
+            this.hue = hue; this.saturation = saturation; invalidate();
+        }
+        void setOnChanged(HueSaturationChanged value) { listener = value; }
 
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
+            float cx = getWidth() * 0.5f;
+            float cy = getHeight() * 0.5f;
+            float radius = Math.max(1.0f, Math.min(getWidth(), getHeight()) * 0.5f - 8.0f);
             int[] colors = {Color.RED, Color.YELLOW, Color.GREEN, Color.CYAN, Color.BLUE, Color.MAGENTA, Color.RED};
-            paint.setShader(new LinearGradient(0, 0, getWidth(), 0, colors, null, Shader.TileMode.CLAMP));
-            canvas.drawRect(0, 0, getWidth(), getHeight(), paint);
-            paint.setShader(null); paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(4.0f); paint.setColor(Color.WHITE);
-            float x = hue / 360.0f * getWidth(); canvas.drawLine(x, 0, x, getHeight(), paint); paint.setStyle(Paint.Style.FILL);
+            paint.setShader(new SweepGradient(cx, cy, colors, null));
+            canvas.drawCircle(cx, cy, radius, paint);
+            paint.setShader(new RadialGradient(cx, cy, radius, Color.WHITE, Color.TRANSPARENT, Shader.TileMode.CLAMP));
+            canvas.drawCircle(cx, cy, radius, paint);
+            paint.setShader(null);
+            double radians = Math.toRadians(hue);
+            float markerX = cx + (float)Math.cos(radians) * saturation * radius;
+            float markerY = cy + (float)Math.sin(radians) * saturation * radius;
+            paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(5.0f); paint.setColor(Color.WHITE);
+            canvas.drawCircle(markerX, markerY, 11.0f, paint);
+            paint.setStrokeWidth(2.0f); paint.setColor(Color.BLACK); canvas.drawCircle(markerX, markerY, 14.0f, paint);
+            paint.setStyle(Paint.Style.FILL);
         }
 
         @Override public boolean onTouchEvent(MotionEvent event) {
             if (event.getActionMasked() != MotionEvent.ACTION_DOWN && event.getActionMasked() != MotionEvent.ACTION_MOVE) return true;
-            hue = clamp(event.getX() / Math.max(1.0f, getWidth()) * 360.0f, 0.0f, 360.0f);
-            if (listener != null) listener.onChanged(hue); invalidate(); return true;
+            float cx = getWidth() * 0.5f, cy = getHeight() * 0.5f;
+            float dx = event.getX() - cx, dy = event.getY() - cy;
+            float radius = Math.max(1.0f, Math.min(getWidth(), getHeight()) * 0.5f - 8.0f);
+            hue = (float)Math.toDegrees(Math.atan2(dy, dx)); if (hue < 0.0f) hue += 360.0f;
+            saturation = clamp((float)Math.hypot(dx, dy) / radius, 0.0f, 1.0f);
+            if (listener != null) listener.onChanged(hue, saturation); invalidate(); return true;
         }
     }
 
-    private static final class SaturationValueView extends View {
+    private static final class ValueBarView extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private float hue;
         private float saturation = 1.0f;
         private float value = 1.0f;
-        private SaturationValueChanged listener;
+        private ValueChanged listener;
 
-        SaturationValueView(Activity context) { super(context); setLayerType(View.LAYER_TYPE_SOFTWARE, null); }
-        void setHue(float value) { hue = value; invalidate(); }
-        void setSaturationValue(float saturation, float value) { this.saturation = saturation; this.value = value; invalidate(); }
-        void setOnChanged(SaturationValueChanged value) { listener = value; }
+        ValueBarView(Activity context) { super(context); }
+        void setHueSaturation(float hue, float saturation) { this.hue = hue; this.saturation = saturation; invalidate(); }
+        void setValue(float value) { this.value = value; invalidate(); }
+        void setOnChanged(ValueChanged value) { listener = value; }
 
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            int hueColor = Color.HSVToColor(new float[] {hue, 1.0f, 1.0f});
-            Shader saturationShader = new LinearGradient(0, 0, getWidth(), 0, Color.WHITE, hueColor, Shader.TileMode.CLAMP);
-            Shader valueShader = new LinearGradient(0, 0, 0, getHeight(), Color.WHITE, Color.BLACK, Shader.TileMode.CLAMP);
-            paint.setShader(new ComposeShader(saturationShader, valueShader, PorterDuff.Mode.MULTIPLY));
+            int selectedColor = Color.HSVToColor(new float[] {hue, saturation, 1.0f});
+            paint.setShader(new LinearGradient(0, 0, getWidth(), 0, Color.BLACK, selectedColor, Shader.TileMode.CLAMP));
             canvas.drawRect(0, 0, getWidth(), getHeight(), paint);
             paint.setShader(null); paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(4.0f); paint.setColor(Color.WHITE);
-            canvas.drawCircle(saturation * getWidth(), (1.0f - value) * getHeight(), 10.0f, paint); paint.setStyle(Paint.Style.FILL);
+            float x = value * getWidth(); canvas.drawLine(x, 0, x, getHeight(), paint); paint.setStyle(Paint.Style.FILL);
         }
 
         @Override public boolean onTouchEvent(MotionEvent event) {
             if (event.getActionMasked() != MotionEvent.ACTION_DOWN && event.getActionMasked() != MotionEvent.ACTION_MOVE) return true;
-            saturation = clamp(event.getX() / Math.max(1.0f, getWidth()), 0.0f, 1.0f);
-            value = 1.0f - clamp(event.getY() / Math.max(1.0f, getHeight()), 0.0f, 1.0f);
-            if (listener != null) listener.onChanged(saturation, value); invalidate(); return true;
+            value = clamp(event.getX() / Math.max(1.0f, getWidth()), 0.0f, 1.0f);
+            if (listener != null) listener.onChanged(value); invalidate(); return true;
         }
     }
 }

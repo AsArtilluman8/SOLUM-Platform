@@ -115,8 +115,8 @@ public final class SolumEnvironmentController {
         state.setFeatureStatus("moon_phase_material", EnvironmentFeatureStatus.FUNCTIONAL);
         state.setFeatureStatus("verified_audio_diagnostics", EnvironmentFeatureStatus.FUNCTIONAL);
         state.setFeatureStatus("light_shafts", EnvironmentFeatureStatus.PROTOTYPE);
-        state.setFeatureStatus("world_space_stars", EnvironmentFeatureStatus.PLACEHOLDER);
-        state.setFeatureStatus("clouds", EnvironmentFeatureStatus.PLACEHOLDER);
+        state.setFeatureStatus("world_space_stars", EnvironmentFeatureStatus.FUNCTIONAL);
+        state.setFeatureStatus("clouds", EnvironmentFeatureStatus.FUNCTIONAL);
         state.setFeatureStatus("world_space_rain", EnvironmentFeatureStatus.PLACEHOLDER);
         state.setFeatureStatus("world_space_snow", EnvironmentFeatureStatus.PLACEHOLDER);
         state.setFeatureStatus("prepared_ibl_reflections", EnvironmentFeatureStatus.PLACEHOLDER);
@@ -157,7 +157,7 @@ public final class SolumEnvironmentController {
         celestial.update(state.timeOfDay, state.weather, state.lighting);
         applyCelestialOverrides();
         if (celestialOnlyMode) {
-            updateAtmosphere();
+            updateCelestialClouds(dt); updateAtmosphere();
             state.fog.density = 0.0f;
             state.fog.maximumOpacity = 0.0f;
             state.lighting.lightningLumens = 0.0f;
@@ -178,7 +178,9 @@ public final class SolumEnvironmentController {
 
     private void enforceCelestialOnlyWeather() {
         SolumWeatherState w = state.weather;
-        w.cloudCoverage = 0.0f; w.cloudDensity = 0.0f; w.fogDensity = 0.0f;
+        w.cloudCoverage = celestialControls.cloudsEnabled ? celestialControls.cloudCoverage : 0.0f;
+        w.cloudDensity = celestialControls.cloudsEnabled ? celestialControls.cloudDensity : 0.0f;
+        w.fogDensity = 0.0f;
         w.rain = 0.0f; w.snow = 0.0f; w.dust = 0.0f; w.windSpeed = 0.0f;
         w.windGust = 0.0f; w.windTurbulence = 0.0f; w.lightningEnabled = 0.0f;
         w.lightningPotential = 0.0f; w.wetnessTarget = 0.0f; w.snowTarget = 0.0f;
@@ -211,6 +213,28 @@ public final class SolumEnvironmentController {
         float base=0.86f-c.coverage*0.35f-state.weather.dust*0.18f;c.color[0]=base;c.color[1]=base*1.02f;c.color[2]=base*1.08f;
         if(cloudTintMode==1){c.color[0]*=1.08f;c.color[1]*=0.94f;c.color[2]*=0.82f;}else if(cloudTintMode==2){c.color[0]*=0.82f;c.color[1]*=0.94f;c.color[2]*=1.12f;}
         SolumEnvironmentQuality q=envPackage.findQuality(state.quality); c.visibleGroups=q.cloudGroups; c.quality=q.name;
+    }
+
+    private void updateCelestialClouds(float dt) {
+        SolumCloudState c = state.clouds;
+        c.coverage = celestialControls.cloudsEnabled ? celestialControls.cloudCoverage : 0.0f;
+        c.density = celestialControls.cloudDensity;
+        c.softness = celestialControls.cloudSoftness;
+        c.brightness = celestialControls.cloudBrightness;
+        c.speed = celestialControls.cloudSpeed;
+        c.height = 14.0f;
+        c.thickness = 0.35f + celestialControls.cloudDensity * 0.55f;
+        c.offsetX += dt * celestialControls.cloudSpeed * 1.15f;
+        c.offsetZ += dt * celestialControls.cloudSpeed * 0.32f;
+        if (c.offsetX > 44.0f) c.offsetX -= 44.0f;
+        if (c.offsetZ > 36.0f) c.offsetZ -= 36.0f;
+        c.lightAttenuation = 1.0f - c.coverage * 0.52f;
+        c.lightningIllumination = 0.0f;
+        c.visibleGroups = 12;
+        c.quality = "P63_2B_LAYERED_WORLD_SPACE";
+        for (int index = 0; index < 3; index++) {
+            c.color[index] = celestialControls.cloudTint[index] * celestialControls.cloudBrightness;
+        }
     }
 
     private void updateAtmosphere() {
@@ -271,7 +295,10 @@ public final class SolumEnvironmentController {
             l.moonLux = celestialControls.moonEnabled ? celestialControls.moonLightLux * night : 0.0f;
             l.moonDiskBrightness = celestialControls.moonEnabled ? celestialControls.moonVisualBrightness * night : 0.0f;
             l.moonPhase = celestialControls.moonPhase;
-            l.starVisibility = 0.0f;
+            float starFade = 1.0f - smoothStep(-0.18f, 0.06f, l.sunElevation);
+            float cloudFade = 1.0f - (celestialControls.cloudsEnabled ? celestialControls.cloudCoverage * 0.82f : 0.0f);
+            l.starVisibility = celestialControls.starsEnabled
+                ? clamp(celestialControls.starBrightness * starFade * cloudFade) : 0.0f;
             System.arraycopy(celestialControls.sunTint, 0, l.sunColor, 0, 3);
             System.arraycopy(celestialControls.moonTint, 0, l.moonColor, 0, 3);
             celestialControls.activeSkySource = skySource(l.sunElevation);

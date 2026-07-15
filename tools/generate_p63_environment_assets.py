@@ -15,6 +15,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "apps" / "engine" / "src" / "main" / "assets" / "env" / "p63"
 SEED = 1597463007
+MOON_PHASE_STEPS = 65
+CELESTIAL_STAR_GROUPS = 8
+CELESTIAL_STAR_SIZE_LEVELS = (0.58, 0.78, 1.0, 1.28, 1.62)
 
 
 def align4(data: bytearray) -> None:
@@ -55,7 +58,7 @@ def moon_png(size: int = 128) -> bytes:
     return b"\x89PNG\r\n\x1a\n" + png_chunk(b"IHDR", header) + png_chunk(b"IDAT", zlib.compress(bytes(rows), 9)) + png_chunk(b"IEND", b"")
 
 
-def halo_png(size: int = 64) -> bytes:
+def halo_png(size: int = 64, falloff_power: float = 2.0) -> bytes:
     """Smooth analytic halo alpha; deliberately contains no stipple/dither/checker branch."""
     rows = bytearray()
     for y in range(size):
@@ -64,7 +67,7 @@ def halo_png(size: int = 64) -> bytes:
         for x in range(size):
             fx = (x + 0.5) / size * 2.0 - 1.0
             radius = math.hypot(fx, fy)
-            alpha = max(0.0, min(1.0, 1.0 - radius))
+            alpha = max(0.0, min(1.0, 1.0 - radius)) ** max(0.5, falloff_power)
             alpha = alpha * alpha * (3.0 - 2.0 * alpha)
             rows.extend((255, 244, 214, round(alpha * 255.0)))
     header = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)
@@ -164,9 +167,13 @@ def moon_phase_png(source: tuple[int, int, bytes], phase: float) -> bytes:
                 continue
             sphere_z = math.sqrt(max(0.0, 1.0 - radius2))
             light = fx * light_x + sphere_z * light_z
-            illumination = smoothstep(-edge, edge, light)
-            # Preserve a restrained textured earthshine floor instead of a black phase object.
-            shaded = 0.035 + illumination * 0.965
+            terminator = smoothstep(-edge * 1.35, edge * 1.35, light)
+            direct = math.sqrt(max(0.0, light)) * terminator
+            limb = 0.70 + sphere_z * 0.30
+            # Restrained textured earthshine keeps the dark hemisphere readable without
+            # introducing a second black object beside the moon.
+            earthshine = (0.028 + 0.024 * sphere_z) * (1.0 - terminator * 0.70)
+            shaded = min(1.0, earthshine + direct * limb)
             limb_alpha = 1.0 - smoothstep(1.0 - edge * 1.8, 1.0, math.sqrt(radius2))
             source_index = target
             out[target] = round(pixels[source_index] * shaded)
@@ -184,10 +191,12 @@ def sun_disc_png(size: int = 128) -> bytes:
         for x in range(size):
             fx = (x + 0.5) / size * 2.0 - 1.0
             radius = math.hypot(fx, fy)
-            alpha = 1.0 - smoothstep(0.82, 1.0, radius)
-            core = 1.0 - smoothstep(0.0, 0.82, radius)
+            alpha = 1.0 - smoothstep(0.80, 1.0, radius)
+            core = 1.0 - smoothstep(0.0, 0.86, radius)
+            granulation = 0.5 + 0.5 * math.sin(fx * 31.0 + math.sin(fy * 19.0) * 2.0)
             index = (y * size + x) * 4
-            pixels[index:index + 4] = bytes((255, round(224 + core * 31), round(168 + core * 87), round(alpha * 255)))
+            pixels[index:index + 4] = bytes((255, round(222 + core * 29 + granulation * 4),
+                                             round(164 + core * 83 + granulation * 8), round(alpha * 255)))
     return encode_rgba_png(size, size, bytes(pixels))
 
 
@@ -370,13 +379,13 @@ def cloud_cluster(seed: int) -> Mesh:
     return merge(parts)
 
 
-def star_group(seed: int, group: int, count: int = 72) -> Mesh:
+def star_group(seed: int, group: int, count: int = 72, group_count: int = 3, size_scale: float = 1.0) -> Mesh:
     rng=random.Random(seed);parts=[];star=octahedron()
     for index in range(count):
         u=rng.random();v=rng.random();w=rng.random();az=u*math.tau;band=abs(v-0.5)*2; elevation=0.12+(1-band**1.8)*1.25+(w-0.5)*0.2;radius=34
         cos=math.cos(elevation);position=(math.sin(az)*cos*radius,math.sin(elevation)*radius,-math.cos(az)*cos*radius)
-        size=0.026+rng.random()**4*0.12
-        if index%3==group:parts.append((star,position,(size,size,size)))
+        size=(0.026+rng.random()**4*0.12)*size_scale
+        if index%group_count==group:parts.append((star,position,(size,size,size)))
     return merge(parts)
 
 
@@ -463,7 +472,7 @@ def generate_glb() -> bytes:
 
 
 def generate_celestial_glb(moon_payload: bytes | None = None, moon_name: str = "P63_SOLUM_NATIVE_MOON") -> bytes:
-    """Small explicit P63.2A stage. It contains no weather, stars, or dynamic IBL assets."""
+    """Explicit P63.2B stage with deterministic celestial geometry and no screen overlays."""
     b = GlbBuilder()
     source_moon_payload = moon_payload or moon_png(256)
     # Embed the exact audited source unchanged for provenance. Runtime phase nodes use only
@@ -471,7 +480,9 @@ def generate_celestial_glb(moon_payload: bytes | None = None, moon_name: str = "
     b.texture_png(source_moon_payload, moon_name)
     decoded_moon = decode_png_rgba(source_moon_payload)
     sun_texture = b.texture_png(sun_disc_png(), "P63_SOLUM_NATIVE_SUN_CORE")
-    halo_texture = b.texture_png(halo_png(), "P63_SMOOTH_CELESTIAL_HALO")
+    halo_texture = b.texture_png(halo_png(96, 1.8), "P63_SMOOTH_CELESTIAL_HALO")
+    inner_glow_texture = b.texture_png(halo_png(96, 1.15), "P63_SMOOTH_CELESTIAL_INNER_GLOW")
+    outer_glow_texture = b.texture_png(halo_png(96, 2.7), "P63_SMOOTH_CELESTIAL_OUTER_GLOW")
     concrete = b.material("P63_2A_Matte", (0.34, 0.35, 0.36, 1), 0, 0.86)
     rough_metal = b.material("P63_2A_RoughMetal", (0.30, 0.33, 0.37, 1), 1, 0.48)
     polished = b.material("P63_2A_PolishedMetal", (0.64, 0.68, 0.74, 1), 1, 0.07)
@@ -481,8 +492,20 @@ def generate_celestial_glb(moon_payload: bytes | None = None, moon_name: str = "
                      emissive_texture=sun_texture, force_single_sided=True)
     sun_halo = b.material("P63_2A_SunHalo", (1, 0.82, 0.50, 0.28), 0, 1, unlit=True,
                           alpha="BLEND", texture=halo_texture, force_single_sided=True)
+    sun_inner = b.material("P63_2B_SunInnerGlow", (1, 0.90, 0.62, 0.34), 0, 1, unlit=True,
+                           alpha="BLEND", texture=inner_glow_texture, force_single_sided=True)
+    sun_outer = b.material("P63_2B_SunOuterHalo", (1, 0.70, 0.34, 0.12), 0, 1, unlit=True,
+                           alpha="BLEND", texture=outer_glow_texture, force_single_sided=True)
     moon_halo = b.material("P63_2A_MoonHalo", (0.58, 0.68, 0.92, 0.16), 0, 1, unlit=True,
                            alpha="BLEND", texture=halo_texture, force_single_sided=True)
+    moon_inner = b.material("P63_2B_MoonInnerGlow", (0.68, 0.78, 1.0, 0.18), 0, 1, unlit=True,
+                            alpha="BLEND", texture=inner_glow_texture, force_single_sided=True)
+    star_materials = [
+        b.material(f"P63_2B_StarGroup_{group}", (0.82, 0.90, 1.0, 0.82), 0, 0,
+                   unlit=True, emissive=(0.52, 0.68, 1.0), alpha="BLEND")
+        for group in range(CELESTIAL_STAR_GROUPS)
+    ]
+    cloud = b.material("P63_2B_CloudLayer", (0.92, 0.95, 1.0, 0.52), 0, 0.94, alpha="BLEND")
 
     box_mesh = b.mesh("p63_2a_box", box(), concrete)
     ground_mesh = b.mesh("p63_2a_ground", plane_up(), concrete)
@@ -507,18 +530,37 @@ def generate_celestial_glb(moon_payload: bytes | None = None, moon_name: str = "
 
     sun_mesh = b.mesh("p63_2a_sun_disk", disk(96), sun)
     sun_halo_mesh = b.mesh("p63_2a_sun_halo", disk(96), sun_halo)
+    sun_inner_mesh = b.mesh("p63_2b_sun_inner_glow", disk(96), sun_inner)
+    sun_outer_mesh = b.mesh("p63_2b_sun_outer_halo", disk(96), sun_outer)
     moon_halo_mesh = b.mesh("p63_2a_moon_halo", disk(96), moon_halo)
+    moon_inner_mesh = b.mesh("p63_2b_moon_inner_glow", disk(96), moon_inner)
+    b.node("P63_SUN_HALO_OUTER", sun_outer_mesh, (0, 14, -25), (0.5, 0.5, 0.5))
     b.node("P63_SUN_HALO", sun_halo_mesh, (0, 14, -25), (0.3, 0.3, 0.3))
+    b.node("P63_SUN_GLOW_INNER", sun_inner_mesh, (0, 14, -25), (0.2, 0.2, 0.2))
     b.node("P63_SUN_DISK", sun_mesh, (0, 14, -25), (0.13, 0.13, 0.13))
     b.node("P63_MOON_HALO", moon_halo_mesh, (0, 12, -24), (0.3, 0.3, 0.3))
-    for index in range(33):
-        phase = index / 32.0
+    b.node("P63_MOON_GLOW_INNER", moon_inner_mesh, (0, 12, -24), (0.2, 0.2, 0.2))
+    for index in range(MOON_PHASE_STEPS):
+        phase = index / (MOON_PHASE_STEPS - 1)
         phase_texture = b.texture_png(moon_phase_png(decoded_moon, phase), f"P63_MOON_ANALYTIC_PHASE_{index:02d}")
         phase_material = b.material(f"P63_2A_MoonPhase_{index:02d}", (1, 1, 1, 1), 0, 0.62,
                                     unlit=False, emissive=(0.12, 0.14, 0.18), alpha="BLEND",
                                     texture=phase_texture, emissive_texture=phase_texture, force_single_sided=True)
         phase_mesh = b.mesh(f"p63_2a_moon_phase_{index:02d}", disk(96), phase_material)
         b.node(f"P63_MOON_PHASE_{index:02d}", phase_mesh, (0, 12, -24), (0.001, 0.001, 0.001))
+
+    for size_level, size_scale in enumerate(CELESTIAL_STAR_SIZE_LEVELS):
+        for group in range(CELESTIAL_STAR_GROUPS):
+            mesh = star_group(SEED ^ 0x53544152, group, count=192,
+                              group_count=CELESTIAL_STAR_GROUPS, size_scale=size_scale)
+            star_mesh = b.mesh(f"p63_2b_star_s{size_level}_g{group}", mesh, star_materials[group])
+            b.node(f"P63_STAR_S{size_level}_G{group}", star_mesh, scale=(0.001, 0.001, 0.001))
+
+    for variant in range(4):
+        cloud_mesh = b.mesh(f"p63_2b_cloud_cluster_{variant}",
+                            cloud_cluster(SEED ^ 0x434C4F55 ^ (variant * 7919)), cloud)
+        for index in range(variant, 12, 4):
+            b.node(f"P63_CLOUD_{index}", cloud_mesh, scale=(0.001, 0.001, 0.001))
     return b.build()
 
 

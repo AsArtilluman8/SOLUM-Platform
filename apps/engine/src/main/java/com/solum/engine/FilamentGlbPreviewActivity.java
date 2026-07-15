@@ -309,6 +309,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     private Button p63SkyButton;
     private Button p63SunButton;
     private Button p63MoonButton;
+    private Button p63StarsButton;
+    private Button p63CloudsButton;
     private Button p63MoonTextureButton;
     private Button p63WeatherButton;
     private Button p63TimePlayButton;
@@ -2604,7 +2606,7 @@ public class FilamentGlbPreviewActivity extends Activity {
                 ByteBuffer stageData = readAssetBuffer(stagePath);
                 modelViewer.loadModelGlb(stageData);
                 p63StageActive = true;
-                modelName = p63CelestialStageRequested ? "P63.2A Celestial Test Stage" : "P63 Environment Stage";
+                modelName = p63CelestialStageRequested ? "P63.2B Celestial Test Stage" : "P63 Environment Stage";
                 modelSourcePath = "asset://" + stagePath;
                 modelCopiedPath = modelSourcePath;
                 cameraDistance = p63CelestialStageRequested ? 15.0f : 18.0f;
@@ -2669,7 +2671,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         modelPath = "";
         p63StageActive = true;
         p63CelestialStageRequested = true;
-        setLastAction("p63_2a_celestial_test_stage_requested");
+        setLastAction("p63_2b_celestial_test_stage_requested");
         loadModel();
     }
 
@@ -4214,6 +4216,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         try {
             JSONObject json = new JSONObject();
             json.put("skyEnabled", s.skyEnabled); json.put("sunEnabled", s.sunEnabled); json.put("moonEnabled", s.moonEnabled);
+            json.put("starsEnabled", s.starsEnabled); json.put("cloudsEnabled", s.cloudsEnabled);
             json.put("timePaused", s.timePaused); json.put("time", s.time); json.put("timeSpeed", s.timeSpeed);
             json.put("sunLightLux", s.sunLightLux); json.put("sunVisualBrightness", s.sunVisualBrightness);
             json.put("sunEmissive", s.sunEmissive); json.put("sunEdgeSoftness", s.sunEdgeSoftness);
@@ -4224,6 +4227,13 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("moonEmissive", s.moonEmissive); json.put("moonEdgeSoftness", s.moonEdgeSoftness);
             json.put("moonElevationOffsetDegrees", s.moonElevationOffsetDegrees);
             json.put("moonTintR", s.moonTint[0]); json.put("moonTintG", s.moonTint[1]); json.put("moonTintB", s.moonTint[2]);
+            json.put("starDensity", s.starDensity); json.put("starBrightness", s.starBrightness);
+            json.put("starSize", s.starSize); json.put("starTwinkleAmount", s.starTwinkleAmount);
+            json.put("starTintR", s.starTint[0]); json.put("starTintG", s.starTint[1]); json.put("starTintB", s.starTint[2]);
+            json.put("cloudCoverage", s.cloudCoverage); json.put("cloudDensity", s.cloudDensity);
+            json.put("cloudSoftness", s.cloudSoftness); json.put("cloudSpeed", s.cloudSpeed);
+            json.put("cloudBrightness", s.cloudBrightness); json.put("activeCloudPreset", s.activeCloudPreset);
+            json.put("cloudTintR", s.cloudTint[0]); json.put("cloudTintG", s.cloudTint[1]); json.put("cloudTintB", s.cloudTint[2]);
             json.put("sunGlowEnabled", s.sunGlowEnabled); json.put("moonGlowEnabled", s.moonGlowEnabled);
             json.put("exposureCompensationEnabled", s.exposureCompensationEnabled); json.put("highlightClampEnabled", s.highlightClampEnabled);
             json.put("bloomLikeEnabled", s.bloomLikeEnabled); json.put("lightShaftsEnabled", s.lightShaftsEnabled);
@@ -4247,6 +4257,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             JSONObject json = new JSONObject(raw);
             s.skyEnabled = json.optBoolean("skyEnabled", s.skyEnabled); s.sunEnabled = json.optBoolean("sunEnabled", s.sunEnabled);
             s.moonEnabled = json.optBoolean("moonEnabled", s.moonEnabled); s.timePaused = json.optBoolean("timePaused", s.timePaused);
+            s.starsEnabled = json.optBoolean("starsEnabled", s.starsEnabled); s.cloudsEnabled = json.optBoolean("cloudsEnabled", s.cloudsEnabled);
             s.time = (float)json.optDouble("time", s.time); s.timeSpeed = (float)json.optDouble("timeSpeed", s.timeSpeed);
             s.sunLightLux = (float)json.optDouble("sunLightLux", s.sunLightLux); s.sunVisualBrightness = (float)json.optDouble("sunVisualBrightness", s.sunVisualBrightness);
             s.sunEmissive = (float)json.optDouble("sunEmissive", s.sunEmissive); s.sunEdgeSoftness = (float)json.optDouble("sunEdgeSoftness", s.sunEdgeSoftness);
@@ -4258,6 +4269,14 @@ public class FilamentGlbPreviewActivity extends Activity {
             s.moonEmissive = (float)json.optDouble("moonEmissive", s.moonEmissive); s.moonEdgeSoftness = (float)json.optDouble("moonEdgeSoftness", s.moonEdgeSoftness);
             s.moonElevationOffsetDegrees = (float)json.optDouble("moonElevationOffsetDegrees", s.moonElevationOffsetDegrees);
             s.setMoonTint((float)json.optDouble("moonTintR", s.moonTint[0]), (float)json.optDouble("moonTintG", s.moonTint[1]), (float)json.optDouble("moonTintB", s.moonTint[2]));
+            s.starDensity = (float)json.optDouble("starDensity", s.starDensity); s.starBrightness = (float)json.optDouble("starBrightness", s.starBrightness);
+            s.starSize = (float)json.optDouble("starSize", s.starSize); s.starTwinkleAmount = (float)json.optDouble("starTwinkleAmount", s.starTwinkleAmount);
+            s.setStarTint((float)json.optDouble("starTintR", s.starTint[0]), (float)json.optDouble("starTintG", s.starTint[1]), (float)json.optDouble("starTintB", s.starTint[2]));
+            s.cloudCoverage = (float)json.optDouble("cloudCoverage", s.cloudCoverage); s.cloudDensity = (float)json.optDouble("cloudDensity", s.cloudDensity);
+            s.cloudSoftness = (float)json.optDouble("cloudSoftness", s.cloudSoftness); s.cloudSpeed = (float)json.optDouble("cloudSpeed", s.cloudSpeed);
+            s.cloudBrightness = (float)json.optDouble("cloudBrightness", s.cloudBrightness);
+            s.activeCloudPreset = json.optString("activeCloudPreset", s.activeCloudPreset);
+            s.setCloudTint((float)json.optDouble("cloudTintR", s.cloudTint[0]), (float)json.optDouble("cloudTintG", s.cloudTint[1]), (float)json.optDouble("cloudTintB", s.cloudTint[2]));
             s.sunGlowEnabled = json.optBoolean("sunGlowEnabled", s.sunGlowEnabled); s.moonGlowEnabled = json.optBoolean("moonGlowEnabled", s.moonGlowEnabled);
             s.exposureCompensationEnabled = json.optBoolean("exposureCompensationEnabled", s.exposureCompensationEnabled);
             s.highlightClampEnabled = json.optBoolean("highlightClampEnabled", s.highlightClampEnabled); s.bloomLikeEnabled = json.optBoolean("bloomLikeEnabled", s.bloomLikeEnabled);
@@ -4270,7 +4289,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         } catch (Throwable error) {
             s.lastCelestialError = "state_restore_failed_" + shortMessage(error);
         }
-        s.oldIblActive = true; s.p63IblEnabled = false; s.cloudsEnabled = false; s.starsEnabled = false;
+        s.oldIblActive = true; s.p63IblEnabled = false;
         s.precipitationEnabled = false; s.surfaceWeatherEnabled = false; s.lightningEnabled = false; s.proceduralAudioEnabled = false;
         s.sanitize();
         p63EnvironmentController.setTime(s.time); p63EnvironmentController.setTimeSpeed(s.timeSpeed);
@@ -4485,13 +4504,14 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void buildP63EnvironmentPanel() {
         ensureP63EnvironmentCore();
         p63EnvironmentTabs.clear();
-        environmentPanel.addView(sectionHeader("SOLUM Environment / Celestial P63.2A.2"));
+        environmentPanel.addView(sectionHeader("SOLUM Environment / Celestial P63.2B"));
 
         HorizontalScrollView tabScroll = new HorizontalScrollView(this);
         tabScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout tabButtons = row();
         for (String[] spec : new String[][] {{"quick", "Quick"}, {"sky", "Sky"}, {"sun", "Sun"},
-                {"moon", "Moon"}, {"camera", "Camera"}, {"debug", "Debug"}}) {
+                {"moon", "Moon"}, {"stars", "Stars"}, {"clouds", "Clouds"}, {"camera", "Camera"},
+                {"postfx", "PostFX"}, {"debug", "Debug"}}) {
             String key = spec[0];
             Button button = button(spec[1], view -> activateP63EnvironmentTab(key));
             button.setTag("p63.tab." + key);
@@ -4510,7 +4530,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         buildP63SkyTab(p63EnvironmentTabContent("sky"));
         buildP63SunTab(p63EnvironmentTabContent("sun"));
         buildP63MoonTab(p63EnvironmentTabContent("moon"));
+        buildP63StarsTab(p63EnvironmentTabContent("stars"));
+        buildP63CloudsTab(p63EnvironmentTabContent("clouds"));
         buildP63CameraTab(p63EnvironmentTabContent("camera"));
+        buildP63PostFxTab(p63EnvironmentTabContent("postfx"));
         buildP63DebugTab(p63EnvironmentTabContent("debug"));
         activeP63EnvironmentTab = "quick";
         activateP63EnvironmentTab(activeP63EnvironmentTab);
@@ -4571,14 +4594,10 @@ public class FilamentGlbPreviewActivity extends Activity {
         skyInfo.setBackgroundColor(Color.TRANSPARENT);
         skyInfo.setText("SOLUM_NATIVE analytic sRGB cubemap · full sphere\nRayleigh-like + Mie-like · continuous horizon haze\nOld IBL remains active; no fullscreen overlay.");
         parent.addView(skyInfo);
-        parent.addView(toggleButton("Exposure compensation", () -> celestialState().exposureCompensationEnabled,
-            value -> celestialState().exposureCompensationEnabled = value));
-        addCelestialControl(parent, "Exposure compensation", -1.0f, 1.0f, 0.05f,
-            () -> celestialState().exposureCompensation, value -> celestialState().exposureCompensation = value, 0.0f);
-        parent.addView(toggleButton("Highlight clamp", () -> celestialState().highlightClampEnabled,
-            value -> celestialState().highlightClampEnabled = value));
-        addCelestialControl(parent, "Highlight clamp", 0.50f, 1.0f, 0.01f,
-            () -> celestialState().highlightClamp, value -> celestialState().highlightClamp = value, 1.0f);
+        TextView layerInfo = overlayText(9.0f, 3);
+        layerInfo.setBackgroundColor(Color.TRANSPARENT);
+        layerInfo.setText("Celestial bodies, stars and clouds stay in renderer/world space.\nPostFX controls moved to their own compact tab.");
+        parent.addView(layerInfo);
     }
 
     private void buildP63SunTab(LinearLayout parent) {
@@ -4602,28 +4621,24 @@ public class FilamentGlbPreviewActivity extends Activity {
         addCelestialControl(parent, "Sun visual brightness", 0.0f, 2.0f, 0.02f,
             () -> celestialState().sunVisualBrightness, value -> celestialState().sunVisualBrightness = value, 1.0f);
         addCelestialControl(parent, "Sun emissive", 0.0f, 2.0f, 0.02f,
-            () -> celestialState().sunEmissive, value -> celestialState().sunEmissive = value, 0.72f);
+            () -> celestialState().sunEmissive, value -> celestialState().sunEmissive = value, 1.10f);
         parent.addView(toggleButton("Sun Halo", () -> celestialState().sunGlowEnabled,
             value -> celestialState().sunGlowEnabled = value));
         addCelestialControl(parent, "Sun Halo", 0.0f, 1.0f, 0.01f,
-            () -> celestialState().sunGlow, value -> celestialState().sunGlow = value, 0.35f);
+            () -> celestialState().sunGlow, value -> celestialState().sunGlow = value, 0.48f);
         parent.addView(toggleButton("Sun Bloom", () -> celestialState().bloomLikeEnabled,
             value -> celestialState().bloomLikeEnabled = value));
         addCelestialControl(parent, "Sun Bloom", 0.0f, 0.12f, 0.005f,
-            () -> celestialState().bloomLikeResponse, value -> celestialState().bloomLikeResponse = value, 0.0f);
+            () -> celestialState().bloomLikeResponse, value -> celestialState().bloomLikeResponse = value, 0.040f);
         addCelestialControl(parent, "Sun edge softness", 0.0f, 1.0f, 0.01f,
-            () -> celestialState().sunEdgeSoftness, value -> celestialState().sunEdgeSoftness = value, 0.55f);
+            () -> celestialState().sunEdgeSoftness, value -> celestialState().sunEdgeSoftness = value, 0.72f);
         addCelestialControl(parent, "Sun angular size", 0.10f, 2.0f, 0.01f,
             () -> celestialState().sunAngularSizeDegrees, value -> celestialState().sunAngularSizeDegrees = value,
             SolumCelestialControlState.DEFAULT_SUN_ANGULAR_SIZE);
         addCelestialControl(parent, "Sun elevation offset", -15.0f, 15.0f, 0.25f,
             () -> celestialState().sunElevationOffsetDegrees, value -> celestialState().sunElevationOffsetDegrees = value, 0.0f);
-        Button color = button("Sun Color", view -> showP63ColorPicker(true));
+        Button color = button("Sun Color", view -> showP63ColorPicker("sun"));
         color.setTag("p63.color.open.sun"); parent.addView(color);
-        LinearLayout rgb = addP63CollapsedGroup(parent, "Advanced RGB", "p63.advanced.rgb.sun");
-        addCelestialControl(rgb, "Sun tint R", 0.0f, 1.0f, 0.01f, () -> celestialState().sunTint[0], value -> celestialState().sunTint[0] = value, 1.0f);
-        addCelestialControl(rgb, "Sun tint G", 0.0f, 1.0f, 0.01f, () -> celestialState().sunTint[1], value -> celestialState().sunTint[1] = value, 0.92f);
-        addCelestialControl(rgb, "Sun tint B", 0.0f, 1.0f, 0.01f, () -> celestialState().sunTint[2], value -> celestialState().sunTint[2] = value, 0.72f);
         Button reset = button("Reset Sun", view -> { celestialState().resetSun(); applyP63StateChange("sun_reset"); });
         reset.setTag("p63.sun_reset"); parent.addView(reset);
     }
@@ -4642,28 +4657,77 @@ public class FilamentGlbPreviewActivity extends Activity {
         addCelestialControl(parent, "Moon light intensity", 0.0f, 2.0f, 0.01f,
             () -> celestialState().moonLightLux, value -> celestialState().moonLightLux = value, 0.15f);
         addCelestialControl(parent, "Moon visual brightness", 0.0f, 2.0f, 0.02f,
-            () -> celestialState().moonVisualBrightness, value -> celestialState().moonVisualBrightness = value, 0.75f);
+            () -> celestialState().moonVisualBrightness, value -> celestialState().moonVisualBrightness = value, 0.82f);
         addCelestialControl(parent, "Moon emissive", 0.0f, 1.5f, 0.01f,
-            () -> celestialState().moonEmissive, value -> celestialState().moonEmissive = value, 0.24f);
+            () -> celestialState().moonEmissive, value -> celestialState().moonEmissive = value, 0.36f);
         parent.addView(toggleButton("Moon Halo", () -> celestialState().moonGlowEnabled,
             value -> celestialState().moonGlowEnabled = value));
         addCelestialControl(parent, "Moon Halo", 0.0f, 1.0f, 0.01f,
-            () -> celestialState().moonGlow, value -> celestialState().moonGlow = value, 0.16f);
+            () -> celestialState().moonGlow, value -> celestialState().moonGlow = value, 0.24f);
         addCelestialControl(parent, "Moon edge softness", 0.0f, 1.0f, 0.01f,
-            () -> celestialState().moonEdgeSoftness, value -> celestialState().moonEdgeSoftness = value, 0.42f);
+            () -> celestialState().moonEdgeSoftness, value -> celestialState().moonEdgeSoftness = value, 0.68f);
         addCelestialControl(parent, "Moon size", 0.10f, 2.0f, 0.01f,
             () -> celestialState().moonAngularSizeDegrees, value -> celestialState().moonAngularSizeDegrees = value,
             SolumCelestialControlState.DEFAULT_MOON_ANGULAR_SIZE);
         addCelestialControl(parent, "Moon elevation offset", -15.0f, 15.0f, 0.25f,
             () -> celestialState().moonElevationOffsetDegrees, value -> celestialState().moonElevationOffsetDegrees = value, 0.0f);
-        Button color = button("Moon Color", view -> showP63ColorPicker(false));
+        Button color = button("Moon Color", view -> showP63ColorPicker("moon"));
         color.setTag("p63.color.open.moon"); parent.addView(color);
-        LinearLayout rgb = addP63CollapsedGroup(parent, "Advanced RGB", "p63.advanced.rgb.moon");
-        addCelestialControl(rgb, "Moon tint R", 0.0f, 1.0f, 0.01f, () -> celestialState().moonTint[0], value -> celestialState().moonTint[0] = value, 0.72f);
-        addCelestialControl(rgb, "Moon tint G", 0.0f, 1.0f, 0.01f, () -> celestialState().moonTint[1], value -> celestialState().moonTint[1] = value, 0.78f);
-        addCelestialControl(rgb, "Moon tint B", 0.0f, 1.0f, 0.01f, () -> celestialState().moonTint[2], value -> celestialState().moonTint[2] = value, 0.90f);
         Button reset = button("Reset Moon", view -> { celestialState().resetMoon(); applyP63StateChange("moon_reset"); });
         reset.setTag("p63.moon_reset"); parent.addView(reset);
+    }
+
+    private void buildP63StarsTab(LinearLayout parent) {
+        p63StarsButton = button("Stars enabled", view -> {
+            celestialState().starsEnabled = !celestialState().starsEnabled; applyP63StateChange("stars_toggle");
+        });
+        p63StarsButton.setTag("p63.stars.toggle"); parent.addView(p63StarsButton);
+        addCelestialControl(parent, "Star density", 0.0f, 1.0f, 0.01f,
+            () -> celestialState().starDensity, value -> celestialState().starDensity = value, 0.72f);
+        addCelestialControl(parent, "Star brightness", 0.0f, 2.0f, 0.02f,
+            () -> celestialState().starBrightness, value -> celestialState().starBrightness = value, 0.88f);
+        addCelestialControl(parent, "Star size", 0.50f, 1.80f, 0.05f,
+            () -> celestialState().starSize, value -> celestialState().starSize = value, 1.0f);
+        addCelestialControl(parent, "Star twinkle", 0.0f, 1.0f, 0.01f,
+            () -> celestialState().starTwinkleAmount, value -> celestialState().starTwinkleAmount = value, 0.28f);
+        Button color = button("Star Color", view -> showP63ColorPicker("stars"));
+        color.setTag("p63.color.open.stars"); parent.addView(color);
+        TextView fade = overlayText(9.0f, 3); fade.setBackgroundColor(Color.TRANSPARENT);
+        fade.setText("Deterministic world-space star field · fades through dawn · hidden in daylight."); parent.addView(fade);
+        Button reset = button("Reset Stars", view -> { celestialState().resetStars(); applyP63StateChange("stars_reset"); });
+        reset.setTag("p63.stars.reset"); parent.addView(reset);
+    }
+
+    private void buildP63CloudsTab(LinearLayout parent) {
+        p63CloudsButton = button("Clouds enabled", view -> {
+            celestialState().cloudsEnabled = !celestialState().cloudsEnabled; applyP63StateChange("clouds_toggle");
+        });
+        p63CloudsButton.setTag("p63.clouds.toggle"); parent.addView(p63CloudsButton);
+        HorizontalScrollView presetScroll = new HorizontalScrollView(this);
+        presetScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout presets = row();
+        for (String name : new String[] {"Clear", "Light Clouds", "Partly Cloudy", "Cloudy", "Sunset Clouds", "Night Clouds"}) {
+            Button preset = button(name, view -> {
+                celestialState().applyCloudPreset(((Button)view).getText().toString()); applyP63StateChange("cloud_preset");
+            });
+            preset.setTag("p63.cloud_preset." + name.toLowerCase(Locale.US).replace(' ', '_'));
+            presets.addView(preset);
+        }
+        presetScroll.addView(presets); parent.addView(presetScroll);
+        addCelestialControl(parent, "Cloud coverage", 0.0f, 1.0f, 0.01f,
+            () -> celestialState().cloudCoverage, value -> { celestialState().cloudCoverage = value; celestialState().activeCloudPreset = "Custom"; }, 0.28f);
+        addCelestialControl(parent, "Cloud density", 0.0f, 1.0f, 0.01f,
+            () -> celestialState().cloudDensity, value -> { celestialState().cloudDensity = value; celestialState().activeCloudPreset = "Custom"; }, 0.58f);
+        addCelestialControl(parent, "Cloud softness", 0.0f, 1.0f, 0.01f,
+            () -> celestialState().cloudSoftness, value -> { celestialState().cloudSoftness = value; celestialState().activeCloudPreset = "Custom"; }, 0.72f);
+        addCelestialControl(parent, "Cloud speed", 0.0f, 2.0f, 0.02f,
+            () -> celestialState().cloudSpeed, value -> { celestialState().cloudSpeed = value; celestialState().activeCloudPreset = "Custom"; }, 0.22f);
+        addCelestialControl(parent, "Cloud brightness", 0.0f, 1.5f, 0.02f,
+            () -> celestialState().cloudBrightness, value -> { celestialState().cloudBrightness = value; celestialState().activeCloudPreset = "Custom"; }, 0.86f);
+        Button color = button("Cloud Color", view -> showP63ColorPicker("clouds"));
+        color.setTag("p63.color.open.clouds"); parent.addView(color);
+        Button reset = button("Reset Clouds", view -> { celestialState().resetClouds(); applyP63StateChange("clouds_reset"); });
+        reset.setTag("p63.clouds.reset"); parent.addView(reset);
     }
 
     private void buildP63CameraTab(LinearLayout parent) {
@@ -4701,6 +4765,21 @@ public class FilamentGlbPreviewActivity extends Activity {
             SolumCelestialControlState.DEFAULT_CAMERA_ZOOM_SENSITIVITY);
         TextView pan = overlayText(9.0f, 2); pan.setBackgroundColor(Color.TRANSPARENT);
         pan.setText("Pan sensitivity: Filament native · gesture ownership isolated"); parent.addView(pan);
+    }
+
+    private void buildP63PostFxTab(LinearLayout parent) {
+        parent.addView(toggleButton("Exposure compensation", () -> celestialState().exposureCompensationEnabled,
+            value -> celestialState().exposureCompensationEnabled = value));
+        addCelestialControl(parent, "Exposure compensation", -1.0f, 1.0f, 0.05f,
+            () -> celestialState().exposureCompensation, value -> celestialState().exposureCompensation = value, 0.0f);
+        parent.addView(toggleButton("Highlight clamp", () -> celestialState().highlightClampEnabled,
+            value -> celestialState().highlightClampEnabled = value));
+        addCelestialControl(parent, "Highlight clamp", 0.50f, 1.0f, 0.01f,
+            () -> celestialState().highlightClamp, value -> celestialState().highlightClamp = value, 1.0f);
+        TextView info = overlayText(9.0f, 4); info.setBackgroundColor(Color.TRANSPARENT);
+        info.setText("Sun Bloom uses Filament threshold bloom.\nTone mapping and old IBL baseline remain unchanged."); parent.addView(info);
+        Button reset = button("Reset PostFX", view -> { celestialState().resetPostProcess(); applyP63StateChange("postfx_reset"); });
+        reset.setTag("p63.postfx.reset"); parent.addView(reset);
     }
 
     private void buildP63DebugTab(LinearLayout parent) {
@@ -4758,14 +4837,21 @@ public class FilamentGlbPreviewActivity extends Activity {
         header.setTag(tag); parent.addView(header); parent.addView(content); return content;
     }
 
-    private void showP63ColorPicker(boolean sun) {
+    private void showP63ColorPicker(String key) {
         SolumCelestialControlState state = celestialState();
-        float[] initial = sun ? state.sunTint : state.moonTint;
-        float[] defaults = sun ? new float[] {1.0f, 0.92f, 0.72f} : new float[] {0.72f, 0.78f, 0.90f};
-        p63ColorPickerDialog = P63HsvColorPickerDialog.show(this, sun ? "sun" : "moon", initial, defaults,
+        float[] initial;
+        float[] defaults;
+        if ("sun".equals(key)) { initial = state.sunTint; defaults = new float[] {1.0f, 0.92f, 0.72f}; }
+        else if ("moon".equals(key)) { initial = state.moonTint; defaults = new float[] {0.72f, 0.78f, 0.90f}; }
+        else if ("stars".equals(key)) { initial = state.starTint; defaults = new float[] {0.82f, 0.90f, 1.0f}; }
+        else { initial = state.cloudTint; defaults = new float[] {0.92f, 0.95f, 1.0f}; }
+        p63ColorPickerDialog = P63HsvColorPickerDialog.show(this, key, initial, defaults,
             (red, green, blue) -> {
-                if (sun) state.setSunTint(red, green, blue); else state.setMoonTint(red, green, blue);
-                applyP63StateChange(sun ? "sun_color_picker_apply" : "moon_color_picker_apply");
+                if ("sun".equals(key)) state.setSunTint(red, green, blue);
+                else if ("moon".equals(key)) state.setMoonTint(red, green, blue);
+                else if ("stars".equals(key)) state.setStarTint(red, green, blue);
+                else state.setCloudTint(red, green, blue);
+                applyP63StateChange(key + "_color_picker_apply");
             });
     }
 
@@ -4803,7 +4889,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         applyCelestialPostProcess();
         if (p63CelestialStageRequested) applyP63CameraPreset("Overview");
         persistWorkspaceSettings();
-        setLastAction("p63_2a1_environment_reset");
+        setLastAction("p63_2b_environment_reset");
         refreshUiNow();
     }
 
@@ -4822,7 +4908,7 @@ public class FilamentGlbPreviewActivity extends Activity {
         applyCelestialPostProcess();
         persistWorkspaceSettings();
         updateAllSliderLabels();
-        setLastAction("p63_2a_" + action);
+        setLastAction("p63_2b_" + action);
         refreshUiNow();
     }
 
@@ -4919,7 +5005,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             p63EnvironmentController = new SolumEnvironmentController(environmentPackage);
             p63EnvironmentController.setCelestialOnlyMode(true);
             restoreP63CelestialState();
-            p63EnvironmentLoadStatus = "functional_p63_2a_celestial_only_old_ibl_preserved";
+            p63EnvironmentLoadStatus = "functional_p63_2b_celestial_stars_clouds_old_ibl_preserved";
         } catch (Throwable error) {
             p63EnvironmentLoadStatus = "failed_" + shortMessage(error);
             lastLifecycleError = shortMessage(error);
@@ -5773,16 +5859,25 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (p63SkyButton != null) p63SkyButton.setText("Sky enabled: " + (controls.skyEnabled ? "On" : "Off"));
         if (p63SunButton != null) p63SunButton.setText("Sun enabled: " + (controls.sunEnabled ? "On" : "Off"));
         if (p63MoonButton != null) p63MoonButton.setText("Moon enabled: " + (controls.moonEnabled ? "On" : "Off"));
+        if (p63StarsButton != null) p63StarsButton.setText("Stars enabled: " + (controls.starsEnabled ? "On" : "Off"));
+        if (p63CloudsButton != null) p63CloudsButton.setText("Clouds enabled: " + (controls.cloudsEnabled ? "On" : "Off")
+            + " · " + controls.activeCloudPreset);
         if (p63MoonTextureButton != null) p63MoonTextureButton.setText("Moon texture: " + controls.moonProvenance + " / " + shorten(controls.activeMoonTexture, 36));
         View sunColor = environmentPanel == null ? null : environmentPanel.findViewWithTag("p63.color.open.sun");
         if (sunColor instanceof Button) ((Button)sunColor).setText("Sun Color  " + rgbHex(controls.sunTint));
         View moonColor = environmentPanel == null ? null : environmentPanel.findViewWithTag("p63.color.open.moon");
         if (moonColor instanceof Button) ((Button)moonColor).setText("Moon Color  " + rgbHex(controls.moonTint));
+        View starColor = environmentPanel == null ? null : environmentPanel.findViewWithTag("p63.color.open.stars");
+        if (starColor instanceof Button) ((Button)starColor).setText("Star Color  " + rgbHex(controls.starTint));
+        View cloudColor = environmentPanel == null ? null : environmentPanel.findViewWithTag("p63.color.open.clouds");
+        if (cloudColor instanceof Button) ((Button)cloudColor).setText("Cloud Color  " + rgbHex(controls.cloudTint));
         if (p63QuickStatusView != null) p63QuickStatusView.setText(
             "Sky: " + p63SkySummary() + " · Sun: " + (controls.sunEnabled ? "On" : "Off")
                 + " · " + oneDecimal(state.lighting.sunLux) + " lux"
                 + "\nMoon: " + (controls.moonEnabled ? "On" : "Off") + " · Phase " + twoDecimal(controls.moonPhase)
-                + " · Camera " + oneDecimal(cameraDistance) + " m");
+                + " · Camera " + oneDecimal(cameraDistance) + " m"
+                + "\nStars: " + (controls.starsEnabled ? twoDecimal(state.lighting.starVisibility) : "Off")
+                + " · Clouds: " + (controls.cloudsEnabled ? controls.activeCloudPreset + " " + twoDecimal(controls.cloudCoverage) : "Off"));
         if (p63AudioButton != null) p63AudioButton.setText("Mute: " + (controls.muted ? "On" : "Off"));
         if (p63AudioDiagnosticsView != null) p63AudioDiagnosticsView.setText(p63EnvironmentAudio == null
             ? "manifest loaded; playback system not created" : p63EnvironmentAudio.getDiagnosticText());
@@ -5795,6 +5890,13 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\nmoon lux=" + twoDecimal(state.lighting.moonLux) + " visual=" + twoDecimal(state.lighting.moonDiskBrightness)
                 + " emissive=" + twoDecimal(controls.moonEmissive) + " halo=" + twoDecimal(controls.moonGlow) + " phase=" + twoDecimal(state.lighting.moonPhase)
                 + " node=" + (p63EnvironmentAdapter == null ? "none" : p63EnvironmentAdapter.getActiveMoonPhaseNode())
+                + "\nstars enabled=" + controls.starsEnabled + " visibility=" + twoDecimal(state.lighting.starVisibility)
+                + " density=" + twoDecimal(controls.starDensity) + " size=" + twoDecimal(controls.starSize)
+                + " twinkle=" + twoDecimal(controls.starTwinkleAmount) + " tint=" + rgbHex(controls.starTint)
+                + "\nclouds enabled=" + controls.cloudsEnabled + " preset=" + controls.activeCloudPreset
+                + " coverage=" + twoDecimal(controls.cloudCoverage) + " density=" + twoDecimal(controls.cloudDensity)
+                + " softness=" + twoDecimal(controls.cloudSoftness) + " speed=" + twoDecimal(controls.cloudSpeed)
+                + " tint=" + rgbHex(controls.cloudTint)
                 + "\nsun direction xyz=" + vector3(state.lighting.sunVisualDirection)
                 + " elevation=" + oneDecimal(state.lighting.sunElevationDegrees) + "° azimuth=" + oneDecimal(state.lighting.sunAzimuthDegrees)
                 + "° aboveHorizon=" + state.lighting.sunAboveHorizon

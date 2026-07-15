@@ -86,9 +86,9 @@ public final class SolumEnvironmentCoreTest {
         controller.setCelestialOnlyMode(true);
         SolumCelestialControlState controls = controller.getCelestialControls();
         require(controls.oldIblActive && !controls.p63IblEnabled, "old IBL remains active");
-        require(!controls.cloudsEnabled && !controls.starsEnabled && !controls.precipitationEnabled
+        require(controls.cloudsEnabled && controls.starsEnabled && !controls.precipitationEnabled
             && !controls.surfaceWeatherEnabled && !controls.lightningEnabled && !controls.proceduralAudioEnabled,
-            "P63.2A deferred systems default off");
+            "P63.2B enables bounded stars/clouds while deferred weather remains off");
         controls.sunLightLux = 4.0f;
         controls.sunVisualBrightness = 1.5f;
         controller.setTime(1200.0f);
@@ -114,7 +114,18 @@ public final class SolumEnvironmentCoreTest {
         controller.update(0.1f);
         require(close(controller.getState().lighting.moonLux, moonLux), "moon emissive is independent from moon directional light intensity");
         require(controller.getState().weather.rain == 0.0f && controller.getState().weather.snow == 0.0f
-            && controller.getState().lighting.starVisibility == 0.0f, "celestial stage stays weather/star free");
+            && controller.getState().lighting.starVisibility > 0.0f, "celestial stage stays precipitation-free and shows night stars");
+        controls.applyCloudPreset("Cloudy");
+        controller.update(0.1f);
+        require(controls.cloudsEnabled && close(controls.cloudCoverage, 0.82f)
+            && close(controller.getState().clouds.coverage, 0.82f), "cloud preset updates renderer state");
+        controls.applyCloudPreset("Clear");
+        controller.update(0.1f);
+        require(!controls.cloudsEnabled && close(controller.getState().clouds.coverage, 0.0f), "Clear preset hides cloud layers");
+        controls.starDensity = 0.55f; controls.starBrightness = 1.2f; controls.starSize = 1.4f;
+        controls.starTwinkleAmount = 0.65f; controls.setStarTint(0.2f, 0.4f, 0.8f); controls.sanitize();
+        require(close(controls.starDensity, 0.55f) && close(controls.starBrightness, 1.2f)
+            && close(controls.starSize, 1.4f) && close(controls.starTint[2], 0.8f), "star controls remain bounded and independent");
         controls.sunLightLux = Float.NaN;
         controls.moonLightLux = Float.POSITIVE_INFINITY;
         controls.exposureCompensation = Float.NEGATIVE_INFINITY;

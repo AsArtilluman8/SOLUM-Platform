@@ -17,7 +17,7 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
             Bundle result = new Bundle();
             try {
                 runViewRegression();
-                result.putString("P63_VIEW_TEST", "PASS slider numeric preset reset; tabs switch correctly; color picker apply/reset; Activity recreation restores shared state");
+                result.putString("P63_VIEW_TEST", "PASS scalar controls; nine tabs; circular color picker; cloud preset; Activity recreation restores shared state");
                 finish(Activity.RESULT_OK, result);
             } catch (Throwable error) {
                 result.putString("P63_VIEW_TEST", "FAIL " + error.getClass().getSimpleName() + " " + error.getMessage());
@@ -36,11 +36,16 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
         View skyContent = tagged(activity, "p63.tab.content.sky", View.class);
         View sunContent = tagged(activity, "p63.tab.content.sun", View.class);
         View moonContent = tagged(activity, "p63.tab.content.moon", View.class);
+        View starsContent = tagged(activity, "p63.tab.content.stars", View.class);
+        View cloudsContent = tagged(activity, "p63.tab.content.clouds", View.class);
         View cameraContent = tagged(activity, "p63.tab.content.camera", View.class);
+        View postFxContent = tagged(activity, "p63.tab.content.postfx", View.class);
         View debugContent = tagged(activity, "p63.tab.content.debug", View.class);
         require(quickContent.getVisibility() == View.VISIBLE, "Quick must be the default inner tab");
         require(skyContent.getVisibility() == View.GONE && sunContent.getVisibility() == View.GONE
-            && moonContent.getVisibility() == View.GONE && cameraContent.getVisibility() == View.GONE
+            && moonContent.getVisibility() == View.GONE && starsContent.getVisibility() == View.GONE
+            && cloudsContent.getVisibility() == View.GONE && cameraContent.getVisibility() == View.GONE
+            && postFxContent.getVisibility() == View.GONE
             && debugContent.getVisibility() == View.GONE, "only Quick may be visible by default");
         Button sunTab = tagged(activity, "p63.tab.sun", Button.class);
         runOnMainSync(sunTab::performClick);
@@ -103,6 +108,27 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
         waitForIdleSync();
         require(color.getText().toString().contains("#FFEBB8") || color.getText().toString().contains("#FFEBB7"),
             "color picker Reset did not restore the Sun default");
+
+        Button cloudsTab = tagged(activity, "p63.tab.clouds", Button.class);
+        runOnMainSync(cloudsTab::performClick);
+        waitForIdleSync();
+        Button cloudyPreset = tagged(activity, "p63.cloud_preset.cloudy", Button.class);
+        SeekBar cloudCoverage = tagged(activity, "p63.slider.cloud_coverage", SeekBar.class);
+        runOnMainSync(cloudyPreset::performClick);
+        waitForIdleSync();
+        require(cloudCoverage.getProgress() == 82, "Cloudy preset did not synchronize coverage");
+
+        Button starsTab = tagged(activity, "p63.tab.stars", Button.class);
+        runOnMainSync(starsTab::performClick);
+        waitForIdleSync();
+        Button starColor = tagged(activity, "p63.color.open.stars", Button.class);
+        runOnMainSync(starColor::performClick);
+        waitForIdleSync();
+        P63HsvColorPickerDialog starDialog = ((FilamentGlbPreviewActivity)activity).getP63ColorPickerDialogForTest();
+        require(starDialog != null && starDialog.isShowing(), "Star color wheel did not open");
+        runOnMainSync(() -> { starDialog.setHueForTest(120.0f); starDialog.setSaturationValueForTest(1.0f, 1.0f); starDialog.applyDraftForTest(); });
+        waitForIdleSync();
+        require(starColor.getText().toString().contains("#00FF00"), "Star color wheel did not update state");
 
         runOnMainSync(() -> { exact.setText("24.5"); apply.performClick(); activity.finish(); });
         waitForIdleSync();

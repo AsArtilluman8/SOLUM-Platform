@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#07121a">
+  <title>SOLUM Native Environment · P62B</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <canvas id="viewport" aria-label="Мобильная диагностическая 3D-сцена окружения SOLUM"></canvas>
+  <header id="topbar">
+    <div class="brand">
+      <strong>SOLUM ENVIRONMENT</strong>
+      <span id="weather-status">Загрузка compact package…</span>
+    </div>
+    <div class="metrics" aria-label="Производительность">
+      <span class="metric"><b id="fps">—</b> FPS</span>
+      <span class="metric"><b id="frame-ms">—</b> ms</span>
+      <span class="truth-badge">SOLUM_NATIVE</span>
+    </div>
+  </header>
+
+  <button id="panel-toggle" class="floating" type="button" aria-controls="panel" aria-expanded="true">Скрыть управление</button>
+  <aside id="panel" aria-label="Управление окружением">
+    <nav id="tabs" aria-label="Разделы">
+      <button type="button" data-tab="weather" class="active">Погода</button>
+      <button type="button" data-tab="accuracy">Точность</button>
+      <button type="button" data-tab="scenarios">Сценарии</button>
+      <button type="button" data-tab="audio">Звук</button>
+    </nav>
+    <div id="panel-scroll">
+      <section class="page active" data-page="weather">
+        <div class="primary-grid">
+          <label class="control wide">
+            <span>Погода <output id="transition-status">стабильно</output></span>
+            <select id="weather"></select>
+          </label>
+          <label class="control">
+            <span>Переход <output id="transition-value">4.0 s</output></span>
+            <input id="transition" type="range" min="0" max="12" value="4" step="0.5">
+          </label>
+          <label class="control">
+            <span>Качество</span>
+            <select id="quality">
+              <option>Low</option>
+              <option selected>Medium</option>
+              <option>High</option>
+            </select>
+          </label>
+          <label class="control wide">
+            <span>Время <output id="time-value">—</output></span>
+            <input id="time" type="range" min="0" max="2400" value="960" step="1">
+          </label>
+        </div>
+        <div class="inline-actions">
+          <button id="time-play" type="button">▶ Время</button>
+          <label class="compact-control"><span>Скорость</span><input id="time-speed" type="range" min="0" max="8" value="1" step="0.25"><output id="speed-value">1.0×</output></label>
+          <button id="reset" type="button">↺ Сброс</button>
+        </div>
+
+        <details>
+          <summary>Точная настройка погоды</summary>
+          <div class="slider-grid">
+            <label class="control"><span>Облака <output id="clouds-value"></output></span><input id="clouds" type="range" min="0" max="1" step="0.01"></label>
+            <label class="control"><span>Туман <output id="fog-value"></output></span><input id="fog" type="range" min="0" max="0.12" step="0.001"></label>
+            <label class="control"><span>Дождь <output id="rain-value"></output></span><input id="rain" type="range" min="0" max="1" step="0.01"></label>
+            <label class="control"><span>Снег <output id="snow-value"></output></span><input id="snow" type="range" min="0" max="1" step="0.01"></label>
+            <label class="control"><span>Ветер <output id="wind-value"></output></span><input id="wind" type="range" min="0" max="1" step="0.01"></label>
+            <label class="control"><span>Молния <output id="lightning-value"></output></span><input id="lightning" type="range" min="0" max="1" step="0.01"></label>
+            <label class="control"><span>Влажность <output id="humidity-value"></output></span><input id="humidity" type="range" min="0" max="1" step="0.01"></label>
+            <label class="control"><span>Влажная поверхность <output id="wetness-value"></output></span><input id="wetness" type="range" min="0" max="1" step="0.01"></label>
+          </div>
+        </details>
+        <div class="state-strip" id="state-strip" aria-live="polite"></div>
+        <div class="inline-actions end-actions">
+          <button id="camera-reset" type="button">◎ Камера</button>
+          <button id="export-report" class="primary" type="button">Экспорт отчёта</button>
+        </div>
+      </section>
+
+      <section class="page" data-page="accuracy">
+        <p class="notice"><b>Это независимая система SOLUM.</b> Точные UDS данные отделены от адаптеров и процедурных эффектов.</p>
+        <div id="accuracy-list" class="card-list"></div>
+      </section>
+
+      <section class="page" data-page="scenarios">
+        <p class="notice">Фиксированные camera/time/weather состояния для визуального сравнения. Pixel-perfect UDS parity не заявляется.</p>
+        <div id="scenario-list" class="scenario-grid"></div>
+      </section>
+
+      <section class="page" data-page="audio">
+        <p class="notice warning">Автоматические bindings отключены: точная MetaSound-привязка неизвестна. Доступно только ручное прослушивание подтверждённых WAV.</p>
+        <div id="audio-list" class="card-list"></div>
+      </section>
+    </div>
+  </aside>
+  <div id="gesture-hint">1 палец: orbit · 2 пальца: pan/pinch · двойной tap: reset</div>
+  <div id="fatal" role="alert" hidden></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 package com.solum.engine.environment.p63;
 
 import java.util.Arrays;
+import java.nio.ByteBuffer;
 
 public final class SolumEnvironmentCoreTest {
     private static final String[] IDS = {
@@ -71,6 +72,8 @@ public final class SolumEnvironmentCoreTest {
         require(controller.getState().surface.snowCover < snowPeak, "snow melts/fades");
 
         require(controller.getState().getFeatureStatus().get("interior_exclusion") == EnvironmentFeatureStatus.FUNCTIONAL, "classification truth present");
+        testCanonicalCelestialCoordinates();
+        testAnalyticSky();
         testCelestialOnly(env);
         System.out.println("P63_CORE_TEST=PASS presets=" + Arrays.toString(IDS)
             + " stars=" + starsA.getStars().size()
@@ -116,6 +119,60 @@ public final class SolumEnvironmentCoreTest {
             && close(controls.bloomLikeResponse, 0.12f), "safe light and post-process ranges");
     }
 
+    private static void testCanonicalCelestialCoordinates() {
+        float[] fixedTimes = {0.0f, 600.0f, 900.0f, 1200.0f, 1700.0f, 1800.0f, 2100.0f};
+        SolumEnvironmentLightingState first = new SolumEnvironmentLightingState();
+        SolumEnvironmentLightingState second = new SolumEnvironmentLightingState();
+        for (float time : fixedTimes) {
+            SolumCelestialCoordinateSystem.update(time, 0.0f, first);
+            SolumCelestialCoordinateSystem.update(time, 0.0f, second);
+            require(vectorClose(first.sunVisualDirection, second.sunVisualDirection), "deterministic sun direction at " + time);
+            require(vectorClose(first.moonVisualDirection, second.moonVisualDirection), "deterministic moon direction at " + time);
+            require(close(length(first.sunVisualDirection), 1.0f) && close(length(first.moonVisualDirection), 1.0f), "normalized celestial directions");
+            require(SolumCelestialCoordinateSystem.consistentBodyAndLightDirection(first.sunVisualDirection, first.sunDirection),
+                "sun visual and Filament light derive from one canonical direction");
+            require(SolumCelestialCoordinateSystem.consistentBodyAndLightDirection(first.moonVisualDirection, first.moonDirection),
+                "moon visual and Filament light derive from one canonical direction");
+        }
+        for (float time : new float[] {900.0f, 1200.0f, 1700.0f}) {
+            SolumCelestialCoordinateSystem.update(time, 0.0f, first);
+            require(first.sunAboveHorizon, "sun visible at " + time);
+        }
+        for (float time : new float[] {0.0f, 2100.0f}) {
+            SolumCelestialCoordinateSystem.update(time, 0.0f, first);
+            require(first.moonAboveHorizon, "moon visible at " + time);
+        }
+        SolumCelestialCoordinateSystem.update(1200.0f, 0.0f, first);
+        float[] positionA = new float[3];
+        float[] positionB = new float[3];
+        SolumCelestialCoordinateSystem.positionRelativeToCamera(positionA, 0.0f, 2.0f, 4.0f,
+            first.sunVisualDirection, SolumCelestialCoordinateSystem.SKY_RADIUS);
+        SolumCelestialCoordinateSystem.positionRelativeToCamera(positionB, 7.0f, 5.0f, -3.0f,
+            first.sunVisualDirection, SolumCelestialCoordinateSystem.SKY_RADIUS);
+        require(close(positionB[0] - positionA[0], 7.0f) && close(positionB[1] - positionA[1], 3.0f)
+            && close(positionB[2] - positionA[2], -7.0f), "disk position translates with camera without parallax");
+        require(positionA[1] > 0.0f && first.sunAboveHorizon, "visible disk cannot be placed below ground by world origin");
+    }
+
+    private static void testAnalyticSky() {
+        float[] sun = {0.0f, 0.75f, -0.6614378f};
+        float[] above = {0.8f, 0.001f, -0.6f};
+        float[] below = {0.8f, -0.001f, -0.6f};
+        float[] nadir = {0.0f, -1.0f, 0.0f};
+        float[] horizonColor = new float[3];
+        float[] belowColor = new float[3];
+        float[] nadirColor = new float[3];
+        SolumAnalyticSky.linearColor(above, sun, horizonColor);
+        SolumAnalyticSky.linearColor(below, sun, belowColor);
+        SolumAnalyticSky.linearColor(nadir, sun, nadirColor);
+        require(colorDistance(horizonColor, belowColor) < 0.02f, "no upper/lower hemisphere seam");
+        require(colorDistance(belowColor, nadirColor) > 0.02f, "lower hemisphere remains atmospheric, not a flat fill");
+        for (float value : horizonColor) require(Float.isFinite(value) && value > 0.0f, "sky has finite non-black floor");
+        ByteBuffer cubemap = SolumAnalyticSky.createSrgbCubemap(sun);
+        require(cubemap.remaining() == SolumAnalyticSky.FACE_COUNT * SolumAnalyticSky.CUBEMAP_SIZE
+            * SolumAnalyticSky.CUBEMAP_SIZE * 4, "full six-face sRGB sky cubemap");
+    }
+
     private static SolumEnvironmentPackage fixture() {
         SolumEnvironmentPackage env = new SolumEnvironmentPackage();
         env.addQuality(new SolumEnvironmentQuality("Low", 420, 5, 96, 0.72f));
@@ -139,5 +196,8 @@ public final class SolumEnvironmentCoreTest {
     }
 
     private static boolean close(float a, float b) { return Math.abs(a - b) < 0.001f; }
+    private static float length(float[] value) { return (float)Math.sqrt(value[0] * value[0] + value[1] * value[1] + value[2] * value[2]); }
+    private static boolean vectorClose(float[] a, float[] b) { return close(a[0], b[0]) && close(a[1], b[1]) && close(a[2], b[2]); }
+    private static float colorDistance(float[] a, float[] b) { return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]); }
     private static void require(boolean value, String label) { if (!value) throw new AssertionError(label); }
 }

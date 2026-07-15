@@ -103,6 +103,48 @@ def embedded_png(gltf: dict, binary: bytes, image_name: str) -> tuple[int, int, 
     return width, height, raw
 
 
+def embedded_payload(gltf: dict, binary: bytes, image_name: str) -> bytes:
+    image = next(item for item in gltf["images"] if item.get("name") == image_name)
+    view = gltf["bufferViews"][image["bufferView"]]
+    start = view.get("byteOffset", 0)
+    return binary[start:start + view["byteLength"]]
+
+
+def accessor_values(gltf: dict, binary: bytes, accessor_index: int) -> list[tuple[float, ...]]:
+    accessor = gltf["accessors"][accessor_index]
+    view = gltf["bufferViews"][accessor["bufferView"]]
+    components = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}[accessor["type"]]
+    formats = {5123: "H", 5125: "I", 5126: "f"}
+    fmt = formats[accessor["componentType"]]
+    size = struct.calcsize("<" + fmt) * components
+    stride = view.get("byteStride", size)
+    start = view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
+    return [struct.unpack_from("<" + fmt * components, binary, start + index * stride)
+            for index in range(accessor["count"])]
+
+
+def validate_node_winding(gltf: dict, binary: bytes, node_name: str) -> None:
+    node = next(item for item in gltf["nodes"] if item.get("name") == node_name)
+    primitive = gltf["meshes"][node["mesh"]]["primitives"][0]
+    positions = accessor_values(gltf, binary, primitive["attributes"]["POSITION"])
+    normals = accessor_values(gltf, binary, primitive["attributes"]["NORMAL"])
+    indices = [int(item[0]) for item in accessor_values(gltf, binary, primitive["indices"])]
+    checked = 0
+    for offset in range(0, len(indices), 3):
+        ia, ib, ic = indices[offset:offset + 3]
+        a, b, c = positions[ia], positions[ib], positions[ic]
+        ab = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
+        ac = (c[0] - a[0], c[1] - a[1], c[2] - a[2])
+        cross = (ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0])
+        magnitude = sum(value * value for value in cross)
+        if magnitude < 1e-10:
+            continue
+        normal = tuple((normals[ia][axis] + normals[ib][axis] + normals[ic][axis]) / 3.0 for axis in range(3))
+        require(sum(cross[axis] * normal[axis] for axis in range(3)) > 0.0, f"winding matches normals: {node_name}")
+        checked += 1
+    require(checked > 0, f"non-degenerate triangles checked: {node_name}")
+
+
 def validate_p63_2a() -> None:
     stage = P63 / "p63_2a_celestial_test_stage.glb"
     gltf, binary = read_glb(stage)
@@ -111,33 +153,38 @@ def validate_p63_2a() -> None:
         "P63_CELESTIAL_STAGE_ROOT", "P63_STAGE_GROUND", "P63_MATTE_SPHERE", "P63_ROUGH_METAL",
         "P63_POLISHED_METAL", "P63_GLASS", "P63_VERTICAL_WALL", "P63_SHADOW_PILLAR",
         "P63_CAMERA_ORBIT_TARGET", "P63_NORMAL_SCALE_REFERENCE", "P63_ROOF", "P63_INTERIOR_FLOOR",
-        "P63_SKY_DAWN", "P63_SKY_DAY", "P63_SKY_SUNSET", "P63_SKY_TWILIGHT", "P63_SKY_NIGHT",
-        "P63_SUN_DISK", "P63_MOON_DISK", "P63_MOON_SHADOW",
+        "P63_SUN_HALO", "P63_SUN_DISK", "P63_MOON_HALO", "P63_MOON_DISK", "P63_MOON_SHADOW",
     }
     require(required <= names, "P63.2A diagnostic and celestial nodes")
     prohibited = ("STAR", "CLOUD", "RAIN", "SNOW", "DUST", "PUDDLE", "LIGHTNING")
     require(not any(any(token in name for token in prohibited) for name in names), "P63.2A excludes deferred weather/stars")
     materials = {item.get("name", ""): item for item in gltf.get("materials", [])}
-    for slot in ("dawn", "day", "sunset", "twilight", "night"):
-        require(materials[f"P63_2A_Sky_{slot}"]["doubleSided"], f"full sphere is camera-visible: {slot}")
-    width, height, pixels = embedded_png(gltf, binary, "P63_SKY_DAY")
-    require((width, height) == (256, 128), "mobile sky texture dimensions")
-    stride = 1 + width * 4
-    for row in (8, 62, 96, 120):
-        require(pixels[row * stride] == 0, "unfiltered deterministic PNG row")
-        first = pixels[row * stride + 1:row * stride + 5]
-        last = pixels[row * stride + 1 + (width - 1) * 4:row * stride + 1 + width * 4]
-        require(max(abs(first[i] - last[i]) for i in range(3)) <= 2, f"periodic sky seam row {row}")
-    lower_horizon = pixels[82 * stride + 1:82 * stride + 4]
-    lower_nadir = pixels[118 * stride + 1:118 * stride + 4]
-    require(lower_horizon != lower_nadir and len(set(lower_horizon)) > 1 and len(set(lower_nadir)) > 1,
-            "lower hemisphere is atmospheric continuation, not flat grey")
+    require(not any(name.startswith("P63_SKY_") for name in names), "five pre-baked GLB skies removed")
+    require(not any(name.startswith("P63_2A_Sky_") for name in materials), "no final two-color/pre-baked sky material")
+    require(materials["P63_2A_MoonPhaseMask"].get("alphaMode", "OPAQUE") == "OPAQUE", "moon phase is smooth opaque geometry, not alpha dithering")
+    require(not materials["P63_2A_MoonPhaseMask"].get("doubleSided", False), "moon phase billboard has canonical front side")
+    require("normalTexture" not in materials["P63_2A_Moon"], "moon normal remains unbound without tangent path")
+    for node_name in ("P63_STAGE_GROUND", "P63_INTERIOR_FLOOR", "P63_MATTE_SPHERE", "P63_ROUGH_METAL",
+                      "P63_POLISHED_METAL", "P63_GLASS", "P63_VERTICAL_WALL", "P63_SHADOW_PILLAR", "P63_ROOF"):
+        validate_node_winding(gltf, binary, node_name)
 
     resource_manifest = json.loads((P63 / "P63_2A_RESOURCE_MANIFEST.json").read_text(encoding="utf-8"))
     moon = resource_manifest["selectedMoon"]
     require(moon["sha256"] == "8a8ff79b0d06946bfd09efcada50cc4a9891076b7f2a00b49fa8e182bbb6e375", "verified moon hash")
     require(moon["dimensions"] == "256x256" and moon["colorSpace"] == "sRGB" and moon["provenance"] == "UDS_VERIFIED", "moon validation/provenance")
     require(resource_manifest["selectedMoonDetail"]["runtimeUsage"] == "AUDITED_NOT_BOUND_NO_TANGENT_SAFE_PATH", "moon normal is not falsely bound")
+    private_stage = ROOT / "apps/engine/src/main/assets/private_premium/p63_2a/celestial/p63_2a_celestial_test_stage_uds.glb"
+    if private_stage.is_file():
+        private_gltf, private_binary = read_glb(private_stage)
+        payload = embedded_payload(private_gltf, private_binary, "P63_UDS_VERIFIED_MOON_COLOR")
+        import hashlib
+        require(hashlib.sha256(payload).hexdigest() == moon["sha256"], "exact UDS moon payload embedded")
+        private_materials = {item.get("name", ""): item for item in private_gltf["materials"]}
+        moon_material = private_materials["P63_2A_Moon"]
+        texture_index = moon_material["pbrMetallicRoughness"]["baseColorTexture"]["index"]
+        sampler = private_gltf["samplers"][private_gltf["textures"][texture_index]["sampler"]]
+        require(sampler["magFilter"] == 9729 and sampler["minFilter"] == 9987, "moon uses linear+mipmap filtering, never nearest")
+        require(moon_material.get("alphaMode", "OPAQUE") == "OPAQUE", "UDS moon has no transparent sorting path")
 
     audio = json.loads((P63 / "P63_2A_VERIFIED_AUDIO_MANIFEST.json").read_text(encoding="utf-8"))
     require(audio["proceduralAudioDefault"] is False and audio["longLoopStatus"] == "NO_VERIFIED_LONG_LOOP", "safe audio defaults")
@@ -150,6 +197,8 @@ def validate_p63_2a() -> None:
 
     activity = ACTIVITY.read_text(encoding="utf-8")
     adapter = (JAVA / "SolumFilamentEnvironmentAdapter.java").read_text(encoding="utf-8")
+    coordinates = (JAVA / "SolumCelestialCoordinateSystem.java").read_text(encoding="utf-8")
+    analytic_sky = (JAVA / "SolumAnalyticSky.java").read_text(encoding="utf-8")
     audio_source = (JAVA / "SolumEnvironmentAudioSystem.java").read_text(encoding="utf-8")
     require("intensity * 30000.0f * blend" not in activity, "bad indirect-light multiplier absent")
     require("float rawIntensity = intensity * blend" in activity and "clamp(rawIntensity, 0.0f, 2.0f)" in activity, "indirect-light clamp regression")
@@ -157,10 +206,22 @@ def validate_p63_2a() -> None:
     require('slider.setTag("p63.slider." + key)' in activity and 'apply.setTag("p63.numeric.apply." + key)' in activity,
             "real slider/numeric View bindings")
     require("PREF_P63_2A_STATE" in activity and "restoreP63CelestialState" in activity, "Activity recreation persistence")
-    require("cameraDistance = p63CelestialStageRequested ? 15.0f" in activity and "cameraTargetY = p63CelestialStageRequested ? 1.3f" in activity, "diagnostic camera framing")
+    require('applyP63CameraPreset("Overview")' in activity and "P63_CAMERA_ZOOM_SPEED = 0.014f" in activity,
+            "diagnostic camera framing and 1.4x zoom")
+    require("P63_CAMERA_MIN_DISTANCE = 2.0f" in activity and "P63_CAMERA_MAX_DISTANCE = 45.0f" in activity
+            and "constrainP63Camera()" in activity, "camera gesture distance and ground-plane bounds")
+    require("positionRelativeToCamera" in coordinates and "cameraX + bodyDirection[0] * safeRadius" in coordinates, "camera-relative celestial disks")
+    require("consistentBodyAndLightDirection" in coordinates and "sunVisualDirection" in adapter, "single canonical visual/light direction")
+    require("SAMPLER_CUBEMAP" in adapter and "SRGB8_A8" in adapter and "linearColor" in analytic_sky, "camera-inside analytic full sky cubemap")
+    require("P63_SUN_HALO" in adapter and "P63_MOON_HALO" in adapter and "PROTOTYPE_HOOK_ONLY" in activity, "safe halo/bloom and shafts hook")
+    phase_source = adapter[adapter.index("float phase = state.lighting.moonPhase"):adapter.index("if (controller.isCelestialOnlyMode())", adapter.index("float phase = state.lighting.moonPhase"))]
+    require(not any(token in phase_source.lower() for token in ("stipple", "checker", "bayer", "dither", "point")), "no dither/stipple moon phase branch")
+    for section in ("time", "sky", "sun", "moon", "post_process", "camera", "audio", "debug"):
+        require(f'addP63AccordionSection("{section}"' in activity, f"accordion section: {section}")
     require("setLooping(false)" in audio_source and "makeLoop" not in audio_source and "procedural" in audio_source, "verified playback is non-looped and non-procedural")
     android_test = ROOT / "apps/engine/src/androidTest/java/com/solum/engine/P63CelestialControlsViewTest.java"
-    require(android_test.is_file() and "Activity recreation restores shared state" in android_test.read_text(encoding="utf-8"), "real Android View test added")
+    require(android_test.is_file() and "Activity recreation restores shared state" in android_test.read_text(encoding="utf-8")
+            and "accordion defaults and toggle" in android_test.read_text(encoding="utf-8"), "real Android View and accordion test added")
 
 
 def validate_ibl_assets() -> None:

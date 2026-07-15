@@ -55,6 +55,22 @@ def moon_png(size: int = 128) -> bytes:
     return b"\x89PNG\r\n\x1a\n" + png_chunk(b"IHDR", header) + png_chunk(b"IDAT", zlib.compress(bytes(rows), 9)) + png_chunk(b"IEND", b"")
 
 
+def halo_png(size: int = 64) -> bytes:
+    """Smooth analytic halo alpha; deliberately contains no stipple/dither/checker branch."""
+    rows = bytearray()
+    for y in range(size):
+        rows.append(0)
+        fy = (y + 0.5) / size * 2.0 - 1.0
+        for x in range(size):
+            fx = (x + 0.5) / size * 2.0 - 1.0
+            radius = math.hypot(fx, fy)
+            alpha = max(0.0, min(1.0, 1.0 - radius))
+            alpha = alpha * alpha * (3.0 - 2.0 * alpha)
+            rows.extend((255, 244, 214, round(alpha * 255.0)))
+    header = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + png_chunk(b"IHDR", header) + png_chunk(b"IDAT", zlib.compress(bytes(rows), 9)) + png_chunk(b"IEND", b"")
+
+
 def sky_png(slot: str, width: int = 256, height: int = 128) -> bytes:
     """Deterministic full-sphere mobile atmosphere; azimuth is periodic at the seam."""
     settings = {
@@ -142,6 +158,12 @@ def plane() -> Mesh:
     return Mesh([(-1, 0, -1), (1, 0, -1), (1, 0, 1), (-1, 0, 1)], [(0, 1, 0)] * 4, [(0, 0), (1, 0), (1, 1), (0, 1)], [0, 1, 2, 0, 2, 3])
 
 
+def plane_up() -> Mesh:
+    """+Y normals with matching counter-clockwise winding when viewed from above."""
+    return Mesh([(-1, 0, -1), (1, 0, -1), (1, 0, 1), (-1, 0, 1)], [(0, 1, 0)] * 4,
+                [(0, 0), (1, 0), (1, 1), (0, 1)], [0, 2, 1, 0, 3, 2])
+
+
 def disk(segments: int = 32) -> Mesh:
     positions = [(0.0, 0.0, 0.0)]
     normals = [(0.0, 0.0, 1.0)]
@@ -155,7 +177,7 @@ def disk(segments: int = 32) -> Mesh:
     return Mesh(positions, normals, uvs, indices)
 
 
-def sphere(segments: int = 10, rings: int = 6) -> Mesh:
+def sphere(segments: int = 10, rings: int = 6, outward_winding: bool = False) -> Mesh:
     positions: list[tuple[float, float, float]] = []
     normals: list[tuple[float, float, float]] = []
     uvs: list[tuple[float, float]] = []
@@ -170,7 +192,10 @@ def sphere(segments: int = 10, rings: int = 6) -> Mesh:
     for ring in range(rings):
         for segment in range(segments):
             a = ring * stride + segment; b = a + stride
-            indices.extend((a, b, a + 1, a + 1, b, b + 1))
+            if outward_winding:
+                indices.extend((a, a + 1, b, a + 1, b + 1, b))
+            else:
+                indices.extend((a, b, a + 1, a + 1, b, b + 1))
     return Mesh(positions, normals, uvs, indices)
 
 
@@ -249,10 +274,10 @@ class GlbBuilder:
     def __init__(self) -> None:
         self.binary=bytearray();self.buffer_views=[];self.accessors=[];self.meshes=[];self.nodes=[];self.materials=[];self.images=[];self.textures=[];self.samplers=[]
 
-    def material(self,name:str,color:tuple[float,float,float,float],metallic:float,roughness:float,*,unlit=False,emissive=(0,0,0),alpha="OPAQUE",texture=None,double_sided=False)->int:
+    def material(self,name:str,color:tuple[float,float,float,float],metallic:float,roughness:float,*,unlit=False,emissive=(0,0,0),alpha="OPAQUE",texture=None,double_sided=False,force_single_sided=False)->int:
         pbr={"baseColorFactor":list(color),"metallicFactor":metallic,"roughnessFactor":roughness}
         if texture is not None:pbr["baseColorTexture"]={"index":texture}
-        item={"name":name,"pbrMetallicRoughness":pbr,"emissiveFactor":list(emissive),"doubleSided":double_sided or alpha!="OPAQUE"}
+        item={"name":name,"pbrMetallicRoughness":pbr,"emissiveFactor":list(emissive),"doubleSided":False if force_single_sided else double_sided or alpha!="OPAQUE"}
         if alpha!="OPAQUE":item["alphaMode"]=alpha;item["alphaCutoff"]=0.08
         if unlit:item["extensions"]={"KHR_materials_unlit":{}}
         self.materials.append(item);return len(self.materials)-1
@@ -320,49 +345,48 @@ def generate_celestial_glb(moon_payload: bytes | None = None, moon_name: str = "
     """Small explicit P63.2A stage. It contains no weather, stars, or dynamic IBL assets."""
     b = GlbBuilder()
     moon_texture = b.texture_png(moon_payload or moon_png(256), moon_name)
-    sky_textures = {slot: b.texture_png(sky_png(slot), f"P63_SKY_{slot.upper()}", 10497)
-                    for slot in ("dawn", "day", "sunset", "twilight", "night")}
+    halo_texture = b.texture_png(halo_png(), "P63_SMOOTH_CELESTIAL_HALO")
     concrete = b.material("P63_2A_Matte", (0.34, 0.35, 0.36, 1), 0, 0.86)
     rough_metal = b.material("P63_2A_RoughMetal", (0.30, 0.33, 0.37, 1), 1, 0.48)
     polished = b.material("P63_2A_PolishedMetal", (0.64, 0.68, 0.74, 1), 1, 0.07)
     glass = b.material("P63_2A_Glass", (0.25, 0.58, 0.74, 0.27), 0, 0.06, alpha="BLEND")
-    sun = b.material("P63_2A_SunDisk", (1, 0.78, 0.34, 1), 0, 0, unlit=True, emissive=(1, 0.48, 0.08), double_sided=True)
-    moon = b.material("P63_2A_Moon", (1, 1, 1, 1), 0, 0.62, unlit=True, texture=moon_texture, double_sided=True)
-    moon_shadow = b.material("P63_2A_MoonPhaseMask", (0.002, 0.004, 0.012, 0.98), 0, 1, unlit=True, alpha="BLEND", double_sided=True)
-    sky_materials = {slot: b.material(f"P63_2A_Sky_{slot}", (1, 1, 1, 1), 0, 1,
-                                      unlit=True, texture=texture, double_sided=True)
-                     for slot, texture in sky_textures.items()}
+    sun = b.material("P63_2A_SunDisk", (1, 0.78, 0.34, 1), 0, 0, unlit=True, emissive=(0.72, 0.32, 0.04))
+    moon = b.material("P63_2A_Moon", (1, 1, 1, 1), 0, 0.62, unlit=True, texture=moon_texture)
+    moon_shadow = b.material("P63_2A_MoonPhaseMask", (0.002, 0.004, 0.012, 1), 0, 1, unlit=True)
+    sun_halo = b.material("P63_2A_SunHalo", (1, 0.82, 0.50, 0.28), 0, 1, unlit=True,
+                          alpha="BLEND", texture=halo_texture, force_single_sided=True)
+    moon_halo = b.material("P63_2A_MoonHalo", (0.58, 0.68, 0.92, 0.16), 0, 1, unlit=True,
+                           alpha="BLEND", texture=halo_texture, force_single_sided=True)
 
     box_mesh = b.mesh("p63_2a_box", box(), concrete)
-    ground_mesh = b.mesh("p63_2a_ground", plane(), concrete)
-    matte_sphere = b.mesh("p63_2a_matte_sphere", sphere(24, 14), concrete)
-    rough_sphere = b.mesh("p63_2a_rough_sphere", sphere(24, 14), rough_metal)
-    polished_sphere = b.mesh("p63_2a_polished_sphere", sphere(24, 14), polished)
-    glass_sphere = b.mesh("p63_2a_glass_sphere", sphere(24, 14), glass)
+    ground_mesh = b.mesh("p63_2a_ground", plane_up(), concrete)
+    matte_sphere = b.mesh("p63_2a_matte_sphere", sphere(24, 14, outward_winding=True), concrete)
+    rough_sphere = b.mesh("p63_2a_rough_sphere", sphere(24, 14, outward_winding=True), rough_metal)
+    polished_sphere = b.mesh("p63_2a_polished_sphere", sphere(24, 14, outward_winding=True), polished)
+    glass_sphere = b.mesh("p63_2a_glass_sphere", sphere(24, 14, outward_winding=True), glass)
     b.node("P63_CELESTIAL_STAGE_ROOT", box_mesh, (0, -0.3, -2), (0.05, 0.05, 0.05))
-    b.node("P63_STAGE_GROUND", ground_mesh, (0, 0, -2), (10, 1, 8))
-    b.node("P63_MATTE_SPHERE", matte_sphere, (-4.5, 1.0, -2), (1, 1, 1))
-    b.node("P63_ROUGH_METAL", rough_sphere, (-1.8, 1.0, -2), (1, 1, 1))
-    b.node("P63_POLISHED_METAL", polished_sphere, (0.9, 1.0, -2), (1, 1, 1))
-    b.node("P63_GLASS", glass_sphere, (3.6, 1.0, -2), (1, 1, 1))
-    b.node("P63_SHADOW_PILLAR", box_mesh, (-5.8, 2.0, 1.5), (0.42, 2.0, 0.42))
-    b.node("P63_VERTICAL_WALL", box_mesh, (5.8, 2.0, 0.4), (0.22, 2.0, 3.0))
-    b.node("P63_INTERIOR_FLOOR", ground_mesh, (2.8, 0.025, 3.7), (2.2, 1, 1.8))
-    b.node("P63_ROOF", box_mesh, (2.8, 3.4, 3.7), (2.3, 0.12, 1.9))
-    b.node("P63_ROOF_LEFT", box_mesh, (0.55, 1.7, 3.7), (0.12, 1.7, 1.9))
-    b.node("P63_ROOF_BACK", box_mesh, (2.8, 1.7, 5.55), (2.3, 1.7, 0.12))
-    b.node("P63_NORMAL_SCALE_REFERENCE", box_mesh, (-3.8, 0.5, 3.6), (0.5, 0.5, 0.5))
+    b.node("P63_STAGE_GROUND", ground_mesh, (0, 0, -2), (14, 1, 10))
+    b.node("P63_MATTE_SPHERE", matte_sphere, (-6.0, 1.1, -2.5), (1.1, 1.1, 1.1))
+    b.node("P63_ROUGH_METAL", rough_sphere, (-2.0, 1.1, -2.5), (1.1, 1.1, 1.1))
+    b.node("P63_POLISHED_METAL", polished_sphere, (2.0, 1.1, -2.5), (1.1, 1.1, 1.1))
+    b.node("P63_GLASS", glass_sphere, (6.0, 1.1, -2.5), (1.1, 1.1, 1.1))
+    b.node("P63_SHADOW_PILLAR", box_mesh, (-7.5, 2.2, 2.2), (0.45, 2.2, 0.45))
+    b.node("P63_VERTICAL_WALL", box_mesh, (8.0, 2.2, 1.5), (0.24, 2.2, 3.2))
+    b.node("P63_INTERIOR_FLOOR", ground_mesh, (4.6, 0.025, 5.5), (2.5, 1, 2.0))
+    b.node("P63_ROOF", box_mesh, (4.6, 3.6, 5.5), (2.6, 0.12, 2.1))
+    b.node("P63_ROOF_LEFT", box_mesh, (2.05, 1.8, 5.5), (0.12, 1.8, 2.1))
+    b.node("P63_ROOF_BACK", box_mesh, (4.6, 1.8, 7.55), (2.6, 1.8, 0.12))
+    b.node("P63_NORMAL_SCALE_REFERENCE", box_mesh, (-4.6, 0.55, 4.7), (0.55, 0.55, 0.55))
     b.node("P63_CAMERA_ORBIT_TARGET", matte_sphere, (0, 1.2, -2), (0.06, 0.06, 0.06))
 
-    sky_meshes = {slot: b.mesh(f"p63_2a_sky_{slot}", sphere(48, 24), material)
-                  for slot, material in sky_materials.items()}
-    for slot, mesh in sky_meshes.items():
-        b.node(f"P63_SKY_{slot.upper()}", mesh, (0, 1.5, -2), (55, 55, 55))
-
-    sun_mesh = b.mesh("p63_2a_sun_disk", disk(64), sun)
-    moon_mesh = b.mesh("p63_2a_moon_disk", disk(64), moon)
-    shadow_mesh = b.mesh("p63_2a_moon_phase_mask", disk(64), moon_shadow)
+    sun_mesh = b.mesh("p63_2a_sun_disk", disk(96), sun)
+    moon_mesh = b.mesh("p63_2a_moon_disk", disk(96), moon)
+    shadow_mesh = b.mesh("p63_2a_moon_phase_mask", disk(96), moon_shadow)
+    sun_halo_mesh = b.mesh("p63_2a_sun_halo", disk(96), sun_halo)
+    moon_halo_mesh = b.mesh("p63_2a_moon_halo", disk(96), moon_halo)
+    b.node("P63_SUN_HALO", sun_halo_mesh, (0, 14, -25), (0.3, 0.3, 0.3))
     b.node("P63_SUN_DISK", sun_mesh, (0, 14, -25), (0.13, 0.13, 0.13))
+    b.node("P63_MOON_HALO", moon_halo_mesh, (0, 12, -24), (0.3, 0.3, 0.3))
     b.node("P63_MOON_DISK", moon_mesh, (0, 12, -24), (0.13, 0.13, 0.13))
     b.node("P63_MOON_SHADOW", shadow_mesh, (0, 12, -23.96), (0.13, 0.13, 0.13))
     return b.build()

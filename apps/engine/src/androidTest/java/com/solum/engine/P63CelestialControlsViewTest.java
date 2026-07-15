@@ -17,7 +17,7 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
             Bundle result = new Bundle();
             try {
                 runViewRegression();
-                result.putString("P63_VIEW_TEST", "PASS slider numeric preset reset; Activity recreation restores shared state");
+                result.putString("P63_VIEW_TEST", "PASS slider numeric preset reset; accordion defaults and toggle; Activity recreation restores shared state");
                 finish(Activity.RESULT_OK, result);
             } catch (Throwable error) {
                 result.putString("P63_VIEW_TEST", "FAIL " + error.getClass().getSimpleName() + " " + error.getMessage());
@@ -32,6 +32,32 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         Activity activity = startActivitySync(intent);
         waitForIdleSync();
+        View timeContent = tagged(activity, "p63.accordion.content.time", View.class);
+        View cameraContent = tagged(activity, "p63.accordion.content.camera", View.class);
+        View skyContent = tagged(activity, "p63.accordion.content.sky", View.class);
+        View sunContent = tagged(activity, "p63.accordion.content.sun", View.class);
+        View moonContent = tagged(activity, "p63.accordion.content.moon", View.class);
+        View postContent = tagged(activity, "p63.accordion.content.post_process", View.class);
+        View audioContent = tagged(activity, "p63.accordion.content.audio", View.class);
+        View debugContent = tagged(activity, "p63.accordion.content.debug", View.class);
+        require(timeContent.getVisibility() == View.VISIBLE && cameraContent.getVisibility() == View.VISIBLE,
+            "Time and Camera must be open by default");
+        require(skyContent.getVisibility() == View.GONE && sunContent.getVisibility() == View.GONE
+            && moonContent.getVisibility() == View.GONE && postContent.getVisibility() == View.GONE
+            && audioContent.getVisibility() == View.GONE && debugContent.getVisibility() == View.GONE,
+            "only Time and Camera may be open by default");
+        Button skyHeader = tagged(activity, "p63.accordion.sky", Button.class);
+        runOnMainSync(skyHeader::performClick);
+        waitForIdleSync();
+        require(skyContent.getVisibility() == View.VISIBLE, "accordion defaults and toggle failed");
+        tagged(activity, "p63.quick.focus_sun", Button.class);
+        tagged(activity, "p63.quick.focus_moon", Button.class);
+        tagged(activity, "p63.camera.overview", Button.class);
+        tagged(activity, "p63.camera.materials", Button.class);
+        tagged(activity, "p63.camera.horizon", Button.class);
+        tagged(activity, "p63.camera.under_roof", Button.class);
+        tagged(activity, "p63.camera.zoom_in", Button.class);
+        tagged(activity, "p63.camera.zoom_out", Button.class);
         SeekBar slider = tagged(activity, "p63.slider.sun_light_intensity", SeekBar.class);
         EditText exact = tagged(activity, "p63.numeric.sun_light_intensity", EditText.class);
         Button apply = tagged(activity, "p63.numeric.apply.sun_light_intensity", Button.class);

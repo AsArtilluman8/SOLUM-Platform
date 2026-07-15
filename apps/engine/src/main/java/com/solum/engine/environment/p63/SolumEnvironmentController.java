@@ -262,15 +262,8 @@ public final class SolumEnvironmentController {
         SolumEnvironmentLightingState l=state.lighting;
         if (celestialOnlyMode) {
             celestialControls.sanitize();
-            float offset = (float)Math.toRadians(celestialControls.sunElevationOffsetDegrees);
-            float elevation = (float)Math.asin(Math.max(-1.0f, Math.min(1.0f, -l.sunDirection[1]))) + offset;
-            elevation = Math.max((float)-Math.PI * 0.5f, Math.min((float)Math.PI * 0.5f, elevation));
-            float azimuth = (float)Math.atan2(-l.sunDirection[0], -l.sunDirection[2]);
-            float cosElevation = (float)Math.cos(elevation);
-            normalizeDirection(l.sunDirection, -(float)Math.sin(azimuth)*cosElevation, -(float)Math.sin(elevation), -(float)Math.cos(azimuth)*cosElevation);
-            normalizeDirection(l.moonDirection, -l.sunDirection[0], -l.sunDirection[1], -l.sunDirection[2]);
-            l.sunElevation = (float)Math.sin(elevation);
-            l.moonElevation = -l.sunElevation;
+            SolumCelestialCoordinateSystem.update(state.timeOfDay,
+                celestialControls.sunElevationOffsetDegrees, l);
             float day = smoothStep(-0.08f, 0.10f, l.sunElevation);
             float night = smoothStep(-0.08f, 0.10f, l.moonElevation);
             l.sunLux = celestialControls.sunEnabled ? celestialControls.sunLightLux * day : 0.0f;
@@ -284,6 +277,12 @@ public final class SolumEnvironmentController {
             celestialControls.activeSkySource = skySource(l.sunElevation);
             return;
         }
+        normalizeDirection(l.sunVisualDirection, -l.sunDirection[0], -l.sunDirection[1], -l.sunDirection[2]);
+        normalizeDirection(l.moonVisualDirection, -l.moonDirection[0], -l.moonDirection[1], -l.moonDirection[2]);
+        l.sunElevationDegrees = (float)Math.toDegrees(Math.asin(Math.max(-1.0f, Math.min(1.0f, l.sunVisualDirection[1]))));
+        l.moonElevationDegrees = (float)Math.toDegrees(Math.asin(Math.max(-1.0f, Math.min(1.0f, l.moonVisualDirection[1]))));
+        l.sunAboveHorizon = l.sunElevationDegrees > 0.0f;
+        l.moonAboveHorizon = l.moonElevationDegrees > 0.0f;
         if(!Float.isNaN(manualMoonPhase))l.moonPhase=manualMoonPhase;l.sunLux*=sunScale;l.sunDiskBrightness*=sunScale;l.moonLux*=moonScale;l.moonDiskBrightness*=moonScale;l.starVisibility=clamp(l.starVisibility*starBrightness);if(sunTintMode==1){l.sunColor[0]=1;l.sunColor[1]*=0.84f;l.sunColor[2]*=0.62f;}else if(sunTintMode==2){l.sunColor[0]*=0.82f;l.sunColor[1]*=0.92f;l.sunColor[2]=1;}if(moonTintMode==1){l.moonColor[0]=0.68f;l.moonColor[1]=0.72f;l.moonColor[2]=0.78f;}else if(moonTintMode==2){l.moonColor[0]=0.35f;l.moonColor[1]=0.50f;l.moonColor[2]=1.0f;}
     }
 

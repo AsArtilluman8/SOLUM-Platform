@@ -6,6 +6,8 @@ package com.solum.engine.environment.p63;
  */
 public final class SolumCelestialControlState {
     public static final float DEFAULT_TIME = 960.0f;
+    public static final float DEFAULT_SUN_ANGULAR_SIZE = 0.85f;
+    public static final float DEFAULT_MOON_ANGULAR_SIZE = 0.90f;
 
     public boolean skyEnabled = true;
     public boolean sunEnabled = true;
@@ -25,12 +27,12 @@ public final class SolumCelestialControlState {
 
     public float sunLightLux = 18.0f;
     public float sunVisualBrightness = 1.0f;
-    public float sunAngularSizeDegrees = 0.53f;
+    public float sunAngularSizeDegrees = DEFAULT_SUN_ANGULAR_SIZE;
     public float sunElevationOffsetDegrees = 0.0f;
     public final float[] sunTint = {1.0f, 0.92f, 0.72f};
 
     public float moonPhase = 0.62f;
-    public float moonAngularSizeDegrees = 0.52f;
+    public float moonAngularSizeDegrees = DEFAULT_MOON_ANGULAR_SIZE;
     public float moonVisualBrightness = 0.75f;
     public float moonLightLux = 0.15f;
     public final float[] moonTint = {0.72f, 0.78f, 0.90f};
@@ -68,7 +70,7 @@ public final class SolumCelestialControlState {
 
     public void resetSun() {
         sunEnabled = true; sunLightLux = 18.0f; sunVisualBrightness = 1.0f;
-        sunAngularSizeDegrees = 0.53f; sunElevationOffsetDegrees = 0.0f;
+        sunAngularSizeDegrees = DEFAULT_SUN_ANGULAR_SIZE; sunElevationOffsetDegrees = 0.0f;
         setSunTint(1.0f, 0.92f, 0.72f);
     }
 
@@ -77,7 +79,7 @@ public final class SolumCelestialControlState {
             sunLightLux = 7.0f; sunVisualBrightness = 0.70f; sunAngularSizeDegrees = 0.65f;
             setSunTint(1.0f, 0.88f, 0.70f);
         } else if ("Bright".equals(preset)) {
-            sunLightLux = 35.0f; sunVisualBrightness = 1.35f; sunAngularSizeDegrees = 0.53f;
+            sunLightLux = 35.0f; sunVisualBrightness = 1.35f; sunAngularSizeDegrees = DEFAULT_SUN_ANGULAR_SIZE;
             setSunTint(1.0f, 0.96f, 0.88f);
         } else if ("Sunset".equals(preset)) {
             sunLightLux = 12.0f; sunVisualBrightness = 1.15f; sunAngularSizeDegrees = 0.72f;
@@ -89,7 +91,7 @@ public final class SolumCelestialControlState {
     }
 
     public void resetMoon() {
-        moonEnabled = true; moonPhase = 0.62f; moonAngularSizeDegrees = 0.52f;
+        moonEnabled = true; moonPhase = 0.62f; moonAngularSizeDegrees = DEFAULT_MOON_ANGULAR_SIZE;
         moonVisualBrightness = 0.75f; moonLightLux = 0.15f;
         setMoonTint(0.72f, 0.78f, 0.90f);
     }
@@ -119,10 +121,10 @@ public final class SolumCelestialControlState {
         timeSpeed = finiteClamp(timeSpeed, 0.0f, 8.0f, 1.0f);
         sunLightLux = finiteClamp(sunLightLux, 0.0f, 50.0f, 18.0f);
         sunVisualBrightness = finiteClamp(sunVisualBrightness, 0.0f, 2.0f, 1.0f);
-        sunAngularSizeDegrees = finiteClamp(sunAngularSizeDegrees, 0.10f, 2.0f, 0.53f);
+        sunAngularSizeDegrees = finiteClamp(sunAngularSizeDegrees, 0.10f, 2.0f, DEFAULT_SUN_ANGULAR_SIZE);
         sunElevationOffsetDegrees = finiteClamp(sunElevationOffsetDegrees, -15.0f, 15.0f, 0.0f);
         moonPhase = finiteClamp(moonPhase, 0.0f, 1.0f, 0.62f);
-        moonAngularSizeDegrees = finiteClamp(moonAngularSizeDegrees, 0.10f, 2.0f, 0.52f);
+        moonAngularSizeDegrees = finiteClamp(moonAngularSizeDegrees, 0.10f, 2.0f, DEFAULT_MOON_ANGULAR_SIZE);
         moonVisualBrightness = finiteClamp(moonVisualBrightness, 0.0f, 2.0f, 0.75f);
         moonLightLux = finiteClamp(moonLightLux, 0.0f, 2.0f, 0.15f);
         sunGlow = finiteClamp(sunGlow, 0.0f, 1.0f, 0.35f);

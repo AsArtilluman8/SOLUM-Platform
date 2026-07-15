@@ -7,11 +7,14 @@ import com.google.android.filament.EntityManager;
 import com.google.android.filament.LightManager;
 import com.google.android.filament.MaterialInstance;
 import com.google.android.filament.RenderableManager;
+import com.google.android.filament.Skybox;
+import com.google.android.filament.Texture;
 import com.google.android.filament.TransformManager;
 import com.google.android.filament.View;
 import com.google.android.filament.gltfio.FilamentAsset;
 import com.google.android.filament.utils.ModelViewer;
 
+import java.nio.ByteBuffer;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -25,7 +28,6 @@ public final class SolumFilamentEnvironmentAdapter {
     private static final String[] SNOW_NAMES = cellNames("P63_SNOW_CELL_");
     private static final String[] DUST_NAMES = cellNames("P63_DUST_CELL_");
     private static final String[] RIPPLE_NAMES = indexedNames("P63_RIPPLE_", 8);
-    private static final String[] SKY_NAMES = {"P63_SKY_DAWN", "P63_SKY_DAY", "P63_SKY_SUNSET", "P63_SKY_TWILIGHT", "P63_SKY_NIGHT"};
     public interface Host {
         void applyPreparedIbl(String slot, long revision, float intensity, float blend);
         void applyEnvironmentSkyColor(float red, float green, float blue, float lightningFlash);
@@ -38,8 +40,12 @@ public final class SolumFilamentEnvironmentAdapter {
     private final Host host;
     private final Map<String, Integer> stageEntities = new LinkedHashMap<>();
     private final float[] transformScratch = new float[16];
+    private final float[] billboardRightScratch = new float[3];
+    private final float[] lastSkySunDirection = {Float.NaN, Float.NaN, Float.NaN};
     private int moonLightEntity;
     private int lightningLightEntity;
+    private Texture celestialSkyTexture;
+    private Skybox celestialSkybox;
     private long lastIblRevision = -1L;
     private float rainPhase;
     private float snowPhase;
@@ -49,6 +55,8 @@ public final class SolumFilamentEnvironmentAdapter {
     private String status = "created_not_bound";
     private String materialStatus = "not_applied";
     private boolean stageBound;
+    private boolean celestialSkyVisible;
+    private String celestialSkyStatus = "not_created";
 
     public SolumFilamentEnvironmentAdapter(ModelViewer viewer, SolumEnvironmentController controller,
                                             SolumEnvironmentAudioSystem audio, Host host) {
@@ -69,7 +77,7 @@ public final class SolumFilamentEnvironmentAdapter {
             }
         }
         boolean celestialStage = stageEntities.containsKey("P63_CELESTIAL_STAGE_ROOT")
-            && stageEntities.containsKey("P63_SKY_DAY") && stageEntities.containsKey("P63_SUN_DISK")
+            && stageEntities.containsKey("P63_SUN_DISK")
             && stageEntities.containsKey("P63_MOON_DISK") && stageEntities.containsKey("P63_STAGE_GROUND");
         stageBound = celestialStage || p63Count >= 40;
         status = stageBound ? "bound_p63_filament_stage_entities=" + p63Count : "asset_bound_without_p63_stage_entities=" + p63Count;
@@ -103,12 +111,13 @@ public final class SolumFilamentEnvironmentAdapter {
 
     public void release() {
         Engine engine = viewer.getEngine();
+        destroyCelestialSky(engine);
         destroyLight(engine, moonLightEntity); moonLightEntity = 0;
         destroyLight(engine, lightningLightEntity); lightningLightEntity = 0;
         stageEntities.clear(); stageBound = false; status = "released";
     }
 
-    public String getStatus() { return status + " material=" + materialStatus + " stageBound=" + stageBound; }
+    public String getStatus() { return status + " material=" + materialStatus + " sky=" + celestialSkyStatus + " stageBound=" + stageBound; }
 
     private void createLights() {
         Engine engine = viewer.getEngine();
@@ -181,6 +190,7 @@ public final class SolumFilamentEnvironmentAdapter {
 
     private void applyStage(SolumEnvironmentState state, float dt) {
         if (controller.isCelestialOnlyMode()) {
+            applyAnalyticSky(state);
             applyCelestialGeometry(state);
             materialClock += dt;
             if (materialClock >= 0.12f) { materialClock = 0.0f; applyMaterials(state); }
@@ -201,31 +211,44 @@ public final class SolumFilamentEnvironmentAdapter {
     }
 
     private void applyCelestialGeometry(SolumEnvironmentState state) {
-        float radius = 27.0f;
-        float sunX = -state.lighting.sunDirection[0] * radius;
-        float sunY = -state.lighting.sunDirection[1] * radius;
-        float sunZ = -state.lighting.sunDirection[2] * radius - 5.0f;
-        float moonX = -state.lighting.moonDirection[0] * radius;
-        float moonY = -state.lighting.moonDirection[1] * radius;
-        float moonZ = -state.lighting.moonDirection[2] * radius - 5.0f;
+        float radius = controller.isCelestialOnlyMode() ? SolumCelestialCoordinateSystem.SKY_RADIUS : 27.0f;
+        SolumCelestialCoordinateSystem.positionRelativeToCamera(state.lighting.sunVisualPosition,
+            controller.getCameraX(), controller.getCameraY(), controller.getCameraZ(),
+            state.lighting.sunVisualDirection, radius);
+        SolumCelestialCoordinateSystem.positionRelativeToCamera(state.lighting.moonVisualPosition,
+            controller.getCameraX(), controller.getCameraY(), controller.getCameraZ(),
+            state.lighting.moonVisualDirection, radius);
+        float sunX = state.lighting.sunVisualPosition[0];
+        float sunY = state.lighting.sunVisualPosition[1];
+        float sunZ = state.lighting.sunVisualPosition[2];
+        float moonX = state.lighting.moonVisualPosition[0];
+        float moonY = state.lighting.moonVisualPosition[1];
+        float moonZ = state.lighting.moonVisualPosition[2];
         SolumCelestialControlState controls = controller.getCelestialControls();
         float sunAngular = controller.isCelestialOnlyMode() ? controls.sunAngularSizeDegrees : 4.66f * controller.getSunDiskScale();
         float moonAngular = controller.isCelestialOnlyMode() ? controls.moonAngularSizeDegrees : 4.24f * controller.getMoonDiskScale();
-        float sunScale = state.lighting.sunDiskBrightness > 0.01f ? radius * (float)Math.tan(Math.toRadians(sunAngular * 0.5f)) : 0.001f;
-        float moonScale = state.lighting.moonDiskBrightness > 0.01f ? radius * (float)Math.tan(Math.toRadians(moonAngular * 0.5f)) : 0.001f;
-        setTransform("P63_SUN_DISK", sunX, sunY, sunZ, sunScale, sunScale, sunScale, 0, 0, 0);
-        setTransform("P63_MOON_DISK", moonX, moonY, moonZ, moonScale, moonScale, moonScale, 0, 0, 0);
+        boolean sunVisible = state.lighting.sunAboveHorizon && state.lighting.sunDiskBrightness > 0.01f;
+        boolean moonVisible = state.lighting.moonAboveHorizon && state.lighting.moonDiskBrightness > 0.01f;
+        float sunScale = sunVisible ? radius * (float)Math.tan(Math.toRadians(sunAngular * 0.5f)) : 0.001f;
+        float moonScale = moonVisible ? radius * (float)Math.tan(Math.toRadians(moonAngular * 0.5f)) : 0.001f;
+        setBillboardTransform("P63_SUN_HALO", sunX, sunY, sunZ, state.lighting.sunVisualDirection,
+            sunScale * (2.5f + controls.sunGlow * 2.5f), sunScale * (2.5f + controls.sunGlow * 2.5f), -0.045f);
+        setBillboardTransform("P63_SUN_DISK", sunX, sunY, sunZ, state.lighting.sunVisualDirection,
+            sunScale, sunScale, 0.0f);
+        setBillboardTransform("P63_MOON_HALO", moonX, moonY, moonZ, state.lighting.moonVisualDirection,
+            moonScale * (2.0f + controls.moonGlow * 2.0f), moonScale * (2.0f + controls.moonGlow * 2.0f), -0.040f);
+        setBillboardTransform("P63_MOON_DISK", moonX, moonY, moonZ, state.lighting.moonVisualDirection,
+            moonScale, moonScale, 0.0f);
         float phase = state.lighting.moonPhase;
-        float shadowOffset = (phase - 0.5f) * moonScale * 1.55f;
-        float shadowScaleX = 0.78f + Math.abs(phase - 0.5f) * 0.42f;
-        setTransform("P63_MOON_SHADOW", moonX + shadowOffset, moonY, moonZ + 0.035f, moonScale * shadowScaleX, moonScale, moonScale, 0, 0, 0);
+        computeBillboardRight(state.lighting.moonVisualDirection, billboardRightScratch);
+        float shadowOffset = phase * moonScale * 2.0f;
+        float shadowScale = moonVisible && phase < 0.995f ? moonScale : 0.001f;
+        setBillboardTransform("P63_MOON_SHADOW",
+            moonX + billboardRightScratch[0] * shadowOffset,
+            moonY + billboardRightScratch[1] * shadowOffset,
+            moonZ + billboardRightScratch[2] * shadowOffset,
+            state.lighting.moonVisualDirection, shadowScale, shadowScale, 0.035f);
         if (controller.isCelestialOnlyMode()) {
-            String active = controls.activeSkySource;
-            for (String skyName : SKY_NAMES) {
-                boolean selected = active.endsWith(skyName.substring("P63_SKY_".length()));
-                float scale = controls.skyEnabled && selected ? 55.0f : 0.001f;
-                setTransform(skyName, controller.getCameraX(), controller.getCameraY(), controller.getCameraZ(), scale, scale, scale, 0, 0, 0);
-            }
             return;
         }
         float starScale = Math.max(0.001f, state.lighting.starVisibility);
@@ -291,16 +314,20 @@ public final class SolumFilamentEnvironmentAdapter {
         try {
             if (controller.isCelestialOnlyMode()) {
                 SolumCelestialControlState controls = controller.getCelestialControls();
-                float sunGlow = controls.sunGlowEnabled ? controls.sunGlow * 0.25f : 0.0f;
-                float moonGlow = controls.moonGlowEnabled ? controls.moonGlow * 0.20f : 0.0f;
                 float highlight = controls.highlightClampEnabled ? controls.highlightClamp : 1.0f;
-                float sunVisual = Math.min(highlight, safeRange(state.lighting.sunDiskBrightness * (1.0f + sunGlow), 0.0f, 2.0f));
-                float moonVisual = Math.min(highlight, safeRange(state.lighting.moonDiskBrightness * (1.0f + moonGlow), 0.0f, 2.0f));
+                float sunVisual = Math.min(highlight, safeRange(state.lighting.sunDiskBrightness, 0.0f, 2.0f));
+                float moonVisual = Math.min(highlight, safeRange(state.lighting.moonDiskBrightness, 0.0f, 2.0f));
                 setMaterial4("P63_SUN_DISK", "baseColorFactor", controls.sunTint[0] * sunVisual,
                     controls.sunTint[1] * sunVisual, controls.sunTint[2] * sunVisual, Math.min(1.0f, sunVisual));
                 setMaterial4("P63_MOON_DISK", "baseColorFactor", controls.moonTint[0] * moonVisual,
                     controls.moonTint[1] * moonVisual, controls.moonTint[2] * moonVisual, Math.min(1.0f, moonVisual));
-                materialStatus = "p63_2a_celestial_visual_light_separation";
+                float sunHalo = controls.sunGlowEnabled && state.lighting.sunAboveHorizon ? controls.sunGlow : 0.0f;
+                float moonHalo = controls.moonGlowEnabled && state.lighting.moonAboveHorizon ? controls.moonGlow : 0.0f;
+                setMaterial4("P63_SUN_HALO", "baseColorFactor", controls.sunTint[0], controls.sunTint[1],
+                    controls.sunTint[2], safeRange(sunHalo * 0.52f, 0.0f, 0.52f));
+                setMaterial4("P63_MOON_HALO", "baseColorFactor", controls.moonTint[0], controls.moonTint[1],
+                    controls.moonTint[2], safeRange(moonHalo * 0.38f, 0.0f, 0.38f));
+                materialStatus = "p63_2a1_billboard_disks_smooth_phase_safe_halos";
                 return;
             }
             float wet = state.surface.wetness;
@@ -355,6 +382,106 @@ public final class SolumFilamentEnvironmentAdapter {
         if (rotationZ != 0.0f) Matrix.rotateM(transformScratch, 0, rotationZ, 0, 0, 1);
         Matrix.scaleM(transformScratch, 0, sx, sy, sz);
         manager.setTransform(instance, transformScratch);
+    }
+
+    private void setBillboardTransform(String name, float tx, float ty, float tz, float[] bodyDirection,
+                                       float scaleX, float scaleY, float towardCameraOffset) {
+        Integer entity = stageEntities.get(name); if (entity == null) return;
+        TransformManager manager = viewer.getEngine().getTransformManager();
+        int instance = manager.getInstance(entity); if (instance == 0) return;
+        float forwardX = -bodyDirection[0];
+        float forwardY = -bodyDirection[1];
+        float forwardZ = -bodyDirection[2];
+        computeBillboardRight(bodyDirection, billboardRightScratch);
+        float rightX = billboardRightScratch[0];
+        float rightY = billboardRightScratch[1];
+        float rightZ = billboardRightScratch[2];
+        float upX = forwardY * rightZ - forwardZ * rightY;
+        float upY = forwardZ * rightX - forwardX * rightZ;
+        float upZ = forwardX * rightY - forwardY * rightX;
+        transformScratch[0] = rightX * scaleX; transformScratch[1] = rightY * scaleX; transformScratch[2] = rightZ * scaleX; transformScratch[3] = 0.0f;
+        transformScratch[4] = upX * scaleY; transformScratch[5] = upY * scaleY; transformScratch[6] = upZ * scaleY; transformScratch[7] = 0.0f;
+        transformScratch[8] = forwardX; transformScratch[9] = forwardY; transformScratch[10] = forwardZ; transformScratch[11] = 0.0f;
+        transformScratch[12] = tx + forwardX * towardCameraOffset;
+        transformScratch[13] = ty + forwardY * towardCameraOffset;
+        transformScratch[14] = tz + forwardZ * towardCameraOffset;
+        transformScratch[15] = 1.0f;
+        manager.setTransform(instance, transformScratch);
+    }
+
+    private static void computeBillboardRight(float[] bodyDirection, float[] out) {
+        float forwardX = -bodyDirection[0];
+        float forwardY = -bodyDirection[1];
+        float forwardZ = -bodyDirection[2];
+        float rightX = forwardZ;
+        float rightY = 0.0f;
+        float rightZ = -forwardX;
+        float length = (float)Math.sqrt(rightX * rightX + rightZ * rightZ);
+        if (length < 0.001f) {
+            rightX = -forwardY; rightY = forwardX; rightZ = 0.0f;
+            length = (float)Math.sqrt(rightX * rightX + rightY * rightY);
+        }
+        if (length < 0.001f) { rightX = 1.0f; rightY = 0.0f; rightZ = 0.0f; length = 1.0f; }
+        out[0] = rightX / length; out[1] = rightY / length; out[2] = rightZ / length;
+    }
+
+    private void applyAnalyticSky(SolumEnvironmentState state) {
+        SolumCelestialControlState controls = controller.getCelestialControls();
+        if (!controls.skyEnabled) {
+            if (celestialSkyVisible) viewer.getScene().setSkybox(null);
+            celestialSkyVisible = false;
+            celestialSkyStatus = "disabled_user";
+            return;
+        }
+        try {
+            Engine engine = viewer.getEngine();
+            if (celestialSkyTexture == null) {
+                celestialSkyTexture = new Texture.Builder()
+                    .width(SolumAnalyticSky.CUBEMAP_SIZE)
+                    .height(SolumAnalyticSky.CUBEMAP_SIZE)
+                    .levels(1)
+                    .sampler(Texture.Sampler.SAMPLER_CUBEMAP)
+                    .format(Texture.InternalFormat.SRGB8_A8)
+                    .build(engine);
+            }
+            float dot = state.lighting.sunVisualDirection[0] * lastSkySunDirection[0]
+                + state.lighting.sunVisualDirection[1] * lastSkySunDirection[1]
+                + state.lighting.sunVisualDirection[2] * lastSkySunDirection[2];
+            if (!Float.isFinite(dot) || dot < 0.99995f || celestialSkybox == null) {
+                ByteBuffer pixels = SolumAnalyticSky.createSrgbCubemap(state.lighting.sunVisualDirection);
+                Texture.PixelBufferDescriptor descriptor = new Texture.PixelBufferDescriptor(
+                    pixels, Texture.Format.RGBA, Texture.Type.UBYTE, 1);
+                celestialSkyTexture.setImage(engine, 0, descriptor, SolumAnalyticSky.faceOffsets());
+                System.arraycopy(state.lighting.sunVisualDirection, 0, lastSkySunDirection, 0, 3);
+            }
+            if (celestialSkybox == null) {
+                celestialSkybox = new Skybox.Builder().environment(celestialSkyTexture).showSun(false).build(engine);
+            }
+            // Re-assert the celestial sky because legacy Render Control Center actions can
+            // legitimately replace the Scene skybox while this bounded stage is active.
+            viewer.getScene().setSkybox(celestialSkybox);
+            celestialSkyVisible = true;
+            celestialSkyStatus = "SOLUM_NATIVE_ANALYTIC_CUBEMAP_64_SRGB_no_hemisphere_seam";
+        } catch (Throwable error) {
+            controls.skyEnabled = false;
+            controls.lastCelestialError = "sky_material_disabled_" + safe(error);
+            celestialSkyStatus = "disabled_after_error_" + safe(error);
+            celestialSkyVisible = false;
+            try { viewer.getScene().setSkybox(null); } catch (Throwable ignored) { }
+        }
+    }
+
+    private void destroyCelestialSky(Engine engine) {
+        try { viewer.getScene().setSkybox(null); } catch (Throwable ignored) { }
+        if (celestialSkybox != null) {
+            try { engine.destroySkybox(celestialSkybox); } catch (Throwable ignored) { }
+            celestialSkybox = null;
+        }
+        if (celestialSkyTexture != null) {
+            try { engine.destroyTexture(celestialSkyTexture); } catch (Throwable ignored) { }
+            celestialSkyTexture = null;
+        }
+        celestialSkyVisible = false;
     }
 
     private void destroyLight(Engine engine, int entity) {

@@ -263,7 +263,7 @@ public final class SolumEnvironmentController {
         if (celestialOnlyMode) {
             celestialControls.sanitize();
             SolumCelestialCoordinateSystem.update(state.timeOfDay,
-                celestialControls.sunElevationOffsetDegrees, l);
+                celestialControls.sunElevationOffsetDegrees, celestialControls.moonElevationOffsetDegrees, l);
             float day = smoothStep(-0.08f, 0.10f, l.sunElevation);
             float night = smoothStep(-0.08f, 0.10f, l.moonElevation);
             l.sunLux = celestialControls.sunEnabled ? celestialControls.sunLightLux * day : 0.0f;

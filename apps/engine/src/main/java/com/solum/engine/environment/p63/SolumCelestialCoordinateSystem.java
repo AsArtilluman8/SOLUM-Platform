@@ -15,6 +15,11 @@ public final class SolumCelestialCoordinateSystem {
 
     public static void update(float timeHundredths, float sunElevationOffsetDegrees,
                               SolumEnvironmentLightingState out) {
+        update(timeHundredths, sunElevationOffsetDegrees, 0.0f, out);
+    }
+
+    public static void update(float timeHundredths, float sunElevationOffsetDegrees,
+                              float moonElevationOffsetDegrees, SolumEnvironmentLightingState out) {
         if (out == null) throw new IllegalArgumentException("celestial_lighting_state_missing");
         float hours = decimalHours(timeHundredths);
         double orbit = (hours - 6.0) / 24.0 * Math.PI * 2.0;
@@ -30,6 +35,7 @@ public final class SolumCelestialCoordinateSystem {
         normalize(out.moonVisualDirection, -east,
             -meridian * (float)Math.sin(maxElevation),
             meridian * (float)Math.cos(maxElevation));
+        applyElevationOffset(out.moonVisualDirection, moonElevationOffsetDegrees);
 
         invert(out.sunDirection, out.sunVisualDirection);
         invert(out.moonDirection, out.moonVisualDirection);
@@ -66,6 +72,30 @@ public final class SolumCelestialCoordinateSystem {
             + bodyDirection[1] * lightDirection[1]
             + bodyDirection[2] * lightDirection[2];
         return Math.abs(dot + 1.0f) < 0.0005f;
+    }
+
+    public static void focusTarget(float[] out, float[] eye, float[] bodyDirection, float distance) {
+        if (out == null || out.length < 3 || eye == null || eye.length < 3
+                || bodyDirection == null || bodyDirection.length < 3) {
+            throw new IllegalArgumentException("celestial_focus_arguments_invalid");
+        }
+        float safeDistance = finiteClamp(distance, 1.0f, SKY_RADIUS, 12.0f);
+        out[0] = eye[0] + bodyDirection[0] * safeDistance;
+        out[1] = eye[1] + bodyDirection[1] * safeDistance;
+        out[2] = eye[2] + bodyDirection[2] * safeDistance;
+    }
+
+    public static boolean focusDirectionAligned(float[] eye, float[] target, float[] bodyDirection) {
+        if (eye == null || target == null || bodyDirection == null
+                || eye.length < 3 || target.length < 3 || bodyDirection.length < 3) return false;
+        float dx = target[0] - eye[0];
+        float dy = target[1] - eye[1];
+        float dz = target[2] - eye[2];
+        float length = (float)Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (!Float.isFinite(length) || length < 0.0001f) return false;
+        float dot = dx / length * bodyDirection[0] + dy / length * bodyDirection[1]
+            + dz / length * bodyDirection[2];
+        return dot > 0.9995f;
     }
 
     private static void applyElevationOffset(float[] direction, float offsetDegrees) {

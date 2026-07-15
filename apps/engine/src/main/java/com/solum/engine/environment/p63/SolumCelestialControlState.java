@@ -8,6 +8,8 @@ public final class SolumCelestialControlState {
     public static final float DEFAULT_TIME = 960.0f;
     public static final float DEFAULT_SUN_ANGULAR_SIZE = 0.85f;
     public static final float DEFAULT_MOON_ANGULAR_SIZE = 0.90f;
+    public static final float DEFAULT_CAMERA_ORBIT_SENSITIVITY = 0.010f;
+    public static final float DEFAULT_CAMERA_ZOOM_SENSITIVITY = 0.021f;
 
     public boolean skyEnabled = true;
     public boolean sunEnabled = true;
@@ -27,6 +29,8 @@ public final class SolumCelestialControlState {
 
     public float sunLightLux = 18.0f;
     public float sunVisualBrightness = 1.0f;
+    public float sunEmissive = 0.72f;
+    public float sunEdgeSoftness = 0.55f;
     public float sunAngularSizeDegrees = DEFAULT_SUN_ANGULAR_SIZE;
     public float sunElevationOffsetDegrees = 0.0f;
     public final float[] sunTint = {1.0f, 0.92f, 0.72f};
@@ -34,7 +38,10 @@ public final class SolumCelestialControlState {
     public float moonPhase = 0.62f;
     public float moonAngularSizeDegrees = DEFAULT_MOON_ANGULAR_SIZE;
     public float moonVisualBrightness = 0.75f;
+    public float moonEmissive = 0.24f;
+    public float moonEdgeSoftness = 0.42f;
     public float moonLightLux = 0.15f;
+    public float moonElevationOffsetDegrees = 0.0f;
     public final float[] moonTint = {0.72f, 0.78f, 0.90f};
 
     public boolean sunGlowEnabled = true;
@@ -51,6 +58,8 @@ public final class SolumCelestialControlState {
 
     public float masterVolume = 0.45f;
     public boolean muted = false;
+    public float cameraOrbitSensitivity = DEFAULT_CAMERA_ORBIT_SENSITIVITY;
+    public float cameraZoomSensitivity = DEFAULT_CAMERA_ZOOM_SENSITIVITY;
 
     public String activeSkySource = "SOLUM_NATIVE_RAYLEIGH_MIE_DAY";
     public String activeMoonTexture = "UNAVAILABLE";
@@ -64,35 +73,45 @@ public final class SolumCelestialControlState {
         precipitationEnabled = false; surfaceWeatherEnabled = false; lightningEnabled = false;
         proceduralAudioEnabled = false; time = DEFAULT_TIME; timeSpeed = 1.0f;
         resetSun(); resetMoon(); resetPostProcess(); masterVolume = 0.45f; muted = false;
+        cameraOrbitSensitivity = DEFAULT_CAMERA_ORBIT_SENSITIVITY;
+        cameraZoomSensitivity = DEFAULT_CAMERA_ZOOM_SENSITIVITY;
         activeSkySource = "SOLUM_NATIVE_RAYLEIGH_MIE_DAY";
         lastCelestialError = "none";
     }
 
     public void resetSun() {
         sunEnabled = true; sunLightLux = 18.0f; sunVisualBrightness = 1.0f;
+        sunEmissive = 0.72f; sunEdgeSoftness = 0.55f;
         sunAngularSizeDegrees = DEFAULT_SUN_ANGULAR_SIZE; sunElevationOffsetDegrees = 0.0f;
+        sunGlowEnabled = true; sunGlow = 0.35f; bloomLikeEnabled = false; bloomLikeResponse = 0.0f;
         setSunTint(1.0f, 0.92f, 0.72f);
     }
 
     public void applySunPreset(String preset) {
         if ("Soft".equals(preset)) {
             sunLightLux = 7.0f; sunVisualBrightness = 0.70f; sunAngularSizeDegrees = 0.65f;
+            sunEmissive = 0.45f; sunGlow = 0.22f; bloomLikeResponse = 0.015f;
             setSunTint(1.0f, 0.88f, 0.70f);
         } else if ("Bright".equals(preset)) {
             sunLightLux = 35.0f; sunVisualBrightness = 1.35f; sunAngularSizeDegrees = DEFAULT_SUN_ANGULAR_SIZE;
+            sunEmissive = 1.10f; sunGlow = 0.50f; bloomLikeResponse = 0.060f;
             setSunTint(1.0f, 0.96f, 0.88f);
         } else if ("Sunset".equals(preset)) {
             sunLightLux = 12.0f; sunVisualBrightness = 1.15f; sunAngularSizeDegrees = 0.72f;
+            sunEmissive = 0.82f; sunGlow = 0.42f; bloomLikeResponse = 0.035f;
             sunElevationOffsetDegrees = -4.0f; setSunTint(1.0f, 0.52f, 0.22f);
         } else {
             resetSun();
         }
+        sunGlowEnabled = true; bloomLikeEnabled = bloomLikeResponse > 0.0f;
         sanitize();
     }
 
     public void resetMoon() {
         moonEnabled = true; moonPhase = 0.62f; moonAngularSizeDegrees = DEFAULT_MOON_ANGULAR_SIZE;
-        moonVisualBrightness = 0.75f; moonLightLux = 0.15f;
+        moonVisualBrightness = 0.75f; moonEmissive = 0.24f; moonEdgeSoftness = 0.42f;
+        moonLightLux = 0.15f; moonElevationOffsetDegrees = 0.0f;
+        moonGlowEnabled = true; moonGlow = 0.16f;
         setMoonTint(0.72f, 0.78f, 0.90f);
     }
 
@@ -121,18 +140,25 @@ public final class SolumCelestialControlState {
         timeSpeed = finiteClamp(timeSpeed, 0.0f, 8.0f, 1.0f);
         sunLightLux = finiteClamp(sunLightLux, 0.0f, 50.0f, 18.0f);
         sunVisualBrightness = finiteClamp(sunVisualBrightness, 0.0f, 2.0f, 1.0f);
+        sunEmissive = finiteClamp(sunEmissive, 0.0f, 2.0f, 0.72f);
+        sunEdgeSoftness = finiteClamp(sunEdgeSoftness, 0.0f, 1.0f, 0.55f);
         sunAngularSizeDegrees = finiteClamp(sunAngularSizeDegrees, 0.10f, 2.0f, DEFAULT_SUN_ANGULAR_SIZE);
         sunElevationOffsetDegrees = finiteClamp(sunElevationOffsetDegrees, -15.0f, 15.0f, 0.0f);
         moonPhase = finiteClamp(moonPhase, 0.0f, 1.0f, 0.62f);
         moonAngularSizeDegrees = finiteClamp(moonAngularSizeDegrees, 0.10f, 2.0f, DEFAULT_MOON_ANGULAR_SIZE);
         moonVisualBrightness = finiteClamp(moonVisualBrightness, 0.0f, 2.0f, 0.75f);
+        moonEmissive = finiteClamp(moonEmissive, 0.0f, 1.5f, 0.24f);
+        moonEdgeSoftness = finiteClamp(moonEdgeSoftness, 0.0f, 1.0f, 0.42f);
         moonLightLux = finiteClamp(moonLightLux, 0.0f, 2.0f, 0.15f);
+        moonElevationOffsetDegrees = finiteClamp(moonElevationOffsetDegrees, -15.0f, 15.0f, 0.0f);
         sunGlow = finiteClamp(sunGlow, 0.0f, 1.0f, 0.35f);
         moonGlow = finiteClamp(moonGlow, 0.0f, 1.0f, 0.16f);
         exposureCompensation = finiteClamp(exposureCompensation, -1.0f, 1.0f, 0.0f);
         highlightClamp = finiteClamp(highlightClamp, 0.50f, 1.0f, 1.0f);
         bloomLikeResponse = finiteClamp(bloomLikeResponse, 0.0f, 0.12f, 0.0f);
         masterVolume = finiteClamp(masterVolume, 0.0f, 1.0f, 0.45f);
+        cameraOrbitSensitivity = finiteClamp(cameraOrbitSensitivity, 0.003f, 0.020f, DEFAULT_CAMERA_ORBIT_SENSITIVITY);
+        cameraZoomSensitivity = finiteClamp(cameraZoomSensitivity, 0.007f, 0.040f, DEFAULT_CAMERA_ZOOM_SENSITIVITY);
         setSunTint(sunTint[0], sunTint[1], sunTint[2]);
         setMoonTint(moonTint[0], moonTint[1], moonTint[2]);
     }

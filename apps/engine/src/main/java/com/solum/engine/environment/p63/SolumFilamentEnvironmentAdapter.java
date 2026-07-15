@@ -28,6 +28,8 @@ public final class SolumFilamentEnvironmentAdapter {
     private static final String[] SNOW_NAMES = cellNames("P63_SNOW_CELL_");
     private static final String[] DUST_NAMES = cellNames("P63_DUST_CELL_");
     private static final String[] RIPPLE_NAMES = indexedNames("P63_RIPPLE_", 8);
+    private static final int MOON_PHASE_STEPS = 33;
+    private static final String[] MOON_PHASE_NAMES = phaseNames();
     public interface Host {
         void applyPreparedIbl(String slot, long revision, float intensity, float blend);
         void applyEnvironmentSkyColor(float red, float green, float blue, float lightningFlash);
@@ -57,6 +59,7 @@ public final class SolumFilamentEnvironmentAdapter {
     private boolean stageBound;
     private boolean celestialSkyVisible;
     private String celestialSkyStatus = "not_created";
+    private int activeMoonPhaseIndex = -1;
 
     public SolumFilamentEnvironmentAdapter(ModelViewer viewer, SolumEnvironmentController controller,
                                             SolumEnvironmentAudioSystem audio, Host host) {
@@ -78,8 +81,10 @@ public final class SolumFilamentEnvironmentAdapter {
         }
         boolean celestialStage = stageEntities.containsKey("P63_CELESTIAL_STAGE_ROOT")
             && stageEntities.containsKey("P63_SUN_DISK")
-            && stageEntities.containsKey("P63_MOON_DISK") && stageEntities.containsKey("P63_STAGE_GROUND");
+            && stageEntities.containsKey("P63_MOON_PHASE_00") && stageEntities.containsKey("P63_STAGE_GROUND");
         stageBound = celestialStage || p63Count >= 40;
+        activeMoonPhaseIndex = -1;
+        if (celestialStage) for (String name : MOON_PHASE_NAMES) setLayerVisible(name, false);
         status = stageBound ? "bound_p63_filament_stage_entities=" + p63Count : "asset_bound_without_p63_stage_entities=" + p63Count;
         SolumEnvironmentState state = controller.getState();
         state.stageStatus = status; state.adapterStatus = "filament_adapter_live";
@@ -117,7 +122,12 @@ public final class SolumFilamentEnvironmentAdapter {
         stageEntities.clear(); stageBound = false; status = "released";
     }
 
-    public String getStatus() { return status + " material=" + materialStatus + " sky=" + celestialSkyStatus + " stageBound=" + stageBound; }
+    public String getStatus() { return status + " material=" + materialStatus + " sky=" + celestialSkyStatus
+        + " moonPhaseNode=" + getActiveMoonPhaseNode() + " stageBound=" + stageBound; }
+
+    public String getActiveMoonPhaseNode() {
+        return activeMoonPhaseIndex < 0 ? "none" : MOON_PHASE_NAMES[activeMoonPhaseIndex];
+    }
 
     private void createLights() {
         Engine engine = viewer.getEngine();
@@ -232,11 +242,25 @@ public final class SolumFilamentEnvironmentAdapter {
         float sunScale = sunVisible ? radius * (float)Math.tan(Math.toRadians(sunAngular * 0.5f)) : 0.001f;
         float moonScale = moonVisible ? radius * (float)Math.tan(Math.toRadians(moonAngular * 0.5f)) : 0.001f;
         setBillboardTransform("P63_SUN_HALO", sunX, sunY, sunZ, state.lighting.sunVisualDirection,
-            sunScale * (2.5f + controls.sunGlow * 2.5f), sunScale * (2.5f + controls.sunGlow * 2.5f), -0.045f);
+            sunScale * (2.0f + controls.sunGlow * 2.5f + controls.sunEdgeSoftness * 0.8f),
+            sunScale * (2.0f + controls.sunGlow * 2.5f + controls.sunEdgeSoftness * 0.8f), -0.045f);
         setBillboardTransform("P63_SUN_DISK", sunX, sunY, sunZ, state.lighting.sunVisualDirection,
             sunScale, sunScale, 0.0f);
         setBillboardTransform("P63_MOON_HALO", moonX, moonY, moonZ, state.lighting.moonVisualDirection,
-            moonScale * (2.0f + controls.moonGlow * 2.0f), moonScale * (2.0f + controls.moonGlow * 2.0f), -0.040f);
+            moonScale * (1.8f + controls.moonGlow * 2.0f + controls.moonEdgeSoftness * 0.6f),
+            moonScale * (1.8f + controls.moonGlow * 2.0f + controls.moonEdgeSoftness * 0.6f), -0.040f);
+        if (controller.isCelestialOnlyMode()) {
+            int requestedPhase = Math.max(0, Math.min(MOON_PHASE_STEPS - 1,
+                Math.round(state.lighting.moonPhase * (MOON_PHASE_STEPS - 1))));
+            if (requestedPhase != activeMoonPhaseIndex) {
+                if (activeMoonPhaseIndex >= 0) setLayerVisible(MOON_PHASE_NAMES[activeMoonPhaseIndex], false);
+                activeMoonPhaseIndex = requestedPhase;
+                setLayerVisible(MOON_PHASE_NAMES[activeMoonPhaseIndex], true);
+            }
+            setBillboardTransform(MOON_PHASE_NAMES[activeMoonPhaseIndex], moonX, moonY, moonZ,
+                state.lighting.moonVisualDirection, moonScale, moonScale, 0.0f);
+            return;
+        }
         setBillboardTransform("P63_MOON_DISK", moonX, moonY, moonZ, state.lighting.moonVisualDirection,
             moonScale, moonScale, 0.0f);
         float phase = state.lighting.moonPhase;
@@ -248,9 +272,6 @@ public final class SolumFilamentEnvironmentAdapter {
             moonY + billboardRightScratch[1] * shadowOffset,
             moonZ + billboardRightScratch[2] * shadowOffset,
             state.lighting.moonVisualDirection, shadowScale, shadowScale, 0.035f);
-        if (controller.isCelestialOnlyMode()) {
-            return;
-        }
         float starScale = Math.max(0.001f, state.lighting.starVisibility);
         float rotation = state.timeOfDay / 2400.0f * 360.0f;
         int visibleGroups = Math.max(0, Math.min(3, (int) Math.ceil(controller.getStarDensity() * 3.0f)));
@@ -319,15 +340,20 @@ public final class SolumFilamentEnvironmentAdapter {
                 float moonVisual = Math.min(highlight, safeRange(state.lighting.moonDiskBrightness, 0.0f, 2.0f));
                 setMaterial4("P63_SUN_DISK", "baseColorFactor", controls.sunTint[0] * sunVisual,
                     controls.sunTint[1] * sunVisual, controls.sunTint[2] * sunVisual, Math.min(1.0f, sunVisual));
-                setMaterial4("P63_MOON_DISK", "baseColorFactor", controls.moonTint[0] * moonVisual,
+                String moonNode = getActiveMoonPhaseNode();
+                setMaterial4(moonNode, "baseColorFactor", controls.moonTint[0] * moonVisual,
                     controls.moonTint[1] * moonVisual, controls.moonTint[2] * moonVisual, Math.min(1.0f, moonVisual));
+                setMaterial3("P63_SUN_DISK", "emissiveFactor", controls.sunTint[0] * controls.sunEmissive,
+                    controls.sunTint[1] * controls.sunEmissive, controls.sunTint[2] * controls.sunEmissive);
+                setMaterial3(moonNode, "emissiveFactor", controls.moonTint[0] * controls.moonEmissive,
+                    controls.moonTint[1] * controls.moonEmissive, controls.moonTint[2] * controls.moonEmissive);
                 float sunHalo = controls.sunGlowEnabled && state.lighting.sunAboveHorizon ? controls.sunGlow : 0.0f;
                 float moonHalo = controls.moonGlowEnabled && state.lighting.moonAboveHorizon ? controls.moonGlow : 0.0f;
                 setMaterial4("P63_SUN_HALO", "baseColorFactor", controls.sunTint[0], controls.sunTint[1],
                     controls.sunTint[2], safeRange(sunHalo * 0.52f, 0.0f, 0.52f));
                 setMaterial4("P63_MOON_HALO", "baseColorFactor", controls.moonTint[0], controls.moonTint[1],
                     controls.moonTint[2], safeRange(moonHalo * 0.38f, 0.0f, 0.38f));
-                materialStatus = "p63_2a1_billboard_disks_smooth_phase_safe_halos";
+                materialStatus = "p63_2a2_single_visible_moon_disc_analytic_terminator_no_occluder_safe_emissive_halos";
                 return;
             }
             float wet = state.surface.wetness;
@@ -362,6 +388,19 @@ public final class SolumFilamentEnvironmentAdapter {
     private void setMaterial4(String name, String parameter, float x, float y, float z, float w) {
         MaterialInstance material = firstMaterial(name);
         if (material != null) material.setParameter(parameter, x, y, z, w);
+    }
+
+    private void setMaterial3(String name, String parameter, float x, float y, float z) {
+        MaterialInstance material = firstMaterial(name);
+        if (material != null) material.setParameter(parameter, x, y, z);
+    }
+
+    private void setLayerVisible(String name, boolean visible) {
+        Integer entity = stageEntities.get(name);
+        if (entity == null) return;
+        RenderableManager manager = viewer.getEngine().getRenderableManager();
+        int instance = manager.getInstance(entity);
+        if (instance != 0) manager.setLayerMask(instance, 0xFF, visible ? 0x01 : 0x00);
     }
 
     private MaterialInstance firstMaterial(String name) {
@@ -491,6 +530,7 @@ public final class SolumFilamentEnvironmentAdapter {
 
     private void notifyStatus() { if (host != null) host.onEnvironmentAdapterStatus(status); }
     private static String[] indexedNames(String prefix,int count){String[] out=new String[count];for(int i=0;i<count;i++)out[i]=prefix+i;return out;}
+    private static String[] phaseNames(){String[] out=new String[MOON_PHASE_STEPS];for(int i=0;i<out.length;i++)out[i]=String.format(Locale.US,"P63_MOON_PHASE_%02d",i);return out;}
     private static String[] cellNames(String prefix){String[] out=new String[25];for(int z=0;z<5;z++)for(int x=0;x<5;x++)out[z*5+x]=prefix+x+"_"+z;return out;}
     private static float wrap(float value, float range) { float out=value%range;return out<0?out+range:out; }
     private static float wrapSigned(float value, float range) { float out=(value+range*0.5f)%range;if(out<0)out+=range;return out-range*0.5f; }

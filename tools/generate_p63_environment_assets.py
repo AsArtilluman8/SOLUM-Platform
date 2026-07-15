@@ -71,6 +71,126 @@ def halo_png(size: int = 64) -> bytes:
     return b"\x89PNG\r\n\x1a\n" + png_chunk(b"IHDR", header) + png_chunk(b"IDAT", zlib.compress(bytes(rows), 9)) + png_chunk(b"IEND", b"")
 
 
+def encode_rgba_png(width: int, height: int, pixels: bytes) -> bytes:
+    require_size = width * height * 4
+    if len(pixels) != require_size:
+        raise ValueError(f"rgba_size_mismatch_{len(pixels)}_{require_size}")
+    rows = bytearray()
+    stride = width * 4
+    for y in range(height):
+        rows.append(0)
+        rows.extend(pixels[y * stride:(y + 1) * stride])
+    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + png_chunk(b"IHDR", header) + png_chunk(b"IDAT", zlib.compress(bytes(rows), 9)) + png_chunk(b"IEND", b"")
+
+
+def decode_png_rgba(payload: bytes) -> tuple[int, int, bytes]:
+    """Decode the audited 8-bit non-interlaced RGB/RGBA source without external packages."""
+    if not payload.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("moon_source_not_png")
+    width = height = color_type = bit_depth = interlace = 0
+    compressed = bytearray()
+    offset = 8
+    while offset + 12 <= len(payload):
+        length = struct.unpack_from(">I", payload, offset)[0]
+        kind = payload[offset + 4:offset + 8]
+        data = payload[offset + 8:offset + 8 + length]
+        if kind == b"IHDR":
+            width, height, bit_depth, color_type, _, _, interlace = struct.unpack(">IIBBBBB", data)
+        elif kind == b"IDAT":
+            compressed.extend(data)
+        elif kind == b"IEND":
+            break
+        offset += length + 12
+    if bit_depth != 8 or color_type not in (2, 6) or interlace != 0:
+        raise ValueError(f"moon_png_unsupported_{bit_depth}_{color_type}_{interlace}")
+    channels = 3 if color_type == 2 else 4
+    stride = width * channels
+    raw = zlib.decompress(bytes(compressed))
+    previous = bytearray(stride)
+    decoded = bytearray()
+    source_offset = 0
+    for _ in range(height):
+        filter_type = raw[source_offset]
+        source_offset += 1
+        scan = bytearray(raw[source_offset:source_offset + stride])
+        source_offset += stride
+        for x in range(stride):
+            left = scan[x - channels] if x >= channels else 0
+            above = previous[x]
+            upper_left = previous[x - channels] if x >= channels else 0
+            if filter_type == 1:
+                scan[x] = (scan[x] + left) & 255
+            elif filter_type == 2:
+                scan[x] = (scan[x] + above) & 255
+            elif filter_type == 3:
+                scan[x] = (scan[x] + ((left + above) >> 1)) & 255
+            elif filter_type == 4:
+                p = left + above - upper_left
+                pa, pb, pc = abs(p - left), abs(p - above), abs(p - upper_left)
+                predictor = left if pa <= pb and pa <= pc else (above if pb <= pc else upper_left)
+                scan[x] = (scan[x] + predictor) & 255
+            elif filter_type != 0:
+                raise ValueError(f"moon_png_filter_{filter_type}")
+        for x in range(width):
+            base = x * channels
+            decoded.extend((scan[base], scan[base + 1], scan[base + 2], scan[base + 3] if channels == 4 else 255))
+        previous = scan
+    return width, height, bytes(decoded)
+
+
+def smoothstep(edge0: float, edge1: float, value: float) -> float:
+    t = max(0.0, min(1.0, (value - edge0) / max(1e-6, edge1 - edge0)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def moon_phase_png(source: tuple[int, int, bytes], phase: float) -> bytes:
+    """Curved spherical terminator baked from the exact color texture; no dither or occluder."""
+    width, height, pixels = source
+    phase = max(0.0, min(1.0, phase))
+    phase_angle = math.acos(phase * 2.0 - 1.0)
+    light_x = math.sin(phase_angle)
+    light_z = math.cos(phase_angle)
+    edge = 3.0 / max(width, height)
+    out = bytearray(width * height * 4)
+    for y in range(height):
+        fy = 1.0 - (y + 0.5) / height * 2.0
+        for x in range(width):
+            fx = (x + 0.5) / width * 2.0 - 1.0
+            radius2 = fx * fx + fy * fy
+            target = (y * width + x) * 4
+            if radius2 >= 1.0:
+                out[target:target + 4] = b"\x00\x00\x00\x00"
+                continue
+            sphere_z = math.sqrt(max(0.0, 1.0 - radius2))
+            light = fx * light_x + sphere_z * light_z
+            illumination = smoothstep(-edge, edge, light)
+            # Preserve a restrained textured earthshine floor instead of a black phase object.
+            shaded = 0.035 + illumination * 0.965
+            limb_alpha = 1.0 - smoothstep(1.0 - edge * 1.8, 1.0, math.sqrt(radius2))
+            source_index = target
+            out[target] = round(pixels[source_index] * shaded)
+            out[target + 1] = round(pixels[source_index + 1] * shaded)
+            out[target + 2] = round(pixels[source_index + 2] * shaded)
+            out[target + 3] = round(pixels[source_index + 3] * limb_alpha)
+    return encode_rgba_png(width, height, bytes(out))
+
+
+def sun_disc_png(size: int = 128) -> bytes:
+    """SOLUM-native bright core with continuous soft falloff and no fullscreen flare."""
+    pixels = bytearray(size * size * 4)
+    for y in range(size):
+        fy = (y + 0.5) / size * 2.0 - 1.0
+        for x in range(size):
+            fx = (x + 0.5) / size * 2.0 - 1.0
+            radius = math.hypot(fx, fy)
+            alpha = 1.0 - smoothstep(0.82, 1.0, radius)
+            core = 1.0 - smoothstep(0.0, 0.82, radius)
+            index = (y * size + x) * 4
+            pixels[index:index + 4] = bytes((255, round(224 + core * 31), round(168 + core * 87), round(alpha * 255)))
+    return encode_rgba_png(size, size, bytes(pixels))
+
+
 def sky_png(slot: str, width: int = 256, height: int = 128) -> bytes:
     """Deterministic full-sphere mobile atmosphere; azimuth is periodic at the seam."""
     settings = {
@@ -274,10 +394,11 @@ class GlbBuilder:
     def __init__(self) -> None:
         self.binary=bytearray();self.buffer_views=[];self.accessors=[];self.meshes=[];self.nodes=[];self.materials=[];self.images=[];self.textures=[];self.samplers=[]
 
-    def material(self,name:str,color:tuple[float,float,float,float],metallic:float,roughness:float,*,unlit=False,emissive=(0,0,0),alpha="OPAQUE",texture=None,double_sided=False,force_single_sided=False)->int:
+    def material(self,name:str,color:tuple[float,float,float,float],metallic:float,roughness:float,*,unlit=False,emissive=(0,0,0),alpha="OPAQUE",texture=None,emissive_texture=None,double_sided=False,force_single_sided=False)->int:
         pbr={"baseColorFactor":list(color),"metallicFactor":metallic,"roughnessFactor":roughness}
         if texture is not None:pbr["baseColorTexture"]={"index":texture}
         item={"name":name,"pbrMetallicRoughness":pbr,"emissiveFactor":list(emissive),"doubleSided":False if force_single_sided else double_sided or alpha!="OPAQUE"}
+        if emissive_texture is not None:item["emissiveTexture"]={"index":emissive_texture}
         if alpha!="OPAQUE":item["alphaMode"]=alpha;item["alphaCutoff"]=0.08
         if unlit:item["extensions"]={"KHR_materials_unlit":{}}
         self.materials.append(item);return len(self.materials)-1
@@ -344,15 +465,20 @@ def generate_glb() -> bytes:
 def generate_celestial_glb(moon_payload: bytes | None = None, moon_name: str = "P63_SOLUM_NATIVE_MOON") -> bytes:
     """Small explicit P63.2A stage. It contains no weather, stars, or dynamic IBL assets."""
     b = GlbBuilder()
-    moon_texture = b.texture_png(moon_payload or moon_png(256), moon_name)
+    source_moon_payload = moon_payload or moon_png(256)
+    # Embed the exact audited source unchanged for provenance. Runtime phase nodes use only
+    # deterministic color derivatives of this payload, never a secondary black occluder.
+    b.texture_png(source_moon_payload, moon_name)
+    decoded_moon = decode_png_rgba(source_moon_payload)
+    sun_texture = b.texture_png(sun_disc_png(), "P63_SOLUM_NATIVE_SUN_CORE")
     halo_texture = b.texture_png(halo_png(), "P63_SMOOTH_CELESTIAL_HALO")
     concrete = b.material("P63_2A_Matte", (0.34, 0.35, 0.36, 1), 0, 0.86)
     rough_metal = b.material("P63_2A_RoughMetal", (0.30, 0.33, 0.37, 1), 1, 0.48)
     polished = b.material("P63_2A_PolishedMetal", (0.64, 0.68, 0.74, 1), 1, 0.07)
     glass = b.material("P63_2A_Glass", (0.25, 0.58, 0.74, 0.27), 0, 0.06, alpha="BLEND")
-    sun = b.material("P63_2A_SunDisk", (1, 0.78, 0.34, 1), 0, 0, unlit=True, emissive=(0.72, 0.32, 0.04))
-    moon = b.material("P63_2A_Moon", (1, 1, 1, 1), 0, 0.62, unlit=True, texture=moon_texture)
-    moon_shadow = b.material("P63_2A_MoonPhaseMask", (0.002, 0.004, 0.012, 1), 0, 1, unlit=True)
+    sun = b.material("P63_2A_SunDisk", (1, 0.78, 0.34, 1), 0, 0, unlit=False,
+                     emissive=(0.72, 0.32, 0.04), alpha="BLEND", texture=sun_texture,
+                     emissive_texture=sun_texture, force_single_sided=True)
     sun_halo = b.material("P63_2A_SunHalo", (1, 0.82, 0.50, 0.28), 0, 1, unlit=True,
                           alpha="BLEND", texture=halo_texture, force_single_sided=True)
     moon_halo = b.material("P63_2A_MoonHalo", (0.58, 0.68, 0.92, 0.16), 0, 1, unlit=True,
@@ -380,15 +506,19 @@ def generate_celestial_glb(moon_payload: bytes | None = None, moon_name: str = "
     b.node("P63_CAMERA_ORBIT_TARGET", matte_sphere, (0, 1.2, -2), (0.06, 0.06, 0.06))
 
     sun_mesh = b.mesh("p63_2a_sun_disk", disk(96), sun)
-    moon_mesh = b.mesh("p63_2a_moon_disk", disk(96), moon)
-    shadow_mesh = b.mesh("p63_2a_moon_phase_mask", disk(96), moon_shadow)
     sun_halo_mesh = b.mesh("p63_2a_sun_halo", disk(96), sun_halo)
     moon_halo_mesh = b.mesh("p63_2a_moon_halo", disk(96), moon_halo)
     b.node("P63_SUN_HALO", sun_halo_mesh, (0, 14, -25), (0.3, 0.3, 0.3))
     b.node("P63_SUN_DISK", sun_mesh, (0, 14, -25), (0.13, 0.13, 0.13))
     b.node("P63_MOON_HALO", moon_halo_mesh, (0, 12, -24), (0.3, 0.3, 0.3))
-    b.node("P63_MOON_DISK", moon_mesh, (0, 12, -24), (0.13, 0.13, 0.13))
-    b.node("P63_MOON_SHADOW", shadow_mesh, (0, 12, -23.96), (0.13, 0.13, 0.13))
+    for index in range(33):
+        phase = index / 32.0
+        phase_texture = b.texture_png(moon_phase_png(decoded_moon, phase), f"P63_MOON_ANALYTIC_PHASE_{index:02d}")
+        phase_material = b.material(f"P63_2A_MoonPhase_{index:02d}", (1, 1, 1, 1), 0, 0.62,
+                                    unlit=False, emissive=(0.12, 0.14, 0.18), alpha="BLEND",
+                                    texture=phase_texture, emissive_texture=phase_texture, force_single_sided=True)
+        phase_mesh = b.mesh(f"p63_2a_moon_phase_{index:02d}", disk(96), phase_material)
+        b.node(f"P63_MOON_PHASE_{index:02d}", phase_mesh, (0, 12, -24), (0.001, 0.001, 0.001))
     return b.build()
 
 

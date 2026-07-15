@@ -73,6 +73,7 @@ public final class SolumEnvironmentCoreTest {
 
         require(controller.getState().getFeatureStatus().get("interior_exclusion") == EnvironmentFeatureStatus.FUNCTIONAL, "classification truth present");
         testCanonicalCelestialCoordinates();
+        testCameraGestureOwnership();
         testAnalyticSky();
         testCelestialOnly(env);
         System.out.println("P63_CORE_TEST=PASS presets=" + Arrays.toString(IDS)
@@ -96,15 +97,22 @@ public final class SolumEnvironmentCoreTest {
         float sunVisual = controller.getState().lighting.sunDiskBrightness;
         require(close(sunLux, 4.0f) && close(sunVisual, 1.5f), "sun visual/light separation values");
         controls.sunVisualBrightness = 0.25f;
+        controls.sunEmissive = 1.35f;
         controller.update(0.1f);
         require(close(controller.getState().lighting.sunLux, sunLux), "sun visual edit does not change directional light");
         require(close(controller.getState().lighting.sunDiskBrightness, 0.25f), "sun visual edit applies independently");
+        require(close(controls.sunEmissive, 1.35f) && close(controller.getState().lighting.sunLux, sunLux),
+            "sun emissive is independent from sun directional light intensity");
         controls.moonPhase = 0.23f;
         controls.moonLightLux = 0.4f;
         controller.setTime(0.0f);
         controller.update(0.1f);
         require(close(controller.getState().lighting.moonPhase, 0.23f), "moon phase applies");
         require(controller.getState().lighting.moonLux > 0.0f && controller.getState().lighting.sunLux == 0.0f, "separate moon directional light at night");
+        float moonLux = controller.getState().lighting.moonLux;
+        controls.moonEmissive = 1.1f;
+        controller.update(0.1f);
+        require(close(controller.getState().lighting.moonLux, moonLux), "moon emissive is independent from moon directional light intensity");
         require(controller.getState().weather.rain == 0.0f && controller.getState().weather.snow == 0.0f
             && controller.getState().lighting.starVisibility == 0.0f, "celestial stage stays weather/star free");
         controls.sunLightLux = Float.NaN;
@@ -152,6 +160,34 @@ public final class SolumEnvironmentCoreTest {
         require(close(positionB[0] - positionA[0], 7.0f) && close(positionB[1] - positionA[1], 3.0f)
             && close(positionB[2] - positionA[2], -7.0f), "disk position translates with camera without parallax");
         require(positionA[1] > 0.0f && first.sunAboveHorizon, "visible disk cannot be placed below ground by world origin");
+        float[] eye = {2.0f, 3.0f, 5.0f};
+        float[] target = new float[3];
+        SolumCelestialCoordinateSystem.focusTarget(target, eye, first.sunVisualDirection, 12.0f);
+        require(SolumCelestialCoordinateSystem.focusDirectionAligned(eye, target, first.sunVisualDirection),
+            "Focus Sun lands camera on visible sun direction");
+        SolumCelestialCoordinateSystem.update(0.0f, 0.0f, 2.0f, first);
+        SolumCelestialCoordinateSystem.focusTarget(target, eye, first.moonVisualDirection, 12.0f);
+        require(SolumCelestialCoordinateSystem.focusDirectionAligned(eye, target, first.moonVisualDirection),
+            "Focus Moon lands camera on visible moon direction");
+    }
+
+    private static void testCameraGestureOwnership() {
+        SolumCameraGestureState gesture = new SolumCameraGestureState();
+        gesture.beginPrimary(20.0f, 20.0f);
+        gesture.updatePrimary(60.0f, 35.0f);
+        require(gesture.changesOrbit() && !gesture.changesDistance() && !gesture.changesTarget(),
+            "orbit does not change camera distance or target");
+        gesture.beginTwo(10.0f, 20.0f, 50.0f, 20.0f);
+        gesture.updateTwo(0.0f, 20.0f, 65.0f, 20.0f);
+        require(gesture.changesDistance() && !gesture.changesOrbit() && !gesture.changesTarget(),
+            "pinch changes only camera distance");
+        require(Math.abs(gesture.consumePinchDelta()) > 0.0f, "pinch produces a distance delta");
+        gesture.updateTwo(20.0f, 50.0f, 85.0f, 50.0f);
+        require(gesture.changesDistance(), "pinch ownership stays locked when midpoint also moves");
+        gesture.beginTwo(10.0f, 20.0f, 50.0f, 20.0f);
+        gesture.updateTwo(25.0f, 35.0f, 65.0f, 35.0f);
+        require(gesture.changesTarget() && !gesture.changesDistance() && !gesture.changesOrbit(),
+            "two-finger pan changes only target");
     }
 
     private static void testAnalyticSky() {

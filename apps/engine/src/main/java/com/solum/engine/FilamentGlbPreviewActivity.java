@@ -72,6 +72,8 @@ import com.solum.engine.environment.EnvironmentController;
 import com.solum.engine.environment.EnvironmentDiagnostics;
 import com.solum.engine.environment.EnvironmentSettings;
 import com.solum.engine.environment.p63.EnvironmentFeatureStatus;
+import com.solum.engine.environment.p63.SolumCameraGestureState;
+import com.solum.engine.environment.p63.SolumCelestialCoordinateSystem;
 import com.solum.engine.environment.p63.SolumCelestialControlState;
 import com.solum.engine.environment.p63.SolumEnvironmentAudioSystem;
 import com.solum.engine.environment.p63.SolumEnvironmentController;
@@ -201,7 +203,6 @@ public class FilamentGlbPreviewActivity extends Activity {
     private static final String P63_2A_UDS_STAGE_ASSET_PATH = "private_premium/p63_2a/celestial/p63_2a_celestial_test_stage_uds.glb";
     private static final String P63_IBL_ASSET_ROOT = "env/p63/p63_";
     private static final String PREF_P63_2A_STATE = "p63_2a_celestial_state_json";
-    private static final float P63_CAMERA_ZOOM_SPEED = 0.014f;
     private static final float P63_CAMERA_MIN_DISTANCE = 2.0f;
     private static final float P63_CAMERA_MAX_DISTANCE = 45.0f;
 
@@ -209,7 +210,8 @@ public class FilamentGlbPreviewActivity extends Activity {
     private SunGlareOverlayView sunGlareOverlayView;
     private ModelViewer modelViewer;
     private Manipulator cameraManipulator;
-    private com.google.android.filament.utils.GestureDetector cameraGestureDetector;
+    private final SolumCameraGestureState p63CameraGestureState = new SolumCameraGestureState();
+    private boolean p63ManipulatorGrabActive;
     private RenderControlApi renderControlApi;
     private EnvironmentApi environmentApi;
     private SolumEnvironmentController p63EnvironmentController;
@@ -562,7 +564,17 @@ public class FilamentGlbPreviewActivity extends Activity {
     private boolean p63CelestialStageRequested = false;
     private boolean p63CelestialStateRestored = false;
     private boolean p63DebugExpanded = false;
-    private final List<P63AccordionSection> p63AccordionSections = new ArrayList<>();
+    private final List<P63EnvironmentTab> p63EnvironmentTabs = new ArrayList<>();
+    private String activeP63EnvironmentTab = "quick";
+    private P63HsvColorPickerDialog p63ColorPickerDialog;
+    private TextView p63QuickStatusView;
+    private String p63CameraMode = "IDLE";
+    private String p63LastCameraAction = "none";
+    private float p63CameraYawDegrees;
+    private float p63CameraPitchDegrees;
+    private long p63LastTapTimeMs;
+    private float p63LastTapX;
+    private float p63LastTapY;
     private final float[] p63CameraPositionScratch = new float[3];
     private final float[] p63CameraEyeScratch = new float[3];
     private final float[] p63CameraTargetScratch = new float[3];
@@ -1837,22 +1849,23 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private void createViewer() {
         try {
+            ensureP63EnvironmentCore();
             UiHelper uiHelper = new UiHelper(UiHelper.ContextErrorPolicy.DONT_CHECK);
             Manipulator manipulator = new Manipulator.Builder()
                 .viewport(Math.max(1, surfaceView.getWidth()), Math.max(1, surfaceView.getHeight()))
                 .targetPosition(0.0f, 0.0f, 0.0f)
                 .orbitHomePosition(0.0f, 0.0f, 4.4f)
-                .zoomSpeed(P63_CAMERA_ZOOM_SPEED)
+                .orbitSpeed(celestialState().cameraOrbitSensitivity, celestialState().cameraOrbitSensitivity)
+                .zoomSpeed(celestialState().cameraZoomSensitivity)
+                .panning(true)
                 .build(Manipulator.Mode.ORBIT);
             cameraManipulator = manipulator;
-            cameraGestureDetector = new com.google.android.filament.utils.GestureDetector(surfaceView, manipulator);
             modelViewer = new ModelViewer(surfaceView, Engine.create(), uiHelper, manipulator);
             renderControlApi = new FilamentRenderController(modelViewer.getView());
             environmentApi = new EnvironmentController(renderControlApi);
             surfaceView.setOnTouchListener((view, event) -> {
                 if (destroying || destroyed || modelViewer == null) return true;
-                if (cameraGestureDetector != null) cameraGestureDetector.onTouchEvent(event);
-                if (event.getAction() == MotionEvent.ACTION_UP) requestPick(event);
+                handleP63CameraTouch(event);
                 return true;
             });
             createEnvironmentFallback();
@@ -1907,7 +1920,6 @@ public class FilamentGlbPreviewActivity extends Activity {
     private void updateP63Environment(long frameTimeNanos) {
         if (p63EnvironmentAdapter == null || p63EnvironmentController == null) return;
         float dt = rollingFrameMs > 0.0f ? Math.min(0.1f, rollingFrameMs / 1000.0f) : 1.0f / 60.0f;
-        if (p63CelestialStageRequested) constrainP63Camera();
         modelViewer.getCamera().getPosition(p63CameraPositionScratch);
         p63EnvironmentController.setCameraPosition(p63CameraPositionScratch[0], p63CameraPositionScratch[1], p63CameraPositionScratch[2]);
         SolumEnvironmentState state = p63EnvironmentAdapter.update(dt);
@@ -4204,10 +4216,13 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("skyEnabled", s.skyEnabled); json.put("sunEnabled", s.sunEnabled); json.put("moonEnabled", s.moonEnabled);
             json.put("timePaused", s.timePaused); json.put("time", s.time); json.put("timeSpeed", s.timeSpeed);
             json.put("sunLightLux", s.sunLightLux); json.put("sunVisualBrightness", s.sunVisualBrightness);
+            json.put("sunEmissive", s.sunEmissive); json.put("sunEdgeSoftness", s.sunEdgeSoftness);
             json.put("sunAngularSizeDegrees", s.sunAngularSizeDegrees); json.put("sunElevationOffsetDegrees", s.sunElevationOffsetDegrees);
             json.put("sunTintR", s.sunTint[0]); json.put("sunTintG", s.sunTint[1]); json.put("sunTintB", s.sunTint[2]);
             json.put("moonPhase", s.moonPhase); json.put("moonAngularSizeDegrees", s.moonAngularSizeDegrees);
             json.put("moonVisualBrightness", s.moonVisualBrightness); json.put("moonLightLux", s.moonLightLux);
+            json.put("moonEmissive", s.moonEmissive); json.put("moonEdgeSoftness", s.moonEdgeSoftness);
+            json.put("moonElevationOffsetDegrees", s.moonElevationOffsetDegrees);
             json.put("moonTintR", s.moonTint[0]); json.put("moonTintG", s.moonTint[1]); json.put("moonTintB", s.moonTint[2]);
             json.put("sunGlowEnabled", s.sunGlowEnabled); json.put("moonGlowEnabled", s.moonGlowEnabled);
             json.put("exposureCompensationEnabled", s.exposureCompensationEnabled); json.put("highlightClampEnabled", s.highlightClampEnabled);
@@ -4215,6 +4230,8 @@ public class FilamentGlbPreviewActivity extends Activity {
             json.put("sunGlow", s.sunGlow); json.put("moonGlow", s.moonGlow); json.put("exposureCompensation", s.exposureCompensation);
             json.put("highlightClamp", s.highlightClamp); json.put("bloomLikeResponse", s.bloomLikeResponse);
             json.put("masterVolume", s.masterVolume); json.put("muted", s.muted);
+            json.put("cameraOrbitSensitivity", s.cameraOrbitSensitivity);
+            json.put("cameraZoomSensitivity", s.cameraZoomSensitivity);
             return json.toString();
         } catch (Throwable error) {
             return "";
@@ -4232,11 +4249,14 @@ public class FilamentGlbPreviewActivity extends Activity {
             s.moonEnabled = json.optBoolean("moonEnabled", s.moonEnabled); s.timePaused = json.optBoolean("timePaused", s.timePaused);
             s.time = (float)json.optDouble("time", s.time); s.timeSpeed = (float)json.optDouble("timeSpeed", s.timeSpeed);
             s.sunLightLux = (float)json.optDouble("sunLightLux", s.sunLightLux); s.sunVisualBrightness = (float)json.optDouble("sunVisualBrightness", s.sunVisualBrightness);
+            s.sunEmissive = (float)json.optDouble("sunEmissive", s.sunEmissive); s.sunEdgeSoftness = (float)json.optDouble("sunEdgeSoftness", s.sunEdgeSoftness);
             s.sunAngularSizeDegrees = (float)json.optDouble("sunAngularSizeDegrees", s.sunAngularSizeDegrees);
             s.sunElevationOffsetDegrees = (float)json.optDouble("sunElevationOffsetDegrees", s.sunElevationOffsetDegrees);
             s.setSunTint((float)json.optDouble("sunTintR", s.sunTint[0]), (float)json.optDouble("sunTintG", s.sunTint[1]), (float)json.optDouble("sunTintB", s.sunTint[2]));
             s.moonPhase = (float)json.optDouble("moonPhase", s.moonPhase); s.moonAngularSizeDegrees = (float)json.optDouble("moonAngularSizeDegrees", s.moonAngularSizeDegrees);
             s.moonVisualBrightness = (float)json.optDouble("moonVisualBrightness", s.moonVisualBrightness); s.moonLightLux = (float)json.optDouble("moonLightLux", s.moonLightLux);
+            s.moonEmissive = (float)json.optDouble("moonEmissive", s.moonEmissive); s.moonEdgeSoftness = (float)json.optDouble("moonEdgeSoftness", s.moonEdgeSoftness);
+            s.moonElevationOffsetDegrees = (float)json.optDouble("moonElevationOffsetDegrees", s.moonElevationOffsetDegrees);
             s.setMoonTint((float)json.optDouble("moonTintR", s.moonTint[0]), (float)json.optDouble("moonTintG", s.moonTint[1]), (float)json.optDouble("moonTintB", s.moonTint[2]));
             s.sunGlowEnabled = json.optBoolean("sunGlowEnabled", s.sunGlowEnabled); s.moonGlowEnabled = json.optBoolean("moonGlowEnabled", s.moonGlowEnabled);
             s.exposureCompensationEnabled = json.optBoolean("exposureCompensationEnabled", s.exposureCompensationEnabled);
@@ -4245,6 +4265,8 @@ public class FilamentGlbPreviewActivity extends Activity {
             s.moonGlow = (float)json.optDouble("moonGlow", s.moonGlow); s.exposureCompensation = (float)json.optDouble("exposureCompensation", s.exposureCompensation);
             s.highlightClamp = (float)json.optDouble("highlightClamp", s.highlightClamp); s.bloomLikeResponse = (float)json.optDouble("bloomLikeResponse", s.bloomLikeResponse);
             s.masterVolume = (float)json.optDouble("masterVolume", s.masterVolume); s.muted = json.optBoolean("muted", s.muted);
+            s.cameraOrbitSensitivity = (float)json.optDouble("cameraOrbitSensitivity", s.cameraOrbitSensitivity);
+            s.cameraZoomSensitivity = (float)json.optDouble("cameraZoomSensitivity", s.cameraZoomSensitivity);
         } catch (Throwable error) {
             s.lastCelestialError = "state_restore_failed_" + shortMessage(error);
         }
@@ -4462,204 +4484,305 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private void buildP63EnvironmentPanel() {
         ensureP63EnvironmentCore();
-        p63AccordionSections.clear();
-        environmentPanel.addView(sectionHeader("SOLUM Environment / Celestial P63.2A.1"));
+        p63EnvironmentTabs.clear();
+        environmentPanel.addView(sectionHeader("SOLUM Environment / Celestial P63.2A.2"));
 
-        HorizontalScrollView quickScroll = new HorizontalScrollView(this);
-        quickScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout quickRow = row();
-        Button loadStage = button("Load Stage", v -> loadP63EnvironmentStage());
-        loadStage.setTag("p63.load_celestial_test_stage");
-        quickRow.addView(loadStage);
-        Button quickOverview = button("Overview", v -> applyP63CameraPreset("Overview"));
-        quickOverview.setTag("p63.quick.overview"); quickRow.addView(quickOverview);
-        Button quickSun = button("Focus Sun", v -> focusP63Celestial(true));
-        quickSun.setTag("p63.quick.focus_sun"); quickRow.addView(quickSun);
-        Button quickMoon = button("Focus Moon", v -> focusP63Celestial(false));
-        quickMoon.setTag("p63.quick.focus_moon"); quickRow.addView(quickMoon);
-        Button quickReset = button("Reset", v -> resetP63Environment());
-        quickReset.setTag("p63.quick.reset"); quickRow.addView(quickReset);
-        quickScroll.addView(quickRow);
-        environmentPanel.addView(quickScroll);
+        HorizontalScrollView tabScroll = new HorizontalScrollView(this);
+        tabScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout tabButtons = row();
+        for (String[] spec : new String[][] {{"quick", "Quick"}, {"sky", "Sky"}, {"sun", "Sun"},
+                {"moon", "Moon"}, {"camera", "Camera"}, {"debug", "Debug"}}) {
+            String key = spec[0];
+            Button button = button(spec[1], view -> activateP63EnvironmentTab(key));
+            button.setTag("p63.tab." + key);
+            LinearLayout content = new LinearLayout(this);
+            content.setOrientation(LinearLayout.VERTICAL);
+            content.setPadding(dp(6), dp(4), dp(6), dp(8));
+            content.setTag("p63.tab.content." + key);
+            p63EnvironmentTabs.add(new P63EnvironmentTab(key, button, content));
+            tabButtons.addView(button);
+        }
+        tabScroll.addView(tabButtons);
+        environmentPanel.addView(tabScroll);
+        for (P63EnvironmentTab tab : p63EnvironmentTabs) environmentPanel.addView(tab.content);
 
-        LinearLayout timeSection = addP63AccordionSection("time", true,
-            () -> "Time: " + formatP63Time(celestialState().time) + (celestialState().timePaused ? " · Paused" : " · Playing"));
-        p63TimePlayButton = button("Time", v -> {
+        buildP63QuickTab(p63EnvironmentTabContent("quick"));
+        buildP63SkyTab(p63EnvironmentTabContent("sky"));
+        buildP63SunTab(p63EnvironmentTabContent("sun"));
+        buildP63MoonTab(p63EnvironmentTabContent("moon"));
+        buildP63CameraTab(p63EnvironmentTabContent("camera"));
+        buildP63DebugTab(p63EnvironmentTabContent("debug"));
+        activeP63EnvironmentTab = "quick";
+        activateP63EnvironmentTab(activeP63EnvironmentTab);
+        updateP63EnvironmentUi();
+    }
+
+    private void buildP63QuickTab(LinearLayout parent) {
+        HorizontalScrollView actionsScroll = new HorizontalScrollView(this);
+        actionsScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout actions = row();
+        Button load = button("Load Stage", view -> loadP63EnvironmentStage());
+        load.setTag("p63.load_celestial_test_stage"); actions.addView(load);
+        Button overview = button("Overview", view -> applyP63CameraPreset("Overview"));
+        overview.setTag("p63.quick.overview"); actions.addView(overview);
+        Button sun = button("Focus Sun", view -> focusP63Celestial(true));
+        sun.setTag("p63.quick.focus_sun"); actions.addView(sun);
+        Button moon = button("Focus Moon", view -> focusP63Celestial(false));
+        moon.setTag("p63.quick.focus_moon"); actions.addView(moon);
+        Button reset = button("Reset", view -> resetP63Environment());
+        reset.setTag("p63.quick.reset"); actions.addView(reset);
+        actionsScroll.addView(actions); parent.addView(actionsScroll);
+
+        p63TimePlayButton = button("Time", view -> {
             if (p63EnvironmentController != null) {
                 boolean paused = p63EnvironmentController.getTimeSystem().isPaused();
                 p63EnvironmentController.setTimePaused(!paused);
             }
-            persistWorkspaceSettings();
-            refreshUiNow();
+            persistWorkspaceSettings(); refreshUiNow();
         });
-        timeSection.addView(p63TimePlayButton);
-        addCelestialControl(timeSection, "Time", 0.0f, 2400.0f, 5.0f,
+        p63TimePlayButton.setTag("p63.quick.time_play"); parent.addView(p63TimePlayButton);
+        addCelestialControl(parent, "Time", 0.0f, 2400.0f, 5.0f,
             () -> celestialState().time, value -> p63EnvironmentController.setTime(value), SolumCelestialControlState.DEFAULT_TIME);
-        addCelestialControl(timeSection, "Time Speed", 0.0f, 8.0f, 0.25f,
+        addCelestialControl(parent, "Time Speed", 0.0f, 8.0f, 0.25f,
             () -> celestialState().timeSpeed, value -> p63EnvironmentController.setTimeSpeed(value), 1.0f);
-        HorizontalScrollView fixedTimeScroll = new HorizontalScrollView(this);
-        LinearLayout fixedTimeRow = row();
+        HorizontalScrollView timeScroll = new HorizontalScrollView(this);
+        timeScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout fixedTimes = row();
         for (String fixed : new String[] {"00:00", "06:00", "09:00", "12:00", "17:00", "18:00", "21:00"}) {
-            Button timeButton = button(fixed, v -> {
-                String value = ((Button)v).getText().toString();
+            Button time = button(fixed, view -> {
+                String value = ((Button)view).getText().toString();
                 p63EnvironmentController.setTime(Float.parseFloat(value.substring(0, 2)) * 100.0f);
                 applyP63StateChange("fixed_time_" + value.replace(':', '_'));
             });
-            timeButton.setTag("p63.time." + fixed.replace(':', '_'));
-            fixedTimeRow.addView(timeButton);
+            time.setTag("p63.time." + fixed.replace(':', '_')); fixedTimes.addView(time);
         }
-        fixedTimeScroll.addView(fixedTimeRow); timeSection.addView(fixedTimeScroll);
+        timeScroll.addView(fixedTimes); parent.addView(timeScroll);
+        p63QuickStatusView = overlayText(10.0f, 5);
+        p63QuickStatusView.setBackgroundColor(Color.TRANSPARENT);
+        p63QuickStatusView.setTag("p63.quick.status"); parent.addView(p63QuickStatusView);
+    }
 
-        LinearLayout skySection = addP63AccordionSection("sky", false,
-            () -> "Sky: " + p63SkySummary());
-        p63SkyButton = button("Sky enabled", v -> { celestialState().skyEnabled = !celestialState().skyEnabled; applyP63StateChange("sky_toggle"); });
-        skySection.addView(p63SkyButton);
+    private void buildP63SkyTab(LinearLayout parent) {
+        p63SkyButton = button("Sky enabled", view -> {
+            celestialState().skyEnabled = !celestialState().skyEnabled; applyP63StateChange("sky_toggle");
+        });
+        parent.addView(p63SkyButton);
         TextView skyInfo = overlayText(10.0f, 5);
         skyInfo.setBackgroundColor(Color.TRANSPARENT);
-        skyInfo.setText("SOLUM_NATIVE analytic sRGB cubemap · full sphere · Rayleigh-like + Mie-like · horizon haze\nNo GLB hemisphere fills; old IBL stays active; no fullscreen overlay.");
-        skySection.addView(skyInfo);
+        skyInfo.setText("SOLUM_NATIVE analytic sRGB cubemap · full sphere\nRayleigh-like + Mie-like · continuous horizon haze\nOld IBL remains active; no fullscreen overlay.");
+        parent.addView(skyInfo);
+        parent.addView(toggleButton("Exposure compensation", () -> celestialState().exposureCompensationEnabled,
+            value -> celestialState().exposureCompensationEnabled = value));
+        addCelestialControl(parent, "Exposure compensation", -1.0f, 1.0f, 0.05f,
+            () -> celestialState().exposureCompensation, value -> celestialState().exposureCompensation = value, 0.0f);
+        parent.addView(toggleButton("Highlight clamp", () -> celestialState().highlightClampEnabled,
+            value -> celestialState().highlightClampEnabled = value));
+        addCelestialControl(parent, "Highlight clamp", 0.50f, 1.0f, 0.01f,
+            () -> celestialState().highlightClamp, value -> celestialState().highlightClamp = value, 1.0f);
+    }
 
-        LinearLayout sunSection = addP63AccordionSection("sun", false,
-            () -> "Sun: " + (celestialState().sunEnabled ? "On" : "Off") + " · " + oneDecimal(celestialState().sunLightLux) + " lux");
-        p63SunButton = button("Sun enabled", v -> { celestialState().sunEnabled = !celestialState().sunEnabled; applyP63StateChange("sun_toggle"); });
-        sunSection.addView(p63SunButton);
-        Button focusSun = button("Focus Sun", v -> focusP63Celestial(true)); focusSun.setTag("p63.focus.sun"); sunSection.addView(focusSun);
-        addCelestialControl(sunSection, "Sun light intensity", 0.0f, 50.0f, 0.5f, () -> celestialState().sunLightLux, v -> celestialState().sunLightLux = v, 18.0f);
-        addCelestialControl(sunSection, "Sun visual brightness", 0.0f, 2.0f, 0.02f, () -> celestialState().sunVisualBrightness, v -> celestialState().sunVisualBrightness = v, 1.0f);
-        addCelestialControl(sunSection, "Sun angular size", 0.10f, 2.0f, 0.01f, () -> celestialState().sunAngularSizeDegrees, v -> celestialState().sunAngularSizeDegrees = v, SolumCelestialControlState.DEFAULT_SUN_ANGULAR_SIZE);
-        addCelestialControl(sunSection, "Sun elevation offset", -15.0f, 15.0f, 0.25f, () -> celestialState().sunElevationOffsetDegrees, v -> celestialState().sunElevationOffsetDegrees = v, 0.0f);
-        addCelestialControl(sunSection, "Sun tint R", 0.0f, 1.0f, 0.01f, () -> celestialState().sunTint[0], v -> celestialState().sunTint[0] = v, 1.0f);
-        addCelestialControl(sunSection, "Sun tint G", 0.0f, 1.0f, 0.01f, () -> celestialState().sunTint[1], v -> celestialState().sunTint[1] = v, 0.92f);
-        addCelestialControl(sunSection, "Sun tint B", 0.0f, 1.0f, 0.01f, () -> celestialState().sunTint[2], v -> celestialState().sunTint[2] = v, 0.72f);
-        LinearLayout sunPresets = row();
-        for (String preset : new String[] {"Soft", "Neutral", "Bright", "Sunset"}) {
-            Button presetButton = button(preset, v -> { celestialState().applySunPreset(((Button)v).getText().toString()); applyP63StateChange("sun_preset"); });
-            presetButton.setTag("p63.sun_preset." + preset.toLowerCase(Locale.US));
-            sunPresets.addView(presetButton,
-                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+    private void buildP63SunTab(LinearLayout parent) {
+        p63SunButton = button("Sun enabled", view -> {
+            celestialState().sunEnabled = !celestialState().sunEnabled; applyP63StateChange("sun_toggle");
+        });
+        parent.addView(p63SunButton);
+        Button focus = button("Focus Sun", view -> focusP63Celestial(true));
+        focus.setTag("p63.focus.sun"); parent.addView(focus);
+        LinearLayout presets = row();
+        for (String name : new String[] {"Soft", "Neutral", "Bright", "Sunset"}) {
+            Button preset = button(name, view -> {
+                celestialState().applySunPreset(((Button)view).getText().toString()); applyP63StateChange("sun_preset");
+            });
+            preset.setTag("p63.sun_preset." + name.toLowerCase(Locale.US));
+            presets.addView(preset, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         }
-        sunSection.addView(sunPresets);
-        Button resetSun = button("Reset Sun", v -> { celestialState().resetSun(); applyP63StateChange("sun_reset"); });
-        resetSun.setTag("p63.sun_reset");
-        sunSection.addView(resetSun);
+        parent.addView(presets);
+        addCelestialControl(parent, "Sun light intensity", 0.0f, 50.0f, 0.5f,
+            () -> celestialState().sunLightLux, value -> celestialState().sunLightLux = value, 18.0f);
+        addCelestialControl(parent, "Sun visual brightness", 0.0f, 2.0f, 0.02f,
+            () -> celestialState().sunVisualBrightness, value -> celestialState().sunVisualBrightness = value, 1.0f);
+        addCelestialControl(parent, "Sun emissive", 0.0f, 2.0f, 0.02f,
+            () -> celestialState().sunEmissive, value -> celestialState().sunEmissive = value, 0.72f);
+        parent.addView(toggleButton("Sun Halo", () -> celestialState().sunGlowEnabled,
+            value -> celestialState().sunGlowEnabled = value));
+        addCelestialControl(parent, "Sun Halo", 0.0f, 1.0f, 0.01f,
+            () -> celestialState().sunGlow, value -> celestialState().sunGlow = value, 0.35f);
+        parent.addView(toggleButton("Sun Bloom", () -> celestialState().bloomLikeEnabled,
+            value -> celestialState().bloomLikeEnabled = value));
+        addCelestialControl(parent, "Sun Bloom", 0.0f, 0.12f, 0.005f,
+            () -> celestialState().bloomLikeResponse, value -> celestialState().bloomLikeResponse = value, 0.0f);
+        addCelestialControl(parent, "Sun edge softness", 0.0f, 1.0f, 0.01f,
+            () -> celestialState().sunEdgeSoftness, value -> celestialState().sunEdgeSoftness = value, 0.55f);
+        addCelestialControl(parent, "Sun angular size", 0.10f, 2.0f, 0.01f,
+            () -> celestialState().sunAngularSizeDegrees, value -> celestialState().sunAngularSizeDegrees = value,
+            SolumCelestialControlState.DEFAULT_SUN_ANGULAR_SIZE);
+        addCelestialControl(parent, "Sun elevation offset", -15.0f, 15.0f, 0.25f,
+            () -> celestialState().sunElevationOffsetDegrees, value -> celestialState().sunElevationOffsetDegrees = value, 0.0f);
+        Button color = button("Sun Color", view -> showP63ColorPicker(true));
+        color.setTag("p63.color.open.sun"); parent.addView(color);
+        LinearLayout rgb = addP63CollapsedGroup(parent, "Advanced RGB", "p63.advanced.rgb.sun");
+        addCelestialControl(rgb, "Sun tint R", 0.0f, 1.0f, 0.01f, () -> celestialState().sunTint[0], value -> celestialState().sunTint[0] = value, 1.0f);
+        addCelestialControl(rgb, "Sun tint G", 0.0f, 1.0f, 0.01f, () -> celestialState().sunTint[1], value -> celestialState().sunTint[1] = value, 0.92f);
+        addCelestialControl(rgb, "Sun tint B", 0.0f, 1.0f, 0.01f, () -> celestialState().sunTint[2], value -> celestialState().sunTint[2] = value, 0.72f);
+        Button reset = button("Reset Sun", view -> { celestialState().resetSun(); applyP63StateChange("sun_reset"); });
+        reset.setTag("p63.sun_reset"); parent.addView(reset);
+    }
 
-        LinearLayout moonSection = addP63AccordionSection("moon", false,
-            () -> "Moon: " + (celestialState().moonEnabled ? "On" : "Off") + " · Phase " + twoDecimal(celestialState().moonPhase));
-        p63MoonButton = button("Moon enabled", v -> { celestialState().moonEnabled = !celestialState().moonEnabled; applyP63StateChange("moon_toggle"); });
-        moonSection.addView(p63MoonButton);
-        Button focusMoon = button("Focus Moon", v -> focusP63Celestial(false)); focusMoon.setTag("p63.focus.moon"); moonSection.addView(focusMoon);
-        p63MoonTextureButton = button("Moon texture slot", v -> setLastAction("moon_texture_slot_read_only_manifest_backed"));
-        p63MoonTextureButton.setTag("p63.moon_texture_slot");
-        moonSection.addView(p63MoonTextureButton);
-        addCelestialControl(moonSection, "Moon phase", 0.0f, 1.0f, 0.01f, () -> celestialState().moonPhase, v -> celestialState().moonPhase = v, 0.62f);
-        addCelestialControl(moonSection, "Moon size", 0.10f, 2.0f, 0.01f, () -> celestialState().moonAngularSizeDegrees, v -> celestialState().moonAngularSizeDegrees = v, SolumCelestialControlState.DEFAULT_MOON_ANGULAR_SIZE);
-        addCelestialControl(moonSection, "Moon visual brightness", 0.0f, 2.0f, 0.02f, () -> celestialState().moonVisualBrightness, v -> celestialState().moonVisualBrightness = v, 0.75f);
-        addCelestialControl(moonSection, "Moon light intensity", 0.0f, 2.0f, 0.01f, () -> celestialState().moonLightLux, v -> celestialState().moonLightLux = v, 0.15f);
-        addCelestialControl(moonSection, "Moon tint R", 0.0f, 1.0f, 0.01f, () -> celestialState().moonTint[0], v -> celestialState().moonTint[0] = v, 0.72f);
-        addCelestialControl(moonSection, "Moon tint G", 0.0f, 1.0f, 0.01f, () -> celestialState().moonTint[1], v -> celestialState().moonTint[1] = v, 0.78f);
-        addCelestialControl(moonSection, "Moon tint B", 0.0f, 1.0f, 0.01f, () -> celestialState().moonTint[2], v -> celestialState().moonTint[2] = v, 0.90f);
-        moonSection.addView(button("Reset Moon", v -> { celestialState().resetMoon(); applyP63StateChange("moon_reset"); }));
+    private void buildP63MoonTab(LinearLayout parent) {
+        p63MoonButton = button("Moon enabled", view -> {
+            celestialState().moonEnabled = !celestialState().moonEnabled; applyP63StateChange("moon_toggle");
+        });
+        parent.addView(p63MoonButton);
+        Button focus = button("Focus Moon", view -> focusP63Celestial(false));
+        focus.setTag("p63.focus.moon"); parent.addView(focus);
+        p63MoonTextureButton = button("Moon texture slot", view -> setLastAction("moon_texture_slot_read_only_manifest_backed"));
+        p63MoonTextureButton.setTag("p63.moon_texture_slot"); parent.addView(p63MoonTextureButton);
+        addCelestialControl(parent, "Moon phase", 0.0f, 1.0f, 0.01f,
+            () -> celestialState().moonPhase, value -> celestialState().moonPhase = value, 0.62f);
+        addCelestialControl(parent, "Moon light intensity", 0.0f, 2.0f, 0.01f,
+            () -> celestialState().moonLightLux, value -> celestialState().moonLightLux = value, 0.15f);
+        addCelestialControl(parent, "Moon visual brightness", 0.0f, 2.0f, 0.02f,
+            () -> celestialState().moonVisualBrightness, value -> celestialState().moonVisualBrightness = value, 0.75f);
+        addCelestialControl(parent, "Moon emissive", 0.0f, 1.5f, 0.01f,
+            () -> celestialState().moonEmissive, value -> celestialState().moonEmissive = value, 0.24f);
+        parent.addView(toggleButton("Moon Halo", () -> celestialState().moonGlowEnabled,
+            value -> celestialState().moonGlowEnabled = value));
+        addCelestialControl(parent, "Moon Halo", 0.0f, 1.0f, 0.01f,
+            () -> celestialState().moonGlow, value -> celestialState().moonGlow = value, 0.16f);
+        addCelestialControl(parent, "Moon edge softness", 0.0f, 1.0f, 0.01f,
+            () -> celestialState().moonEdgeSoftness, value -> celestialState().moonEdgeSoftness = value, 0.42f);
+        addCelestialControl(parent, "Moon size", 0.10f, 2.0f, 0.01f,
+            () -> celestialState().moonAngularSizeDegrees, value -> celestialState().moonAngularSizeDegrees = value,
+            SolumCelestialControlState.DEFAULT_MOON_ANGULAR_SIZE);
+        addCelestialControl(parent, "Moon elevation offset", -15.0f, 15.0f, 0.25f,
+            () -> celestialState().moonElevationOffsetDegrees, value -> celestialState().moonElevationOffsetDegrees = value, 0.0f);
+        Button color = button("Moon Color", view -> showP63ColorPicker(false));
+        color.setTag("p63.color.open.moon"); parent.addView(color);
+        LinearLayout rgb = addP63CollapsedGroup(parent, "Advanced RGB", "p63.advanced.rgb.moon");
+        addCelestialControl(rgb, "Moon tint R", 0.0f, 1.0f, 0.01f, () -> celestialState().moonTint[0], value -> celestialState().moonTint[0] = value, 0.72f);
+        addCelestialControl(rgb, "Moon tint G", 0.0f, 1.0f, 0.01f, () -> celestialState().moonTint[1], value -> celestialState().moonTint[1] = value, 0.78f);
+        addCelestialControl(rgb, "Moon tint B", 0.0f, 1.0f, 0.01f, () -> celestialState().moonTint[2], value -> celestialState().moonTint[2] = value, 0.90f);
+        Button reset = button("Reset Moon", view -> { celestialState().resetMoon(); applyP63StateChange("moon_reset"); });
+        reset.setTag("p63.moon_reset"); parent.addView(reset);
+    }
 
-        LinearLayout postSection = addP63AccordionSection("post_process", false,
-            () -> "Post Process: Halo " + (celestialState().sunGlowEnabled ? "On" : "Off") + " · Bloom " + (celestialState().bloomLikeEnabled ? "On" : "Off"));
-        postSection.addView(toggleButton("Sun Halo", () -> celestialState().sunGlowEnabled, v -> celestialState().sunGlowEnabled = v));
-        addCelestialControl(postSection, "Sun Halo", 0.0f, 1.0f, 0.01f, () -> celestialState().sunGlow, v -> celestialState().sunGlow = v, 0.35f);
-        postSection.addView(toggleButton("Sun Bloom", () -> celestialState().bloomLikeEnabled, v -> celestialState().bloomLikeEnabled = v));
-        addCelestialControl(postSection, "Sun Bloom", 0.0f, 0.12f, 0.005f, () -> celestialState().bloomLikeResponse, v -> celestialState().bloomLikeResponse = v, 0.0f);
-        postSection.addView(toggleButton("Moon Halo", () -> celestialState().moonGlowEnabled, v -> celestialState().moonGlowEnabled = v));
-        addCelestialControl(postSection, "Moon Halo", 0.0f, 1.0f, 0.01f, () -> celestialState().moonGlow, v -> celestialState().moonGlow = v, 0.16f);
-        postSection.addView(toggleButton("Exposure compensation", () -> celestialState().exposureCompensationEnabled, v -> celestialState().exposureCompensationEnabled = v));
-        addCelestialControl(postSection, "Exposure compensation", -1.0f, 1.0f, 0.05f, () -> celestialState().exposureCompensation, v -> celestialState().exposureCompensation = v, 0.0f);
-        postSection.addView(toggleButton("Highlight clamp", () -> celestialState().highlightClampEnabled, v -> celestialState().highlightClampEnabled = v));
-        addCelestialControl(postSection, "Highlight clamp", 0.50f, 1.0f, 0.01f, () -> celestialState().highlightClamp, v -> celestialState().highlightClamp = v, 1.0f);
-        postSection.addView(toggleButton("Light shafts PROTOTYPE_HOOK_ONLY", () -> celestialState().lightShaftsEnabled, v -> celestialState().lightShaftsEnabled = v));
-
-        LinearLayout cameraSection = addP63AccordionSection("camera", true,
-            () -> "Camera: " + oneDecimal(cameraDistance) + " m · Zoom 1.4×");
-        LinearLayout cameraPresetRow = row();
+    private void buildP63CameraTab(LinearLayout parent) {
+        LinearLayout presetRow = row();
         for (String preset : new String[] {"Overview", "Materials", "Horizon"}) {
-            Button presetButton = button(preset, v -> applyP63CameraPreset(((Button)v).getText().toString()));
-            presetButton.setTag("p63.camera." + preset.toLowerCase(Locale.US));
-            cameraPresetRow.addView(presetButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+            Button button = button(preset, view -> applyP63CameraPreset(((Button)view).getText().toString()));
+            button.setTag("p63.camera." + preset.toLowerCase(Locale.US));
+            presetRow.addView(button, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         }
-        cameraSection.addView(cameraPresetRow);
-        LinearLayout cameraPresetRow2 = row();
+        parent.addView(presetRow);
+        LinearLayout presetRow2 = row();
         for (String preset : new String[] {"Under Roof", "Sun", "Moon"}) {
-            Button presetButton = button(preset, v -> applyP63CameraPreset(((Button)v).getText().toString()));
-            presetButton.setTag("p63.camera." + preset.toLowerCase(Locale.US).replace(' ', '_'));
-            cameraPresetRow2.addView(presetButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+            Button button = button(preset, view -> applyP63CameraPreset(((Button)view).getText().toString()));
+            button.setTag("p63.camera." + preset.toLowerCase(Locale.US).replace(' ', '_'));
+            presetRow2.addView(button, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         }
-        cameraSection.addView(cameraPresetRow2);
+        parent.addView(presetRow2);
         LinearLayout zoomRow = row();
-        Button zoomIn = button("Zoom +", v -> zoomP63Camera(true)); zoomIn.setTag("p63.camera.zoom_in");
-        Button zoomOut = button("Zoom −", v -> zoomP63Camera(false)); zoomOut.setTag("p63.camera.zoom_out");
+        Button zoomIn = button("Zoom +", view -> zoomP63Camera(true)); zoomIn.setTag("p63.camera.zoom_in");
+        Button zoomOut = button("Zoom −", view -> zoomP63Camera(false)); zoomOut.setTag("p63.camera.zoom_out");
         zoomRow.addView(zoomIn, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         zoomRow.addView(zoomOut, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
-        cameraSection.addView(zoomRow);
+        parent.addView(zoomRow);
         LinearLayout frameRow = row();
-        Button frameStage = button("Frame Stage", v -> applyP63CameraPreset("Overview")); frameStage.setTag("p63.camera.frame_stage");
-        Button resetCamera = button("Reset Camera", v -> resetCameraControls()); resetCamera.setTag("p63.camera.reset");
-        frameRow.addView(frameStage, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
-        frameRow.addView(resetCamera, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
-        cameraSection.addView(frameRow);
+        Button frame = button("Frame Stage", view -> applyP63CameraPreset("Overview")); frame.setTag("p63.camera.frame_stage");
+        Button reset = button("Reset Camera", view -> resetCameraControls()); reset.setTag("p63.camera.reset");
+        frameRow.addView(frame, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        frameRow.addView(reset, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        parent.addView(frameRow);
+        addCelestialControl(parent, "Camera orbit sensitivity", 0.003f, 0.020f, 0.001f,
+            () -> celestialState().cameraOrbitSensitivity, value -> updateP63CameraSensitivity(true, value),
+            SolumCelestialControlState.DEFAULT_CAMERA_ORBIT_SENSITIVITY);
+        addCelestialControl(parent, "Camera zoom sensitivity", 0.007f, 0.040f, 0.001f,
+            () -> celestialState().cameraZoomSensitivity, value -> updateP63CameraSensitivity(false, value),
+            SolumCelestialControlState.DEFAULT_CAMERA_ZOOM_SENSITIVITY);
+        TextView pan = overlayText(9.0f, 2); pan.setBackgroundColor(Color.TRANSPARENT);
+        pan.setText("Pan sensitivity: Filament native · gesture ownership isolated"); parent.addView(pan);
+    }
 
-        LinearLayout audioSection = addP63AccordionSection("audio", false,
-            () -> "Audio: " + (p63EnvironmentAudio == null ? "Stopped" : p63EnvironmentAudio.getPlaybackState()));
-        addCelestialControl(audioSection, "Master volume", 0.0f, 1.0f, 0.01f, () -> celestialState().masterVolume, v -> {
-            celestialState().masterVolume = v; p63EnvironmentController.setAudioVolume(v); if (p63EnvironmentAudio != null) p63EnvironmentAudio.setMasterVolume(v);
+    private void buildP63DebugTab(LinearLayout parent) {
+        parent.addView(toggleButton("Light shafts PROTOTYPE_HOOK_ONLY", () -> celestialState().lightShaftsEnabled,
+            value -> celestialState().lightShaftsEnabled = value));
+        p63EnvironmentSummaryView = overlayText(10.0f, 22);
+        p63EnvironmentSummaryView.setBackgroundColor(Color.TRANSPARENT); parent.addView(p63EnvironmentSummaryView);
+        LinearLayout audio = addP63CollapsedGroup(parent, "Audio diagnostics · unchanged", "p63.debug.audio_unchanged");
+        addCelestialControl(audio, "Master volume", 0.0f, 1.0f, 0.01f, () -> celestialState().masterVolume, value -> {
+            celestialState().masterVolume = value; p63EnvironmentController.setAudioVolume(value);
+            if (p63EnvironmentAudio != null) p63EnvironmentAudio.setMasterVolume(value);
         }, 0.45f);
-        p63AudioButton = button("Mute", v -> { celestialState().muted = !celestialState().muted; p63EnvironmentController.setAudioMuted(celestialState().muted); if (p63EnvironmentAudio != null) p63EnvironmentAudio.setMuted(celestialState().muted); applyP63StateChange("audio_mute"); });
-        audioSection.addView(p63AudioButton);
-        LinearLayout audioRow = row();
-        audioRow.addView(button("Test RainHit", v -> { if (p63EnvironmentAudio != null) p63EnvironmentAudio.playRainHit(); refreshUiNow(); }), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
-        audioRow.addView(button("Test Thunder", v -> { if (p63EnvironmentAudio != null) p63EnvironmentAudio.playThunder(); refreshUiNow(); }), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
-        audioRow.addView(button("Test Wind", v -> { if (p63EnvironmentAudio != null) p63EnvironmentAudio.playWind(); refreshUiNow(); }), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
-        audioSection.addView(audioRow);
-        audioSection.addView(button("Stop All", v -> { if (p63EnvironmentAudio != null) p63EnvironmentAudio.stopAll(); refreshUiNow(); }));
+        p63AudioButton = button("Mute", view -> {
+            celestialState().muted = !celestialState().muted; p63EnvironmentController.setAudioMuted(celestialState().muted);
+            if (p63EnvironmentAudio != null) p63EnvironmentAudio.setMuted(celestialState().muted);
+            applyP63StateChange("audio_mute");
+        });
+        audio.addView(p63AudioButton);
+        LinearLayout tests = row();
+        tests.addView(button("Test RainHit", view -> { if (p63EnvironmentAudio != null) p63EnvironmentAudio.playRainHit(); refreshUiNow(); }), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        tests.addView(button("Test Thunder", view -> { if (p63EnvironmentAudio != null) p63EnvironmentAudio.playThunder(); refreshUiNow(); }), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        tests.addView(button("Test Wind", view -> { if (p63EnvironmentAudio != null) p63EnvironmentAudio.playWind(); refreshUiNow(); }), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        audio.addView(tests);
+        audio.addView(button("Stop All", view -> { if (p63EnvironmentAudio != null) p63EnvironmentAudio.stopAll(); refreshUiNow(); }));
         p63AudioDiagnosticsView = overlayText(9.0f, 80);
-        p63AudioDiagnosticsView.setBackgroundColor(Color.TRANSPARENT);
-        audioSection.addView(p63AudioDiagnosticsView);
-
-        LinearLayout debugSection = addP63AccordionSection("debug", false,
-            () -> "Debug: " + ("none".equals(celestialState().lastCelestialError) ? "OK" : "Error"));
-        p63EnvironmentSummaryView = overlayText(10.0f, 12);
-        p63EnvironmentSummaryView.setBackgroundColor(Color.TRANSPARENT);
-        debugSection.addView(p63EnvironmentSummaryView);
+        p63AudioDiagnosticsView.setBackgroundColor(Color.TRANSPARENT); audio.addView(p63AudioDiagnosticsView);
         p63EnvironmentClassificationView = overlayText(10.0f, 60);
         p63EnvironmentClassificationView.setBackgroundColor(Color.TRANSPARENT);
         debugPanel.addView(sectionHeader("P63 Environment classification / runtime truth"));
         debugPanel.addView(p63EnvironmentClassificationView);
-        updateP63EnvironmentUi();
     }
 
-    private LinearLayout addP63AccordionSection(String key, boolean defaultOpen, StringValue summary) {
-        Button header = button("");
-        header.setTag("p63.accordion." + key);
+    private LinearLayout p63EnvironmentTabContent(String key) {
+        for (P63EnvironmentTab tab : p63EnvironmentTabs) if (tab.key.equals(key)) return tab.content;
+        throw new IllegalArgumentException("missing_p63_tab_" + key);
+    }
+
+    private void activateP63EnvironmentTab(String key) {
+        activeP63EnvironmentTab = key;
+        for (P63EnvironmentTab tab : p63EnvironmentTabs) {
+            boolean active = tab.key.equals(key);
+            tab.content.setVisibility(active ? View.VISIBLE : View.GONE);
+            tab.button.setBackgroundColor(active ? Color.rgb(18, 112, 124) : Color.rgb(10, 56, 64));
+        }
+    }
+
+    private LinearLayout addP63CollapsedGroup(LinearLayout parent, String label, String tag) {
         LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setTag("p63.accordion.content." + key);
-        content.setPadding(dp(6), dp(2), dp(6), dp(8));
-        content.setVisibility(defaultOpen ? View.VISIBLE : View.GONE);
-        P63AccordionSection section = new P63AccordionSection(header, content, summary, defaultOpen);
-        header.setOnClickListener(v -> {
-            section.open = !section.open;
-            content.setVisibility(section.open ? View.VISIBLE : View.GONE);
-            updateP63AccordionHeader(section);
+        content.setOrientation(LinearLayout.VERTICAL); content.setVisibility(View.GONE); content.setTag(tag + ".content");
+        Button header = button("▸ " + label, view -> {
+            boolean open = content.getVisibility() != View.VISIBLE;
+            content.setVisibility(open ? View.VISIBLE : View.GONE);
+            ((Button)view).setText((open ? "▾ " : "▸ ") + label);
         });
-        p63AccordionSections.add(section);
-        environmentPanel.addView(header);
-        environmentPanel.addView(content);
-        updateP63AccordionHeader(section);
-        return content;
+        header.setTag(tag); parent.addView(header); parent.addView(content); return content;
     }
 
-    private void updateP63AccordionHeaders() {
-        for (P63AccordionSection section : p63AccordionSections) updateP63AccordionHeader(section);
+    private void showP63ColorPicker(boolean sun) {
+        SolumCelestialControlState state = celestialState();
+        float[] initial = sun ? state.sunTint : state.moonTint;
+        float[] defaults = sun ? new float[] {1.0f, 0.92f, 0.72f} : new float[] {0.72f, 0.78f, 0.90f};
+        p63ColorPickerDialog = P63HsvColorPickerDialog.show(this, sun ? "sun" : "moon", initial, defaults,
+            (red, green, blue) -> {
+                if (sun) state.setSunTint(red, green, blue); else state.setMoonTint(red, green, blue);
+                applyP63StateChange(sun ? "sun_color_picker_apply" : "moon_color_picker_apply");
+            });
     }
 
-    private void updateP63AccordionHeader(P63AccordionSection section) {
-        if (section == null || section.header == null) return;
-        section.header.setText((section.open ? "▾ " : "▸ ") + section.summary.get());
+    P63HsvColorPickerDialog getP63ColorPickerDialogForTest() { return p63ColorPickerDialog; }
+    float getP63CameraDistanceForTest() { syncP63CameraMetadata(); return cameraDistance; }
+
+    private void updateP63CameraSensitivity(boolean orbit, float value) {
+        if (orbit) celestialState().cameraOrbitSensitivity = value;
+        else celestialState().cameraZoomSensitivity = value;
+        celestialState().sanitize();
+        if (cameraManipulator != null) {
+            cameraManipulator.getLookAt(p63CameraEyeScratch, p63CameraTargetScratch, p63CameraUpScratch);
+            installP63CameraManipulator("Sensitivity",
+                p63CameraEyeScratch[0], p63CameraEyeScratch[1], p63CameraEyeScratch[2],
+                p63CameraTargetScratch[0], p63CameraTargetScratch[1], p63CameraTargetScratch[2]);
+        }
+        p63LastCameraAction = orbit ? "orbit_sensitivity" : "zoom_sensitivity";
     }
 
     private String p63SkySummary() {
@@ -5018,26 +5141,120 @@ public class FilamentGlbPreviewActivity extends Activity {
         }
         float[] direction = sun ? state.lighting.sunVisualDirection : state.lighting.moonVisualDirection;
         modelViewer.getCamera().getPosition(p63CameraEyeScratch);
-        float targetX = p63CameraEyeScratch[0] + direction[0] * 12.0f;
-        float targetY = p63CameraEyeScratch[1] + direction[1] * 12.0f;
-        float targetZ = p63CameraEyeScratch[2] + direction[2] * 12.0f;
+        SolumCelestialCoordinateSystem.focusTarget(p63CameraTargetScratch, p63CameraEyeScratch, direction, 12.0f);
         installP63CameraManipulator(sun ? "Sun" : "Moon",
             p63CameraEyeScratch[0], Math.max(0.35f, p63CameraEyeScratch[1]), p63CameraEyeScratch[2],
-            targetX, targetY, targetZ);
+            p63CameraTargetScratch[0], p63CameraTargetScratch[1], p63CameraTargetScratch[2]);
+        p63LastCameraAction = sun ? "focus_sun" : "focus_moon";
         celestialState().lastCelestialError = "none";
+    }
+
+    private void handleP63CameraTouch(MotionEvent event) {
+        if (event == null || cameraManipulator == null || surfaceView == null) return;
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            p63CameraGestureState.beginPrimary(event.getX(), event.getY());
+            beginP63ManipulatorGrab(event.getX(), event.getY(), false);
+            p63CameraMode = "ORBIT"; p63LastCameraAction = "orbit_begin";
+            return;
+        }
+        if (action == MotionEvent.ACTION_POINTER_DOWN && event.getPointerCount() >= 2) {
+            endP63ManipulatorGrab();
+            p63CameraGestureState.beginTwo(event.getX(0), event.getY(0), event.getX(1), event.getY(1));
+            p63CameraMode = "TWO_FINGER_PENDING"; p63LastCameraAction = "two_finger_pending";
+            return;
+        }
+        if (action == MotionEvent.ACTION_MOVE) {
+            if (event.getPointerCount() == 1 && p63CameraGestureState.getMode() == SolumCameraGestureState.Mode.ORBIT) {
+                p63CameraGestureState.updatePrimary(event.getX(), event.getY());
+                cameraManipulator.grabUpdate(Math.round(event.getX()), manipulatorY(event.getY()));
+                p63CameraMode = "ORBIT"; p63LastCameraAction = "orbit_update";
+                syncP63CameraMetadata();
+            } else if (event.getPointerCount() >= 2) {
+                SolumCameraGestureState.Mode previousMode = p63CameraGestureState.getMode();
+                SolumCameraGestureState.Mode mode = p63CameraGestureState.updateTwo(
+                    event.getX(0), event.getY(0), event.getX(1), event.getY(1));
+                float midpointX = p63CameraGestureState.midpointX(event.getX(0), event.getX(1));
+                float midpointY = p63CameraGestureState.midpointY(event.getY(0), event.getY(1));
+                if (mode == SolumCameraGestureState.Mode.PAN) {
+                    if (previousMode != SolumCameraGestureState.Mode.PAN) beginP63ManipulatorGrab(midpointX, midpointY, true);
+                    cameraManipulator.grabUpdate(Math.round(midpointX), manipulatorY(midpointY));
+                    p63CameraMode = "PAN"; p63LastCameraAction = "pan_update";
+                    syncP63CameraMetadata();
+                } else if (mode == SolumCameraGestureState.Mode.PINCH) {
+                    float scroll = p63CameraGestureState.consumePinchDelta() * 0.10f;
+                    cameraManipulator.scroll(Math.round(midpointX), manipulatorY(midpointY), scroll);
+                    p63CameraMode = "PINCH"; p63LastCameraAction = "pinch_distance_only";
+                    syncP63CameraMetadata();
+                }
+            }
+            return;
+        }
+        if (action == MotionEvent.ACTION_POINTER_UP) {
+            endP63ManipulatorGrab();
+            p63CameraGestureState.blockUntilAllPointersUp();
+            p63CameraMode = "BLOCKED_UNTIL_UP"; p63LastCameraAction = "two_finger_end";
+            applyP63CameraBoundsAtGestureEnd();
+            return;
+        }
+        if (action == MotionEvent.ACTION_UP) {
+            boolean tap = p63CameraGestureState.isTapCandidate();
+            endP63ManipulatorGrab();
+            p63CameraGestureState.end();
+            p63CameraMode = "IDLE";
+            applyP63CameraBoundsAtGestureEnd();
+            if (tap) {
+                long now = System.currentTimeMillis();
+                float dx = event.getX() - p63LastTapX;
+                float dy = event.getY() - p63LastTapY;
+                if (now - p63LastTapTimeMs <= 350L && dx * dx + dy * dy <= 48.0f * 48.0f) {
+                    resetCameraControls();
+                    p63LastCameraAction = "double_tap_reset";
+                    p63LastTapTimeMs = 0L;
+                } else {
+                    requestPick(event);
+                    p63LastTapTimeMs = now; p63LastTapX = event.getX(); p63LastTapY = event.getY();
+                    p63LastCameraAction = "tap_pick";
+                }
+            }
+            return;
+        }
+        if (action == MotionEvent.ACTION_CANCEL) {
+            endP63ManipulatorGrab();
+            p63CameraGestureState.end();
+            p63CameraMode = "IDLE"; p63LastCameraAction = "gesture_cancel";
+            applyP63CameraBoundsAtGestureEnd();
+        }
+    }
+
+    private void beginP63ManipulatorGrab(float x, float y, boolean pan) {
+        endP63ManipulatorGrab();
+        cameraManipulator.grabBegin(Math.round(x), manipulatorY(y), pan);
+        p63ManipulatorGrabActive = true;
+    }
+
+    private void endP63ManipulatorGrab() {
+        if (!p63ManipulatorGrabActive || cameraManipulator == null) return;
+        cameraManipulator.grabEnd();
+        p63ManipulatorGrabActive = false;
+    }
+
+    private int manipulatorY(float screenY) {
+        return Math.max(0, Math.round(surfaceView.getHeight() - screenY));
     }
 
     private void zoomP63Camera(boolean zoomIn) {
         if (cameraManipulator == null || surfaceView == null) return;
         int centerX = Math.max(1, surfaceView.getWidth() / 2);
         int centerY = Math.max(1, surfaceView.getHeight() / 2);
-        cameraManipulator.scroll(centerX, centerY, zoomIn ? -24.0f : 42.0f);
-        constrainP63Camera();
+        cameraManipulator.scroll(centerX, centerY, zoomIn ? -36.0f : 63.0f);
+        applyP63CameraBoundsAtGestureEnd();
+        p63LastCameraAction = zoomIn ? "zoom_button_in" : "zoom_button_out";
         setLastAction(zoomIn ? "p63_camera_zoom_in" : "p63_camera_zoom_out");
         refreshUiNow();
     }
 
-    private void constrainP63Camera() {
+    private void applyP63CameraBoundsAtGestureEnd() {
         if (cameraManipulator == null) return;
         cameraManipulator.getLookAt(p63CameraEyeScratch, p63CameraTargetScratch, p63CameraUpScratch);
         float dx = p63CameraEyeScratch[0] - p63CameraTargetScratch[0];
@@ -5077,7 +5294,9 @@ public class FilamentGlbPreviewActivity extends Activity {
                 .orbitHomePosition(eyeX, Math.max(0.35f, eyeY), eyeZ)
                 .upVector(0.0f, 1.0f, 0.0f)
                 .groundPlane(0.0f, 1.0f, 0.0f, 0.0f)
-                .zoomSpeed(P63_CAMERA_ZOOM_SPEED)
+                .orbitSpeed(celestialState().cameraOrbitSensitivity, celestialState().cameraOrbitSensitivity)
+                .zoomSpeed(celestialState().cameraZoomSensitivity)
+                .panning(true)
                 .fovDegrees(cameraFov)
                 .farPlane(250.0f)
                 .build(Manipulator.Mode.ORBIT);
@@ -5085,10 +5304,12 @@ public class FilamentGlbPreviewActivity extends Activity {
             field.setAccessible(true);
             field.set(modelViewer, replacement);
             cameraManipulator = replacement;
-            cameraGestureDetector = new com.google.android.filament.utils.GestureDetector(surfaceView, replacement);
+            p63CameraGestureState.end();
+            p63ManipulatorGrabActive = false;
             syncP63CameraMetadata();
             cameraApplyStatus = "p63_manipulator_preset_" + preset.toLowerCase(Locale.US).replace(' ', '_');
-            cameraStatus = "preset=" + preset + " zoomSpeed=" + threeDecimal(P63_CAMERA_ZOOM_SPEED)
+            cameraStatus = "preset=" + preset + " orbitSpeed=" + threeDecimal(celestialState().cameraOrbitSensitivity)
+                + " zoomSpeed=" + threeDecimal(celestialState().cameraZoomSensitivity)
                 + " distanceRange=" + oneDecimal(P63_CAMERA_MIN_DISTANCE) + ".." + oneDecimal(P63_CAMERA_MAX_DISTANCE)
                 + " groundPlane=Y0";
             persistWorkspaceSettings();
@@ -5110,6 +5331,12 @@ public class FilamentGlbPreviewActivity extends Activity {
         cameraTargetX = p63CameraTargetScratch[0];
         cameraTargetY = p63CameraTargetScratch[1];
         cameraTargetZ = p63CameraTargetScratch[2];
+        float viewX = p63CameraTargetScratch[0] - p63CameraEyeScratch[0];
+        float viewY = p63CameraTargetScratch[1] - p63CameraEyeScratch[1];
+        float viewZ = p63CameraTargetScratch[2] - p63CameraEyeScratch[2];
+        float viewLength = Math.max(0.0001f, (float)Math.sqrt(viewX * viewX + viewY * viewY + viewZ * viewZ));
+        p63CameraYawDegrees = (float)Math.toDegrees(Math.atan2(viewX, -viewZ));
+        p63CameraPitchDegrees = (float)Math.toDegrees(Math.asin(clamp(viewY / viewLength, -1.0f, 1.0f)));
     }
 
     private void applyCameraControls() {
@@ -5547,6 +5774,15 @@ public class FilamentGlbPreviewActivity extends Activity {
         if (p63SunButton != null) p63SunButton.setText("Sun enabled: " + (controls.sunEnabled ? "On" : "Off"));
         if (p63MoonButton != null) p63MoonButton.setText("Moon enabled: " + (controls.moonEnabled ? "On" : "Off"));
         if (p63MoonTextureButton != null) p63MoonTextureButton.setText("Moon texture: " + controls.moonProvenance + " / " + shorten(controls.activeMoonTexture, 36));
+        View sunColor = environmentPanel == null ? null : environmentPanel.findViewWithTag("p63.color.open.sun");
+        if (sunColor instanceof Button) ((Button)sunColor).setText("Sun Color  " + rgbHex(controls.sunTint));
+        View moonColor = environmentPanel == null ? null : environmentPanel.findViewWithTag("p63.color.open.moon");
+        if (moonColor instanceof Button) ((Button)moonColor).setText("Moon Color  " + rgbHex(controls.moonTint));
+        if (p63QuickStatusView != null) p63QuickStatusView.setText(
+            "Sky: " + p63SkySummary() + " · Sun: " + (controls.sunEnabled ? "On" : "Off")
+                + " · " + oneDecimal(state.lighting.sunLux) + " lux"
+                + "\nMoon: " + (controls.moonEnabled ? "On" : "Off") + " · Phase " + twoDecimal(controls.moonPhase)
+                + " · Camera " + oneDecimal(cameraDistance) + " m");
         if (p63AudioButton != null) p63AudioButton.setText("Mute: " + (controls.muted ? "On" : "Off"));
         if (p63AudioDiagnosticsView != null) p63AudioDiagnosticsView.setText(p63EnvironmentAudio == null
             ? "manifest loaded; playback system not created" : p63EnvironmentAudio.getDiagnosticText());
@@ -5555,7 +5791,10 @@ public class FilamentGlbPreviewActivity extends Activity {
                 "active sky source=" + controls.activeSkySource
                 + "\nactive moon texture=" + controls.activeMoonTexture + " provenance=" + controls.moonProvenance
                 + "\nsun lux=" + twoDecimal(state.lighting.sunLux) + " visual=" + twoDecimal(state.lighting.sunDiskBrightness)
-                + " moon lux=" + twoDecimal(state.lighting.moonLux) + " visual=" + twoDecimal(state.lighting.moonDiskBrightness) + " phase=" + twoDecimal(state.lighting.moonPhase)
+                + " emissive=" + twoDecimal(controls.sunEmissive) + " halo=" + twoDecimal(controls.sunGlow) + " bloom=" + threeDecimal(controls.bloomLikeResponse)
+                + "\nmoon lux=" + twoDecimal(state.lighting.moonLux) + " visual=" + twoDecimal(state.lighting.moonDiskBrightness)
+                + " emissive=" + twoDecimal(controls.moonEmissive) + " halo=" + twoDecimal(controls.moonGlow) + " phase=" + twoDecimal(state.lighting.moonPhase)
+                + " node=" + (p63EnvironmentAdapter == null ? "none" : p63EnvironmentAdapter.getActiveMoonPhaseNode())
                 + "\nsun direction xyz=" + vector3(state.lighting.sunVisualDirection)
                 + " elevation=" + oneDecimal(state.lighting.sunElevationDegrees) + "° azimuth=" + oneDecimal(state.lighting.sunAzimuthDegrees)
                 + "° aboveHorizon=" + state.lighting.sunAboveHorizon
@@ -5568,6 +5807,9 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + " directional light direction=" + vector3(state.lighting.moonDirection)
                 + "\nexposure baseline=" + twoDecimal(exposure) + " compensation=" + (controls.exposureCompensationEnabled ? twoDecimal(controls.exposureCompensation) : "off")
                 + "\nold IBL active=" + controls.oldIblActive + " P63 IBL=" + controls.p63IblEnabled
+                + "\ncamera distance=" + twoDecimal(cameraDistance) + " target=" + twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY) + "/" + twoDecimal(cameraTargetZ)
+                + " yaw=" + oneDecimal(p63CameraYawDegrees) + " pitch=" + oneDecimal(p63CameraPitchDegrees)
+                + " mode=" + p63CameraMode + " lastAction=" + p63LastCameraAction
                 + "\npost-process=" + controls.postProcessStatus
                 + "\naudio playback=" + (p63EnvironmentAudio == null ? "not_created" : p63EnvironmentAudio.getPlaybackState())
                 + "\nlast celestial error=" + controls.lastCelestialError
@@ -5596,7 +5838,7 @@ public class FilamentGlbPreviewActivity extends Activity {
             }
             p63EnvironmentClassificationView.setText(report.toString());
         }
-        updateP63AccordionHeaders();
+        if (!p63EnvironmentTabs.isEmpty()) activateP63EnvironmentTab(activeP63EnvironmentTab);
     }
 
     private static String formatP63Time(float value) {
@@ -5711,7 +5953,10 @@ public class FilamentGlbPreviewActivity extends Activity {
                 + "\ncameraTargetX/Y/Z=" + twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY) + "/" + twoDecimal(cameraTargetZ)
                 + "\ncameraPanX/Y=" + twoDecimal(cameraTargetX) + "/" + twoDecimal(cameraTargetY)
                 + "\nfov=" + oneDecimal(cameraFov) + " nearFar=0.05/250"
-                + "\norbitSensitivity=filament_manipulator_default zoomSensitivity=" + threeDecimal(P63_CAMERA_ZOOM_SPEED) + " (1.4x)"
+                + "\norbitSensitivity=" + threeDecimal(celestialState().cameraOrbitSensitivity)
+                + " zoomSensitivity=" + threeDecimal(celestialState().cameraZoomSensitivity) + " (1.5x)"
+                + "\ngestureMode=" + p63CameraMode + " yaw/pitch=" + oneDecimal(p63CameraYawDegrees) + "/" + oneDecimal(p63CameraPitchDegrees)
+                + " lastCameraAction=" + p63LastCameraAction
                 + "\nfitStatus=" + cameraApplyStatus);
         }
         if (modelSummaryView != null) {
@@ -7274,19 +7519,13 @@ public class FilamentGlbPreviewActivity extends Activity {
     private interface FloatSetter { void set(float value); }
     private interface BooleanValue { boolean get(); }
     private interface BooleanSetter { void set(boolean value); }
-    private interface StringValue { String get(); }
-
-    private static final class P63AccordionSection {
-        final Button header;
+    private static final class P63EnvironmentTab {
+        final String key;
+        final Button button;
         final LinearLayout content;
-        final StringValue summary;
-        boolean open;
 
-        P63AccordionSection(Button header, LinearLayout content, StringValue summary, boolean open) {
-            this.header = header;
-            this.content = content;
-            this.summary = summary;
-            this.open = open;
+        P63EnvironmentTab(String key, Button button, LinearLayout content) {
+            this.key = key; this.button = button; this.content = content;
         }
     }
 
@@ -7312,6 +7551,13 @@ public class FilamentGlbPreviewActivity extends Activity {
 
     private static String oneDecimal(float value) {
         return String.format(Locale.US, "%.1f", value);
+    }
+
+    private static String rgbHex(float[] rgb) {
+        int red = Math.round(clamp(rgb[0], 0.0f, 1.0f) * 255.0f);
+        int green = Math.round(clamp(rgb[1], 0.0f, 1.0f) * 255.0f);
+        int blue = Math.round(clamp(rgb[2], 0.0f, 1.0f) * 255.0f);
+        return String.format(Locale.US, "#%02X%02X%02X", red, green, blue);
     }
 
     private static String noDecimal(float value) {

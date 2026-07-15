@@ -17,7 +17,7 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
             Bundle result = new Bundle();
             try {
                 runViewRegression();
-                result.putString("P63_VIEW_TEST", "PASS slider numeric preset reset; accordion defaults and toggle; Activity recreation restores shared state");
+                result.putString("P63_VIEW_TEST", "PASS slider numeric preset reset; tabs switch correctly; color picker apply/reset; Activity recreation restores shared state");
                 finish(Activity.RESULT_OK, result);
             } catch (Throwable error) {
                 result.putString("P63_VIEW_TEST", "FAIL " + error.getClass().getSimpleName() + " " + error.getMessage());
@@ -32,24 +32,21 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         Activity activity = startActivitySync(intent);
         waitForIdleSync();
-        View timeContent = tagged(activity, "p63.accordion.content.time", View.class);
-        View cameraContent = tagged(activity, "p63.accordion.content.camera", View.class);
-        View skyContent = tagged(activity, "p63.accordion.content.sky", View.class);
-        View sunContent = tagged(activity, "p63.accordion.content.sun", View.class);
-        View moonContent = tagged(activity, "p63.accordion.content.moon", View.class);
-        View postContent = tagged(activity, "p63.accordion.content.post_process", View.class);
-        View audioContent = tagged(activity, "p63.accordion.content.audio", View.class);
-        View debugContent = tagged(activity, "p63.accordion.content.debug", View.class);
-        require(timeContent.getVisibility() == View.VISIBLE && cameraContent.getVisibility() == View.VISIBLE,
-            "Time and Camera must be open by default");
+        View quickContent = tagged(activity, "p63.tab.content.quick", View.class);
+        View skyContent = tagged(activity, "p63.tab.content.sky", View.class);
+        View sunContent = tagged(activity, "p63.tab.content.sun", View.class);
+        View moonContent = tagged(activity, "p63.tab.content.moon", View.class);
+        View cameraContent = tagged(activity, "p63.tab.content.camera", View.class);
+        View debugContent = tagged(activity, "p63.tab.content.debug", View.class);
+        require(quickContent.getVisibility() == View.VISIBLE, "Quick must be the default inner tab");
         require(skyContent.getVisibility() == View.GONE && sunContent.getVisibility() == View.GONE
-            && moonContent.getVisibility() == View.GONE && postContent.getVisibility() == View.GONE
-            && audioContent.getVisibility() == View.GONE && debugContent.getVisibility() == View.GONE,
-            "only Time and Camera may be open by default");
-        Button skyHeader = tagged(activity, "p63.accordion.sky", Button.class);
-        runOnMainSync(skyHeader::performClick);
+            && moonContent.getVisibility() == View.GONE && cameraContent.getVisibility() == View.GONE
+            && debugContent.getVisibility() == View.GONE, "only Quick may be visible by default");
+        Button sunTab = tagged(activity, "p63.tab.sun", Button.class);
+        runOnMainSync(sunTab::performClick);
         waitForIdleSync();
-        require(skyContent.getVisibility() == View.VISIBLE, "accordion defaults and toggle failed");
+        require(sunContent.getVisibility() == View.VISIBLE && quickContent.getVisibility() == View.GONE,
+            "tabs switch correctly");
         tagged(activity, "p63.quick.focus_sun", Button.class);
         tagged(activity, "p63.quick.focus_moon", Button.class);
         tagged(activity, "p63.camera.overview", Button.class);
@@ -58,6 +55,22 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
         tagged(activity, "p63.camera.under_roof", Button.class);
         tagged(activity, "p63.camera.zoom_in", Button.class);
         tagged(activity, "p63.camera.zoom_out", Button.class);
+        Button cameraTab = tagged(activity, "p63.tab.camera", Button.class);
+        Button zoomIn = tagged(activity, "p63.camera.zoom_in", Button.class);
+        Button zoomOut = tagged(activity, "p63.camera.zoom_out", Button.class);
+        runOnMainSync(cameraTab::performClick);
+        waitForIdleSync();
+        float initialDistance = ((FilamentGlbPreviewActivity)activity).getP63CameraDistanceForTest();
+        runOnMainSync(zoomOut::performClick);
+        waitForIdleSync();
+        float zoomedOutDistance = ((FilamentGlbPreviewActivity)activity).getP63CameraDistanceForTest();
+        require(zoomedOutDistance > initialDistance, "Zoom - button did not increase camera distance");
+        runOnMainSync(zoomIn::performClick);
+        waitForIdleSync();
+        require(((FilamentGlbPreviewActivity)activity).getP63CameraDistanceForTest() < zoomedOutDistance,
+            "Zoom + button did not decrease camera distance");
+        runOnMainSync(sunTab::performClick);
+        waitForIdleSync();
         SeekBar slider = tagged(activity, "p63.slider.sun_light_intensity", SeekBar.class);
         EditText exact = tagged(activity, "p63.numeric.sun_light_intensity", EditText.class);
         Button apply = tagged(activity, "p63.numeric.apply.sun_light_intensity", Button.class);
@@ -74,6 +87,22 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
         runOnMainSync(reset::performClick);
         waitForIdleSync();
         require(slider.getProgress() == 36, "reset did not synchronize thumb");
+
+        Button color = tagged(activity, "p63.color.open.sun", Button.class);
+        runOnMainSync(color::performClick);
+        waitForIdleSync();
+        P63HsvColorPickerDialog dialog = ((FilamentGlbPreviewActivity)activity).getP63ColorPickerDialogForTest();
+        require(dialog != null && dialog.isShowing(), "Sun color picker did not open");
+        runOnMainSync(() -> { dialog.setHueForTest(180.0f); dialog.setSaturationValueForTest(1.0f, 1.0f); dialog.applyDraftForTest(); });
+        waitForIdleSync();
+        require(color.getText().toString().contains("#00FFFF"), "color picker Apply did not update Sun state/preview button");
+        runOnMainSync(color::performClick);
+        waitForIdleSync();
+        P63HsvColorPickerDialog resetDialog = ((FilamentGlbPreviewActivity)activity).getP63ColorPickerDialogForTest();
+        runOnMainSync(() -> { resetDialog.setHueForTest(300.0f); resetDialog.setSaturationValueForTest(1.0f, 1.0f); resetDialog.resetDraftForTest(); resetDialog.applyDraftForTest(); });
+        waitForIdleSync();
+        require(color.getText().toString().contains("#FFEBB8") || color.getText().toString().contains("#FFEBB7"),
+            "color picker Reset did not restore the Sun default");
 
         runOnMainSync(() -> { exact.setText("24.5"); apply.performClick(); activity.finish(); });
         waitForIdleSync();

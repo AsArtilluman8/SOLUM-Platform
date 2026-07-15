@@ -25,6 +25,7 @@ public final class SolumFilamentEnvironmentAdapter {
     private static final String[] SNOW_NAMES = cellNames("P63_SNOW_CELL_");
     private static final String[] DUST_NAMES = cellNames("P63_DUST_CELL_");
     private static final String[] RIPPLE_NAMES = indexedNames("P63_RIPPLE_", 8);
+    private static final String[] SKY_NAMES = {"P63_SKY_DAWN", "P63_SKY_DAY", "P63_SKY_SUNSET", "P63_SKY_TWILIGHT", "P63_SKY_NIGHT"};
     public interface Host {
         void applyPreparedIbl(String slot, long revision, float intensity, float blend);
         void applyEnvironmentSkyColor(float red, float green, float blue, float lightningFlash);
@@ -67,12 +68,17 @@ public final class SolumFilamentEnvironmentAdapter {
                 if (name.startsWith("P63_")) p63Count++;
             }
         }
-        stageBound = p63Count >= 40;
+        boolean celestialStage = stageEntities.containsKey("P63_CELESTIAL_STAGE_ROOT")
+            && stageEntities.containsKey("P63_SKY_DAY") && stageEntities.containsKey("P63_SUN_DISK")
+            && stageEntities.containsKey("P63_MOON_DISK") && stageEntities.containsKey("P63_STAGE_GROUND");
+        stageBound = celestialStage || p63Count >= 40;
         status = stageBound ? "bound_p63_filament_stage_entities=" + p63Count : "asset_bound_without_p63_stage_entities=" + p63Count;
         SolumEnvironmentState state = controller.getState();
         state.stageStatus = status; state.adapterStatus = "filament_adapter_live";
-        state.setFeatureStatus("world_space_rain", stageBound ? EnvironmentFeatureStatus.PROTOTYPE : EnvironmentFeatureStatus.PLACEHOLDER);
-        state.setFeatureStatus("world_space_snow", stageBound ? EnvironmentFeatureStatus.PROTOTYPE : EnvironmentFeatureStatus.PLACEHOLDER);
+        if (!controller.isCelestialOnlyMode()) {
+            state.setFeatureStatus("world_space_rain", stageBound ? EnvironmentFeatureStatus.PROTOTYPE : EnvironmentFeatureStatus.PLACEHOLDER);
+            state.setFeatureStatus("world_space_snow", stageBound ? EnvironmentFeatureStatus.PROTOTYPE : EnvironmentFeatureStatus.PLACEHOLDER);
+        }
         notifyStatus();
     }
 
@@ -80,12 +86,11 @@ public final class SolumFilamentEnvironmentAdapter {
         float dt = Math.max(0.0f, Math.min(0.1f, deltaSeconds));
         SolumEnvironmentState state = controller.update(dt);
         applyLights(state);
-        applyFog(state);
+        if (controller.isCelestialOnlyMode()) disableFog(); else applyFog(state);
         if (host != null) {
-            if (lastIblRevision != state.lighting.iblRevision) {
+            SolumCelestialControlState controls = controller.getCelestialControls();
+            if (!controller.isCelestialOnlyMode() || controls.p63IblEnabled) {
                 lastIblRevision = state.lighting.iblRevision;
-                host.applyPreparedIbl(state.lighting.iblSlot, lastIblRevision, state.lighting.ambientIntensity, state.lighting.iblBlend);
-            } else {
                 host.applyPreparedIbl(state.lighting.iblSlot, lastIblRevision, state.lighting.ambientIntensity, state.lighting.iblBlend);
             }
             host.applyEnvironmentSkyColor(state.atmosphere.skyColor[0], state.atmosphere.skyColor[1], state.atmosphere.skyColor[2], state.lightning.flash);
@@ -111,10 +116,12 @@ public final class SolumFilamentEnvironmentAdapter {
         new LightManager.Builder(LightManager.Type.DIRECTIONAL).castShadows(false).direction(0.0f, 1.0f, 0.0f)
             .color(0.446f, 0.557f, 0.865f).intensity(0.0f).build(engine, moonLightEntity);
         viewer.getScene().addEntity(moonLightEntity);
-        lightningLightEntity = EntityManager.get().create();
-        new LightManager.Builder(LightManager.Type.POINT).castShadows(false).position(0.0f, 8.0f, -8.0f)
-            .color(0.495f, 0.613f, 1.0f).intensity(0.0f).falloff(32.0f).build(engine, lightningLightEntity);
-        viewer.getScene().addEntity(lightningLightEntity);
+        if (!controller.isCelestialOnlyMode()) {
+            lightningLightEntity = EntityManager.get().create();
+            new LightManager.Builder(LightManager.Type.POINT).castShadows(false).position(0.0f, 8.0f, -8.0f)
+                .color(0.495f, 0.613f, 1.0f).intensity(0.0f).falloff(32.0f).build(engine, lightningLightEntity);
+            viewer.getScene().addEntity(lightningLightEntity);
+        }
     }
 
     private void applyLights(SolumEnvironmentState state) {
@@ -124,14 +131,14 @@ public final class SolumFilamentEnvironmentAdapter {
             if (sun != 0) {
                 manager.setDirection(sun, state.lighting.sunDirection[0], state.lighting.sunDirection[1], state.lighting.sunDirection[2]);
                 manager.setColor(sun, state.lighting.sunColor[0], state.lighting.sunColor[1], state.lighting.sunColor[2]);
-                manager.setIntensity(sun, Math.max(0.0f, state.lighting.sunLux));
+                manager.setIntensity(sun, safeRange(state.lighting.sunLux, 0.0f, 50.0f));
                 manager.setShadowCaster(sun, state.lighting.sunLux > 0.05f);
             }
             int moon = manager.getInstance(moonLightEntity);
             if (moon != 0) {
                 manager.setDirection(moon, state.lighting.moonDirection[0], state.lighting.moonDirection[1], state.lighting.moonDirection[2]);
                 manager.setColor(moon, state.lighting.moonColor[0], state.lighting.moonColor[1], state.lighting.moonColor[2]);
-                manager.setIntensity(moon, Math.max(0.0f, state.lighting.moonLux));
+                manager.setIntensity(moon, safeRange(state.lighting.moonLux, 0.0f, 2.0f));
             }
             int lightning = manager.getInstance(lightningLightEntity);
             if (lightning != 0) {
@@ -163,7 +170,22 @@ public final class SolumFilamentEnvironmentAdapter {
         }
     }
 
+    private void disableFog() {
+        try {
+            View.FogOptions fog = viewer.getView().getFogOptions();
+            if (fog.enabled) { fog.enabled = false; viewer.getView().setFogOptions(fog); }
+        } catch (Throwable error) {
+            status = "celestial_fog_disable_failed_" + safe(error);
+        }
+    }
+
     private void applyStage(SolumEnvironmentState state, float dt) {
+        if (controller.isCelestialOnlyMode()) {
+            applyCelestialGeometry(state);
+            materialClock += dt;
+            if (materialClock >= 0.12f) { materialClock = 0.0f; applyMaterials(state); }
+            return;
+        }
         rainPhase = wrap(rainPhase + dt * (5.5f + state.wind.speed * 5.0f), 12.0f);
         snowPhase = wrap(snowPhase + dt * (0.75f + state.wind.speed * 1.25f), 12.0f);
         dustPhase = wrap(dustPhase + dt * (0.65f + state.wind.speed * 2.6f), 12.0f);
@@ -186,14 +208,26 @@ public final class SolumFilamentEnvironmentAdapter {
         float moonX = -state.lighting.moonDirection[0] * radius;
         float moonY = -state.lighting.moonDirection[1] * radius;
         float moonZ = -state.lighting.moonDirection[2] * radius - 5.0f;
-        float sunScale = state.lighting.sunDiskBrightness > 0.01f ? 1.10f * controller.getSunDiskScale() : 0.001f;
-        float moonScale = state.lighting.moonDiskBrightness > 0.01f ? controller.getMoonDiskScale() : 0.001f;
+        SolumCelestialControlState controls = controller.getCelestialControls();
+        float sunAngular = controller.isCelestialOnlyMode() ? controls.sunAngularSizeDegrees : 4.66f * controller.getSunDiskScale();
+        float moonAngular = controller.isCelestialOnlyMode() ? controls.moonAngularSizeDegrees : 4.24f * controller.getMoonDiskScale();
+        float sunScale = state.lighting.sunDiskBrightness > 0.01f ? radius * (float)Math.tan(Math.toRadians(sunAngular * 0.5f)) : 0.001f;
+        float moonScale = state.lighting.moonDiskBrightness > 0.01f ? radius * (float)Math.tan(Math.toRadians(moonAngular * 0.5f)) : 0.001f;
         setTransform("P63_SUN_DISK", sunX, sunY, sunZ, sunScale, sunScale, sunScale, 0, 0, 0);
         setTransform("P63_MOON_DISK", moonX, moonY, moonZ, moonScale, moonScale, moonScale, 0, 0, 0);
         float phase = state.lighting.moonPhase;
-        float shadowOffset = (phase - 0.5f) * 1.55f;
+        float shadowOffset = (phase - 0.5f) * moonScale * 1.55f;
         float shadowScaleX = 0.78f + Math.abs(phase - 0.5f) * 0.42f;
         setTransform("P63_MOON_SHADOW", moonX + shadowOffset, moonY, moonZ + 0.035f, moonScale * shadowScaleX, moonScale, moonScale, 0, 0, 0);
+        if (controller.isCelestialOnlyMode()) {
+            String active = controls.activeSkySource;
+            for (String skyName : SKY_NAMES) {
+                boolean selected = active.endsWith(skyName.substring("P63_SKY_".length()));
+                float scale = controls.skyEnabled && selected ? 55.0f : 0.001f;
+                setTransform(skyName, controller.getCameraX(), controller.getCameraY(), controller.getCameraZ(), scale, scale, scale, 0, 0, 0);
+            }
+            return;
+        }
         float starScale = Math.max(0.001f, state.lighting.starVisibility);
         float rotation = state.timeOfDay / 2400.0f * 360.0f;
         int visibleGroups = Math.max(0, Math.min(3, (int) Math.ceil(controller.getStarDensity() * 3.0f)));
@@ -255,6 +289,20 @@ public final class SolumFilamentEnvironmentAdapter {
 
     private void applyMaterials(SolumEnvironmentState state) {
         try {
+            if (controller.isCelestialOnlyMode()) {
+                SolumCelestialControlState controls = controller.getCelestialControls();
+                float sunGlow = controls.sunGlowEnabled ? controls.sunGlow * 0.25f : 0.0f;
+                float moonGlow = controls.moonGlowEnabled ? controls.moonGlow * 0.20f : 0.0f;
+                float highlight = controls.highlightClampEnabled ? controls.highlightClamp : 1.0f;
+                float sunVisual = Math.min(highlight, safeRange(state.lighting.sunDiskBrightness * (1.0f + sunGlow), 0.0f, 2.0f));
+                float moonVisual = Math.min(highlight, safeRange(state.lighting.moonDiskBrightness * (1.0f + moonGlow), 0.0f, 2.0f));
+                setMaterial4("P63_SUN_DISK", "baseColorFactor", controls.sunTint[0] * sunVisual,
+                    controls.sunTint[1] * sunVisual, controls.sunTint[2] * sunVisual, Math.min(1.0f, sunVisual));
+                setMaterial4("P63_MOON_DISK", "baseColorFactor", controls.moonTint[0] * moonVisual,
+                    controls.moonTint[1] * moonVisual, controls.moonTint[2] * moonVisual, Math.min(1.0f, moonVisual));
+                materialStatus = "p63_2a_celestial_visual_light_separation";
+                return;
+            }
             float wet = state.surface.wetness;
             setMaterial("P63_WET_SURFACE", "roughnessFactor", Math.max(0.04f, 0.78f - wet * 0.66f));
             setMaterial4("P63_WET_SURFACE", "baseColorFactor", 0.085f * (1.0f - wet * 0.38f), 0.09f * (1.0f - wet * 0.38f), 0.095f * (1.0f - wet * 0.38f), 1.0f);
@@ -319,5 +367,6 @@ public final class SolumFilamentEnvironmentAdapter {
     private static String[] cellNames(String prefix){String[] out=new String[25];for(int z=0;z<5;z++)for(int x=0;x<5;x++)out[z*5+x]=prefix+x+"_"+z;return out;}
     private static float wrap(float value, float range) { float out=value%range;return out<0?out+range:out; }
     private static float wrapSigned(float value, float range) { float out=(value+range*0.5f)%range;if(out<0)out+=range;return out-range*0.5f; }
+    private static float safeRange(float value, float min, float max) { return Float.isNaN(value) || Float.isInfinite(value) ? min : Math.max(min, Math.min(max, value)); }
     private static String safe(Throwable error) { return error == null ? "unknown" : error.getClass().getSimpleName() + "_" + String.valueOf(error.getMessage()).replace(' ', '_').toLowerCase(Locale.US); }
 }

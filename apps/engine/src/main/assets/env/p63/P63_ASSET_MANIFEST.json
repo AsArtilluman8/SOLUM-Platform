@@ -5,6 +5,9 @@
   "seed": 1597463007,
   "license": "SOLUM_NATIVE",
   "files": [
+    "P63_ASSET_MANIFEST.json",
+    "P63_CAPTURE_SCENARIOS.json",
+    "p63_2a_celestial_test_stage.glb",
     "p63_day.hdr",
     "p63_environment_stage.glb",
     "p63_night.hdr",

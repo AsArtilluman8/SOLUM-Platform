@@ -188,7 +188,7 @@ if [ -f "./gradlew" ]; then
   if [ ! -x "./gradlew" ]; then
     chmod +x ./gradlew 2>/dev/null || true
   fi
-  BUILD_CMD="./gradlew assembleDebug"
+  BUILD_CMD="./gradlew assembleDebug :apps:engine:assembleDebugAndroidTest"
   GRADLE_VALIDATION_STATUS="valid_gradlew"
 elif [ "$HAS_GRADLE_MARKERS" -eq 1 ] && command -v gradle >/dev/null 2>&1; then
   log "gradle_project_validation=gradle -q projects"
@@ -198,7 +198,7 @@ elif [ "$HAS_GRADLE_MARKERS" -eq 1 ] && command -v gradle >/dev/null 2>&1; then
   set -e
 
   if [ "$GRADLE_VALIDATION_CODE" -eq 0 ]; then
-    BUILD_CMD="gradle assembleDebug"
+    BUILD_CMD="gradle assembleDebug :apps:engine:assembleDebugAndroidTest"
     GRADLE_VALIDATION_STATUS="valid_global_gradle"
   else
     GRADLE_VALIDATION_STATUS="invalid_global_gradle"

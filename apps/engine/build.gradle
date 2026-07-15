@@ -12,6 +12,7 @@ android {
         targetSdk 34
         versionCode 4
         versionName '0.4.0'
+        testInstrumentationRunner 'com.solum.engine.P63CelestialControlsViewTest'
     }
 
     sourceSets {

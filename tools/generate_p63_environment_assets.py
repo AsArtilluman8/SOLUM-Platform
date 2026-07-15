@@ -55,6 +55,48 @@ def moon_png(size: int = 128) -> bytes:
     return b"\x89PNG\r\n\x1a\n" + png_chunk(b"IHDR", header) + png_chunk(b"IDAT", zlib.compress(bytes(rows), 9)) + png_chunk(b"IEND", b"")
 
 
+def sky_png(slot: str, width: int = 256, height: int = 128) -> bytes:
+    """Deterministic full-sphere mobile atmosphere; azimuth is periodic at the seam."""
+    settings = {
+        "dawn": ((0.015, 0.035, 0.11), (0.82, 0.32, 0.12), 0.66, 0.22, -0.06),
+        "day": ((0.06, 0.30, 0.78), (0.58, 0.74, 0.92), 0.36, 0.08, 0.38),
+        "sunset": ((0.025, 0.055, 0.16), (0.98, 0.27, 0.055), 0.78, 0.34, -0.02),
+        "twilight": ((0.018, 0.035, 0.105), (0.38, 0.14, 0.22), 0.54, 0.20, -0.12),
+        "night": ((0.004, 0.009, 0.032), (0.018, 0.035, 0.085), 0.20, 0.04, -0.42),
+    }
+    zenith, horizon, rayleigh, mie, sun_elevation = settings[slot]
+    rows = bytearray()
+    for y in range(height):
+        rows.append(0)
+        v = (y + 0.5) / height
+        elevation = math.pi * 0.5 - v * math.pi
+        sin_elevation = math.sin(elevation)
+        altitude = max(0.0, min(1.0, (sin_elevation + 0.10) / 0.90))
+        horizon_band = math.exp(-abs(sin_elevation) * 7.5)
+        lower_continuation = max(0.0, -sin_elevation)
+        for x in range(width):
+            azimuth = ((x + 0.5) / width) * math.tau - math.pi
+            cos_gamma = (math.cos(elevation) * math.cos(sun_elevation) * math.cos(azimuth)
+                         + math.sin(elevation) * math.sin(sun_elevation))
+            cos_gamma = max(-1.0, min(1.0, cos_gamma))
+            rayleigh_phase = 0.75 * (1.0 + cos_gamma * cos_gamma)
+            g = 0.76
+            mie_phase = (1.0 - g * g) / max(0.035, (1.0 + g * g - 2.0 * g * cos_gamma) ** 1.5)
+            sun_glow = math.exp((cos_gamma - 1.0) * 42.0)
+            base = [horizon[i] * (1.0 - altitude) + zenith[i] * altitude for i in range(3)]
+            scatter = rayleigh * rayleigh_phase * 0.055 + mie * mie_phase * 0.012 + sun_glow * mie * 0.44
+            warm = (1.0, 0.55, 0.25) if slot in ("dawn", "sunset") else (0.72, 0.84, 1.0)
+            # The lower hemisphere remains atmospheric instead of becoming a flat grey cap.
+            lower_haze = lower_continuation * (0.30 if slot != "night" else 0.10)
+            rgb = [base[i] + scatter * warm[i] + horizon_band * horizon[i] * 0.12 for i in range(3)]
+            if lower_continuation > 0.0:
+                rgb = [rgb[i] * (1.0 - lower_haze) + horizon[i] * lower_haze for i in range(3)]
+            rows.extend(max(0, min(255, round((max(0.0, min(1.0, c))) ** (1.0 / 2.2) * 255.0))) for c in rgb)
+            rows.append(255)
+    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + png_chunk(b"IHDR", header) + png_chunk(b"IDAT", zlib.compress(bytes(rows), 9)) + png_chunk(b"IEND", b"")
+
+
 @dataclass
 class Mesh:
     positions: list[tuple[float, float, float]]
@@ -207,17 +249,17 @@ class GlbBuilder:
     def __init__(self) -> None:
         self.binary=bytearray();self.buffer_views=[];self.accessors=[];self.meshes=[];self.nodes=[];self.materials=[];self.images=[];self.textures=[];self.samplers=[]
 
-    def material(self,name:str,color:tuple[float,float,float,float],metallic:float,roughness:float,*,unlit=False,emissive=(0,0,0),alpha="OPAQUE",texture=None)->int:
+    def material(self,name:str,color:tuple[float,float,float,float],metallic:float,roughness:float,*,unlit=False,emissive=(0,0,0),alpha="OPAQUE",texture=None,double_sided=False)->int:
         pbr={"baseColorFactor":list(color),"metallicFactor":metallic,"roughnessFactor":roughness}
         if texture is not None:pbr["baseColorTexture"]={"index":texture}
-        item={"name":name,"pbrMetallicRoughness":pbr,"emissiveFactor":list(emissive),"doubleSided":alpha!="OPAQUE"}
+        item={"name":name,"pbrMetallicRoughness":pbr,"emissiveFactor":list(emissive),"doubleSided":double_sided or alpha!="OPAQUE"}
         if alpha!="OPAQUE":item["alphaMode"]=alpha;item["alphaCutoff"]=0.08
         if unlit:item["extensions"]={"KHR_materials_unlit":{}}
         self.materials.append(item);return len(self.materials)-1
 
-    def texture_png(self,payload:bytes)->int:
+    def texture_png(self,payload:bytes,name:str="P63_Procedural_Moon_Craters",wrap:int=33071)->int:
         align4(self.binary);start=len(self.binary);self.binary.extend(payload);view=len(self.buffer_views);self.buffer_views.append({"buffer":0,"byteOffset":start,"byteLength":len(payload)})
-        image=len(self.images);self.images.append({"bufferView":view,"mimeType":"image/png","name":"P63_Procedural_Moon_Craters"});sampler=len(self.samplers);self.samplers.append({"magFilter":9729,"minFilter":9987,"wrapS":33071,"wrapT":33071});self.textures.append({"sampler":sampler,"source":image});return len(self.textures)-1
+        image=len(self.images);self.images.append({"bufferView":view,"mimeType":"image/png","name":name});sampler=len(self.samplers);self.samplers.append({"magFilter":9729,"minFilter":9987,"wrapS":wrap,"wrapT":33071});self.textures.append({"sampler":sampler,"source":image});return len(self.textures)-1
 
     def _accessor(self,values:list[tuple],fmt:str,component_type:int,kind:str,target:int)->int:
         align4(self.binary);start=len(self.binary)
@@ -274,6 +316,58 @@ def generate_glb() -> bytes:
     return b.build()
 
 
+def generate_celestial_glb(moon_payload: bytes | None = None, moon_name: str = "P63_SOLUM_NATIVE_MOON") -> bytes:
+    """Small explicit P63.2A stage. It contains no weather, stars, or dynamic IBL assets."""
+    b = GlbBuilder()
+    moon_texture = b.texture_png(moon_payload or moon_png(256), moon_name)
+    sky_textures = {slot: b.texture_png(sky_png(slot), f"P63_SKY_{slot.upper()}", 10497)
+                    for slot in ("dawn", "day", "sunset", "twilight", "night")}
+    concrete = b.material("P63_2A_Matte", (0.34, 0.35, 0.36, 1), 0, 0.86)
+    rough_metal = b.material("P63_2A_RoughMetal", (0.30, 0.33, 0.37, 1), 1, 0.48)
+    polished = b.material("P63_2A_PolishedMetal", (0.64, 0.68, 0.74, 1), 1, 0.07)
+    glass = b.material("P63_2A_Glass", (0.25, 0.58, 0.74, 0.27), 0, 0.06, alpha="BLEND")
+    sun = b.material("P63_2A_SunDisk", (1, 0.78, 0.34, 1), 0, 0, unlit=True, emissive=(1, 0.48, 0.08), double_sided=True)
+    moon = b.material("P63_2A_Moon", (1, 1, 1, 1), 0, 0.62, unlit=True, texture=moon_texture, double_sided=True)
+    moon_shadow = b.material("P63_2A_MoonPhaseMask", (0.002, 0.004, 0.012, 0.98), 0, 1, unlit=True, alpha="BLEND", double_sided=True)
+    sky_materials = {slot: b.material(f"P63_2A_Sky_{slot}", (1, 1, 1, 1), 0, 1,
+                                      unlit=True, texture=texture, double_sided=True)
+                     for slot, texture in sky_textures.items()}
+
+    box_mesh = b.mesh("p63_2a_box", box(), concrete)
+    ground_mesh = b.mesh("p63_2a_ground", plane(), concrete)
+    matte_sphere = b.mesh("p63_2a_matte_sphere", sphere(24, 14), concrete)
+    rough_sphere = b.mesh("p63_2a_rough_sphere", sphere(24, 14), rough_metal)
+    polished_sphere = b.mesh("p63_2a_polished_sphere", sphere(24, 14), polished)
+    glass_sphere = b.mesh("p63_2a_glass_sphere", sphere(24, 14), glass)
+    b.node("P63_CELESTIAL_STAGE_ROOT", box_mesh, (0, -0.3, -2), (0.05, 0.05, 0.05))
+    b.node("P63_STAGE_GROUND", ground_mesh, (0, 0, -2), (10, 1, 8))
+    b.node("P63_MATTE_SPHERE", matte_sphere, (-4.5, 1.0, -2), (1, 1, 1))
+    b.node("P63_ROUGH_METAL", rough_sphere, (-1.8, 1.0, -2), (1, 1, 1))
+    b.node("P63_POLISHED_METAL", polished_sphere, (0.9, 1.0, -2), (1, 1, 1))
+    b.node("P63_GLASS", glass_sphere, (3.6, 1.0, -2), (1, 1, 1))
+    b.node("P63_SHADOW_PILLAR", box_mesh, (-5.8, 2.0, 1.5), (0.42, 2.0, 0.42))
+    b.node("P63_VERTICAL_WALL", box_mesh, (5.8, 2.0, 0.4), (0.22, 2.0, 3.0))
+    b.node("P63_INTERIOR_FLOOR", ground_mesh, (2.8, 0.025, 3.7), (2.2, 1, 1.8))
+    b.node("P63_ROOF", box_mesh, (2.8, 3.4, 3.7), (2.3, 0.12, 1.9))
+    b.node("P63_ROOF_LEFT", box_mesh, (0.55, 1.7, 3.7), (0.12, 1.7, 1.9))
+    b.node("P63_ROOF_BACK", box_mesh, (2.8, 1.7, 5.55), (2.3, 1.7, 0.12))
+    b.node("P63_NORMAL_SCALE_REFERENCE", box_mesh, (-3.8, 0.5, 3.6), (0.5, 0.5, 0.5))
+    b.node("P63_CAMERA_ORBIT_TARGET", matte_sphere, (0, 1.2, -2), (0.06, 0.06, 0.06))
+
+    sky_meshes = {slot: b.mesh(f"p63_2a_sky_{slot}", sphere(48, 24), material)
+                  for slot, material in sky_materials.items()}
+    for slot, mesh in sky_meshes.items():
+        b.node(f"P63_SKY_{slot.upper()}", mesh, (0, 1.5, -2), (55, 55, 55))
+
+    sun_mesh = b.mesh("p63_2a_sun_disk", disk(64), sun)
+    moon_mesh = b.mesh("p63_2a_moon_disk", disk(64), moon)
+    shadow_mesh = b.mesh("p63_2a_moon_phase_mask", disk(64), moon_shadow)
+    b.node("P63_SUN_DISK", sun_mesh, (0, 14, -25), (0.13, 0.13, 0.13))
+    b.node("P63_MOON_DISK", moon_mesh, (0, 12, -24), (0.13, 0.13, 0.13))
+    b.node("P63_MOON_SHADOW", shadow_mesh, (0, 12, -23.96), (0.13, 0.13, 0.13))
+    return b.build()
+
+
 def rgbe(red: float, green: float, blue: float) -> tuple[int, int, int, int]:
     value=max(red,green,blue)
     if value<1e-32:return 0,0,0,0
@@ -308,6 +402,7 @@ def hdr_bytes(slot: str, width: int = 128, height: int = 64) -> bytes:
 def main() -> None:
     OUT.mkdir(parents=True,exist_ok=True)
     (OUT/"p63_environment_stage.glb").write_bytes(generate_glb())
+    (OUT/"p63_2a_celestial_test_stage.glb").write_bytes(generate_celestial_glb())
     for slot in ("day","sunset","night","overcast","storm","snow","sand"):(OUT/f"p63_{slot}.hdr").write_bytes(hdr_bytes(slot))
     manifest={"schema":"solum.environment.generated-assets","schemaVersion":1,"generator":"tools/generate_p63_environment_assets.py","seed":SEED,"license":"SOLUM_NATIVE","files":sorted(path.name for path in OUT.iterdir() if path.is_file())}
     (OUT/"P63_ASSET_MANIFEST.json").write_text(json.dumps(manifest,indent=2)+"\n",encoding="utf-8")

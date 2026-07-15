@@ -71,9 +71,49 @@ public final class SolumEnvironmentCoreTest {
         require(controller.getState().surface.snowCover < snowPeak, "snow melts/fades");
 
         require(controller.getState().getFeatureStatus().get("interior_exclusion") == EnvironmentFeatureStatus.FUNCTIONAL, "classification truth present");
+        testCelestialOnly(env);
         System.out.println("P63_CORE_TEST=PASS presets=" + Arrays.toString(IDS)
             + " stars=" + starsA.getStars().size()
             + " lightningEvents=" + controller.getState().lightning.eventIndex);
+    }
+
+    private static void testCelestialOnly(SolumEnvironmentPackage env) {
+        SolumEnvironmentController controller = new SolumEnvironmentController(env);
+        controller.setCelestialOnlyMode(true);
+        SolumCelestialControlState controls = controller.getCelestialControls();
+        require(controls.oldIblActive && !controls.p63IblEnabled, "old IBL remains active");
+        require(!controls.cloudsEnabled && !controls.starsEnabled && !controls.precipitationEnabled
+            && !controls.surfaceWeatherEnabled && !controls.lightningEnabled && !controls.proceduralAudioEnabled,
+            "P63.2A deferred systems default off");
+        controls.sunLightLux = 4.0f;
+        controls.sunVisualBrightness = 1.5f;
+        controller.setTime(1200.0f);
+        controller.update(0.1f);
+        float sunLux = controller.getState().lighting.sunLux;
+        float sunVisual = controller.getState().lighting.sunDiskBrightness;
+        require(close(sunLux, 4.0f) && close(sunVisual, 1.5f), "sun visual/light separation values");
+        controls.sunVisualBrightness = 0.25f;
+        controller.update(0.1f);
+        require(close(controller.getState().lighting.sunLux, sunLux), "sun visual edit does not change directional light");
+        require(close(controller.getState().lighting.sunDiskBrightness, 0.25f), "sun visual edit applies independently");
+        controls.moonPhase = 0.23f;
+        controls.moonLightLux = 0.4f;
+        controller.setTime(0.0f);
+        controller.update(0.1f);
+        require(close(controller.getState().lighting.moonPhase, 0.23f), "moon phase applies");
+        require(controller.getState().lighting.moonLux > 0.0f && controller.getState().lighting.sunLux == 0.0f, "separate moon directional light at night");
+        require(controller.getState().weather.rain == 0.0f && controller.getState().weather.snow == 0.0f
+            && controller.getState().lighting.starVisibility == 0.0f, "celestial stage stays weather/star free");
+        controls.sunLightLux = Float.NaN;
+        controls.moonLightLux = Float.POSITIVE_INFINITY;
+        controls.exposureCompensation = Float.NEGATIVE_INFINITY;
+        controls.sanitize();
+        require(close(controls.sunLightLux, 18.0f) && close(controls.moonLightLux, 0.15f)
+            && close(controls.exposureCompensation, 0.0f), "no NaN or Infinity crosses state boundary");
+        controls.sunLightLux = 999.0f; controls.moonLightLux = 999.0f; controls.bloomLikeResponse = 999.0f;
+        controls.sanitize();
+        require(close(controls.sunLightLux, 50.0f) && close(controls.moonLightLux, 2.0f)
+            && close(controls.bloomLikeResponse, 0.12f), "safe light and post-process ranges");
     }
 
     private static SolumEnvironmentPackage fixture() {

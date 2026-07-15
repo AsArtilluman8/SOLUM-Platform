@@ -5,6 +5,7 @@ public final class SolumEnvironmentController {
     private final SolumEnvironmentState state = new SolumEnvironmentState();
     private final SolumTimeSystem time = new SolumTimeSystem();
     private final SolumCelestialSystem celestial = new SolumCelestialSystem();
+    private final SolumCelestialControlState celestialControls = new SolumCelestialControlState();
     private final SolumPrecipitationOcclusion occlusion;
     private SolumWeatherState weatherFrom;
     private SolumWeatherState weatherTarget;
@@ -24,6 +25,7 @@ public final class SolumEnvironmentController {
     private float manualPuddle = Float.NaN, manualSnowCover = Float.NaN, manualIce = Float.NaN, manualMoonPhase = Float.NaN;
     private long audioLightningEvent = -1L;
     private int sunTintMode, moonTintMode, cloudTintMode;
+    private boolean celestialOnlyMode;
 
     public SolumEnvironmentController(SolumEnvironmentPackage envPackage) {
         if (envPackage == null) throw new IllegalArgumentException("environment_package_missing");
@@ -46,6 +48,7 @@ public final class SolumEnvironmentController {
     }
 
     public SolumEnvironmentState getState() { return state; }
+    public SolumCelestialControlState getCelestialControls() { return celestialControls; }
     public SolumEnvironmentPackage getPackage() { return envPackage; }
     public SolumTimeSystem getTimeSystem() { return time; }
     public SolumPrecipitationOcclusion getOcclusion() { return occlusion; }
@@ -67,12 +70,12 @@ public final class SolumEnvironmentController {
     }
 
     public void setQuality(String quality) { state.quality = envPackage.findQuality(quality).name; }
-    public void setTime(float hundredths) { time.set(hundredths); }
-    public void transitionTime(float hundredths, float seconds) { time.transitionTo(hundredths, seconds); }
-    public void setTimePaused(boolean paused) { time.setPaused(paused); }
-    public void setTimeSpeed(float speed) { time.setSpeed(speed); }
-    public void setAudioVolume(float value) { state.audio.masterVolume = clamp(value); }
-    public void setAudioMuted(boolean muted) { state.audio.muted = muted; }
+    public void setTime(float hundredths) { celestialControls.time = SolumCelestialControlState.finiteClamp(hundredths, 0.0f, 2400.0f, 960.0f); time.set(celestialControls.time); }
+    public void transitionTime(float hundredths, float seconds) { celestialControls.time = SolumCelestialControlState.finiteClamp(hundredths, 0.0f, 2400.0f, 960.0f); time.transitionTo(celestialControls.time, seconds); }
+    public void setTimePaused(boolean paused) { celestialControls.timePaused = paused; time.setPaused(paused); }
+    public void setTimeSpeed(float speed) { celestialControls.timeSpeed = SolumCelestialControlState.finiteClamp(speed, 0.0f, 8.0f, 1.0f); time.setSpeed(celestialControls.timeSpeed); }
+    public void setAudioVolume(float value) { celestialControls.masterVolume = SolumCelestialControlState.finiteClamp(value, 0.0f, 1.0f, 0.45f); state.audio.masterVolume = celestialControls.masterVolume; }
+    public void setAudioMuted(boolean muted) { celestialControls.muted = muted; state.audio.muted = muted; }
     public void setCameraPosition(float x, float y, float z) { cameraX=x; cameraY=y; cameraZ=z; }
     public void triggerLightning() { if (state.weather.lightningEnabled >= 0.5f) beginStrike(); }
     public void setSunScale(float value) { sunScale = clamp(value); }
@@ -94,12 +97,41 @@ public final class SolumEnvironmentController {
     public float getMoonDiskScale() { return moonDiskScale; }
     public float getStarDensity() { return starDensity; }
     public float getCameraX() { return cameraX; }
+    public float getCameraY() { return cameraY; }
     public float getCameraZ() { return cameraZ; }
+
+    public void setCelestialOnlyMode(boolean enabled) {
+        celestialOnlyMode = enabled;
+        if (!enabled) return;
+        celestialControls.sanitize();
+        time.set(celestialControls.time);
+        time.setSpeed(celestialControls.timeSpeed);
+        time.setPaused(celestialControls.timePaused);
+        state.requestedPreset = "P63_2A_CELESTIAL_ONLY";
+        state.activePreset = state.requestedPreset;
+        state.weatherTransitionActive = false;
+        state.setFeatureStatus("full_sphere_atmosphere", EnvironmentFeatureStatus.FUNCTIONAL);
+        state.setFeatureStatus("sun_disk", EnvironmentFeatureStatus.FUNCTIONAL);
+        state.setFeatureStatus("moon_phase_material", EnvironmentFeatureStatus.FUNCTIONAL);
+        state.setFeatureStatus("verified_audio_diagnostics", EnvironmentFeatureStatus.FUNCTIONAL);
+        state.setFeatureStatus("light_shafts", EnvironmentFeatureStatus.PROTOTYPE);
+        state.setFeatureStatus("world_space_stars", EnvironmentFeatureStatus.PLACEHOLDER);
+        state.setFeatureStatus("clouds", EnvironmentFeatureStatus.PLACEHOLDER);
+        state.setFeatureStatus("world_space_rain", EnvironmentFeatureStatus.PLACEHOLDER);
+        state.setFeatureStatus("world_space_snow", EnvironmentFeatureStatus.PLACEHOLDER);
+        state.setFeatureStatus("prepared_ibl_reflections", EnvironmentFeatureStatus.PLACEHOLDER);
+    }
+
+    public boolean isCelestialOnlyMode() { return celestialOnlyMode; }
 
     public void resetManualOverrides() {
         sunScale=1;sunDiskScale=1;moonScale=1;moonDiskScale=1;starBrightness=1;starDensity=1;cloudSpeedScale=1;iblIntensityScale=1;
         manualPuddle=Float.NaN;manualSnowCover=Float.NaN;manualIce=Float.NaN;manualMoonPhase=Float.NaN;sunTintMode=0;moonTintMode=0;cloudTintMode=0;
         state.audio.masterVolume=0.45f;state.audio.muted=false;
+        if (celestialOnlyMode) {
+            celestialControls.reset();
+            setCelestialOnlyMode(true);
+        }
     }
 
     public void setWeatherValue(String field, float value) {
@@ -119,16 +151,38 @@ public final class SolumEnvironmentController {
 
     public SolumEnvironmentState update(float deltaSeconds) {
         float dt = Math.max(0.0f, Math.min(0.1f, deltaSeconds));
-        updateWeather(dt);
+        if (celestialOnlyMode) enforceCelestialOnlyWeather(); else updateWeather(dt);
         state.timeOfDay = time.update(dt);
+        celestialControls.time = state.timeOfDay;
         celestial.update(state.timeOfDay, state.weather, state.lighting);
         applyCelestialOverrides();
-        updateWind(dt); updateClouds(dt); updateAtmosphere(); updateFog(); updatePrecipitation();
-        updateLightning(dt); updateSurface(dt); applySurfaceOverrides(); updateAudio(dt); updateIbl();
+        if (celestialOnlyMode) {
+            updateAtmosphere();
+            state.fog.density = 0.0f;
+            state.fog.maximumOpacity = 0.0f;
+            state.lighting.lightningLumens = 0.0f;
+            state.lightning.active = false;
+            state.lightning.enabled = false;
+            state.surface.wetness = state.surface.puddle = state.surface.snowCover = state.surface.ice = 0.0f;
+            state.audio.masterVolume = celestialControls.masterVolume;
+            state.audio.muted = celestialControls.muted;
+        } else {
+            updateWind(dt); updateClouds(dt); updateFog(); updatePrecipitation();
+            updateLightning(dt); updateSurface(dt); applySurfaceOverrides(); updateAudio(dt); updateIbl();
+        }
         state.cameraInside = occlusion.isInterior(cameraX, cameraY, cameraZ);
         state.cameraUnderRoof = occlusion.hasRoofAbove(cameraX, cameraY, cameraZ);
         state.frameRevision++;
         return state;
+    }
+
+    private void enforceCelestialOnlyWeather() {
+        SolumWeatherState w = state.weather;
+        w.cloudCoverage = 0.0f; w.cloudDensity = 0.0f; w.fogDensity = 0.0f;
+        w.rain = 0.0f; w.snow = 0.0f; w.dust = 0.0f; w.windSpeed = 0.0f;
+        w.windGust = 0.0f; w.windTurbulence = 0.0f; w.lightningEnabled = 0.0f;
+        w.lightningPotential = 0.0f; w.wetnessTarget = 0.0f; w.snowTarget = 0.0f;
+        w.lightingScale = 1.0f; w.ambientScale = 1.0f; w.exposure = 1.0f;
     }
 
     private void updateWeather(float dt) {
@@ -204,7 +258,49 @@ public final class SolumEnvironmentController {
 
     private void updateIbl(){String slot;if(state.weather.snow>0.12f)slot="snow";else if(state.weather.lightningEnabled>=0.5f)slot="storm";else if(state.weather.rain>0.1f||state.weather.cloudCoverage>0.64f)slot="overcast";else if(state.weather.dust>0.1f)slot="sand";else if(state.lighting.sunElevation<0.03f)slot="night";else if(state.lighting.sunElevation<0.26f)slot="sunset";else slot="day";if(!slot.equals(lastIblSlot)){lastIblSlot=slot;state.lighting.iblSlot=slot;state.lighting.iblRevision++;}state.lighting.iblBlend=(state.weatherTransitionActive?0.58f+Math.abs(state.weatherTransitionAlpha-0.5f)*0.84f:1.0f)*iblIntensityScale;}
 
-    private void applyCelestialOverrides(){SolumEnvironmentLightingState l=state.lighting;if(!Float.isNaN(manualMoonPhase))l.moonPhase=manualMoonPhase;l.sunLux*=sunScale;l.sunDiskBrightness*=sunScale;l.moonLux*=moonScale;l.moonDiskBrightness*=moonScale;l.starVisibility=clamp(l.starVisibility*starBrightness);if(sunTintMode==1){l.sunColor[0]=1;l.sunColor[1]*=0.84f;l.sunColor[2]*=0.62f;}else if(sunTintMode==2){l.sunColor[0]*=0.82f;l.sunColor[1]*=0.92f;l.sunColor[2]=1;}if(moonTintMode==1){l.moonColor[0]=0.68f;l.moonColor[1]=0.72f;l.moonColor[2]=0.78f;}else if(moonTintMode==2){l.moonColor[0]=0.35f;l.moonColor[1]=0.50f;l.moonColor[2]=1.0f;}}
+    private void applyCelestialOverrides(){
+        SolumEnvironmentLightingState l=state.lighting;
+        if (celestialOnlyMode) {
+            celestialControls.sanitize();
+            float offset = (float)Math.toRadians(celestialControls.sunElevationOffsetDegrees);
+            float elevation = (float)Math.asin(Math.max(-1.0f, Math.min(1.0f, -l.sunDirection[1]))) + offset;
+            elevation = Math.max((float)-Math.PI * 0.5f, Math.min((float)Math.PI * 0.5f, elevation));
+            float azimuth = (float)Math.atan2(-l.sunDirection[0], -l.sunDirection[2]);
+            float cosElevation = (float)Math.cos(elevation);
+            normalizeDirection(l.sunDirection, -(float)Math.sin(azimuth)*cosElevation, -(float)Math.sin(elevation), -(float)Math.cos(azimuth)*cosElevation);
+            normalizeDirection(l.moonDirection, -l.sunDirection[0], -l.sunDirection[1], -l.sunDirection[2]);
+            l.sunElevation = (float)Math.sin(elevation);
+            l.moonElevation = -l.sunElevation;
+            float day = smoothStep(-0.08f, 0.10f, l.sunElevation);
+            float night = smoothStep(-0.08f, 0.10f, l.moonElevation);
+            l.sunLux = celestialControls.sunEnabled ? celestialControls.sunLightLux * day : 0.0f;
+            l.sunDiskBrightness = celestialControls.sunEnabled ? celestialControls.sunVisualBrightness * smoothStep(-0.04f, 0.06f, l.sunElevation) : 0.0f;
+            l.moonLux = celestialControls.moonEnabled ? celestialControls.moonLightLux * night : 0.0f;
+            l.moonDiskBrightness = celestialControls.moonEnabled ? celestialControls.moonVisualBrightness * night : 0.0f;
+            l.moonPhase = celestialControls.moonPhase;
+            l.starVisibility = 0.0f;
+            System.arraycopy(celestialControls.sunTint, 0, l.sunColor, 0, 3);
+            System.arraycopy(celestialControls.moonTint, 0, l.moonColor, 0, 3);
+            celestialControls.activeSkySource = skySource(l.sunElevation);
+            return;
+        }
+        if(!Float.isNaN(manualMoonPhase))l.moonPhase=manualMoonPhase;l.sunLux*=sunScale;l.sunDiskBrightness*=sunScale;l.moonLux*=moonScale;l.moonDiskBrightness*=moonScale;l.starVisibility=clamp(l.starVisibility*starBrightness);if(sunTintMode==1){l.sunColor[0]=1;l.sunColor[1]*=0.84f;l.sunColor[2]*=0.62f;}else if(sunTintMode==2){l.sunColor[0]*=0.82f;l.sunColor[1]*=0.92f;l.sunColor[2]=1;}if(moonTintMode==1){l.moonColor[0]=0.68f;l.moonColor[1]=0.72f;l.moonColor[2]=0.78f;}else if(moonTintMode==2){l.moonColor[0]=0.35f;l.moonColor[1]=0.50f;l.moonColor[2]=1.0f;}
+    }
+
+    private static String skySource(float sunElevation) {
+        if (sunElevation > 0.28f) return "SOLUM_NATIVE_RAYLEIGH_MIE_DAY";
+        if (sunElevation > 0.02f) return "SOLUM_NATIVE_RAYLEIGH_MIE_DAWN";
+        if (sunElevation > -0.10f) return "SOLUM_NATIVE_RAYLEIGH_MIE_SUNSET";
+        if (sunElevation > -0.32f) return "SOLUM_NATIVE_RAYLEIGH_MIE_TWILIGHT";
+        return "SOLUM_NATIVE_RAYLEIGH_MIE_NIGHT";
+    }
+
+    private static void normalizeDirection(float[] out, float x, float y, float z) {
+        float length = (float)Math.sqrt(x*x+y*y+z*z); if (length < 0.0001f) length = 1.0f;
+        out[0]=x/length;out[1]=y/length;out[2]=z/length;
+    }
+
+    private static float smoothStep(float a,float b,float value){float t=Math.max(0.0f,Math.min(1.0f,(value-a)/Math.max(0.0001f,b-a)));return t*t*(3.0f-2.0f*t);}
     private void applySurfaceOverrides(){if(!Float.isNaN(manualPuddle))state.surface.puddle=manualPuddle;if(!Float.isNaN(manualSnowCover)){state.surface.snowCover=manualSnowCover;state.surface.exposedSnow=manualSnowCover;}if(!Float.isNaN(manualIce))state.surface.ice=manualIce;state.surface.interiorSnow=0;}
 
     private float random(){return (rngState&0xffffffffL)/4294967296.0f;}private static int xorshift(int v){v^=v<<13;v^=v>>>17;v^=v<<5;return v;}private static float clamp(float v){return Math.max(0,Math.min(1,v));}private static float lerp(float a,float b,float t){return a+(b-a)*t;}private static float approach(float v,float target,float amount){return v<target?Math.min(target,v+amount):Math.max(target,v-amount);}

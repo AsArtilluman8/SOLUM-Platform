@@ -1898,7 +1898,13 @@ public class FilamentGlbPreviewActivity extends Activity {
                     ? "functional_prepared_hdr_prefilter_slot=" + slot
                     : "prepared_hdr_present_but_prefilter_not_ready_" + iblLoadStatus;
             }
-            if (indirectLight != null) indirectLight.setIntensity(Math.max(0.0f, intensity * 30000.0f * blend));
+            if (indirectLight != null) {
+                float rawIntensity = intensity * blend;
+                float appliedIndirectLightIntensity = clamp(rawIntensity, 0.0f, 2.0f);
+                indirectLight.setIntensity(appliedIndirectLightIntensity);
+                android.util.Log.i("SOLUM_P63_INTENSITY", "rawIntensity=" + rawIntensity
+                    + " blend=" + blend + " appliedIndirectLightIntensity=" + appliedIndirectLightIntensity);
+            }
         } catch (Throwable error) {
             p63PreparedIblStatus = "prepared_ibl_failed_" + shortMessage(error);
             if (indirectLight == null || skybox == null) createEnvironmentFallback();

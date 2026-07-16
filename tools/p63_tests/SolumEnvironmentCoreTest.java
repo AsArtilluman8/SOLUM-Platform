@@ -88,7 +88,10 @@ public final class SolumEnvironmentCoreTest {
         require(controls.oldIblActive && !controls.p63IblEnabled, "old IBL remains active");
         require(controls.cloudsEnabled && controls.starsEnabled && !controls.precipitationEnabled
             && !controls.surfaceWeatherEnabled && !controls.lightningEnabled && !controls.proceduralAudioEnabled,
-            "P63.2B enables bounded stars/clouds while deferred weather remains off");
+            "P63.3 enables analytic stars/clouds while deferred weather remains off");
+        require(controls.analyticSky && controls.analyticSun && controls.analyticMoon
+            && controls.analyticStars && controls.analyticClouds && controls.legacyCelestialFallback,
+            "analytic feature flags default on with legacy fallback");
         controls.sunLightLux = 4.0f;
         controls.sunVisualBrightness = 1.5f;
         controller.setTime(1200.0f);
@@ -103,11 +106,11 @@ public final class SolumEnvironmentCoreTest {
         require(close(controller.getState().lighting.sunDiskBrightness, 0.25f), "sun visual edit applies independently");
         require(close(controls.sunEmissive, 1.35f) && close(controller.getState().lighting.sunLux, sunLux),
             "sun emissive is independent from sun directional light intensity");
-        controls.moonPhase = 0.23f;
+        controls.moonPhaseAngleDegrees = 138.6f;
         controls.moonLightLux = 0.4f;
         controller.setTime(0.0f);
         controller.update(0.1f);
-        require(close(controller.getState().lighting.moonPhase, 0.23f), "moon phase applies");
+        require(close(controller.getState().lighting.moonPhase, 0.23f), "continuous moon phase angle applies");
         require(controller.getState().lighting.moonLux > 0.0f && controller.getState().lighting.sunLux == 0.0f, "separate moon directional light at night");
         float moonLux = controller.getState().lighting.moonLux;
         controls.moonEmissive = 1.1f;
@@ -126,16 +129,51 @@ public final class SolumEnvironmentCoreTest {
         controls.starTwinkleAmount = 0.65f; controls.setStarTint(0.2f, 0.4f, 0.8f); controls.sanitize();
         require(close(controls.starDensity, 0.55f) && close(controls.starBrightness, 1.2f)
             && close(controls.starSize, 1.4f) && close(controls.starTint[2], 0.8f), "star controls remain bounded and independent");
+        SolumAnalyticSkyState analytic = controller.getState().analyticSky;
+        require(analytic.analyticSky && analytic.analyticSun && analytic.analyticMoon
+            && analytic.analyticStars && !analytic.analyticClouds, "controller publishes per-feature analytic state");
+        require("Low".equals(analytic.cloudQuality) && analytic.oldIbl && !analytic.p63DynamicIbl,
+            "Low default, old IBL true, dynamic IBL false");
         controls.sunLightLux = Float.NaN;
+        controls.sunDiscLuminanceNits = Float.NaN;
         controls.moonLightLux = Float.POSITIVE_INFINITY;
         controls.exposureCompensation = Float.NEGATIVE_INFINITY;
         controls.sanitize();
-        require(close(controls.sunLightLux, 18.0f) && close(controls.moonLightLux, 0.15f)
+        require(close(controls.sunLightLux, 35_000.0f) && close(controls.sunDiscLuminanceNits, 35_000.0f)
+            && close(controls.moonLightLux, 0.15f)
             && close(controls.exposureCompensation, 0.0f), "no NaN or Infinity crosses state boundary");
-        controls.sunLightLux = 999.0f; controls.moonLightLux = 999.0f; controls.bloomLikeResponse = 999.0f;
+        controls.sunLightLux = 2_000_000.0f; controls.sunDiscLuminanceNits = 2_000_000.0f;
+        controls.moonLightLux = 999.0f; controls.bloomLikeResponse = 999.0f;
         controls.sanitize();
-        require(close(controls.sunLightLux, 50.0f) && close(controls.moonLightLux, 2.0f)
-            && close(controls.bloomLikeResponse, 0.12f), "safe light and post-process ranges");
+        require(close(controls.sunLightLux, SolumAnalyticSkyMaterial.SUN_LUX_SAFETY_MAX)
+            && close(controls.sunDiscLuminanceNits, SolumAnalyticSkyMaterial.SUN_LUMINANCE_SAFETY_MAX_NITS)
+            && close(controls.moonLightLux, SolumAnalyticSkyMaterial.MOON_LUX_SAFETY_MAX)
+            && close(controls.bloomLikeResponse, 0.12f), "large but finite physical safety ranges");
+        testContinuousMoonDirections();
+        controls.applyScenarioPreset("Milky Way Night");
+        require(close(controls.time, 0.0f) && close(controls.milkyWayIntensity, 0.75f)
+            && !controls.cloudsEnabled, "analytic scenario preset inputs");
+    }
+
+    private static void testContinuousMoonDirections() {
+        float[] moon = {0.34f, 0.22f, -0.914111f};
+        float[] full = new float[3];
+        float[] quarter = new float[3];
+        float[] crescentA = new float[3];
+        float[] crescentB = new float[3];
+        float[] fresh = new float[3];
+        SolumAnalyticSkyMaterial.moonToSunDirection(moon, 0.0f, full);
+        SolumAnalyticSkyMaterial.moonToSunDirection(moon, 90.0f, quarter);
+        SolumAnalyticSkyMaterial.moonToSunDirection(moon, 149.9f, crescentA);
+        SolumAnalyticSkyMaterial.moonToSunDirection(moon, 150.1f, crescentB);
+        SolumAnalyticSkyMaterial.moonToSunDirection(moon, 180.0f, fresh);
+        float moonLength = length(moon);
+        float[] unitMoon = {moon[0] / moonLength, moon[1] / moonLength, moon[2] / moonLength};
+        require(dot(full, unitMoon) < -0.999f, "full moon light points toward observer-facing normal");
+        require(Math.abs(dot(quarter, unitMoon)) < 0.002f, "quarter moon direction is orthogonal");
+        require(dot(fresh, unitMoon) > 0.999f, "new moon light points away from observer-facing normal");
+        require(dot(crescentA, crescentB) > 0.9999f, "phase direction changes continuously without an index jump");
+        for (float value : crescentA) require(Float.isFinite(value), "continuous Moon direction remains finite");
     }
 
     private static void testCanonicalCelestialCoordinates() {
@@ -244,6 +282,7 @@ public final class SolumEnvironmentCoreTest {
 
     private static boolean close(float a, float b) { return Math.abs(a - b) < 0.001f; }
     private static float length(float[] value) { return (float)Math.sqrt(value[0] * value[0] + value[1] * value[1] + value[2] * value[2]); }
+    private static float dot(float[] a, float[] b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
     private static boolean vectorClose(float[] a, float[] b) { return close(a[0], b[0]) && close(a[1], b[1]) && close(a[2], b[2]); }
     private static float colorDistance(float[] a, float[] b) { return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]); }
     private static void require(boolean value, String label) { if (!value) throw new AssertionError(label); }

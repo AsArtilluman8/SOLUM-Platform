@@ -15,6 +15,7 @@ public final class SolumEnvironmentState {
     public final SolumSurfaceWeatherState surface = new SolumSurfaceWeatherState();
     public final SolumEnvironmentAudioState audio = new SolumEnvironmentAudioState();
     public final SolumEnvironmentLightingState lighting = new SolumEnvironmentLightingState();
+    public final SolumAnalyticSkyState analyticSky = new SolumAnalyticSkyState();
     public String quality = "Medium";
     public String requestedPreset = "Partly_Cloudy";
     public String activePreset = "Partly_Cloudy";

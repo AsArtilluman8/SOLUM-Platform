@@ -17,7 +17,7 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
             Bundle result = new Bundle();
             try {
                 runViewRegression();
-                result.putString("P63_VIEW_TEST", "PASS scalar controls; nine tabs; circular color picker; cloud preset; Activity recreation restores shared state");
+                result.putString("P63_VIEW_TEST", "PASS P63.3 analytic controls; nine tabs; log/exact luminance; circular color picker; Activity recreation restores shared state");
                 finish(Activity.RESULT_OK, result);
             } catch (Throwable error) {
                 result.putString("P63_VIEW_TEST", "FAIL " + error.getClass().getSimpleName() + " " + error.getMessage());
@@ -33,7 +33,7 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
         Activity activity = startActivitySync(intent);
         waitForIdleSync();
         View quickContent = tagged(activity, "p63.tab.content.quick", View.class);
-        View skyContent = tagged(activity, "p63.tab.content.sky", View.class);
+        View atmosphereContent = tagged(activity, "p63.tab.content.atmosphere", View.class);
         View sunContent = tagged(activity, "p63.tab.content.sun", View.class);
         View moonContent = tagged(activity, "p63.tab.content.moon", View.class);
         View starsContent = tagged(activity, "p63.tab.content.stars", View.class);
@@ -42,7 +42,7 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
         View postFxContent = tagged(activity, "p63.tab.content.postfx", View.class);
         View debugContent = tagged(activity, "p63.tab.content.debug", View.class);
         require(quickContent.getVisibility() == View.VISIBLE, "Quick must be the default inner tab");
-        require(skyContent.getVisibility() == View.GONE && sunContent.getVisibility() == View.GONE
+        require(atmosphereContent.getVisibility() == View.GONE && sunContent.getVisibility() == View.GONE
             && moonContent.getVisibility() == View.GONE && starsContent.getVisibility() == View.GONE
             && cloudsContent.getVisibility() == View.GONE && cameraContent.getVisibility() == View.GONE
             && postFxContent.getVisibility() == View.GONE
@@ -76,22 +76,36 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
             "Zoom + button did not decrease camera distance");
         runOnMainSync(sunTab::performClick);
         waitForIdleSync();
-        SeekBar slider = tagged(activity, "p63.slider.sun_light_intensity", SeekBar.class);
-        EditText exact = tagged(activity, "p63.numeric.sun_light_intensity", EditText.class);
-        Button apply = tagged(activity, "p63.numeric.apply.sun_light_intensity", Button.class);
-        runOnMainSync(() -> { exact.setText("27.5"); apply.performClick(); });
+        SeekBar slider = tagged(activity, "p63.log.slider.sun_light", SeekBar.class);
+        EditText exact = tagged(activity, "p63.numeric.sun_light", EditText.class);
+        Button apply = tagged(activity, "p63.numeric.apply.sun_light", Button.class);
+        runOnMainSync(() -> { exact.setText("27500"); apply.performClick(); });
         waitForIdleSync();
-        require(slider.getProgress() == 55, "numeric Apply did not synchronize SeekBar thumb");
+        int exactProgress = slider.getProgress();
+        require(exactProgress > 0 && exactProgress < 1000,
+            "numeric Apply did not synchronize logarithmic SeekBar thumb");
 
-        Button bright = tagged(activity, "p63.sun_preset.bright", Button.class);
-        runOnMainSync(bright::performClick);
+        Button physicalNoon = tagged(activity, "p63.sun_preset.physical_noon", Button.class);
+        runOnMainSync(physicalNoon::performClick);
         waitForIdleSync();
-        require(slider.getProgress() == 70, "preset did not synchronize thumb");
+        require(slider.getProgress() > exactProgress, "physical preset did not synchronize log thumb");
 
         Button reset = tagged(activity, "p63.sun_reset", Button.class);
         runOnMainSync(reset::performClick);
         waitForIdleSync();
-        require(slider.getProgress() == 36, "reset did not synchronize thumb");
+        require(slider.getProgress() > exactProgress, "reset did not synchronize physical Sun default");
+
+        SeekBar discSlider = tagged(activity, "p63.log.slider.sun_disc_luminance", SeekBar.class);
+        EditText discExact = tagged(activity, "p63.numeric.sun_disc_luminance", EditText.class);
+        Button discApply = tagged(activity, "p63.numeric.apply.sun_disc_luminance", Button.class);
+        runOnMainSync(() -> { discExact.setText("250000"); discApply.performClick(); });
+        waitForIdleSync();
+        require(discSlider.getProgress() == 1000 && discExact.getText().toString().startsWith("250000"),
+            "exact Sun luminance above slider range was not retained safely");
+        runOnMainSync(() -> { discExact.setText("Infinity"); discApply.performClick(); });
+        waitForIdleSync();
+        require(discExact.getText().toString().startsWith("250000"),
+            "non-finite Sun luminance did not keep the prior finite value");
 
         Button color = tagged(activity, "p63.color.open.sun", Button.class);
         runOnMainSync(color::performClick);
@@ -117,6 +131,16 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
         runOnMainSync(cloudyPreset::performClick);
         waitForIdleSync();
         require(cloudCoverage.getProgress() == 82, "Cloudy preset did not synchronize coverage");
+        Button mediumQuality = tagged(activity, "p63.cloud_quality.medium", Button.class);
+        runOnMainSync(mediumQuality::performClick);
+        waitForIdleSync();
+
+        Button atmosphereTab = tagged(activity, "p63.tab.atmosphere", Button.class);
+        runOnMainSync(atmosphereTab::performClick);
+        waitForIdleSync();
+        require(atmosphereContent.getVisibility() == View.VISIBLE,
+            "Atmosphere tab did not expose analytic scattering controls");
+        tagged(activity, "p63.slider.turbidity", SeekBar.class);
 
         Button starsTab = tagged(activity, "p63.tab.stars", Button.class);
         runOnMainSync(starsTab::performClick);
@@ -130,12 +154,15 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
         waitForIdleSync();
         require(starColor.getText().toString().contains("#00FF00"), "Star color wheel did not update state");
 
-        runOnMainSync(() -> { exact.setText("24.5"); apply.performClick(); activity.finish(); });
+        runOnMainSync(() -> { exact.setText("24500"); apply.performClick(); });
+        waitForIdleSync();
+        int persistedProgress = slider.getProgress();
+        runOnMainSync(activity::finish);
         waitForIdleSync();
         Activity recreated = startActivitySync(intent);
         waitForIdleSync();
-        SeekBar restored = tagged(recreated, "p63.slider.sun_light_intensity", SeekBar.class);
-        require(restored.getProgress() == 49, "Activity recreation did not restore state/thumb");
+        SeekBar restored = tagged(recreated, "p63.log.slider.sun_light", SeekBar.class);
+        require(restored.getProgress() == persistedProgress, "Activity recreation did not restore state/log thumb");
         runOnMainSync(recreated::finish);
     }
 

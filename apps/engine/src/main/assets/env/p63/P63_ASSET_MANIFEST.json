@@ -7,6 +7,8 @@
   "files": [
     "P63_2A_RESOURCE_MANIFEST.json",
     "P63_2A_VERIFIED_AUDIO_MANIFEST.json",
+    "P63_3_SKY_PRESETS.json",
+    "P63_3_SKY_TRUTH_MANIFEST.json",
     "P63_ASSET_MANIFEST.json",
     "P63_CAPTURE_SCENARIOS.json",
     "p63_2a_celestial_test_stage.glb",
@@ -17,6 +19,7 @@
     "p63_sand.hdr",
     "p63_snow.hdr",
     "p63_storm.hdr",
-    "p63_sunset.hdr"
+    "p63_sunset.hdr",
+    "analytic_sky_mobile.filamat"
   ]
 }

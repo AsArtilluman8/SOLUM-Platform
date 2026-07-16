@@ -245,7 +245,33 @@ else
   fi
 
   P63_TEST_CODE=0
-  if [ -f "tools/p63_environment_tests.py" ]; then
+  if [ -f "tools/p63_3_sky_truth_audit.py" ]; then
+    log "p63_truth_command=python3 tools/p63_3_sky_truth_audit.py"
+    set +e
+    python3 tools/p63_3_sky_truth_audit.py 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL"
+    P63_TEST_CODE=${PIPESTATUS[0]}
+    set -e
+    if [ "$P63_TEST_CODE" -eq 0 ]; then
+      short "P63_SKY_TRUTH_AUDIT=PASS"
+    else
+      short "P63_SKY_TRUTH_AUDIT=FAILED"
+    fi
+  fi
+
+  if [ "$P63_TEST_CODE" -eq 0 ] && [ -f "tools/compile_p63_3_sky_material.sh" ]; then
+    log "p63_material_command=bash tools/compile_p63_3_sky_material.sh"
+    set +e
+    bash tools/compile_p63_3_sky_material.sh 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL"
+    P63_TEST_CODE=${PIPESTATUS[0]}
+    set -e
+    if [ "$P63_TEST_CODE" -eq 0 ]; then
+      short "P63_ANALYTIC_SKY_MATERIAL=PASS"
+    else
+      short "P63_ANALYTIC_SKY_MATERIAL=FAILED"
+    fi
+  fi
+
+  if [ "$P63_TEST_CODE" -eq 0 ] && [ -f "tools/p63_environment_tests.py" ]; then
     log "p63_test_command=python3 tools/p63_environment_tests.py"
     set +e
     python3 tools/p63_environment_tests.py 2>&1 | tee -a "$FULL_LOG" "$LOCAL_FULL"

@@ -1,0 +1,20 @@
+{
+  "schema": "solum.p63_3.sky_presets",
+  "schemaVersion": 1,
+  "presets": [
+    {"id":"Clear Noon","inputs":{"time":1200,"cloudCoverage":0,"sunLux":110000,"sunNits":100000},"expectedVisibleResult":"blue analytic atmosphere, compact transmitted Sun, no clouds","quality":"Low","provenance":"FILAMENT_ADAPTED+SOLUM_NATIVE","cameraPreset":"Horizon"},
+    {"id":"Golden Hour","inputs":{"time":1700,"cloudCoverage":0.28,"turbidity":2.4},"expectedVisibleResult":"warm long-path atmosphere and naturally lit cloud edges","quality":"Low","provenance":"FILAMENT_ADAPTED+SOLUM_NATIVE","cameraPreset":"Horizon"},
+    {"id":"Sunset","inputs":{"time":1800,"cloudCoverage":0.28,"sunsetSaturation":1.08},"expectedVisibleResult":"Rayleigh/Mie/ozone sunset without solid orange sky fill","quality":"Low","provenance":"FILAMENT_ADAPTED+SOLUM_NATIVE","cameraPreset":"Horizon"},
+    {"id":"Civil Twilight","inputs":{"time":1900,"cloudCoverage":0,"nightFloor":0.012},"expectedVisibleResult":"continuous twilight with first stars","quality":"Low","provenance":"FILAMENT_ADAPTED+UDS_VERIFIED","cameraPreset":"Horizon"},
+    {"id":"Clear Midnight","inputs":{"time":0,"cloudCoverage":0,"starDensity":0.72},"expectedVisibleResult":"dark finite night floor and UDS stars","quality":"Low","provenance":"UDS_VERIFIED+FILAMENT_ADAPTED","cameraPreset":"Overview"},
+    {"id":"Quarter Moon","inputs":{"time":0,"phaseAngleDegrees":90,"earthshine":0.035},"expectedVisibleResult":"continuous curved half-lit Moon terminator","quality":"Low","provenance":"UDS_VERIFIED+FILAMENT_ADAPTED","cameraPreset":"Moon"},
+    {"id":"Crescent Moon","inputs":{"time":0,"phaseAngleDegrees":150,"earthshine":0.035},"expectedVisibleResult":"thin curved crescent with visible earthshine","quality":"Low","provenance":"UDS_VERIFIED+FILAMENT_ADAPTED","cameraPreset":"Moon"},
+    {"id":"Full Moon","inputs":{"time":0,"phaseAngleDegrees":0,"earthshine":0.035},"expectedVisibleResult":"fully illuminated textured Moon with normal detail","quality":"Low","provenance":"UDS_VERIFIED+FILAMENT_ADAPTED","cameraPreset":"Moon"},
+    {"id":"Milky Way Night","inputs":{"time":0,"milkyWayIntensity":0.75,"cloudCoverage":0},"expectedVisibleResult":"UDS stars plus labeled SOLUM-native galactic band","quality":"Low","provenance":"UDS_VERIFIED+SOLUM_NATIVE","cameraPreset":"Moon"},
+    {"id":"Light Clouds","inputs":{"coverage":0.28,"density":0.58,"quality":"Low"},"expectedVisibleResult":"single soft camera-centered base shell","quality":"Low","provenance":"SOLUM_NATIVE","cameraPreset":"Overview"},
+    {"id":"Partly Cloudy","inputs":{"coverage":0.48,"density":0.62,"quality":"Low"},"expectedVisibleResult":"broken base cloud shell without alpha sorting holes","quality":"Low","provenance":"SOLUM_NATIVE","cameraPreset":"Overview"},
+    {"id":"Overcast","inputs":{"coverage":0.82,"density":0.78,"sunLux":6000},"expectedVisibleResult":"dense soft shell with attenuated Sun","quality":"Low","provenance":"SOLUM_NATIVE+FILAMENT_ADAPTED","cameraPreset":"Overview"},
+    {"id":"Sunset Clouds","inputs":{"time":1800,"coverage":0.55,"density":0.66},"expectedVisibleResult":"cloud color driven by transmitted sunset light, not an orange base preset","quality":"Low","provenance":"SOLUM_NATIVE+FILAMENT_ADAPTED","cameraPreset":"Horizon"},
+    {"id":"Night Clouds","inputs":{"time":0,"coverage":0.42,"density":0.70},"expectedVisibleResult":"Moon/sky-lit clouds that occlude stars","quality":"Low","provenance":"SOLUM_NATIVE+FILAMENT_ADAPTED","cameraPreset":"Overview"}
+  ]
+}

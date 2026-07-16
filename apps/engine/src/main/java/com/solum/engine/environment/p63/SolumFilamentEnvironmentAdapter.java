@@ -1,6 +1,7 @@
 package com.solum.engine.environment.p63;
 
 import android.opengl.Matrix;
+import android.content.res.AssetManager;
 
 import com.google.android.filament.Engine;
 import com.google.android.filament.EntityManager;
@@ -43,6 +44,7 @@ public final class SolumFilamentEnvironmentAdapter {
     private final SolumEnvironmentController controller;
     private final SolumEnvironmentAudioSystem audio;
     private final Host host;
+    private final SolumAnalyticSkyRenderer analyticSkyRenderer;
     private final Map<String, Integer> stageEntities = new LinkedHashMap<>();
     private final float[] transformScratch = new float[16];
     private final float[] billboardRightScratch = new float[3];
@@ -67,11 +69,12 @@ public final class SolumFilamentEnvironmentAdapter {
     private int activeStarSizeLevel = -1;
     private int activeStarVisibleGroups = -1;
 
-    public SolumFilamentEnvironmentAdapter(ModelViewer viewer, SolumEnvironmentController controller,
+    public SolumFilamentEnvironmentAdapter(AssetManager assets, ModelViewer viewer, SolumEnvironmentController controller,
                                             SolumEnvironmentAudioSystem audio, Host host) {
-        if (viewer == null || controller == null) throw new IllegalArgumentException("filament_adapter_dependencies_missing");
+        if (assets == null || viewer == null || controller == null) throw new IllegalArgumentException("filament_adapter_dependencies_missing");
         this.viewer = viewer; this.controller = controller; this.audio = audio; this.host = host;
         createLights();
+        analyticSkyRenderer = new SolumAnalyticSkyRenderer(assets, viewer.getEngine(), viewer.getScene());
     }
 
     public void bindStage(FilamentAsset asset) {
@@ -118,7 +121,11 @@ public final class SolumFilamentEnvironmentAdapter {
             }
             host.applyEnvironmentSkyColor(state.atmosphere.skyColor[0], state.atmosphere.skyColor[1], state.atmosphere.skyColor[2], state.lightning.flash);
         }
-        if (stageBound) applyStage(state, dt);
+        if (controller.isCelestialOnlyMode()) {
+            applyCelestialPipeline(state, dt);
+        } else if (stageBound) {
+            applyStage(state, dt);
+        }
         if (audio != null) audio.update(state, dt);
         state.adapterStatus = status + " material=" + materialStatus;
         return state;
@@ -126,6 +133,7 @@ public final class SolumFilamentEnvironmentAdapter {
 
     public void release() {
         Engine engine = viewer.getEngine();
+        analyticSkyRenderer.release();
         destroyCelestialSky(engine);
         destroyLight(engine, moonLightEntity); moonLightEntity = 0;
         destroyLight(engine, lightningLightEntity); lightningLightEntity = 0;
@@ -133,9 +141,11 @@ public final class SolumFilamentEnvironmentAdapter {
     }
 
     public String getStatus() { return status + " material=" + materialStatus + " sky=" + celestialSkyStatus
+        + " analytic=" + analyticSkyRenderer.getStatus()
         + " moonPhaseNode=" + getActiveMoonPhaseNode() + " stageBound=" + stageBound; }
 
     public String getActiveMoonPhaseNode() {
+        if (analyticSkyRenderer.isActive()) return "analytic_continuous_uniform";
         return activeMoonPhaseIndex < 0 ? "none" : MOON_PHASE_NAMES[activeMoonPhaseIndex];
     }
 
@@ -160,14 +170,16 @@ public final class SolumFilamentEnvironmentAdapter {
             if (sun != 0) {
                 manager.setDirection(sun, state.lighting.sunDirection[0], state.lighting.sunDirection[1], state.lighting.sunDirection[2]);
                 manager.setColor(sun, state.lighting.sunColor[0], state.lighting.sunColor[1], state.lighting.sunColor[2]);
-                manager.setIntensity(sun, safeRange(state.lighting.sunLux, 0.0f, 50.0f));
+                manager.setIntensity(sun, safeRange(state.lighting.sunLux, 0.0f,
+                    SolumAnalyticSkyMaterial.SUN_LUX_SAFETY_MAX));
                 manager.setShadowCaster(sun, state.lighting.sunLux > 0.05f);
             }
             int moon = manager.getInstance(moonLightEntity);
             if (moon != 0) {
                 manager.setDirection(moon, state.lighting.moonDirection[0], state.lighting.moonDirection[1], state.lighting.moonDirection[2]);
                 manager.setColor(moon, state.lighting.moonColor[0], state.lighting.moonColor[1], state.lighting.moonColor[2]);
-                manager.setIntensity(moon, safeRange(state.lighting.moonLux, 0.0f, 2.0f));
+                manager.setIntensity(moon, safeRange(state.lighting.moonLux, 0.0f,
+                    SolumAnalyticSkyMaterial.MOON_LUX_SAFETY_MAX));
             }
             int lightning = manager.getInstance(lightningLightEntity);
             if (lightning != 0) {
@@ -209,16 +221,6 @@ public final class SolumFilamentEnvironmentAdapter {
     }
 
     private void applyStage(SolumEnvironmentState state, float dt) {
-        if (controller.isCelestialOnlyMode()) {
-            applyAnalyticSky(state);
-            applyCelestialGeometry(state);
-            applyStarGeometry(state);
-            applyCloudGeometry(state);
-            celestialAnimationTime += dt;
-            materialClock += dt;
-            if (materialClock >= 0.12f) { materialClock = 0.0f; applyMaterials(state); }
-            return;
-        }
         rainPhase = wrap(rainPhase + dt * (5.5f + state.wind.speed * 5.0f), 12.0f);
         snowPhase = wrap(snowPhase + dt * (0.75f + state.wind.speed * 1.25f), 12.0f);
         dustPhase = wrap(dustPhase + dt * (0.65f + state.wind.speed * 2.6f), 12.0f);
@@ -232,6 +234,62 @@ public final class SolumFilamentEnvironmentAdapter {
         applyWindGeometry(state);
         materialClock += dt;
         if (materialClock >= 0.12f) { materialClock = 0.0f; applyMaterials(state); }
+    }
+
+    private void applyCelestialPipeline(SolumEnvironmentState state, float dt) {
+        SolumCelestialControlState controls = controller.getCelestialControls();
+        boolean analyticActive = analyticSkyRenderer.update(state.analyticSky);
+        controls.activeMoonTexture = state.analyticSky.moonSource;
+        controls.moonProvenance = state.analyticSky.moonSource.startsWith("UDS_VERIFIED")
+            ? "UDS_VERIFIED" : "SOLUM_NATIVE";
+        controls.lastCelestialError = state.analyticSky.lastSkyError;
+        if (analyticActive) {
+            hideLegacyCelestialGeometry();
+            materialStatus = "p63_3_single_pass_atmosphere_sun_moon_stars_cloud_shell";
+            celestialSkyStatus = "SOLUM_ANALYTIC_SKY_SINGLE_DRAW";
+            state.setFeatureStatus("sun_disk", EnvironmentFeatureStatus.FUNCTIONAL);
+            state.setFeatureStatus("moon_phase_material", EnvironmentFeatureStatus.FUNCTIONAL);
+            state.setFeatureStatus("analytic_stars", EnvironmentFeatureStatus.FUNCTIONAL);
+            state.setFeatureStatus("clouds", EnvironmentFeatureStatus.FUNCTIONAL);
+            return;
+        }
+        boolean fallbackActive = controls.skyEnabled && state.analyticSky.legacyCelestialFallback;
+        if (!fallbackActive) {
+            hideLegacyCelestialGeometry();
+            materialStatus = controls.skyEnabled ? "analytic_unavailable_fallback_disabled" : "celestial_sky_disabled_user";
+            return;
+        }
+        applyLegacyAnalyticCubemap(state);
+        if (stageBound) {
+            // The controller suppresses legacy cloud groups while analytic clouds are requested.
+            // A whole-material load/update failure must restore that budget for the explicit
+            // legacy fallback instead of silently producing a cloudless fallback scene.
+            state.clouds.visibleGroups = controls.cloudsEnabled ? 12 : 0;
+            applyCelestialGeometry(state);
+            applyStarGeometry(state);
+            applyCloudGeometry(state);
+            celestialAnimationTime += dt;
+            materialClock += dt;
+            if (materialClock >= 0.12f) { materialClock = 0.0f; applyMaterials(state); }
+        }
+        materialStatus = "p63_2b_legacy_celestial_fallback";
+        state.setFeatureStatus("sun_disk", EnvironmentFeatureStatus.PROTOTYPE);
+        state.setFeatureStatus("moon_phase_material", EnvironmentFeatureStatus.PROTOTYPE);
+        state.setFeatureStatus("analytic_stars", EnvironmentFeatureStatus.PROTOTYPE);
+        state.setFeatureStatus("clouds", EnvironmentFeatureStatus.PROTOTYPE);
+    }
+
+    private void hideLegacyCelestialGeometry() {
+        for (String name : new String[] {"P63_SUN_HALO", "P63_SUN_HALO_OUTER", "P63_SUN_GLOW_INNER",
+                "P63_SUN_DISK", "P63_MOON_HALO", "P63_MOON_GLOW_INNER", "P63_MOON_DISK",
+                "P63_MOON_SHADOW"}) setLayerVisible(name, false);
+        for (String name : MOON_PHASE_NAMES) setLayerVisible(name, false);
+        for (String[] sizeNames : STAR_VARIANT_NAMES) for (String name : sizeNames) setLayerVisible(name, false);
+        for (String name : LEGACY_STAR_NAMES) setLayerVisible(name, false);
+        for (String name : CLOUD_NAMES) setLayerVisible(name, false);
+        activeMoonPhaseIndex = -1;
+        activeStarSizeLevel = -1;
+        activeStarVisibleGroups = -1;
     }
 
     private void applyCelestialGeometry(SolumEnvironmentState state) {
@@ -538,7 +596,7 @@ public final class SolumFilamentEnvironmentAdapter {
         out[0] = rightX / length; out[1] = rightY / length; out[2] = rightZ / length;
     }
 
-    private void applyAnalyticSky(SolumEnvironmentState state) {
+    private void applyLegacyAnalyticCubemap(SolumEnvironmentState state) {
         SolumCelestialControlState controls = controller.getCelestialControls();
         if (!controls.skyEnabled) {
             if (celestialSkyVisible) viewer.getScene().setSkybox(null);
@@ -576,8 +634,7 @@ public final class SolumFilamentEnvironmentAdapter {
             celestialSkyVisible = true;
             celestialSkyStatus = "SOLUM_NATIVE_ANALYTIC_CUBEMAP_64_SRGB_no_hemisphere_seam";
         } catch (Throwable error) {
-            controls.skyEnabled = false;
-            controls.lastCelestialError = "sky_material_disabled_" + safe(error);
+            controls.lastCelestialError = "legacy_sky_fallback_disabled_" + safe(error);
             celestialSkyStatus = "disabled_after_error_" + safe(error);
             celestialSkyVisible = false;
             try { viewer.getScene().setSkybox(null); } catch (Throwable ignored) { }

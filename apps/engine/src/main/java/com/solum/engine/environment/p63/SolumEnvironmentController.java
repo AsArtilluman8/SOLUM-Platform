@@ -15,6 +15,7 @@ public final class SolumEnvironmentController {
     private float strikeElapsed;
     private float strikeDuration;
     private float cloudPhase;
+    private float analyticElapsedSeconds;
     private float windPhase;
     private String lastIblSlot = "";
     private float cameraX;
@@ -107,15 +108,17 @@ public final class SolumEnvironmentController {
         time.set(celestialControls.time);
         time.setSpeed(celestialControls.timeSpeed);
         time.setPaused(celestialControls.timePaused);
-        state.requestedPreset = "P63_2A_CELESTIAL_ONLY";
+        state.requestedPreset = "P63_3_ANALYTIC_SKY";
         state.activePreset = state.requestedPreset;
         state.weatherTransitionActive = false;
+        state.setFeatureStatus("analytic_sky_single_draw", EnvironmentFeatureStatus.FUNCTIONAL);
         state.setFeatureStatus("full_sphere_atmosphere", EnvironmentFeatureStatus.FUNCTIONAL);
         state.setFeatureStatus("sun_disk", EnvironmentFeatureStatus.FUNCTIONAL);
         state.setFeatureStatus("moon_phase_material", EnvironmentFeatureStatus.FUNCTIONAL);
         state.setFeatureStatus("verified_audio_diagnostics", EnvironmentFeatureStatus.FUNCTIONAL);
         state.setFeatureStatus("light_shafts", EnvironmentFeatureStatus.PROTOTYPE);
-        state.setFeatureStatus("world_space_stars", EnvironmentFeatureStatus.FUNCTIONAL);
+        state.setFeatureStatus("world_space_stars", EnvironmentFeatureStatus.PLACEHOLDER);
+        state.setFeatureStatus("analytic_stars", EnvironmentFeatureStatus.FUNCTIONAL);
         state.setFeatureStatus("clouds", EnvironmentFeatureStatus.FUNCTIONAL);
         state.setFeatureStatus("world_space_rain", EnvironmentFeatureStatus.PLACEHOLDER);
         state.setFeatureStatus("world_space_snow", EnvironmentFeatureStatus.PLACEHOLDER);
@@ -158,6 +161,7 @@ public final class SolumEnvironmentController {
         applyCelestialOverrides();
         if (celestialOnlyMode) {
             updateCelestialClouds(dt); updateAtmosphere();
+            updateAnalyticSkyState(dt);
             state.fog.density = 0.0f;
             state.fog.maximumOpacity = 0.0f;
             state.lighting.lightningLumens = 0.0f;
@@ -230,8 +234,10 @@ public final class SolumEnvironmentController {
         if (c.offsetZ > 36.0f) c.offsetZ -= 36.0f;
         c.lightAttenuation = 1.0f - c.coverage * 0.52f;
         c.lightningIllumination = 0.0f;
-        c.visibleGroups = 12;
-        c.quality = "P63_2B_LAYERED_WORLD_SPACE";
+        c.visibleGroups = celestialControls.analyticClouds ? 0 : 12;
+        c.quality = celestialControls.analyticClouds
+            ? "P63_3_" + celestialControls.cloudQuality.toUpperCase().replace(' ', '_') + "_SPHERICAL_SHELL"
+            : "P63_2B_LEGACY_GEOMETRY_FALLBACK";
         for (int index = 0; index < 3; index++) {
             c.color[index] = celestialControls.cloudTint[index] * celestialControls.cloudBrightness;
         }
@@ -240,7 +246,10 @@ public final class SolumEnvironmentController {
     private void updateAtmosphere() {
         SolumAtmosphereState a=state.atmosphere; float sunHeight=state.lighting.sunElevation;
         float day=clamp((sunHeight+0.08f)/0.24f); float twilight=clamp(1.0f-Math.abs(sunHeight)/0.24f);
-        a.rayleigh=0.8f+state.weather.humidity*0.35f; a.mie=0.025f+state.weather.humidity*0.12f+state.weather.dust*0.22f;
+        a.rayleigh=celestialOnlyMode ? celestialControls.rayleigh : 0.8f+state.weather.humidity*0.35f;
+        a.mie=celestialOnlyMode ? celestialControls.mie : 0.025f+state.weather.humidity*0.12f+state.weather.dust*0.22f;
+        a.mieAnisotropy = celestialOnlyMode ? celestialControls.mieG : a.mieAnisotropy;
+        a.ozone = celestialOnlyMode ? celestialControls.ozone : a.ozone;
         a.horizonScattering=0.25f+a.mie*2.2f; a.twilight=twilight;
         a.skyColor[0]=lerp(0.012f,0.20f,day)+twilight*0.34f; a.skyColor[1]=lerp(0.020f,0.43f,day)+twilight*0.10f; a.skyColor[2]=lerp(0.055f,0.82f,day)-twilight*0.20f;
         float dark=1.0f-state.weather.cloudCoverage*0.55f-state.weather.dust*0.30f;
@@ -290,18 +299,23 @@ public final class SolumEnvironmentController {
                 celestialControls.sunElevationOffsetDegrees, celestialControls.moonElevationOffsetDegrees, l);
             float day = smoothStep(-0.08f, 0.10f, l.sunElevation);
             float night = smoothStep(-0.08f, 0.10f, l.moonElevation);
+            float phaseAngle = (float)Math.toRadians(celestialControls.moonPhaseAngleDegrees);
+            float phaseLight = ((float)Math.sin(phaseAngle)
+                + ((float)Math.PI - phaseAngle) * (float)Math.cos(phaseAngle)) / (float)Math.PI;
+            phaseLight = Math.max(0.0f, Math.min(1.0f, phaseLight));
             l.sunLux = celestialControls.sunEnabled ? celestialControls.sunLightLux * day : 0.0f;
             l.sunDiskBrightness = celestialControls.sunEnabled ? celestialControls.sunVisualBrightness * smoothStep(-0.04f, 0.06f, l.sunElevation) : 0.0f;
-            l.moonLux = celestialControls.moonEnabled ? celestialControls.moonLightLux * night : 0.0f;
+            l.moonLux = celestialControls.moonEnabled ? celestialControls.moonLightLux * night * phaseLight : 0.0f;
             l.moonDiskBrightness = celestialControls.moonEnabled ? celestialControls.moonVisualBrightness * night : 0.0f;
             l.moonPhase = celestialControls.moonPhase;
             float starFade = 1.0f - smoothStep(-0.18f, 0.06f, l.sunElevation);
-            float cloudFade = 1.0f - (celestialControls.cloudsEnabled ? celestialControls.cloudCoverage * 0.82f : 0.0f);
             l.starVisibility = celestialControls.starsEnabled
-                ? clamp(celestialControls.starBrightness * starFade * cloudFade) : 0.0f;
+                ? clamp(celestialControls.starBrightness * starFade) : 0.0f;
             System.arraycopy(celestialControls.sunTint, 0, l.sunColor, 0, 3);
             System.arraycopy(celestialControls.moonTint, 0, l.moonColor, 0, 3);
-            celestialControls.activeSkySource = skySource(l.sunElevation);
+            celestialControls.activeSkySource = celestialControls.analyticSky
+                ? "FILAMENT_ADAPTED_ANALYTIC_" + skySource(l.sunElevation)
+                : "LEGACY_" + skySource(l.sunElevation);
             return;
         }
         normalizeDirection(l.sunVisualDirection, -l.sunDirection[0], -l.sunDirection[1], -l.sunDirection[2]);
@@ -319,6 +333,81 @@ public final class SolumEnvironmentController {
         if (sunElevation > -0.10f) return "SOLUM_NATIVE_RAYLEIGH_MIE_SUNSET";
         if (sunElevation > -0.32f) return "SOLUM_NATIVE_RAYLEIGH_MIE_TWILIGHT";
         return "SOLUM_NATIVE_RAYLEIGH_MIE_NIGHT";
+    }
+
+    private void updateAnalyticSkyState(float dt) {
+        SolumAnalyticSkyState sky = state.analyticSky;
+        SolumCelestialControlState controls = celestialControls;
+        analyticElapsedSeconds = wrap(analyticElapsedSeconds + Math.max(0.0f, dt), 16384.0f);
+        sky.elapsedSeconds = analyticElapsedSeconds;
+        sky.analyticSky = controls.skyEnabled && controls.analyticSky;
+        sky.analyticSun = controls.sunEnabled && controls.analyticSun;
+        sky.analyticMoon = controls.moonEnabled && controls.analyticMoon;
+        sky.analyticStars = controls.starsEnabled && controls.analyticStars;
+        sky.analyticClouds = controls.cloudsEnabled && controls.analyticClouds;
+        sky.legacyCelestialFallback = controls.legacyCelestialFallback;
+        sky.oldIbl = true;
+        sky.p63DynamicIbl = false;
+        copy3(state.lighting.sunVisualDirection, sky.sunDirection);
+        copy3(state.lighting.moonVisualDirection, sky.moonDirection);
+        SolumAnalyticSkyMaterial.moonToSunDirection(sky.moonDirection, controls.moonPhaseAngleDegrees,
+            sky.moonToSunDirection);
+        copy3(controls.sunTint, sky.sunTint);
+        copy3(controls.moonTint, sky.moonTint);
+        copy3(controls.starTint, sky.starTint);
+        copy3(controls.cloudTint, sky.cloudArtTint);
+        copy3(controls.skyArtTint, sky.skyArtTint);
+        sky.turbidity = controls.turbidity;
+        sky.rayleigh = controls.rayleigh;
+        sky.mie = controls.mie;
+        sky.mieG = controls.mieG;
+        sky.ozone = controls.ozone;
+        sky.horizonHaze = controls.horizonHaze;
+        sky.nightFloor = controls.nightFloor;
+        sky.sunsetSaturation = controls.sunsetSaturation;
+        sky.sunsetContrast = controls.sunsetContrast;
+        sky.horizonWarmth = controls.horizonWarmth;
+        sky.sunDiscLuminanceNits = controls.sunDiscLuminanceNits;
+        sky.sunAngularDiameterDegrees = controls.sunAngularSizeDegrees;
+        sky.sunHaloSize = controls.sunHaloSize;
+        sky.sunHaloFalloff = controls.sunHaloFalloff;
+        sky.sunBloomContribution = controls.sunBloomContribution;
+        sky.sunExposureWeight = controls.sunExposureWeight;
+        sky.sunLimbDarkening = controls.sunLimbDarkening;
+        sky.moonPhaseAngleDegrees = controls.moonPhaseAngleDegrees;
+        sky.moonVisualLuminanceNits = controls.moonVisualLuminanceNits;
+        sky.moonEarthshine = controls.moonEarthshine;
+        sky.moonNormalStrength = controls.moonNormalStrength;
+        sky.moonHalo = controls.moonGlowEnabled ? controls.moonGlow : 0.0f;
+        sky.moonAngularDiameterDegrees = controls.moonAngularSizeDegrees;
+        sky.starDensity = controls.starDensity;
+        sky.starBrightness = controls.starBrightness;
+        sky.starLimitingMagnitude = controls.starLimitingMagnitude;
+        sky.starSize = controls.starSize;
+        sky.starTwinkle = controls.starTwinkleAmount;
+        sky.milkyWayIntensity = controls.milkyWayIntensity;
+        sky.milkyWaySaturation = controls.milkyWaySaturation;
+        sky.siderealRotationDegrees = controls.siderealRotationDegrees + state.timeOfDay / 2400.0f * 360.0f;
+        sky.cloudCoverage = controls.cloudCoverage;
+        sky.cloudDensity = controls.cloudDensity;
+        sky.cloudSoftness = controls.cloudSoftness;
+        sky.cloudHeightKm = controls.cloudHeightKm;
+        sky.cloudThicknessKm = controls.cloudThicknessKm;
+        sky.cloudErosion = controls.cloudErosion;
+        sky.cloudWindSpeed = controls.cloudSpeed;
+        sky.cloudEvolution = controls.cloudEvolution;
+        sky.cloudSilverLining = controls.cloudSilverLining;
+        sky.cloudBrightness = controls.cloudBrightness;
+        sky.cloudQuality = controls.cloudQuality;
+    }
+
+    private static void copy3(float[] source, float[] target) {
+        target[0] = source[0]; target[1] = source[1]; target[2] = source[2];
+    }
+
+    private static float wrap(float value, float range) {
+        float result = value % range;
+        return result < 0.0f ? result + range : result;
     }
 
     private static void normalizeDirection(float[] out, float x, float y, float z) {

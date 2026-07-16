@@ -1,0 +1,392 @@
+// SOLUM P63.3 analytic sky.
+// Independently adapted from the Apache-2.0 Filament simulated sky structure at
+// google/filament@579991668ebeadceece05d79b62f21964028553f.
+// Water reflection and dynamic IBL are intentionally excluded.
+material {
+    name : SolumP63_3AnalyticSky,
+    parameters : [
+        { type : float3, name : sunDirection, precision : high },
+        { type : float3, name : moonDirection, precision : high },
+        { type : float3, name : moonToSunDirection, precision : high },
+        { type : float4, name : atmosphere0, precision : high },
+        { type : float4, name : atmosphere1, precision : high },
+        { type : float4, name : atmosphereArt, precision : high },
+        { type : float3, name : skyArtTint, precision : high },
+        { type : float4, name : sun0, precision : high },
+        { type : float4, name : sun1, precision : high },
+        { type : float3, name : sunTint, precision : high },
+        { type : float4, name : moon0, precision : high },
+        { type : float4, name : moon1, precision : high },
+        { type : float3, name : moonTint, precision : high },
+        { type : float4, name : stars0, precision : high },
+        { type : float4, name : stars1, precision : high },
+        { type : float3, name : starTint, precision : high },
+        { type : float, name : siderealRotation, precision : high },
+        { type : float4, name : cloud0, precision : high },
+        { type : float4, name : cloud1, precision : high },
+        { type : float4, name : cloud2, precision : high },
+        { type : float3, name : cloudArtTint, precision : high },
+        { type : float, name : elapsedSeconds, precision : high },
+        { type : float, name : starTextureAvailable, precision : high },
+        { type : sampler2d, name : moonAlbedo },
+        { type : sampler2d, name : moonNormal },
+        { type : sampler2d, name : realStars },
+        { type : sampler2d, name : tilingStars }
+    ],
+    variables : [
+        { name : "eyeDirection", precision : "high" }
+    ],
+    vertexDomain : device,
+    depthWrite : false,
+    shadingModel : unlit,
+    culling : none
+}
+
+vertex {
+    void materialVertex(inout MaterialVertexInputs material) {
+        highp vec4 p = getPosition();
+        p.z = p.z * -0.5 + 0.5;
+        highp vec4 worldPosition = getWorldFromClipMatrix() * p;
+        material.eyeDirection.xyz = worldPosition.xyz;
+    }
+}
+
+fragment {
+    #define P63_PI 3.141592653589793
+
+    highp float safePow(highp float value, highp float exponent) {
+        return pow(max(value, 1.0e-6), exponent);
+    }
+
+    highp float hash13(highp vec3 p3) {
+        p3 = fract(p3 * 0.1031);
+        p3 += dot(p3, p3.yzx + 33.33);
+        return fract((p3.x + p3.y) * p3.z);
+    }
+
+    highp vec3 mod289(highp vec3 value) {
+        return value - floor(value * (1.0 / 289.0)) * 289.0;
+    }
+
+    highp float valueNoise(highp vec3 point) {
+        point = mod289(point);
+        highp vec3 cell = floor(point);
+        highp vec3 local = fract(point);
+        highp vec3 blend = local * local * (3.0 - 2.0 * local);
+        highp vec3 next = mod289(cell + 1.0);
+        return mix(
+            mix(mix(hash13(vec3(cell.x, cell.y, cell.z)), hash13(vec3(next.x, cell.y, cell.z)), blend.x),
+                mix(hash13(vec3(cell.x, next.y, cell.z)), hash13(vec3(next.x, next.y, cell.z)), blend.x), blend.y),
+            mix(mix(hash13(vec3(cell.x, cell.y, next.z)), hash13(vec3(next.x, cell.y, next.z)), blend.x),
+                mix(hash13(vec3(cell.x, next.y, next.z)), hash13(vec3(next.x, next.y, next.z)), blend.x), blend.y),
+            blend.z);
+    }
+
+    highp float cloudFbm(highp vec3 point, highp float quality) {
+        highp float value = valueNoise(point) * 0.55;
+        point = point * 2.03 + 47.0;
+        value += valueNoise(point) * 0.27;
+        point = point * 2.01 + 83.0;
+        value += valueNoise(point) * 0.13;
+        if (quality > 0.5) {
+            point = point * 2.02 + 119.0;
+            value += valueNoise(point) * 0.065;
+        }
+        if (quality > 1.5) {
+            point = point * 2.01 + 151.0;
+            value += valueNoise(point) * 0.0325;
+        }
+        return value;
+    }
+
+    highp float airMass(highp float elevationSin) {
+        highp float y = clamp(elevationSin, 0.001, 1.0);
+        highp float zenithDegrees = acos(y) * (180.0 / P63_PI);
+        return min(38.0, 1.0 / (y + 0.15 * safePow(93.885 - zenithDegrees, -1.253)));
+    }
+
+    highp float rayleighPhase(highp float cosine) {
+        return 0.1875 * (1.0 + cosine * cosine);
+    }
+
+    highp float hgPhase(highp float cosine, highp float g) {
+        highp float g2 = g * g;
+        highp float denominator = safePow(1.0 + g2 - 2.0 * g * cosine, 1.5);
+        return 0.25 * (1.0 - g2) / max(denominator, 1.0e-5);
+    }
+
+    highp vec3 bodyTransmittance(highp vec3 direction, highp vec3 extinction) {
+        highp float refractedElevation = max(0.001, direction.y + 0.018);
+        highp vec3 value = exp(-extinction * airMass(refractedElevation));
+        highp float horizonVisibility = smoothstep(-0.075, 0.012, direction.y);
+        return value * horizonVisibility;
+    }
+
+    highp vec3 analyticAtmosphere(highp vec3 viewDirection, highp vec3 lightDirection,
+                                  out highp vec3 viewTransmittance,
+                                  out highp vec3 sunTransmittance) {
+        highp float turbidity = materialParams.atmosphere0.x;
+        highp float rayleighScale = materialParams.atmosphere0.y;
+        highp float mieScale = materialParams.atmosphere0.z;
+        highp float mieG = materialParams.atmosphere0.w;
+        highp float ozoneScale = materialParams.atmosphere1.x;
+        highp float horizonHaze = materialParams.atmosphere1.y;
+        highp float nightFloor = materialParams.atmosphere1.z;
+        highp float horizonWarmth = materialParams.atmosphere1.w;
+
+        highp vec3 betaR = vec3(0.0058, 0.0135, 0.0331) * rayleighScale;
+        highp vec3 betaM = vec3(0.0085) * mieScale * (0.45 + turbidity * 0.22);
+        highp vec3 betaO = vec3(0.0032, 0.0075, 0.0013) * ozoneScale;
+        highp vec3 extinction = max(vec3(1.0e-5), betaR + betaM + betaO);
+        highp float viewPath = airMass(max(0.001, viewDirection.y));
+        viewTransmittance = exp(-extinction * viewPath);
+        sunTransmittance = bodyTransmittance(lightDirection, extinction);
+
+        highp float cosine = dot(viewDirection, lightDirection);
+        highp float rPhase = rayleighPhase(cosine);
+        highp float mPhase = hgPhase(cosine, mieG);
+        highp vec3 scattering = (betaR * rPhase + betaM * mPhase) / extinction;
+        highp float twilight = smoothstep(-0.16, 0.035, lightDirection.y);
+        highp float day = smoothstep(-0.035, 0.12, lightDirection.y);
+        highp vec3 incident = max(sunTransmittance, vec3(0.003 * twilight));
+        highp vec3 color = scattering * (1.0 - viewTransmittance) * incident * (2.1 + day * 1.4);
+
+        highp float horizon = safePow(1.0 - clamp(viewDirection.y, 0.0, 1.0), 4.0);
+        highp vec3 longPathColor = normalize(max(sunTransmittance, vec3(1.0e-5)));
+        color += longPathColor * horizon * horizonHaze * twilight * 0.16;
+        color *= mix(vec3(1.0), vec3(1.0 + horizonWarmth * 0.15, 1.0, 1.0 - horizonWarmth * 0.12),
+                     horizon * (1.0 - day));
+
+        highp float night = 1.0 - smoothstep(-0.18, 0.02, lightDirection.y);
+        color += vec3(0.18, 0.27, 0.48) * nightFloor * night;
+        highp float groundFade = smoothstep(-0.09, 0.015, viewDirection.y);
+        return color * mix(0.25, 1.0, groundFade);
+    }
+
+    highp vec3 applyAtmosphereArt(highp vec3 color, highp vec3 lightDirection) {
+        highp float twilight = 1.0 - smoothstep(0.02, 0.30, abs(lightDirection.y));
+        highp float gray = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        highp vec3 saturated = mix(vec3(gray), color, materialParams.atmosphereArt.x);
+        highp vec3 contrasted = pow(max(saturated, vec3(1.0e-6)), vec3(materialParams.atmosphereArt.y));
+        return mix(color, contrasted, twilight) * materialParams.skyArtTint;
+    }
+
+    highp float angularDiskMask(highp vec3 viewDirection, highp vec3 bodyDirection,
+                                highp float angularRadius) {
+        highp float distance = 1.0 - dot(viewDirection, bodyDirection);
+        highp float radius = max(1.0e-7, 1.0 - cos(angularRadius));
+        highp float aa = max(fwidth(distance) * 1.5, radius * 0.025);
+        return 1.0 - smoothstep(radius - aa, radius + aa, distance);
+    }
+
+    highp float safeVisualLuminance(highp float nits, highp float exposureWeight) {
+        return min(32.0, log2(1.0 + max(0.0, nits)) * 0.52 * exposureWeight);
+    }
+
+    highp vec3 analyticSun(highp vec3 viewDirection, highp vec3 lightDirection,
+                           highp vec3 transmittance, highp float cloudOpacity) {
+        if (materialParams.sun0.w < 0.5 || lightDirection.y < -0.08) return vec3(0.0);
+        highp float angularRadius = materialParams.sun0.x;
+        highp float disk = angularDiskMask(viewDirection, lightDirection, angularRadius);
+        highp float distance = 1.0 - dot(viewDirection, lightDirection);
+        highp float radius = max(1.0e-7, 1.0 - cos(angularRadius));
+        highp float relative = clamp(distance / radius, 0.0, 1.0);
+        highp float mu = sqrt(max(0.0, 1.0 - relative));
+        highp float limb = mix(1.0, safePow(mu, materialParams.sun0.z), 0.72);
+        highp float luminance = safeVisualLuminance(materialParams.sun0.y, materialParams.sun1.w);
+        highp vec3 core = materialParams.sunTint * transmittance * luminance * limb * disk;
+
+        highp float haloRadius = angularRadius * max(1.0, materialParams.sun1.x);
+        highp float haloScale = max(1.0e-7, 1.0 - cos(haloRadius));
+        highp float halo = exp(-distance / haloScale * materialParams.sun1.y) * (1.0 - disk * 0.35);
+        highp vec3 glow = materialParams.sunTint * transmittance * luminance
+            * halo * materialParams.sun1.z * 0.16;
+        return (core + glow) * (1.0 - cloudOpacity * 0.94);
+    }
+
+    highp vec2 sphericalUv(highp vec3 direction, highp float rotation) {
+        return vec2(atan(direction.z, direction.x) * (1.0 / (2.0 * P63_PI)) + 0.5 + rotation,
+                    asin(clamp(direction.y, -1.0, 1.0)) * (1.0 / P63_PI) + 0.5);
+    }
+
+    highp float proceduralStar(highp vec3 direction, highp float density, highp float size) {
+        highp float frequency = 330.0;
+        highp vec3 point = direction * frequency;
+        highp vec3 cell = floor(point);
+        highp vec3 random = vec3(hash13(cell), hash13(cell + 17.0), hash13(cell + 43.0));
+        highp float probability = hash13(cell + 91.0);
+        if (probability > density) return 0.0;
+        highp vec3 center = normalize((cell + 0.22 + random * 0.56) / frequency);
+        highp float distance = sqrt(max(0.0, 2.0 * (1.0 - dot(direction, center))));
+        highp float pixelRadius = max(fwidth(direction.x) + fwidth(direction.y), 1.0e-5) * size * 0.72;
+        highp float radial = 1.0 - smoothstep(pixelRadius * 0.25, pixelRadius, distance);
+        return radial * radial * mix(0.28, 1.0, probability);
+    }
+
+    highp vec3 analyticStars(highp vec3 viewDirection, highp vec3 lightDirection,
+                             highp float cloudOpacity, highp float moonMask) {
+        if (materialParams.stars1.w < 0.5) return vec3(0.0);
+        highp float night = 1.0 - smoothstep(-0.18, 0.055, lightDirection.y);
+        night *= night;
+        if (night <= 0.0) return vec3(0.0);
+        highp float rotation = materialParams.siderealRotation * (1.0 / 360.0);
+        highp vec2 uv = sphericalUv(viewDirection, rotation);
+        highp vec3 sampled = texture(materialParams_realStars, uv).rgb;
+        sampled += texture(materialParams_tilingStars, uv * vec2(4.0, 2.0)).rgb * 0.72;
+        highp float luminance = dot(sampled, vec3(0.2126, 0.7152, 0.0722));
+        highp float limiting = materialParams.stars0.z / 8.0;
+        highp float threshold = mix(0.92, 0.12, materialParams.stars0.x) - limiting * 0.10;
+        highp float aa = max(fwidth(luminance) * materialParams.stars0.w * 1.5, 0.004);
+        highp float textureStar = smoothstep(threshold - aa, threshold + aa, luminance);
+        highp float nativeStar = proceduralStar(viewDirection, materialParams.stars0.x, materialParams.stars0.w);
+        highp float star = mix(nativeStar, textureStar, materialParams.starTextureAvailable);
+        highp float twinkleSeed = hash13(floor(viewDirection * 410.0));
+        highp float twinkle = 1.0 + sin(materialParams.elapsedSeconds * (1.3 + twinkleSeed * 2.7)
+            + twinkleSeed * 31.0) * materialParams.stars1.x * 0.28;
+        highp vec3 temperature = mix(vec3(1.0, 0.78, 0.62), vec3(0.68, 0.82, 1.0), twinkleSeed);
+        highp vec3 stars = star * twinkle * materialParams.stars0.y * materialParams.starTint * temperature;
+
+        highp vec3 galacticDirection = normalize(vec3(viewDirection.x * 0.82 + viewDirection.y * 0.31,
+            viewDirection.y * 0.88 - viewDirection.z * 0.22,
+            viewDirection.z * 0.91 + viewDirection.x * 0.17));
+        highp float band = exp(-safePow(abs(galacticDirection.y) * 7.5, 1.45));
+        highp float bandNoise = cloudFbm(galacticDirection * 5.2 + 23.0, 0.0);
+        highp vec3 milky = vec3(0.35, 0.48, 0.72) * band * bandNoise * materialParams.stars1.y;
+        highp float milkyGray = dot(milky, vec3(0.2126, 0.7152, 0.0722));
+        milky = mix(vec3(milkyGray), milky, materialParams.stars1.z);
+        return (stars + milky) * night * (1.0 - cloudOpacity) * (1.0 - moonMask);
+    }
+
+    highp vec3 analyticMoon(highp vec3 viewDirection, highp vec3 moonDirection,
+                            highp vec3 moonToSun, highp vec3 atmosphericTransmittance,
+                            highp float cloudOpacity, out highp float moonMask) {
+        moonMask = 0.0;
+        if (materialParams.moon0.w < 0.5 || moonDirection.y < -0.08) return vec3(0.0);
+        highp float angularRadius = materialParams.moon0.x;
+        moonMask = angularDiskMask(viewDirection, moonDirection, angularRadius);
+        highp float cosine = dot(viewDirection, moonDirection);
+        highp vec3 tangent = viewDirection - cosine * moonDirection;
+        highp float sinRadius = max(1.0e-7, sin(angularRadius));
+        highp vec3 normalPerpendicular = tangent / sinRadius;
+        highp float perpendicularSquared = dot(normalPerpendicular, normalPerpendicular);
+        highp vec3 sphereNormal = normalize(normalPerpendicular
+            - moonDirection * sqrt(max(0.0, 1.0 - perpendicularSquared)));
+
+        highp vec3 up = abs(moonDirection.y) > 0.98 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+        highp vec3 right = normalize(cross(up, moonDirection));
+        highp vec3 moonUp = cross(moonDirection, right);
+        highp vec2 uv = vec2(dot(sphereNormal, right), dot(sphereNormal, moonUp)) * 0.5 + 0.5;
+        uv = vec2(1.0 - uv.x, 1.0 - uv.y);
+        highp vec3 albedo = texture(materialParams_moonAlbedo, uv).rgb;
+        highp vec3 detail = texture(materialParams_moonNormal, uv).xyz * 2.0 - 1.0;
+        detail.xy *= materialParams.moon1.x;
+        detail.x *= -1.0;
+        highp vec3 perturbed = normalize(detail.x * right + detail.y * moonUp + max(0.15, detail.z) * sphereNormal);
+
+        highp float nDotL = dot(perturbed, moonToSun);
+        highp float terminatorWidth = max(fwidth(nDotL) * 2.0, 0.018);
+        highp float terminator = smoothstep(-terminatorWidth, terminatorWidth, nDotL);
+        highp float direct = max(0.0, nDotL) * terminator;
+        highp float earthshine = materialParams.moon0.z * (1.0 - terminator);
+        highp float luminance = safeVisualLuminance(materialParams.moon0.y, 0.58);
+        highp vec3 disk = albedo * materialParams.moonTint * atmosphericTransmittance
+            * luminance * (direct + earthshine) * moonMask;
+
+        highp float distance = 1.0 - dot(viewDirection, moonDirection);
+        highp float haloScale = max(1.0e-7, 1.0 - cos(angularRadius * 5.0));
+        highp float halo = exp(-distance / haloScale * 3.8) * (1.0 - moonMask * 0.65);
+        highp vec3 glow = materialParams.moonTint * atmosphericTransmittance
+            * luminance * halo * materialParams.moon1.y * 0.07;
+        return (disk + glow) * (1.0 - cloudOpacity * 0.96);
+    }
+
+    highp float raySphere(highp vec3 direction, highp float radius, highp float height) {
+        highp float shellRadius = radius + height;
+        highp float b = radius * direction.y;
+        highp float c = radius * radius - shellRadius * shellRadius;
+        highp float discriminant = b * b - c;
+        return discriminant < 0.0 ? -1.0 : -b + sqrt(discriminant);
+    }
+
+    highp vec4 cloudShellLayer(highp vec3 viewDirection, highp vec3 lightDirection,
+                               highp vec3 skyAmbient, highp vec3 sunTransmittance,
+                               highp float height, highp float layerScale,
+                               highp float coverageScale, highp float cirrus) {
+        highp float enabled = materialParams.cloud0.w;
+        if (enabled < 0.5 || materialParams.cloud0.x <= 0.0 || viewDirection.y < -0.015) return vec4(0.0);
+        highp float planetRadius = 6371.0;
+        highp float distance = raySphere(viewDirection, planetRadius, height);
+        if (distance <= 0.0) return vec4(0.0);
+        highp vec3 position = vec3(0.0, planetRadius, 0.0) + viewDirection * distance;
+        highp float time = materialParams.elapsedSeconds;
+        highp vec3 noisePoint = vec3(position.x * layerScale + time * materialParams.cloud1.w * 0.032,
+                                     position.z * layerScale + time * materialParams.cloud1.w * 0.009,
+                                     time * materialParams.cloud2.x * 0.035 + cirrus * 37.0);
+        highp float quality = materialParams.cloud2.w;
+        highp float shape = cloudFbm(noisePoint, quality);
+        highp float detail = valueNoise(noisePoint * 4.1 + 71.0);
+        shape -= detail * materialParams.cloud1.z * mix(0.18, 0.34, quality * 0.5);
+        highp float coverage = clamp(materialParams.cloud0.x * coverageScale, 0.0, 1.0);
+        highp float threshold = 1.0 - coverage;
+        highp float width = mix(0.055, 0.32, materialParams.cloud0.z);
+        highp float density = smoothstep(threshold - width, threshold + width, shape);
+        density *= materialParams.cloud0.y * mix(1.0, 0.55, cirrus);
+        density = clamp(density, 0.0, 1.0);
+        highp float opticalThickness = materialParams.cloud1.y * mix(1.0, 0.35, cirrus);
+        highp float opacity = 1.0 - exp(-density * (1.2 + opticalThickness * 1.7));
+
+        highp float cosine = dot(viewDirection, lightDirection);
+        highp float silver = hgPhase(cosine, 0.88) * materialParams.cloud2.y * 0.52;
+        highp float beer = exp(-density * (2.2 + opticalThickness * 1.2));
+        highp vec3 transmittedSun = sunTransmittance * (0.18 + beer * 0.82);
+        highp vec3 moonAmbient = vec3(0.11, 0.16, 0.25) * (1.0 - smoothstep(-0.12, 0.08, lightDirection.y));
+        highp vec3 lighting = skyAmbient * (0.38 + beer * 0.30) + transmittedSun * (0.45 + silver) + moonAmbient;
+        highp float edge = max(fwidth(density), 0.002);
+        highp float softEdge = smoothstep(0.0, edge * 4.0 + 0.08, density);
+        opacity *= softEdge;
+        highp vec3 color = lighting * materialParams.cloud2.z * materialParams.cloudArtTint;
+        return vec4(max(color, vec3(0.0)), clamp(opacity, 0.0, 0.985));
+    }
+
+    void material(inout MaterialInputs material) {
+        prepareMaterial(material);
+        highp vec3 viewDirection = normalize(variable_eyeDirection.xyz);
+        highp vec3 lightDirection = normalize(materialParams.sunDirection);
+        highp vec3 moonDirection = normalize(materialParams.moonDirection);
+        highp vec3 moonToSun = normalize(materialParams.moonToSunDirection);
+
+        highp vec3 viewTransmittance;
+        highp vec3 sunTransmittance;
+        highp vec3 color = analyticAtmosphere(viewDirection, lightDirection,
+                                              viewTransmittance, sunTransmittance);
+        color = applyAtmosphereArt(color, lightDirection);
+
+        highp vec4 baseCloud = cloudShellLayer(viewDirection, lightDirection, color,
+            sunTransmittance, materialParams.cloud1.x, 0.035, 1.0, 0.0);
+        highp vec4 highCloud = vec4(0.0);
+        if (materialParams.cloud2.w > 0.5) {
+            highCloud = cloudShellLayer(viewDirection, lightDirection, color,
+                sunTransmittance, materialParams.cloud1.x + 5.5, 0.075, 0.62, 1.0);
+        }
+        highp float cloudOpacity = 1.0 - (1.0 - baseCloud.a) * (1.0 - highCloud.a);
+        highp vec3 cloudColor = baseCloud.rgb;
+        if (highCloud.a > 0.001) cloudColor = mix(cloudColor, highCloud.rgb,
+            highCloud.a / max(0.001, baseCloud.a + highCloud.a));
+
+        highp float moonMask = angularDiskMask(viewDirection, moonDirection, materialParams.moon0.x)
+            * materialParams.moon0.w;
+        color += analyticStars(viewDirection, lightDirection, cloudOpacity, moonMask);
+        color += analyticSun(viewDirection, lightDirection, sunTransmittance, cloudOpacity);
+        highp float resolvedMoonMask;
+        color += analyticMoon(viewDirection, moonDirection, moonToSun,
+            bodyTransmittance(moonDirection,
+                vec3(0.0058, 0.0135, 0.0331) * materialParams.atmosphere0.y
+                + vec3(0.0085) * materialParams.atmosphere0.z
+                + vec3(0.0032, 0.0075, 0.0013) * materialParams.atmosphere1.x),
+            cloudOpacity, resolvedMoonMask);
+        color = mix(color, cloudColor, cloudOpacity);
+
+        color = clamp(color, vec3(0.0), vec3(64.0));
+        material.baseColor = vec4(color, 1.0);
+    }
+}

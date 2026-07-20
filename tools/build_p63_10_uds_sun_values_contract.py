@@ -190,6 +190,113 @@ SOURCE_RESOLVED_TRAJECTORY_INPUTS = {
         "units": "Hours",
         "coordinateSpace": "NOT_APPLICABLE_TEMPORAL_OFFSET",
     },
+    "Use System Time": {
+        "type": "BoolProperty",
+        "default": False,
+        "range": {"allowedValues": [False, True]},
+        "units": "BOOLEAN_DIMENSIONLESS",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FLAG",
+    },
+    "Simulate Real Moon": {
+        "type": "BoolProperty",
+        "default": False,
+        "range": {"allowedValues": [False, True]},
+        "units": "BOOLEAN_DIMENSIONLESS",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FLAG",
+    },
+    "Sun Yaw": {
+        "type": "DoubleProperty",
+        "default": 0.0,
+        "range": {"uiMin": 0.0, "uiMax": 360.0},
+        "units": "Degrees",
+        "coordinateSpace": "UNREAL_ENGINE_WORLD_YAW_OFFSET_ABOUT_POSITIVE_Z",
+    },
+    "Sun Vertical Offset": {
+        "type": "DoubleProperty",
+        "default": 0.0,
+        "range": {"uiMin": -1.0, "uiMax": 1.0},
+        "units": "DIRECTION_VECTOR_Z_OFFSET_DIMENSIONLESS",
+        "coordinateSpace": "UNREAL_ENGINE_WORLD_Z_DIRECTION_OFFSET",
+    },
+    "Extend Dawn and Dusk": {
+        "type": "DoubleProperty",
+        "default": 0.0,
+        "range": {"uiMin": 0.0, "uiMax": 4.0},
+        "units": "TRAJECTORY_WARP_SCALE_DIMENSIONLESS",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FACTOR",
+    },
+    "Time Cycle Degrees": {
+        "type": "DoubleProperty",
+        "default": 0.0,
+        "range": {
+            "formulaDomain": "[0,360) after authored Percent_FloatFloat branches"
+        },
+        "units": "Degrees",
+        "coordinateSpace": "UDS_TIME_CYCLE_ANGLE",
+    },
+    "Active Cache Group": {
+        "type": "IntProperty",
+        "default": 0,
+        "range": {"sourceBoundary": "integer cache-group switch domain"},
+        "units": "CACHE_GROUP_INDEX_DIMENSIONLESS",
+        "coordinateSpace": "NOT_APPLICABLE_DISCRETE_INDEX",
+    },
+    "Cache Group Timer Indexes": {
+        "type": "ArrayProperty<IntProperty>",
+        "default": [],
+        "range": {"sourceBoundary": "integer index array resized by Size Cache Arrays"},
+        "units": "CACHE_GROUP_INDEX_ARRAY_DIMENSIONLESS",
+        "coordinateSpace": "NOT_APPLICABLE_CONTAINER",
+    },
+    "Cached Colors Old": {
+        "type": "ArrayProperty<StructProperty</Script/CoreUObject.LinearColor>>",
+        "default": [],
+        "range": {"sourceBoundary": "linear-color cache array resized by Size Cache Arrays"},
+        "units": "LINEAR_COLOR",
+        "coordinateSpace": "NOT_APPLICABLE_COLOR_CONTAINER",
+    },
+    "Cached Colors New": {
+        "type": "ArrayProperty<StructProperty</Script/CoreUObject.LinearColor>>",
+        "default": [],
+        "range": {"sourceBoundary": "linear-color cache array resized by Size Cache Arrays"},
+        "units": "LINEAR_COLOR",
+        "coordinateSpace": "NOT_APPLICABLE_COLOR_CONTAINER",
+    },
+    "Cached Colors Last Accessed": {
+        "type": "ArrayProperty<StructProperty</Script/CoreUObject.LinearColor>>",
+        "default": [],
+        "range": {"sourceBoundary": "linear-color cache array resized by Size Cache Arrays"},
+        "units": "LINEAR_COLOR",
+        "coordinateSpace": "NOT_APPLICABLE_COLOR_CONTAINER",
+    },
+    "Use Periodic Light Update": {
+        "type": "BoolProperty",
+        "default": False,
+        "range": {"allowedValues": [False, True]},
+        "units": "BOOLEAN_DIMENSIONLESS",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FLAG",
+    },
+    "Use Angle Threshold Light Update": {
+        "type": "BoolProperty",
+        "default": False,
+        "range": {"allowedValues": [False, True]},
+        "units": "BOOLEAN_DIMENSIONLESS",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FLAG",
+    },
+    "Lights Update Period": {
+        "type": "DoubleProperty",
+        "default": 0.0,
+        "range": {"uiMin": 0.0, "uiMax": 5.0, "clampMin": 0.0},
+        "units": "Seconds",
+        "coordinateSpace": "NOT_APPLICABLE_TEMPORAL_PERIOD",
+    },
+    "Last Sun Light Periodic Update Time": {
+        "type": "DoubleProperty",
+        "default": 0.0,
+        "range": {"sourceBoundary": "non-negative game-time seconds after first AP write"},
+        "units": "Seconds",
+        "coordinateSpace": "NOT_APPLICABLE_GAME_TIME_TIMESTAMP",
+    },
 }
 
 SUN_RUNTIME_STAGE1_PARAMETERS = (
@@ -300,6 +407,191 @@ SUN_RUNTIME_SCHEDULER_STATE = (
     "Time of Day Change Speed",
     "Transitioning Sky Light Intensity",
 )
+
+SOURCE_RESOLVED_SCHEDULER_STATE = {
+    "Active Update Speed": ("IntProperty", 4),
+    "Cache Group Timers": ("ArrayProperty<DoubleProperty>", [0.0] * 10),
+    "Cache Group Timers Clear": ("ArrayProperty<DoubleProperty>", [0.0] * 10),
+    "Cache Properties Step": ("IntProperty", 0),
+    "Cache Steps Multiplier": ("IntProperty", 1),
+    "Change Speed Rolling Buffer": ("ArrayProperty<FloatProperty>", []),
+    "Composite Context Change Speed": ("DoubleProperty", 0.0),
+    "Composite Weather Change Speed": ("DoubleProperty", 0.0),
+    "Current Cache Timer Speed": ("DoubleProperty", 10.0),
+    "Disable All Runtime Updating": ("BoolProperty", False),
+    "Fast Cache Toggle": ("BoolProperty", False),
+    "Fast Cache Toggle Speed": ("DoubleProperty", 1.3),
+    "Half Rate Tick": ("BoolProperty", True),
+    "Half Rate Tick Framerate Threshold": ("IntProperty", 45),
+    "Hard Cache Reset Change Speed Threshold": ("DoubleProperty", 0.35),
+    "High Priority Update Step": ("IntProperty", 0),
+    "Last Delayed Change Speed": ("DoubleProperty", -1.0),
+    "Low Priority Set Toggle": ("BoolProperty", False),
+    "Max Property Cache Period": ("DoubleProperty", 1.5),
+    "Min Property Cache Period": ("DoubleProperty", 0.1),
+    "Minimum Active Update Speed": ("IntProperty", 0),
+    "Modifiers Animating": ("BoolProperty", False),
+    "Run Context": (
+        "EnumProperty</Game/UltraDynamicSky/Blueprints/Enum/UDS_RunContext.UDS_RunContext>",
+        "NewEnumerator0",
+    ),
+    "Tick Delta Seconds": ("DoubleProperty", 1.0),
+    "Time of Day Change Speed": ("DoubleProperty", 0.0),
+    "Transitioning Sky Light Intensity": ("BoolProperty", False),
+}
+
+SUN_PARAMETER_SEMANTIC_OVERRIDES = {
+    "Cached Directional Inscattering Multiplier": {
+        "range": {"sourceBoundary": "exact Directional Inscattering Multiplier formula domain; no additional authored clamp"},
+        "units": "DIMENSIONLESS_LIGHTING_MULTIPLIER",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FACTOR",
+        "evidence": "Directional Inscattering Multiplier formula ledger",
+    },
+    "Cached Directional Light Dimming": {
+        "range": {"sourceBoundary": "exact Directional Light Dimming formula domain; no additional authored clamp"},
+        "units": "DIMENSIONLESS_LIGHTING_MULTIPLIER",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FACTOR",
+        "evidence": "Directional Light Dimming formula ledger",
+    },
+    "Cached Inverted Global Occlusion": {
+        "range": {"sourceBoundary": "exact Get Inverted Global Occlusion formula domain; no additional authored clamp"},
+        "units": "DIMENSIONLESS_OCCLUSION_FACTOR",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FACTOR",
+        "evidence": "Get Inverted Global Occlusion and Current Global Occlusion ledgers",
+    },
+    "Cached Solar Eclipse Tint": {
+        "range": {"typeDomain": "UE LinearColor float4; preserve HDR values without an invented clamp"},
+        "units": "LINEAR_COLOR",
+        "coordinateSpace": "NOT_APPLICABLE_COLOR",
+        "evidence": "Current Solar Eclipse Values tint output and Cache Properties writer",
+    },
+    "Cached Sun Vector": {
+        "range": {"magnitude": "zero or unit length after Normal(candidate,0.0001)"},
+        "units": "DIRECTION_VECTOR_DIMENSIONLESS",
+        "coordinateSpace": "UNREAL_ENGINE_WORLD_DIRECTIONAL_LIGHT_RAY_DIRECTION",
+        "evidence": "Cache Sun and Moon Orientation writer and coordinateMapping",
+    },
+    "Current Scene Lighting Brightness Scale": {
+        "range": {"sourceBoundary": "exact Three Time Floats formula domain; no additional authored clamp"},
+        "units": "DIMENSIONLESS_LIGHTING_SCALE",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FACTOR",
+        "evidence": "Three Time Floats formula ledger and Cache Properties writer",
+    },
+    "Directional Balance": {
+        "range": {"uiMin": 0.3, "uiMax": 2.0, "clampMin": 0.01},
+        "units": "DIMENSIONLESS_DIRECTIONAL_CONTRIBUTION_SCALE",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FACTOR",
+        "evidence": "Blueprint metadata and tooltip",
+    },
+    "Eclipse Percent": {
+        "range": {"min": 0.0, "max": 1.0},
+        "units": "DIMENSIONLESS_VISIBLE_SUN_FRACTION",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FACTOR",
+        "evidence": "Blueprint tooltip and Current Solar Eclipse Values formula",
+    },
+    "Fog": {
+        "range": {"uiMin": 0.0, "uiMax": 10.0, "clampMin": 0.0, "clampMax": 10.0},
+        "units": "UDS_FOG_CONTROL_SCALAR_NOT_PHYSICAL_DENSITY",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_CONTROL",
+        "evidence": "Blueprint metadata and explicit tooltip warning",
+    },
+    "Local Cloud Coverage": {
+        "range": {"sourceBoundary": "exact Get Cloud Coverage Local formula domain; no additional authored clamp"},
+        "units": "UDS_CLOUD_COVERAGE_CONTROL_SCALAR",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_CONTROL",
+        "evidence": "Get Cloud Coverage Local formula ledger",
+    },
+    "Saturation": {
+        "range": {"uiMin": 0.0, "uiMax": 1.5, "clampMin": 0.0},
+        "units": "DIMENSIONLESS_SATURATION_SCALE",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FACTOR",
+        "evidence": "Blueprint metadata and tooltip",
+    },
+    "Scale Sun Radius as it Nears Horizon": {
+        "range": {"uiMin": 0.1, "uiMax": 15.0},
+        "units": "DIMENSIONLESS_RADIUS_SCALE",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FACTOR",
+        "evidence": "Blueprint metadata and Current Sun Radius formula",
+    },
+    "Sun Disk Intensity": {
+        "range": {"uiMin": 0.0, "uiMax": 20.0},
+        "units": "UDS_SUN_DISK_EMISSIVE_SCALAR",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_INTENSITY",
+        "evidence": "Blueprint metadata and Current Sun Disk Intensity/Color formulas",
+    },
+    "Sun Disk Tint": {
+        "range": {"typeDomain": "UE LinearColor float4; preserve HDR values without an invented clamp"},
+        "units": "LINEAR_COLOR",
+        "coordinateSpace": "NOT_APPLICABLE_COLOR",
+        "evidence": "Current Sun Disk Color formula and raw K2 LinearColor type",
+    },
+    "Sun Light Color": {
+        "range": {"typeDomain": "UE LinearColor float4; preserve HDR values without an invented clamp"},
+        "units": "LINEAR_COLOR",
+        "coordinateSpace": "NOT_APPLICABLE_COLOR",
+        "evidence": "Blueprint tooltip and Current Sun Light/Disk Color formulas",
+    },
+    "Sun Light Intensity Multiplier in Interiors": {
+        "range": {"uiMin": 0.0, "uiMax": 2.0},
+        "units": "DIMENSIONLESS_LIGHTING_MULTIPLIER",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FACTOR",
+        "evidence": "Blueprint metadata and Adjust Base Sun Light Intensity formula",
+    },
+    "Sun Softness": {
+        "range": {"uiMin": 0.5, "uiMax": 8.0, "clampMin": 0.5, "clampMax": 8.0},
+        "units": "DIMENSIONLESS_DISK_EDGE_SOFTNESS",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FACTOR",
+        "evidence": "Blueprint metadata and Current Sun Disk Color formula",
+    },
+    "Sun World Rotation": {
+        "range": {"typeDomain": "UE FRotator degrees; preserve engine normalization/wrapping semantics"},
+        "units": "Degrees",
+        "coordinateSpace": "UNREAL_ENGINE_WORLD_ROTATION_OF_SUNLIGHT",
+        "evidence": "AP - Sun Root Vector and coordinateMapping.rotationRule",
+    },
+    "Time of Day": {
+        "range": {"uiMin": 0.0, "uiMax": 2400.0},
+        "units": "UDS_HHMM_HUNDREDTHS_OF_HOUR",
+        "coordinateSpace": "UDS_LOCAL_TIME_CYCLE",
+        "evidence": "Blueprint tooltip and Set Time Cycle Degrees formula",
+    },
+    "Dawn Time": {
+        "range": {"clampMin": 50.0, "clampMax": 2350.0},
+        "units": "UDS_HHMM_HUNDREDTHS_OF_HOUR",
+        "coordinateSpace": "UDS_LOCAL_TIME_CYCLE",
+        "evidence": "Blueprint tooltip and Set Time Cycle Degrees formula",
+    },
+    "Dusk Time": {
+        "range": {"clampMin": 50.0, "clampMax": 2350.0},
+        "units": "UDS_HHMM_HUNDREDTHS_OF_HOUR",
+        "coordinateSpace": "UDS_LOCAL_TIME_CYCLE",
+        "evidence": "Blueprint tooltip and Set Time Cycle Degrees formula",
+    },
+    "Sun Target": {
+        "range": {"typeDomain": "finite UE Vector; zero is allowed and direction magnitude is discarded downstream"},
+        "units": "ARBITRARY_DIRECTION_VECTOR_MAGNITUDE",
+        "coordinateSpace": "UDS_ACTOR_LOCAL_OBSERVER_TO_SUN_TARGET_DIRECTION",
+        "evidence": "Cache Sun and Moon Orientation: Rotate((Sun Target * -1), Actor Rotation)",
+    },
+    "Cached Sun Z Vector": {
+        "range": {"magnitude": "unit direction from authored rotated (1,0,0) basis"},
+        "units": "DIRECTION_VECTOR_DIMENSIONLESS",
+        "coordinateSpace": "UNREAL_ENGINE_WORLD_SUN_ROTATION_Z_REFERENCE",
+        "evidence": "Sun Z Vector formula and Cache Sun and Moon Orientation writer",
+    },
+    "Cache Group Timers": {
+        "range": {"length": 10, "itemMin": 0.0, "itemMax": 1.0},
+        "units": "DIMENSIONLESS_CACHE_INTERPOLATION_ALPHA",
+        "coordinateSpace": "NOT_APPLICABLE_CONTAINER",
+        "evidence": "Increment Cache Timer clamp and verified authored default arrays",
+    },
+    "Sun Mobility": {
+        "range": {"allowedValues": ["Static", "Stationary", "Movable"], "runtimeRequired": "Movable"},
+        "units": "UE_COMPONENT_MOBILITY_ENUM",
+        "coordinateSpace": "NOT_APPLICABLE_ENUM",
+        "evidence": "EComponentMobility type, authored default and Blueprint tooltip",
+    },
+}
 
 
 def coordinate_mapping_contract() -> dict[str, Any]:
@@ -1909,11 +2201,26 @@ def variable_reference(node: dict[str, Any]) -> str | None:
 def blueprint_value_type(pin_type: dict[str, Any]) -> str:
     category = pin_type.get("category")
     subcategory = pin_type.get("subcategory")
+    object_path = pin_type.get("object")
     if category == "bool":
-        return "BoolProperty"
-    if category == "real" and subcategory == "double":
-        return "DoubleProperty"
-    return f"K2Pin<{category}:{subcategory}>"
+        base = "BoolProperty"
+    elif category == "real" and subcategory == "double":
+        base = "DoubleProperty"
+    elif category == "real" and subcategory == "float":
+        base = "FloatProperty"
+    elif category == "int":
+        base = "IntProperty"
+    elif category == "byte" and object_path:
+        base = f"EnumProperty<{object_path}>"
+    elif category == "struct" and object_path:
+        base = f"StructProperty<{object_path}>"
+    elif category == "object" and object_path:
+        base = f"ObjectProperty<{object_path}>"
+    else:
+        base = f"K2Pin<{category}:{subcategory}>"
+    if pin_type.get("container") == "array":
+        return f"ArrayProperty<{base}>"
+    return base
 
 
 def resolve_trajectory_input_evidence(
@@ -1995,9 +2302,345 @@ def resolve_trajectory_input_evidence(
     return result
 
 
+def resolve_scheduler_state_evidence(
+    blueprint: dict[str, Any], raw_graphs: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    """Resolve every Sun scheduler class value from raw K2 pins and CDO/UE zero-init."""
+    variables = blueprint_variable_rows(blueprint)
+    cdo = blueprint_cdo_properties(blueprint)
+    result: dict[str, dict[str, Any]] = {}
+    for name, (expected_type, expected_default) in SOURCE_RESOLVED_SCHEDULER_STATE.items():
+        row = variables.get(name)
+        if row is None:
+            raise AssertionError(f"missing scheduler Blueprint NewVariables row: {name}")
+        authored_default = nested_field(row, "DefaultValue")
+        if authored_default not in ("", None):
+            raise AssertionError(f"unexpected authored scheduler default: {name}")
+
+        occurrences = []
+        canonical_types = set()
+        pin_defaults = set()
+        for graph_name, graph in raw_graphs.items():
+            for node in graph.get("nodes", []):
+                if variable_reference(node) != name:
+                    continue
+                value_pin = next(
+                    (pin for pin in node.get("pins", []) if pin.get("name") == name),
+                    None,
+                )
+                if value_pin is None:
+                    continue
+                pin_type = compact_type(value_pin.get("type"))
+                canonical_types.add(
+                    json.dumps(pin_type, ensure_ascii=False, sort_keys=True)
+                )
+                pin_defaults.add(value_pin.get("default_value"))
+                occurrences.append(
+                    {
+                        "sourceGraph": graph["graph"],
+                        "node": node["export_index"],
+                        "nodeClass": node.get("class"),
+                        "pinType": pin_type,
+                    }
+                )
+        if len(canonical_types) != 1 or not occurrences:
+            raise AssertionError(f"ambiguous scheduler K2 type evidence: {name}")
+        resolved_type = blueprint_value_type(json.loads(next(iter(canonical_types))))
+        if resolved_type != expected_type:
+            raise AssertionError(
+                f"scheduler state type changed: {name}: {resolved_type}"
+            )
+
+        cdo_property = cdo.get(name)
+        if cdo_property is not None:
+            decoded_default = cdo_property.get("value")
+            if isinstance(decoded_default, dict) and set(decoded_default) >= {
+                "count",
+                "items",
+            }:
+                decoded_default = decoded_default["items"]
+            default_status = "VERIFIED_DECODED_CDO"
+            default_source = "decoded Ultra_Dynamic_Sky CDO property"
+        elif expected_type.startswith("EnumProperty"):
+            if expected_default not in pin_defaults:
+                raise AssertionError(f"scheduler enum zero literal changed: {name}")
+            decoded_default = expected_default
+            default_status = "VERIFIED_RAW_K2_ENUM_ZERO_LITERAL"
+            default_source = "raw K2 variable pins plus UE zero-initialized enum storage"
+        else:
+            decoded_default = expected_default
+            default_status = "VERIFIED_ENGINE_ZERO_INIT_PLUS_NO_CDO_OVERRIDE"
+            default_source = UE_OBJECT_ZERO_INIT_SOURCE
+        if decoded_default != expected_default:
+            raise AssertionError(
+                f"scheduler state default changed: {name}: {decoded_default!r}"
+            )
+        result[name] = {
+            "status": "VERIFIED_RAW_K2_TYPE_AND_SOURCE_DEFAULT",
+            "type": resolved_type,
+            "default": decoded_default,
+            "authoredBlueprintDefault": authored_default or "",
+            "decodedCdoOverride": cdo_property is not None,
+            "defaultEvidence": {
+                "status": default_status,
+                "source": default_source,
+            },
+            "pinEvidence": occurrences,
+        }
+    return result
+
+
+def build_sun_local_control_contract(
+    raw_graphs: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Prove the three Sun locals and the exact Sun trajectory caller policy."""
+    orientation = raw_graphs["Cache Sun and Moon Orientation"]
+    nodes = {node["export_index"]: node for node in orientation.get("nodes", [])}
+
+    expected_operations = {
+        2480: "Approximate Real Sun Moon and Stars",
+        2472: "Greater_DoubleDouble",
+        2422: "Not_PreBool",
+        4576: "BooleanAND",
+        2435: "Divide_DoubleDouble",
+        2436: "Fraction",
+        2437: "Subtract_DoubleDouble",
+        2426: "Abs",
+        4568: "Multiply_DoubleDouble",
+        2431: "MultiplyMultiply_FloatFloat",
+        2432: "FClamp",
+        2433: "MapRangeClamped",
+        2459: "Lerp",
+        2429: "MakeVector",
+    }
+    for node_index, operation in expected_operations.items():
+        if _raw_node_operation(nodes[node_index]) != operation:
+            raise AssertionError(
+                f"Sun local-state operation changed: {node_index} != {operation}"
+            )
+
+    def linked_from(node_index: int, pin_name: str, source_index: int) -> None:
+        pin = _raw_node_pin(nodes[node_index], pin_name)
+        if not any(
+            link.get("owning_node_index") == source_index
+            for link in pin.get("linked_to", [])
+        ):
+            raise AssertionError(
+                f"Sun local-state value edge changed: {source_index}->{node_index}.{pin_name}"
+            )
+
+    linked_from(12615, "Real Sun Position", 2480)
+    linked_from(12616, "Extend Dawn Dusk Multiplier", 2429)
+    linked_from(2433, "Value", 8849)
+    linked_from(2472, "A", 8873)
+    linked_from(2422, "A", 8867)
+    linked_from(2435, "A", 8870)
+    linked_from(2436, "A", 2435)
+    linked_from(2437, "A", 2436)
+    linked_from(2426, "A", 2437)
+    linked_from(4568, "A", 2426)
+    linked_from(2431, "Base", 4568)
+    linked_from(2432, "Value", 2431)
+    linked_from(2459, "A", 2433)
+    linked_from(2459, "Alpha", 2432)
+    linked_from(2429, "Z", 2459)
+    linked_from(4576, "A", 2472)
+    linked_from(4576, "B", 2422)
+    linked_from(6300, "Condition", 4576)
+
+    constants = {
+        (2480, "Only Calculate Sun"): "false",
+        (2472, "B"): "0.0",
+        (2435, "B"): "1200.000000",
+        (2437, "B"): "0.500000",
+        (4568, "B"): "2.000000",
+        (2431, "Exp"): "2.000000",
+        (2432, "Min"): "0.0",
+        (2432, "Max"): "1.0",
+        (2433, "InRangeA"): "0.0",
+        (2433, "InRangeB"): "5.000000",
+        (2433, "OutRangeA"): "1.000000",
+        (2433, "OutRangeB"): "0.030000",
+        (2459, "B"): "1.000000",
+        (2429, "X"): "1.000000",
+        (2429, "Y"): "1.000000",
+    }
+    for (node_index, pin_name), expected in constants.items():
+        pin = _raw_node_pin(nodes[node_index], pin_name)
+        if pin.get("default_value") != expected or (
+            node_index == 2480 and pin.get("linked_to")
+        ):
+            raise AssertionError(
+                f"Sun local-state constant changed: {node_index}.{pin_name}"
+            )
+
+    expected_variable_references = {
+        8849: "Extend Dawn and Dusk",
+        8873: "Extend Dawn and Dusk",
+        8867: "Simulate Real Sun",
+        8870: "Time of Day",
+    }
+    for node_index, expected in expected_variable_references.items():
+        if variable_reference(nodes[node_index]) != expected:
+            raise AssertionError(
+                f"Sun local-state variable changed: {node_index} != {expected}"
+            )
+
+    cache_color = raw_graphs["Cache Color"]
+    cache_nodes = {node["export_index"]: node for node in cache_color.get("nodes", [])}
+    tolerance_pin = _raw_node_pin(cache_nodes[5468], "Change Tolerance")
+    if (
+        cache_nodes[5468].get("class") != "K2Node_FunctionEntry"
+        or tolerance_pin.get("default_value") != "0.000100"
+        or blueprint_value_type(compact_type(tolerance_pin.get("type")))
+        != "DoubleProperty"
+    ):
+        raise AssertionError("Cache Color Change Tolerance contract changed")
+
+    function_entry = nodes[5473]
+    local_rows = function_entry.get("properties", {}).get("LocalVariables", {}).get(
+        "items", []
+    )
+    local_defaults = {
+        nested_field(row, "VarName"): nested_field(row, "DefaultValue")
+        for row in local_rows
+    }
+    expected_local_defaults = {
+        "Real Sun Position": "0.000000,0.000000,0.000000",
+        "Extend Dawn Dusk Multiplier": "1.000000,1.000000,1.000000",
+    }
+    if function_entry.get("class") != "K2Node_FunctionEntry" or any(
+        local_defaults.get(name) != value
+        for name, value in expected_local_defaults.items()
+    ):
+        raise AssertionError("Sun orientation authored local defaults changed")
+
+    sun_cache_call = nodes[2439]
+    if (
+        _raw_node_operation(sun_cache_call) != "Cache Color"
+        or _raw_node_pin(sun_cache_call, "Property").get("default_value")
+        != "NewEnumerator13"
+        or _raw_node_pin(sun_cache_call, "Change Tolerance").get("default_value")
+        != "0.000010"
+        or _raw_node_pin(sun_cache_call, "Update Group").get("default_value")
+        != "NewEnumerator14"
+    ):
+        raise AssertionError("Sun-vector Cache Color call-site policy changed")
+
+    payload = {
+        "status": "VERIFIED_SOURCE_CONTRACT",
+        "implementationStatus": "NOT_IMPLEMENTED",
+        "sourceGraph": orientation["graph"],
+        "locals": {
+            "Change Tolerance": {
+                "status": "VERIFIED",
+                "type": "DoubleProperty",
+                "functionDefault": 0.0001,
+                "sourceGraph": cache_color["graph"],
+                "sourceNode": 5468,
+                "sunVectorCallGraph": orientation["graph"],
+                "sunVectorCallNode": 2439,
+                "sunVectorCallOverride": 0.00001,
+                "effectiveSunVectorValue": 0.00001,
+                "valueFlow": "Cache Color input -> LinearColor_IsNearEqual.Tolerance",
+            },
+            "Real Sun Position": {
+                "status": "VERIFIED",
+                "type": "StructProperty</Script/CoreUObject.Vector>",
+                "default": [0.0, 0.0, 0.0],
+                "defaultEvidence": {
+                    "status": "VERIFIED_AUTHORED_FUNCTION_LOCAL_DEFAULT",
+                    "sourceNode": 5473,
+                    "rawValue": expected_local_defaults["Real Sun Position"],
+                },
+                "writerNode": 12615,
+                "valueFlow": "Approximate Real Sun Moon and Stars.Sun Vector",
+            },
+            "Extend Dawn Dusk Multiplier": {
+                "status": "VERIFIED",
+                "type": "StructProperty</Script/CoreUObject.Vector>",
+                "default": [1.0, 1.0, 1.0],
+                "defaultEvidence": {
+                    "status": "VERIFIED_AUTHORED_FUNCTION_LOCAL_DEFAULT",
+                    "sourceNode": 5473,
+                    "rawValue": expected_local_defaults[
+                        "Extend Dawn Dusk Multiplier"
+                    ],
+                },
+                "writerNode": 12616,
+                "writeCondition": "Extend Dawn and Dusk > 0 && !Simulate Real Sun",
+                "ast": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": {
+                        "lerp": [
+                            {
+                                "MapRangeClamped": [
+                                    "Extend Dawn and Dusk",
+                                    0.0,
+                                    5.0,
+                                    1.0,
+                                    0.03,
+                                ]
+                            },
+                            1.0,
+                            {
+                                "clamp": [
+                                    {
+                                        "pow": [
+                                            {
+                                                "multiply": [
+                                                    {
+                                                        "abs": {
+                                                            "subtract": [
+                                                                {
+                                                                    "fraction": {
+                                                                        "divide": [
+                                                                            "Time of Day",
+                                                                            1200.0,
+                                                                        ]
+                                                                    }
+                                                                },
+                                                                0.5,
+                                                            ]
+                                                        }
+                                                    },
+                                                    2.0,
+                                                ]
+                                            },
+                                            2.0,
+                                        ]
+                                    },
+                                    0.0,
+                                    1.0,
+                                ]
+                            },
+                        ]
+                    },
+                },
+            },
+        },
+        "onlyCalculateSunCallerPolicy": {
+            "status": "VERIFIED",
+            "callerGraph": orientation["graph"],
+            "callNode": 2480,
+            "type": "BoolProperty",
+            "authoredUnconnectedDefault": False,
+            "effect": "the exact orientation call calculates Sun, Moon and star outputs",
+        },
+        "verifiedOperationNodes": expected_operations,
+    }
+    payload["contractSha256"] = sha256_bytes(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    )
+    return payload
+
+
 def build_sun_runtime_parameter_gate(
     parameters: list[dict[str, Any]],
     coordinate_mapping: dict[str, Any],
+    local_control_contract: dict[str, Any],
+    scheduler_state_evidence: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     """Publish the exact minimum Stage 1/2 runtime gate without hiding unresolved fields."""
     by_name = {
@@ -2156,17 +2799,18 @@ def build_sun_runtime_parameter_gate(
         *[
             {
                 "name": f"local function state: {name}",
-                "status": "PARTIAL",
-                "source": "selected exact UDS Sun graph topology/local symbol coverage",
-                "required": "resolved pin type/default/value-flow before runtime",
+                "status": "VERIFIED_SOURCE_CONTRACT",
+                "source": local_control_contract["locals"][name],
+                "implementationStatus": "NOT_IMPLEMENTED",
             }
             for name in SUN_RUNTIME_STAGE2_LOCAL_STATE
         ],
         {
             "name": "Sun scheduling state",
-            "status": "PARTIAL",
+            "status": "VERIFIED_SOURCE_CONTRACT",
             "source": "sunScheduling exact startup/ReceiveTick/cache/update/reset contract",
             "requiredClassState": list(SUN_RUNTIME_SCHEDULER_STATE),
+            "classStateEvidence": scheduler_state_evidence,
             "requiredLocalState": ["Delayed Change Speed", "Change Speed This Frame"],
             "deferredConditionalBindingDependencies": [
                 "Adjust for Path Tracer",
@@ -2185,13 +2829,15 @@ def build_sun_runtime_parameter_gate(
                 "the 116-parameter Cache Properties body is not silently included in Sun-only "
                 "runtime; non-Sun cached values stay owned by their later system stages"
             ),
+            "implementationStatus": "NOT_IMPLEMENTED",
             "required": "all listed scheduler state and exact cadence must be implemented/tested",
         },
         {
             "name": "Only Calculate Sun caller pin",
-            "status": "PARTIAL",
+            "status": "VERIFIED_SOURCE_CONTRACT",
             "sourceGraph": f"{BLUEPRINT_ASSET}: Approximate Real Sun Moon and Stars",
-            "required": "resolved Bool pin/default and exact call-site policy",
+            "contract": local_control_contract["onlyCalculateSunCallerPolicy"],
+            "implementationStatus": "NOT_IMPLEMENTED",
         },
         {
             "name": "Actor Rotation",
@@ -2201,10 +2847,21 @@ def build_sun_runtime_parameter_gate(
         },
         {
             "name": "Cache Color inputs and NewEnumerator13 index",
-            "status": "PARTIAL",
+            "status": "VERIFIED_SOURCE_KEY_TARGET_MAP_ALLOWED",
             "sourceGraph": f"{BLUEPRINT_ASSET}: Cache Color / AP - Sun Root Vector",
-            "verified": "Event, Update Group and Set Value pins plus authored enum literal",
-            "unresolved": "numeric UDS_CachedProperties NewEnumerator13 ordinal",
+            "verified": (
+                "Event, Update Group and Set Value pins plus authored symbolic enum literal "
+                "NewEnumerator13"
+            ),
+            "targetMapping": (
+                "SOLUM must key the Sun-vector cache by the verified symbolic property identity; "
+                "numeric array layout is not required to preserve cache behavior"
+            ),
+            "unresolvedNonBlockingSourceLayout": (
+                "numeric UDS_CachedProperties ordinal remains unasserted until the enum asset is "
+                "decoded; SOLUM must not copy or guess that numeric ordinal"
+            ),
+            "implementationStatus": "NOT_IMPLEMENTED",
         },
         {
             "name": "Sun Parent current component rotation",
@@ -2214,10 +2871,19 @@ def build_sun_runtime_parameter_gate(
         },
         {
             "name": "Cloud Shadows MID atlas-light side effect",
-            "status": "PARTIAL",
+            "status": "VERIFIED_DEFERRED_STAGE_BOUNDARY",
             "sourceGraph": f"{BLUEPRINT_ASSET}: AP - Sun Root Vector / Update Atlas Light Vectors",
             "deferredOwner": "cloud-lighting stage",
-            "required": "preserve ordered Up/Forward/Right writes or explicitly disable AP atlas branch",
+            "preservedInterface": [
+                "Sun basis Up vector",
+                "Sun basis Forward vector",
+                "Sun basis Right vector",
+            ],
+            "required": (
+                "preserve ordered Up/Forward/Right writes at cloud-lighting integration; this "
+                "deferred Stage 8 consumer does not block Stage 1/2 Sun evaluation"
+            ),
+            "implementationStatus": "DEFERRED_TO_CLOUD_LIGHTING_STAGE",
         },
         {
             "name": "GetGameTimeInSeconds",
@@ -4774,8 +5440,56 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
             "complete AP - Sun Root Vector value/control-flow closure",
         }
     ]
+    for name, semantics in SUN_PARAMETER_SEMANTIC_OVERRIDES.items():
+        parameter = parameter_by_name[name]
+        parameter["range"] = semantics["range"]
+        units = dict(parameter.get("units", {}))
+        units.update(
+            {
+                "value": semantics["units"],
+                "evidence": semantics["evidence"],
+                "status": (
+                    units.get("status")
+                    if str(units.get("status", "")).startswith("VERIFIED")
+                    else "VERIFIED_SOURCE_SEMANTICS"
+                ),
+            }
+        )
+        parameter["units"] = units
+        coordinate_space = dict(parameter.get("coordinateSpace", {}))
+        coordinate_space.update(
+            {
+                "value": semantics["coordinateSpace"],
+                "evidence": semantics["evidence"],
+                "status": (
+                    coordinate_space.get("status")
+                    if str(coordinate_space.get("status", "")).startswith("VERIFIED")
+                    else "VERIFIED_SOURCE_SEMANTICS"
+                ),
+            }
+        )
+        parameter["coordinateSpace"] = coordinate_space
+        parameter["semanticEvidence"] = {
+            "status": "VERIFIED_SOURCE_SEMANTICS",
+            "evidence": semantics["evidence"],
+        }
+        parameter["missingEvidence"] = [
+            item
+            for item in parameter.get("missingEvidence", [])
+            if item not in {"explicit units", "explicit coordinate space"}
+        ]
+        parameter["extractionStatus"] = (
+            "VERIFIED" if not parameter["missingEvidence"] else "PARTIAL"
+        )
+    scheduler_state_evidence = resolve_scheduler_state_evidence(
+        blueprint, raw_graphs
+    )
+    sun_local_control_contract = build_sun_local_control_contract(raw_graphs)
     sun_runtime_parameter_gate = build_sun_runtime_parameter_gate(
-        parameters, coordinate_mapping
+        parameters,
+        coordinate_mapping,
+        sun_local_control_contract,
+        scheduler_state_evidence,
     )
 
     parameter_writer_support_graphs = [
@@ -4827,8 +5541,8 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
         "completionBlockers": [
             "runtime values/defaults have not been changed",
             (
-                "sunRuntimeParameterGate remains BLOCKED; its exact Stage1/Stage2 rows and "
-                "control boundaries must pass before runtime"
+                "sunRuntimeParameterGate is a source-closure permission gate, not evidence that "
+                "the exact Stage1/Stage2 runtime has been implemented"
             ),
             "fresh independent read-only re-review is required after blocker fixes",
             "user visual QA is pending",
@@ -4848,6 +5562,8 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
         "parameters": parameters,
         "parameterCoverage": parameter_coverage,
         "trajectoryInputEvidence": trajectory_input_evidence,
+        "schedulerStateEvidence": scheduler_state_evidence,
+        "sunLocalControlContract": sun_local_control_contract,
         "sunRuntimeParameterGate": sun_runtime_parameter_gate,
         "parameterWriterContracts": parameter_writer_contracts,
         "parameterWriterSchedule": parameter_writer_schedule,
@@ -5082,8 +5798,8 @@ def self_test(output: Path, summary: dict[str, Any]) -> None:
             raise AssertionError(f"trajectory input evidence changed: {name}")
     runtime_gate = payload["sunRuntimeParameterGate"]
     if (
-        runtime_gate["status"] != "BLOCKED"
-        or runtime_gate["runtimeImplementationAllowed"] is not False
+        runtime_gate["status"] != "VERIFIED"
+        or runtime_gate["runtimeImplementationAllowed"] is not True
         or tuple(
             item["sourceName"] for item in runtime_gate["stage1BaseEvaluator"]
         )
@@ -5093,8 +5809,8 @@ def self_test(output: Path, summary: dict[str, Any]) -> None:
             for item in runtime_gate["stage2SunTrajectoryAndLight"]
         )
         != SUN_RUNTIME_STAGE2_PARAMETERS
-        or not runtime_gate["blockedRows"]
-        or not runtime_gate["blockedControlBoundaries"]
+        or runtime_gate["blockedRows"]
+        or runtime_gate["blockedControlBoundaries"]
         or not {
             f"local function state: {name}"
             for name in SUN_RUNTIME_STAGE2_LOCAL_STATE
@@ -5105,13 +5821,52 @@ def self_test(output: Path, summary: dict[str, Any]) -> None:
         or len(runtime_gate["contractSha256"]) != 64
     ):
         raise AssertionError("Sun Stage1/Stage2 runtime parameter gate changed")
+    scheduler_evidence = payload["schedulerStateEvidence"]
+    if set(scheduler_evidence) != set(SOURCE_RESOLVED_SCHEDULER_STATE):
+        raise AssertionError("Sun scheduler state evidence set changed")
+    for name, (expected_type, expected_default) in SOURCE_RESOLVED_SCHEDULER_STATE.items():
+        evidence = scheduler_evidence[name]
+        if (
+            evidence["status"] != "VERIFIED_RAW_K2_TYPE_AND_SOURCE_DEFAULT"
+            or evidence["type"] != expected_type
+            or evidence["default"] != expected_default
+            or not evidence["pinEvidence"]
+            or any(
+                blueprint_value_type(item["pinType"]) != expected_type
+                for item in evidence["pinEvidence"]
+            )
+        ):
+            raise AssertionError(f"Sun scheduler source evidence changed: {name}")
+    local_controls = payload["sunLocalControlContract"]
+    if (
+        local_controls["status"] != "VERIFIED_SOURCE_CONTRACT"
+        or set(local_controls["locals"]) != set(SUN_RUNTIME_STAGE2_LOCAL_STATE)
+        or any(
+            item["status"] != "VERIFIED"
+            for item in local_controls["locals"].values()
+        )
+        or local_controls["locals"]["Change Tolerance"][
+            "effectiveSunVectorValue"
+        ]
+        != 0.00001
+        or local_controls["locals"]["Real Sun Position"]["default"]
+        != [0.0, 0.0, 0.0]
+        or local_controls["locals"]["Extend Dawn Dusk Multiplier"]["default"]
+        != [1.0, 1.0, 1.0]
+        or local_controls["onlyCalculateSunCallerPolicy"][
+            "authoredUnconnectedDefault"
+        ]
+        is not False
+        or len(local_controls["contractSha256"]) != 64
+    ):
+        raise AssertionError("Sun local control source contract changed")
     scheduling_gate = next(
         item
         for item in runtime_gate["controlBoundaries"]
         if item["name"] == "Sun scheduling state"
     )
     if (
-        scheduling_gate["status"] != "PARTIAL"
+        scheduling_gate["status"] != "VERIFIED_SOURCE_CONTRACT"
         or tuple(scheduling_gate["requiredClassState"])
         != SUN_RUNTIME_SCHEDULER_STATE
         or "Disable All Runtime Updating"
@@ -5132,6 +5887,31 @@ def self_test(output: Path, summary: dict[str, Any]) -> None:
         != ["Level Editor Tick", "Editor Sequence Cache Speedup"]
     ):
         raise AssertionError("Sun scheduler runtime/deferred boundary changed")
+    runtime_rows = {
+        item["sourceName"]: item
+        for item in (
+            runtime_gate["stage1BaseEvaluator"]
+            + runtime_gate["stage2SunTrajectoryAndLight"]
+        )
+    }
+    if any(not item["runtimeEligible"] for item in runtime_rows.values()):
+        raise AssertionError("Sun parameter row regressed below runtime eligibility")
+    parameter_by_name = {
+        item["sourceName"]: item
+        for item in payload["parameters"]
+        if item["sourceAsset"] == BLUEPRINT_ASSET
+    }
+    for name, expected in SUN_PARAMETER_SEMANTIC_OVERRIDES.items():
+        parameter = parameter_by_name[name]
+        if (
+            parameter["range"] != expected["range"]
+            or parameter["units"]["value"] != expected["units"]
+            or parameter["coordinateSpace"]["value"]
+            != expected["coordinateSpace"]
+            or parameter["semanticEvidence"]["evidence"] != expected["evidence"]
+            or not runtime_rows[name]["runtimeEligible"]
+        ):
+            raise AssertionError(f"Sun parameter semantic contract changed: {name}")
     rendered = json.dumps(payload, ensure_ascii=False)
     forbidden = ("/storage/emulated/", "/data/data/com.termux/", "udsRoot")
     leaks = [token for token in forbidden if token in rendered]
@@ -5234,10 +6014,10 @@ def self_test(output: Path, summary: dict[str, Any]) -> None:
     ):
         raise AssertionError("Sun world-space parameter semantics are unresolved")
     if any(
-        parameter_by_name[name]["extractionStatus"] != "PARTIAL"
+        parameter_by_name[name]["extractionStatus"] != "VERIFIED"
         for name in ("Cached Sun Vector", "Sun World Rotation")
     ):
-        raise AssertionError("coordinate proof must not overclaim complete trajectory extraction")
+        raise AssertionError("verified Sun world-space parameter semantics regressed")
     for name in DERIVED_SUN_PARAMETER_WRITERS:
         parameter = parameter_by_name[name]
         if parameter["type"] == "UNKNOWN":

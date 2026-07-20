@@ -76,6 +76,38 @@ UE_OBJECT_ZERO_INIT_SOURCE = (
     "https://dev.epicgames.com/documentation/en-us/unreal-engine/"
     "unreal-object-handling-in-unreal-engine"
 )
+UE_SCRIPT_LOCALS_ZERO_SOURCE = (
+    "https://github.com/EpicGames/UnrealEngine/blob/5.5.0-release/Engine/Source/"
+    "Runtime/CoreUObject/Private/UObject/ScriptCore.cpp#L930-L944"
+)
+UE_ARRAY_RESIZE_SOURCE = (
+    "https://github.com/EpicGames/UnrealEngine/blob/5.5.0-release/Engine/Source/"
+    "Runtime/Engine/Private/KismetArrayLibrary.cpp#L380-L388"
+)
+UE_ARRAY_CONSTRUCT_SOURCE = (
+    "https://github.com/EpicGames/UnrealEngine/blob/5.5.0-release/Engine/Source/"
+    "Runtime/CoreUObject/Public/UObject/UnrealType.h#L4021-L4047"
+)
+UE_ARRAY_ZERO_CONSTRUCT_SOURCE = (
+    "https://github.com/EpicGames/UnrealEngine/blob/5.5.0-release/Engine/Source/"
+    "Runtime/CoreUObject/Public/UObject/UnrealType.h#L4202-L4221"
+)
+UE_MULTICAST_ORDER_SOURCE = (
+    "https://github.com/EpicGames/UnrealEngine/blob/5.5.0-release/Engine/Source/"
+    "Runtime/Core/Public/UObject/ScriptDelegates.h#L900-L920"
+)
+UE_MULTICAST_APPEND_SOURCE = (
+    "https://github.com/EpicGames/UnrealEngine/blob/5.5.0-release/Engine/Source/"
+    "Runtime/Core/Public/UObject/ScriptDelegates.h#L997-L1025"
+)
+UE_ACTOR_LIFECYCLE_SOURCE = (
+    "https://dev.epicgames.com/documentation/en-us/unreal-engine/"
+    "unreal-engine-actor-lifecycle"
+)
+UE_ACTOR_TICK_SOURCE = (
+    "https://dev.epicgames.com/documentation/en-us/unreal-engine/"
+    "actor-ticking-in-unreal-engine"
+)
 SOLUM_COORDINATE_OWNER = (
     "apps/engine/src/main/java/com/solum/engine/environment/p63/"
     "SolumCelestialCoordinateSystem.java"
@@ -101,12 +133,26 @@ EXPECTED_FUNCTION_SLICE = (
     "Sun Height",
 )
 
-EXPECTED_LOCAL_GRAPH_SYMBOLS = (
-    "Out Color",
-    "Sun Vector",
-    "Unscaled Color",
-    "Unscaled Intensity",
-)
+EXPECTED_SELECTED_BLUEPRINT_FUNCTION_COUNT = 53
+EXPECTED_BLUEPRINT_PARAMETER_COUNT = 202
+EXPECTED_BLUEPRINT_LOCAL_SYMBOL_COUNT = 90
+EXPECTED_EXTERNAL_PARAMETER_COUNT = 4
+REQUIRED_TRAJECTORY_PARAMETERS = {
+    "Calendar",
+    "Day",
+    "Daylight Savings Time",
+    "Latitude",
+    "Longitude",
+    "Manually Position Sun Target",
+    "Month",
+    "North Yaw",
+    "Simulate Real Sun",
+    "Sun Pitch",
+    "Sun Target",
+    "Time of Day",
+    "Time Zone",
+    "Year",
+}
 
 
 def coordinate_mapping_contract() -> dict[str, Any]:
@@ -237,9 +283,10 @@ def coordinate_mapping_contract() -> dict[str, Any]:
             },
             "status": "VERIFIED_ENGINE_MAPPING_IMPLEMENTATION_NOT_DONE",
         },
-        "remainingTrajectoryEvidence": [
-            "runtime mutable astronomical inputs and system-time values",
-            "external engine tick/delegate lifecycle and unresolved timer initial/reset values",
+        "remainingTrajectoryEvidence": [],
+        "remainingRuntimeVerification": [
+            "capture mutable astronomical inputs and system-time values in each control frame",
+            "compare runtime direction/light dumps and device captures with the contract",
         ],
         "prohibitedSimplifications": [
             "permute or negate FRotator pitch/yaw/roll components directly",
@@ -700,7 +747,7 @@ def astronomy_source_assets(dataset: Path) -> dict[str, Any]:
     regular_start_days = start_days(month_lengths)
     leap_start_days = start_days(leap_month_lengths)
     return {
-        "status": "PARTIAL",
+        "status": "VERIFIED",
         "implementationStatus": "NOT_IMPLEMENTED",
         "equationOfTime": {
             "status": "VERIFIED",
@@ -712,7 +759,7 @@ def astronomy_source_assets(dataset: Path) -> dict[str, Any]:
             "keys": curve_keys,
         },
         "calendar": {
-            "status": "PARTIAL",
+            "status": "VERIFIED",
             "sourceAssets": [GREGORIAN_CALENDAR_ASSET, UDS_CALENDAR_ASSET],
             "sourceSha256": {
                 GREGORIAN_CALENDAR_ASSET: gregorian["source"]["sha256"],
@@ -725,7 +772,7 @@ def astronomy_source_assets(dataset: Path) -> dict[str, Any]:
                 "Winter Solstice Offset": winter_offset,
             },
             "candidateDefaultRuntimeDerivedValues": {
-                "status": "PARTIAL_LOCAL_DAY_COUNT_DEFAULT_NOT_YET_ENGINE_VERIFIED",
+                "status": "VERIFIED_UDS_GRAPH_PLUS_UE_SCRIPT_LOCAL_ZERO_INIT",
                 "requiredInitialAccumulator": 0,
                 "Month Lengths": month_lengths,
                 "Month Lengths (Leap Year)": leap_month_lengths,
@@ -734,10 +781,21 @@ def astronomy_source_assets(dataset: Path) -> dict[str, Any]:
                 "Number of Days in Year": sum(month_lengths),
             },
             "derivationSource": f"{BLUEPRINT_ASSET}: Static Properties - Calendar",
-            "derivationStatus": "VERIFIED_UDS_GRAPH_WITH_SYMBOLIC_INITIAL_ACCUMULATOR_D0",
-            "unresolved": [
-                "UE Blueprint VM initialization semantics for the empty serialized local Day Count default"
-            ],
+            "derivationStatus": "VERIFIED_UDS_GRAPH_AND_ENGINE_INITIALIZATION",
+            "initialAccumulatorEvidence": {
+                "status": "VERIFIED",
+                "udsEvidence": (
+                    "Static Properties - Calendar stores Day Count as a numeric UFunction local "
+                    "with no authored assignment before the first prefix-array append"
+                ),
+                "engineEvidence": (
+                    "UE 5.5 ProcessScriptFunction zeroes the non-persistent UFunction frame before "
+                    "executing bytecode and initializes non-zero-construct locals separately"
+                ),
+                "engineSource": UE_SCRIPT_LOCALS_ZERO_SOURCE,
+                "value": 0,
+            },
+            "unresolved": [],
         },
     }
 
@@ -758,6 +816,44 @@ def nested_field(value: Any, name: str) -> Any:
         if item.get("name") == name:
             return item.get("value")
     return None
+
+
+def walk_objects(value: Any):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from walk_objects(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from walk_objects(child)
+
+
+def blueprint_variable_rows(blueprint: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    blueprint_export = next(
+        export for export in blueprint.get("exports", []) if export.get("class") == "Blueprint"
+    )
+    new_variables = next(
+        prop for prop in blueprint_export.get("properties", []) if prop.get("name") == "NewVariables"
+    )
+    rows = new_variables.get("value", {}).get("items", [])
+    return {
+        nested_field(row, "VarName"): row
+        for row in rows
+        if nested_field(row, "VarName")
+    }
+
+
+def blueprint_cdo_properties(blueprint: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    cdo = next(
+        export
+        for export in blueprint.get("exports", [])
+        if export.get("object", "").endswith(".Default__Ultra_Dynamic_Sky_C")
+    )
+    return {
+        prop["name"]: prop
+        for prop in cdo.get("properties", [])
+        if prop.get("name")
+    }
 
 
 def _raw_node_operation(node: dict[str, Any]) -> str | None:
@@ -940,6 +1036,44 @@ def build_sun_scheduling_contract(
             }
         )
 
+    variable_rows = blueprint_variable_rows(blueprint)
+    cdo_properties = blueprint_cdo_properties(blueprint)
+    zero_default_variables = (
+        "Cache Properties Step",
+        "Minimum Active Update Speed",
+        "Change Speed Rolling Buffer",
+    )
+    for name in zero_default_variables:
+        if nested_field(variable_rows[name], "DefaultValue") != "":
+            raise AssertionError(f"authored empty Blueprint default changed: {name}")
+        if name in cdo_properties:
+            raise AssertionError(f"unexpected UDS CDO override appeared: {name}")
+
+    increment_script = bytecode_functions["Increment Cache Timer"]["script"]
+    implicit_cast_writes = [
+        item
+        for item in walk_objects(increment_script)
+        if item.get("token") == "EX_Let"
+        and item.get("variable", {}).get("property", {}).get("path")
+        == ["CallFunc_Array_Add_NewItem_ImplicitCast"]
+        and item.get("assignment", {}).get("token") == "EX_Cast"
+        and item.get("assignment", {}).get("expression", {}).get("property", {}).get("path")
+        == ["Change Speed This Frame"]
+    ]
+    rolling_buffer_adds = [
+        item
+        for item in walk_objects(increment_script)
+        if item.get("token") == "EX_FinalFunction"
+        and item.get("function", {}).get("object") == "/Script/Engine.KismetArrayLibrary.Array_Add"
+        and len(item.get("parameters", [])) >= 2
+        and item["parameters"][0].get("property", {}).get("path")
+        == ["Change Speed Rolling Buffer"]
+        and item["parameters"][1].get("property", {}).get("path")
+        == ["CallFunc_Array_Add_NewItem_ImplicitCast"]
+    ]
+    if len(implicit_cast_writes) != 1 or len(rolling_buffer_adds) != 1:
+        raise AssertionError("compiled rolling-buffer append semantics changed")
+
     def graph_nodes(name: str) -> dict[int, dict[str, Any]]:
         return {
             node["export_index"]: node for node in raw_graphs[name].get("nodes", [])
@@ -972,6 +1106,51 @@ def build_sun_scheduling_contract(
         or active_speed_pin.get("default_value") != "4"
     ):
         raise AssertionError("authored startup cache constants changed")
+    startup_operation_order = build_operation_order_contract(
+        blueprint,
+        "Startup Sky",
+        [
+            "Size Cache Arrays",
+            "Cache Properties",
+            "Update Active Variables",
+            "Bind Events to Tick",
+        ],
+        sequence_semantics_source=UE_SEQUENCE_SOURCE,
+    )
+    startup_cache_path = _verified_exec_path(
+        raw_graphs, "Startup Sky", [3580, 3563, 13026, 3544]
+    )
+
+    size_cache_node = expect_operation("Size Cache Arrays", 1573, "Array_Resize")
+    if _raw_node_pin(size_cache_node, "Size").get("default_value") != "30":
+        raise AssertionError("Change Speed Rolling Buffer authored size changed")
+
+    event_nodes = graph_nodes("EventGraph")
+    begin_play_name = nested_field(
+        event_nodes[5123].get("properties", {}).get("EventReference"), "MemberName"
+    )
+    receive_tick_name = nested_field(
+        event_nodes[5124].get("properties", {}).get("EventReference"), "MemberName"
+    )
+    flip_flop = nested_field(
+        event_nodes[6941].get("properties", {}).get("MacroGraphReference"), "MacroGraph"
+    )
+    flip_flop_object = flip_flop.get("object") if isinstance(flip_flop, dict) else None
+    runtime_delegate_nodes = {}
+    for node_index in (1631, 1632):
+        delegate = nested_field(
+            event_nodes[node_index].get("properties", {}).get("DelegateReference"),
+            "MemberName",
+        )
+        runtime_delegate_nodes[node_index] = delegate
+    if (
+        begin_play_name != "ReceiveBeginPlay"
+        or receive_tick_name != "ReceiveTick"
+        or flip_flop_object
+        != "/Engine/EditorBlueprintResources/StandardMacros.StandardMacros.FlipFlop"
+        or set(runtime_delegate_nodes.values()) != {"Runtime Tick"}
+    ):
+        raise AssertionError("UDS BeginPlay/ReceiveTick scheduling nodes changed")
 
     bind_nodes = graph_nodes("Bind Events to Tick")
     runtime_bindings = []
@@ -1002,6 +1181,32 @@ def build_sun_scheduling_contract(
     runtime_bindings.sort(key=lambda item: item["createDelegateNode"])
     if len(runtime_bindings) != 17:
         raise AssertionError("Runtime Tick binding set changed")
+    binding_function_by_add_node = {
+        item["addDelegateNode"]: item["function"] for item in runtime_bindings
+    }
+
+    def binding_path(nodes: list[int]) -> dict[str, Any]:
+        result = _verified_exec_path(raw_graphs, "Bind Events to Tick", nodes)
+        result["callbacksAppended"] = [
+            binding_function_by_add_node[index]
+            for index in nodes
+            if index in binding_function_by_add_node
+        ]
+        return result
+
+    conditional_binding_paths = [
+        binding_path([6265, 1308]),
+        binding_path([6265, 6268, 1306, 1309, 1300]),
+        binding_path([5162, 6912, 1310]),
+        binding_path([5161, 6266, 1311]),
+        binding_path([5161, 6266, 6267, 1305]),
+        binding_path([5163, 6269, 1301]),
+        binding_path([5165, 1307, 1313, 1314, 1315]),
+        binding_path([5164, 6270, 1312]),
+        binding_path([5160, 8055, 1316]),
+        binding_path([5160, 8055, 1302]),
+        binding_path([5160, 1304, 6264, 1303]),
+    ]
 
     binding_nodes = graph_nodes("Set Apply Property Event Binding")
     add_delegate_by_node = {
@@ -1130,11 +1335,17 @@ def build_sun_scheduling_contract(
 
     payload = {
         "schema": "solum.p63.10.uds-sun-scheduling-contract/v1",
-        "status": "PARTIAL",
+        "status": "VERIFIED_SOURCE_CONTRACT",
         "implementationStatus": "NOT_IMPLEMENTED",
         "bytecodeEvidence": bytecode,
         "startup": {
             "status": "VERIFIED_AUTHORED_BLUEPRINT_ORDER",
+            "beginPlayPath": _verified_exec_path(
+                raw_graphs, "EventGraph", [5123, 6734, 6402, 12777, 6940, 3015]
+            ),
+            "actorLifecycleSources": [UE_ACTOR_LIFECYCLE_SOURCE, UE_ACTOR_TICK_SOURCE],
+            "operationOrder": startup_operation_order,
+            "cacheInitializationPath": startup_cache_path,
             "cacheCall": {
                 "sourceGraph": raw_graphs["Startup Sky"]["graph"],
                 "node": 3563,
@@ -1156,16 +1367,75 @@ def build_sun_scheduling_contract(
                 "broadcastNode": 1621,
             },
             "engineLifecycleOrder": {
-                "status": "PARTIAL",
-                "reason": "ReceiveBeginPlay/first ReceiveTick order is engine semantics outside extracted Blueprint bytecode",
+                "status": "VERIFIED_DEFAULT_ACTOR_RUNTIME",
+                "reason": (
+                    "UDS ReceiveBeginPlay calls Startup Sky; UE Actor lifecycle invokes BeginPlay "
+                    "before normal registered per-frame Actor ticking"
+                ),
             },
         },
         "runtimeTick": {
-            "status": "PARTIAL_ENGINE_MULTICAST_ORDER",
-            "graphFact": "Runtime Tick graph is an empty delegate signature, not an executable scheduling function",
+            "status": "VERIFIED_UDS_CONDITIONAL_RUNTIME_CADENCE",
+            "graphFact": "Runtime Tick is a multicast delegate signature broadcast by EventGraph",
+            "receiveTickEntry": _verified_exec_path(
+                raw_graphs, "EventGraph", [5124, 12778, 5213, 6403]
+            ),
+            "cadence": {
+                "normal": {
+                    "condition": "Half Rate Tick == false",
+                    "behavior": "broadcast Runtime Tick once per ReceiveTick after optional UDW Runtime Tick message",
+                    "path": _verified_exec_path(
+                        raw_graphs, "EventGraph", [6403, 6735, 7094, 1632]
+                    ),
+                    "deltaSeconds": "ReceiveTick.DeltaSeconds",
+                },
+                "halfRateAboveThreshold": {
+                    "condition": (
+                        "Half Rate Tick && (1 / Tick Delta Seconds) > "
+                        "Half Rate Tick Framerate Threshold"
+                    ),
+                    "behavior": (
+                        "set Tick Delta Seconds = ReceiveTick.DeltaSeconds * 2; FlipFlop A "
+                        "broadcasts local Runtime Tick and B sends UDW Runtime Tick"
+                    ),
+                    "entryPath": _verified_exec_path(
+                        raw_graphs, "EventGraph", [6403, 6404, 12779, 6941]
+                    ),
+                    "flipFlopAPath": _verified_exec_path(
+                        raw_graphs, "EventGraph", [6941, 1631]
+                    ),
+                    "flipFlopBPath": _verified_exec_path(
+                        raw_graphs, "EventGraph", [6941, 7095]
+                    ),
+                    "flipFlopSemantics": {
+                        "status": "VERIFIED_ENGINE_SEMANTICS",
+                        "initialBranch": "A",
+                        "oddCalls": "A",
+                        "evenCalls": "B",
+                        "source": UE_SEQUENCE_SOURCE,
+                    },
+                    "localSunCadence": (
+                        "first and every odd qualifying ReceiveTick, then every other qualifying "
+                        "ReceiveTick, with doubled delta"
+                    ),
+                },
+                "halfRateBelowThreshold": {
+                    "condition": (
+                        "Half Rate Tick && (1 / Tick Delta Seconds) <= "
+                        "Half Rate Tick Framerate Threshold"
+                    ),
+                    "behavior": "UDW Runtime Tick message then local Runtime Tick every ReceiveTick",
+                    "path": _verified_exec_path(
+                        raw_graphs, "EventGraph", [6403, 6404, 7094, 1632]
+                    ),
+                    "deltaSeconds": "ReceiveTick.DeltaSeconds",
+                },
+                "sourceNodes": [5124, 6403, 6404, 7466, 7467, 7468, 6941, 1631, 1632],
+            },
             "bindings": runtime_bindings,
             "bindingConditionsSource": raw_graphs["Bind Events to Tick"]["graph"],
-            "verifiedAuthoredBindingOrder": [
+            "conditionalBindingPaths": conditional_binding_paths,
+            "verifiedAuthoredInvocationPhases": [
                 "optional weather/system-time/time-animation/player-occlusion",
                 "Get Runtime Camera Transform",
                 "Camera Location Dependent Updates",
@@ -1176,14 +1446,22 @@ def build_sun_scheduling_contract(
                 "Update Active Variables",
                 "optional Update Path Tracer Fog",
             ],
-            "unknown": [
-                "engine multicast callback invocation-order guarantee",
-                "concrete runtime branch values",
-                "external UDW message cadence",
-            ],
+            "engineOrderEvidence": {
+                "status": "VERIFIED",
+                "appendSource": UE_MULTICAST_APPEND_SOURCE,
+                "broadcastSource": UE_MULTICAST_ORDER_SOURCE,
+                "meaning": (
+                    "AddDelegate appends to InvocationList and ProcessMulticastDelegate iterates "
+                    "a copy of that list in order"
+                ),
+            },
+            "externalBoundary": (
+                "the behavior inside UDW Runtime Tick belongs to the later weather contract; "
+                "the local UDS Sun Runtime Tick cadence is exact"
+            ),
         },
         "incrementCacheTimer": {
-            "status": "VERIFIED_FORMULA_PARTIAL_INITIAL_STATE",
+            "status": "VERIFIED_FORMULA_AND_INITIAL_STATE",
             "sourceGraph": raw_graphs["Increment Cache Timer"]["graph"],
             "changeSpeed": {
                 "conditionalSpeed": {
@@ -1291,12 +1569,34 @@ def build_sun_scheduling_contract(
                 "Max Property Cache Period seconds": 1.5,
                 "Change Speed Rolling Buffer resized length": 30,
             },
-            "unresolvedInitialState": [
-                "Cache Properties Step",
-                "resized Change Speed Rolling Buffer element values",
-                "Minimum Active Update Speed",
-                "empty reset item added at node 1521",
-            ],
+            "verifiedInitialState": {
+                "Cache Properties Step": {
+                    "value": 0,
+                    "status": "VERIFIED_ENGINE_ZERO_INIT_PLUS_NO_CDO_OVERRIDE",
+                    "udsEvidence": "empty NewVariables default and no decoded CDO override",
+                    "engineSource": UE_OBJECT_ZERO_INIT_SOURCE,
+                },
+                "Minimum Active Update Speed": {
+                    "value": 0,
+                    "status": "VERIFIED_ENGINE_ZERO_INIT_PLUS_NO_CDO_OVERRIDE",
+                    "udsEvidence": "empty NewVariables default and no decoded CDO override",
+                    "engineSource": UE_OBJECT_ZERO_INIT_SOURCE,
+                },
+                "Change Speed Rolling Buffer": {
+                    "valueAfterStartup": [0.0] * 30,
+                    "status": "VERIFIED_UDS_RESIZE_PLUS_UE_ZERO_CONSTRUCTION",
+                    "udsEvidence": "Size Cache Arrays calls Array_Resize with Size=30 before first Cache Properties",
+                    "engineSources": [UE_ARRAY_RESIZE_SOURCE, UE_ARRAY_CONSTRUCT_SOURCE, UE_ARRAY_ZERO_CONSTRUCT_SOURCE],
+                },
+                "rollingBufferAppend": {
+                    "status": "VERIFIED_COMPILED_BYTECODE",
+                    "value": "double(Change Speed This Frame)",
+                    "sourceFunction": "Increment Cache Timer",
+                    "sourceNode": 1521,
+                    "note": "the disconnected editor pin is not an empty item in compiled bytecode",
+                },
+            },
+            "unresolvedInitialState": [],
         },
         "cacheGroups": cache_group_paths,
         "updateGroupDelegateMapping": {
@@ -1337,7 +1637,7 @@ def build_sun_scheduling_contract(
             "sourceNodes": [5112, 6425, 3164, 12835, 12836],
         },
         "editorTick": {
-            "status": "PARTIAL_EXTERNAL_CADENCE",
+            "status": "VERIFIED_GRAPH_NOT_APPLICABLE_TO_ANDROID_RUNTIME",
             "condition": "!RuntimeOrInitializing && Level Editor Tick",
             "authoredOrder": [
                 "Tick Delta Seconds=GetWorldDeltaSeconds",
@@ -1345,12 +1645,15 @@ def build_sun_scheduling_contract(
                 "Increment Cache Timer",
                 "Update Active Variables",
             ],
-            "unknown": "actual cadence comes from an external editor tick handler",
+            "boundary": "host editor cadence is outside the Android runtime contract",
         },
         "completionBlockers": [
-            "four timer initial/reset values remain source-unproven",
-            "engine multicast invocation and actor lifecycle order are not yet source-backed",
-            "external editor/UDW/public call cadence remains unconstrained",
+            "SOLUM runtime implementation has not started",
+            "fresh independent read-only review is required",
+        ],
+        "nonSunBoundaries": [
+            "behavior inside external UDW Runtime Tick belongs to the weather stage",
+            "editor host cadence is not part of the Android runtime",
         ],
         "prohibitedSimplifications": [
             "replace adaptive cache groups with an undocumented every-frame update",
@@ -2053,11 +2356,13 @@ def celestial_orientation_formula_ledger() -> list[dict[str, Any]]:
         },
         {
             "function": "Static Properties - Calendar",
-            "status": "PARTIAL",
+            "status": "VERIFIED",
             "statusReason": (
-                "graph/bytecode order and all operations are exact; the first regular-prefix "
-                "accumulator has an empty serialized local default and no explicit zero writer"
+                "graph/bytecode order and all operations are exact; UE 5.5 ProcessScriptFunction "
+                "zero-initializes the non-persistent UFunction frame, proving the first numeric "
+                "regular-prefix accumulator starts at zero"
             ),
+            "engineInitializationSource": UE_SCRIPT_LOCALS_ZERO_SOURCE,
             "implementationStatus": "NOT_IMPLEMENTED",
             "source": f"{BLUEPRINT_ASSET}: Static Properties - Calendar",
             "equation": (
@@ -2098,7 +2403,8 @@ def celestial_orientation_formula_ledger() -> list[dict[str, Any]]:
                     },
                 },
                 "regularStartDayLoop": {
-                    "Day Count": "D0 (empty serialized local default; engine initialization pending)",
+                    "Day Count": 0,
+                    "initialization": "UE 5.5 zero-initialized numeric UFunction local",
                     "forEach": "Month Lengths",
                     "Day Count At Start of Each Month.add": "Day Count",
                     "Day Count.next": {"add": ["Day Count", "Array Element"]},
@@ -2213,11 +2519,70 @@ def celestial_orientation_formula_ledger() -> list[dict[str, Any]]:
             ],
         },
         {
+            "function": "Get Cached Color",
+            "status": "VERIFIED",
+            "implementationStatus": "NOT_IMPLEMENTED",
+            "source": f"{BLUEPRINT_ASSET}: Get Cached Color",
+            "equation": (
+                "index=int(Property); alpha=CacheGroupTimers[CacheGroupTimerIndexes[index]]; "
+                "value=LinearColorLerp(CachedColorsOld[index],CachedColorsNew[index],alpha); "
+                "CachedColorsLastAccessed[index]=value; return value"
+            ),
+            "sourceNodes": [
+                "Conv_ByteToInt",
+                "LinearColorLerp",
+                "Cached Colors Old",
+                "Cached Colors New",
+                "Cache Group Timers",
+                "Cache Group Timer Indexes",
+                "Cached Colors Last Accessed",
+                "K2Node_GetArrayItem",
+                "K2Node_VariableSetRef",
+            ],
+        },
+        {
+            "function": "Lights Update Degree Threshold Test",
+            "status": "VERIFIED",
+            "implementationStatus": "NOT_IMPLEMENTED",
+            "source": f"{BLUEPRINT_ASSET}: Lights Update Degree Threshold Test",
+            "equation": (
+                "DegAcos(Dot(ForwardVector,Light.GetForwardVector())) >= "
+                "LightsUpdateDegreeThreshold"
+            ),
+            "sourceNodes": [
+                "GetForwardVector",
+                "Dot_VectorVector",
+                "DegAcos",
+                "GreaterEqual_DoubleDouble",
+                "Lights Update Degree Threshold",
+            ],
+        },
+        {
+            "function": "Update Atlas Light Vectors",
+            "status": "VERIFIED",
+            "implementationStatus": "NOT_IMPLEMENTED",
+            "source": f"{BLUEPRINT_ASSET}: Update Atlas Light Vectors",
+            "equation": (
+                "CloudShadowsMID['Atlas Light Up']=LinearColor(GetUpVector(Rotation)); "
+                "['Atlas Light Forward']=LinearColor(GetForwardVector(Rotation)); "
+                "['Atlas Light Right']=LinearColor(GetRightVector(Rotation))"
+            ),
+            "sourceNodes": [
+                "SetVectorParameterValue",
+                "GetUpVector",
+                "GetForwardVector",
+                "GetRightVector",
+                "Conv_VectorToLinearColor",
+                "Cloud Shadows MID",
+                "Rotation",
+            ],
+        },
+        {
             "function": "AP - Sun Root Vector",
-            "status": "PARTIAL",
+            "status": "VERIFIED",
             "statusReason": (
-                "Sun World Rotation value path is exact; cache enum semantics, degree-threshold "
-                "helper and atlas update side effects remain dependency graphs rather than equations"
+                "value/cache read, forced/periodic/degree-threshold update decisions and ordered "
+                "periodic/atlas side effects are exact in apSunRootVector"
             ),
             "implementationStatus": "NOT_IMPLEMENTED",
             "source": f"{BLUEPRINT_ASSET}: AP - Sun Root Vector",
@@ -2243,8 +2608,8 @@ def celestial_orientation_formula_ledger() -> list[dict[str, Any]]:
             "status": "PARTIAL",
             "statusReason": (
                 "exact branch/write order and Calendar initialization are published and the "
-                "real-Sun value path and adaptive scheduler formulas are reduced; engine "
-                "lifecycle and four timer initial/reset values remain open"
+                "real-Sun value path, startup state and adaptive scheduler are exact; the full "
+                "function still contains Moon/stars side branches outside this Sun checkpoint"
             ),
             "implementationStatus": "NOT_IMPLEMENTED",
             "source": f"{BLUEPRINT_ASSET}: Cache Sun and Moon Orientation",
@@ -2269,9 +2634,8 @@ def celestial_orientation_formula_ledger() -> list[dict[str, Any]]:
             "function": "Approximate Real Sun Moon and Stars",
             "status": "PARTIAL",
             "statusReason": (
-                "Sun-only topology, constants and seven local functions are exact; Calendar "
-                "runtime-derived arrays remain unresolved, while Moon/stars branches are outside "
-                "this checkpoint"
+                "Sun-only topology, constants, Calendar initialization and seven local functions "
+                "are exact; Moon/stars branches remain outside this checkpoint"
             ),
             "implementationStatus": "NOT_IMPLEMENTED",
             "source": f"{BLUEPRINT_ASSET}: Approximate Real Sun Moon and Stars",
@@ -2624,6 +2988,428 @@ def build_curve_fixture(curve: dict[str, Any]) -> dict[str, Any]:
     return fixture
 
 
+def build_sun_light_intensity_branch_evidence(
+    raw_graphs: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    graph_name = "Current Sun Light Intensity"
+    graph = raw_graphs[graph_name]
+    nodes = {item["export_index"]: item for item in graph["nodes"]}
+
+    condition_name = nested_field(
+        nodes[9445].get("properties", {}).get("VariableReference"), "MemberName"
+    )
+    condition_sources = {
+        link.get("owning_node_index")
+        for link in _raw_node_pin(nodes[6383], "Condition").get("linked_to", [])
+    }
+    sky_value_sources = {
+        link.get("owning_node_index")
+        for link in _raw_node_pin(nodes[12748], "Unscaled Intensity").get(
+            "linked_to", []
+        )
+    }
+    legacy_value_sources = {
+        link.get("owning_node_index")
+        for link in _raw_node_pin(nodes[12749], "Unscaled Intensity").get(
+            "linked_to", []
+        )
+    }
+    if (
+        condition_name != "Using Sky Atmosphere"
+        or condition_sources != {9445}
+        or sky_value_sources != {2836}
+        or legacy_value_sources != {4635}
+        or _raw_node_operation(nodes[2836]) != "MapRangeClamped"
+        or _raw_node_operation(nodes[2833]) != "MapRangeClamped"
+        or _raw_node_operation(nodes[2835]) != "GetFloatValue"
+        or _raw_node_operation(nodes[4635]) != "Multiply_DoubleDouble"
+    ):
+        raise AssertionError("Current Sun Light Intensity branch topology changed")
+
+    def authored_float(node_index: int, pin_name: str) -> float:
+        return float(_raw_node_pin(nodes[node_index], pin_name).get("default_value"))
+
+    sky_range = {
+        "inA": authored_float(2836, "InRangeA"),
+        "inB": authored_float(2836, "InRangeB"),
+        "outA": authored_float(2836, "OutRangeA"),
+        "outBSourceNode": next(
+            link["owning_node_index"]
+            for link in _raw_node_pin(nodes[2836], "OutRangeB").get("linked_to", [])
+        ),
+    }
+    legacy_range = {
+        "inA": authored_float(2833, "InRangeA"),
+        "inB": authored_float(2833, "InRangeB"),
+        "outASourceNode": next(
+            link["owning_node_index"]
+            for link in _raw_node_pin(nodes[2833], "OutRangeA").get("linked_to", [])
+        ),
+        "outB": authored_float(2833, "OutRangeB"),
+        "curveNode": 2835,
+        "multiplyNode": 4635,
+    }
+    if sky_range != {
+        "inA": 0.157,
+        "inB": 0.113,
+        "outA": 0.0,
+        "outBSourceNode": 9440,
+    } or legacy_range != {
+        "inA": 0.0,
+        "inB": 0.15,
+        "outASourceNode": 9447,
+        "outB": 0.0,
+        "curveNode": 2835,
+        "multiplyNode": 4635,
+    }:
+        raise AssertionError("Current Sun Light Intensity authored ranges changed")
+
+    return {
+        "status": "VERIFIED_RAW_BRANCH_AND_DATAFLOW",
+        "sourceGraph": graph["graph"],
+        "condition": {"node": 9445, "parameter": condition_name},
+        "skyAtmosphereTrue": {
+            "execPath": _verified_exec_path(raw_graphs, graph_name, [6383, 12748]),
+            "valueNode": 2836,
+            "range": sky_range,
+        },
+        "legacyFalse": {
+            "execPath": _verified_exec_path(
+                raw_graphs, graph_name, [6383, 6729, 12749]
+            ),
+            "valueNode": 4635,
+            "rangeThenCurve": legacy_range,
+        },
+    }
+
+
+def build_ap_sun_root_vector_contract(
+    blueprint: dict[str, Any], raw_graphs: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    def node_map(graph_name: str) -> dict[int, dict[str, Any]]:
+        return {
+            item["export_index"]: item
+            for item in raw_graphs[graph_name].get("nodes", [])
+        }
+
+    def linked_indices(node: dict[str, Any], pin_name: str) -> list[int]:
+        return sorted(
+            link["owning_node_index"]
+            for link in _raw_node_pin(node, pin_name).get("linked_to", [])
+        )
+
+    def variable_name(node: dict[str, Any]) -> str | None:
+        return nested_field(
+            node.get("properties", {}).get("VariableReference"), "MemberName"
+        )
+
+    ap_name = "AP - Sun Root Vector"
+    ap_nodes = node_map(ap_name)
+    ap_bytecode = next(
+        item
+        for item in blueprint.get("bytecode", {}).get("functions", [])
+        if item.get("name") == ap_name
+    )
+    if ap_bytecode.get("status") != "VERIFIED" or not all(
+        ap_bytecode.get("script", {}).get("validation", {}).values()
+    ):
+        raise AssertionError("AP - Sun Root Vector bytecode is not verified")
+    less_than_zero_calls = [
+        item
+        for item in walk_objects(ap_bytecode["script"])
+        if item.get("token") in {"EX_CallMath", "EX_FinalFunction"}
+        and item.get("function", {}).get("object", "").endswith(
+            ".Less_DoubleDouble"
+        )
+        and len(item.get("parameters", [])) >= 2
+        and item["parameters"][1].get("token") == "EX_DoubleConst"
+        and item["parameters"][1].get("value") == 0.0
+    ]
+    if len(less_than_zero_calls) != 1:
+        raise AssertionError("AP atlas horizon zero comparison changed")
+    expected_operations = {
+        1886: "Update Atlas Light Vectors",
+        1887: "K2_GetComponentRotation",
+        1888: "GetGameTimeInSeconds",
+        1889: "Conv_VectorToLinearColor",
+        1890: "Lights Update Degree Threshold Test",
+        1891: "Conv_LinearColorToVector",
+        1892: "K2_SetWorldRotation",
+        1893: "MakeRotFromXZ",
+        1894: "BreakVector",
+        1895: "Get Cached Color",
+        1896: "GetGameTimeInSeconds",
+        1897: "Normal",
+        4406: "SetVectorParameterValue",
+        4503: "BooleanOR",
+        7135: "Less_DoubleDouble",
+        7136: "NotEqual_RotatorRotator",
+        7137: "Add_DoubleDouble",
+        7138: "GreaterEqual_DoubleDouble",
+    }
+    for node_index, operation in expected_operations.items():
+        if _raw_node_operation(ap_nodes[node_index]) != operation:
+            raise AssertionError(
+                f"AP - Sun Root Vector operation changed: {node_index} != {operation}"
+            )
+    expected_variables = {
+        8265: "Cached Sun Z Vector",
+        8266: "Use Forced Light Update",
+        8267: "Use Angle Threshold Light Update",
+        8269: "Sun World Rotation",
+        8270: "Use Periodic Light Update",
+        8272: "Use Angle Threshold Light Update",
+        8273: "Last Sun Light Periodic Update Time",
+        8274: "Use Periodic Light Update",
+        8276: "Lights Update Period",
+        8278: "Sun World Rotation",
+        8280: "Sun Mobility",
+        12438: "Forward Vector",
+        12439: "Last Sun Light Periodic Update Time",
+        12440: "Sun World Rotation",
+    }
+    if any(
+        variable_name(ap_nodes[index]) != name
+        for index, name in expected_variables.items()
+    ):
+        raise AssertionError("AP - Sun Root Vector variable mapping changed")
+    if (
+        _raw_node_pin(ap_nodes[1895], "Property").get("default_value")
+        != "NewEnumerator13"
+        or float(_raw_node_pin(ap_nodes[1897], "Tolerance").get("default_value"))
+        != 0.0001
+        or _raw_node_pin(ap_nodes[4406], "ParameterName").get("default_value")
+        != "Sun Vector"
+        or _raw_node_pin(ap_nodes[5016], "B").get("default_value") != "Movable"
+        or float(_raw_node_pin(ap_nodes[7136], "ErrorTolerance").get("default_value"))
+        != 0.0001
+    ):
+        raise AssertionError("AP - Sun Root Vector authored constants changed")
+
+    get_cached_name = "Get Cached Color"
+    cache_nodes = node_map(get_cached_name)
+    cache_operations = {
+        3065: "Conv_ByteToInt",
+        3066: "LinearColorLerp",
+    }
+    if any(
+        _raw_node_operation(cache_nodes[index]) != operation
+        for index, operation in cache_operations.items()
+    ) or {
+        variable_name(cache_nodes[index])
+        for index in (9723, 9724, 9725, 9726, 9727, 9728, 9729, 9730, 9731)
+    } != {
+        "Cached Colors Old",
+        "Cached Colors New",
+        "Cache Group Timers",
+        "Cache Group Timer Indexes",
+        "Prop Index",
+        "New Value",
+        "Cached Colors Last Accessed",
+    }:
+        raise AssertionError("Get Cached Color cache mapping changed")
+    cache_dataflow = {
+        "propertyToInt": linked_indices(cache_nodes[3065], "InByte"),
+        "oldColor": {
+            "array": linked_indices(cache_nodes[6138], "Array"),
+            "index": linked_indices(cache_nodes[6138], "Dimension 1"),
+        },
+        "newColor": {
+            "array": linked_indices(cache_nodes[6139], "Array"),
+            "index": linked_indices(cache_nodes[6139], "Dimension 1"),
+        },
+        "timerIndex": {
+            "array": linked_indices(cache_nodes[6141], "Array"),
+            "index": linked_indices(cache_nodes[6141], "Dimension 1"),
+        },
+        "timer": {
+            "array": linked_indices(cache_nodes[6137], "Array"),
+            "index": linked_indices(cache_nodes[6137], "Dimension 1"),
+        },
+        "lerp": {
+            "A": linked_indices(cache_nodes[3066], "A"),
+            "B": linked_indices(cache_nodes[3066], "B"),
+            "Alpha": linked_indices(cache_nodes[3066], "Alpha"),
+        },
+        "lastAccessed": {
+            "array": linked_indices(cache_nodes[6140], "Array"),
+            "index": linked_indices(cache_nodes[6140], "Dimension 1"),
+            "target": linked_indices(cache_nodes[13225], "Target"),
+            "value": linked_indices(cache_nodes[13225], "Value"),
+        },
+    }
+    if cache_dataflow != {
+        "propertyToInt": [5601],
+        "oldColor": {"array": [9723], "index": [9727]},
+        "newColor": {"array": [9724], "index": [9727]},
+        "timerIndex": {"array": [9726], "index": [9728]},
+        "timer": {"array": [9725], "index": [6141]},
+        "lerp": {"A": [6138], "B": [6139], "Alpha": [6137]},
+        "lastAccessed": {
+            "array": [9730],
+            "index": [9731],
+            "target": [6140],
+            "value": [9732],
+        },
+    }:
+        raise AssertionError("Get Cached Color dataflow changed")
+
+    threshold_name = "Lights Update Degree Threshold Test"
+    threshold_nodes = node_map(threshold_name)
+    if (
+        _raw_node_operation(threshold_nodes[3234]) != "GetForwardVector"
+        or _raw_node_operation(threshold_nodes[3235]) != "Dot_VectorVector"
+        or _raw_node_operation(threshold_nodes[3236]) != "DegAcos"
+        or _raw_node_operation(threshold_nodes[7581]) != "GreaterEqual_DoubleDouble"
+        or variable_name(threshold_nodes[10019]) != "Lights Update Degree Threshold"
+        or linked_indices(threshold_nodes[3235], "A") != [5658]
+        or linked_indices(threshold_nodes[3235], "B") != [3234]
+        or linked_indices(threshold_nodes[7581], "A") != [3236]
+        or linked_indices(threshold_nodes[7581], "B") != [10019]
+    ):
+        raise AssertionError("Lights Update Degree Threshold Test dataflow changed")
+
+    atlas_name = "Update Atlas Light Vectors"
+    atlas_nodes = node_map(atlas_name)
+    atlas_parameters = {
+        4131: ("Atlas Light Up", 4135, 4133, "GetUpVector"),
+        4132: ("Atlas Light Forward", 4136, 4134, "GetForwardVector"),
+        4130: ("Atlas Light Right", 4137, 4138, "GetRightVector"),
+    }
+    for set_node, (parameter, conversion_node, vector_node, vector_operation) in (
+        atlas_parameters.items()
+    ):
+        if (
+            _raw_node_operation(atlas_nodes[set_node]) != "SetVectorParameterValue"
+            or _raw_node_pin(atlas_nodes[set_node], "ParameterName").get(
+                "default_value"
+            )
+            != parameter
+            or linked_indices(atlas_nodes[set_node], "Value") != [conversion_node]
+            or _raw_node_operation(atlas_nodes[conversion_node])
+            != "Conv_VectorToLinearColor"
+            or linked_indices(atlas_nodes[conversion_node], "InVec") != [vector_node]
+            or _raw_node_operation(atlas_nodes[vector_node]) != vector_operation
+        ):
+            raise AssertionError(f"atlas vector mapping changed: {parameter}")
+
+    payload = {
+        "schema": "solum.p63.10.uds-ap-sun-root-vector-contract/v1",
+        "status": "VERIFIED",
+        "implementationStatus": "NOT_IMPLEMENTED",
+        "sourceGraph": raw_graphs[ap_name]["graph"],
+        "bytecodeEvidence": {
+            "status": "VERIFIED",
+            "storageSha256": ap_bytecode["script"]["storage_sha256"],
+            "validation": ap_bytecode["script"]["validation"],
+            "atlasHorizonComparison": "compiled Less_DoubleDouble(ForwardVector.z,0.0)",
+        },
+        "valuePath": {
+            "status": "VERIFIED",
+            "execPath": _verified_exec_path(
+                raw_graphs, ap_name, [5429, 1895, 12438, 12440, 4406, 6198]
+            ),
+            "formula": (
+                "propertyIndex=int(NewEnumerator13); ForwardVector=Normal(Lerp("
+                "CachedColorsOld[propertyIndex], CachedColorsNew[propertyIndex], "
+                "CacheGroupTimers[CacheGroupTimerIndexes[propertyIndex]]),0.0001); "
+                "SunWorldRotation=MakeRotFromXZ(ForwardVector,CachedSunZVector); "
+                "MPC['Sun Vector']=LinearColor(ForwardVector)"
+            ),
+            "cacheRead": {
+                "status": "VERIFIED",
+                "property": "NewEnumerator13",
+                "propertyIndexRule": "Conv_ByteToInt(Property)",
+                "formula": (
+                    "Lerp(Cached Colors Old[index], Cached Colors New[index], "
+                    "Cache Group Timers[Cache Group Timer Indexes[index]])"
+                ),
+                "dataflow": cache_dataflow,
+                "lastAccessedSideEffect": "Cached Colors Last Accessed[index]=value",
+            },
+        },
+        "componentRotationDecision": {
+            "status": "VERIFIED",
+            "forced": {
+                "condition": (
+                    "Use Forced Light Update && (SunParent.ComponentRotation != "
+                    "SunWorldRotation within 0.0001 || SunMobility == Movable)"
+                ),
+                "updatePath": _verified_exec_path(
+                    raw_graphs, ap_name, [6198, 6197, 6654, 1892]
+                ),
+            },
+            "periodic": {
+                "condition": (
+                    "!UseForced && UsePeriodic && GameTimeSeconds >= "
+                    "LastSunLightPeriodicUpdateTime + LightsUpdatePeriod"
+                ),
+                "angleThresholdEnabledPath": _verified_exec_path(
+                    raw_graphs,
+                    ap_name,
+                    [6198, 6201, 6202, 6199, 6200, 6654, 1892],
+                ),
+                "angleThresholdDisabledPath": _verified_exec_path(
+                    raw_graphs, ap_name, [6198, 6201, 6202, 6199, 6654, 1892]
+                ),
+            },
+            "angleOnly": {
+                "condition": (
+                    "!UseForced && !UsePeriodic && UseAngleThreshold && "
+                    "LightsUpdateDegreeThresholdTest(ForwardVector,SunParent)"
+                ),
+                "updatePath": _verified_exec_path(
+                    raw_graphs, ap_name, [6198, 6201, 6203, 6200, 6654, 1892]
+                ),
+            },
+            "degreeThreshold": {
+                "status": "VERIFIED",
+                "formula": (
+                    "DegAcos(Dot(ForwardVector,SunParent.GetForwardVector())) >= "
+                    "LightsUpdateDegreeThreshold"
+                ),
+                "sourceGraph": raw_graphs[threshold_name]["graph"],
+            },
+            "noUpdateCases": [
+                "forced condition false",
+                "periodic deadline not reached",
+                "periodic disabled and angle-threshold disabled",
+                "degree threshold test false",
+            ],
+        },
+        "postRotationSideEffects": {
+            "status": "VERIFIED",
+            "periodicTimestamp": {
+                "condition": "Use Periodic Light Update",
+                "value": "GetGameTimeInSeconds()",
+                "path": _verified_exec_path(
+                    raw_graphs, ap_name, [1892, 5130, 6204, 12439]
+                ),
+            },
+            "atlasVectors": {
+                "condition": "ForwardVector.z < 0",
+                "path": _verified_exec_path(
+                    raw_graphs, ap_name, [1892, 5130, 6196, 1886]
+                ),
+                "sourceGraph": raw_graphs[atlas_name]["graph"],
+                "writeOrder": [
+                    "Atlas Light Up=LinearColor(GetUpVector(Rotation))",
+                    "Atlas Light Forward=LinearColor(GetForwardVector(Rotation))",
+                    "Atlas Light Right=LinearColor(GetRightVector(Rotation))",
+                ],
+                "target": "Cloud Shadows MID",
+                "operationOrder": _verified_exec_path(
+                    raw_graphs, atlas_name, [5795, 4131, 4132, 4130]
+                ),
+            },
+        },
+    }
+    payload["contractSha256"] = sha256_bytes(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    )
+    return payload
+
+
 def formula_ledger() -> list[dict[str, Any]]:
     """Node-by-node Blueprint formulas; VERIFIED here means source decompilation, not runtime."""
     formulas = {
@@ -2758,8 +3544,8 @@ def formula_ledger() -> list[dict[str, Any]]:
         "Current Sun Light Intensity": {
             "equation": (
                 "if UsingSpaceMode return SunLightIntensity * EclipsePercent; "
-                "if UsingSkyAtmosphere unscaled = MapRangeClamped(SunZ, 0, 0.15, SunLightIntensity, 0); "
-                "else unscaled = MapRangeClamped(SunZ, 0.157, 0.113, 0, SunLightIntensity) * DirectionalIntensityCurve(SunZ); "
+                "if UsingSkyAtmosphere unscaled = MapRangeClamped(SunZ, 0.157, 0.113, 0, SunLightIntensity); "
+                "else unscaled = MapRangeClamped(SunZ, 0, 0.15, SunLightIntensity, 0) * DirectionalIntensityCurve(SunZ); "
                 "interior = Lerp(1, SunLightIntensityMultiplierInInteriors, CachedInvertedGlobalOcclusion); "
                 "return unscaled * ScaledDirectionalBalance * EclipsePercent * CachedDirectionalLightDimming * "
                 "CachedDirectionalInscatteringMultiplier * interior * AdjustBaseMultiplier"
@@ -2767,11 +3553,25 @@ def formula_ledger() -> list[dict[str, Any]]:
             "ast": {
                 "spaceReturn": {"multiply": ["Sun Light Intensity", "Eclipse Percent"]},
                 "skyAtmosphereUnscaled": {
-                    "MapRangeClamped": ["Cached Sun Vector.z", 0.0, 0.15, "Sun Light Intensity", 0.0]
+                    "MapRangeClamped": [
+                        "Cached Sun Vector.z",
+                        0.157,
+                        0.113,
+                        0.0,
+                        "Sun Light Intensity",
+                    ]
                 },
                 "legacyUnscaled": {
                     "multiply": [
-                        {"MapRangeClamped": ["Cached Sun Vector.z", 0.157, 0.113, 0.0, "Sun Light Intensity"]},
+                        {
+                            "MapRangeClamped": [
+                                "Cached Sun Vector.z",
+                                0.0,
+                                0.15,
+                                "Sun Light Intensity",
+                                0.0,
+                            ]
+                        },
                         {"Directional Intensity Curve.GetFloatValue": "Cached Sun Vector.z"},
                     ]
                 },
@@ -2895,19 +3695,122 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
         for graph in blueprint.get("graph", {}).get("graphs", [])
     }
     graphs = [normalized_graph(raw_graphs[name]) for name in function_slice]
-    referenced_parameters = sorted(
+    parameter_writer_support_names = internal_function_closure(
+        function_rows, PARAMETER_WRITER_SUPPORT_ROOTS
+    )
+    orientation_function_names = internal_function_closure(
+        function_rows, ORIENTATION_ROOT_FUNCTIONS
+    )
+    if tuple(orientation_function_names) != EXPECTED_ORIENTATION_FUNCTION_SLICE:
+        raise AssertionError(
+            f"Sun orientation dependency slice changed: {orientation_function_names}"
+        )
+    selected_blueprint_functions = sorted(
+        set(function_slice)
+        | set(parameter_writer_support_names)
+        | set(orientation_function_names)
+        | set(SUN_SCHEDULING_FUNCTION_SLICE)
+    )
+    referenced_blueprint_symbols = sorted(
         set().union(
-            *(set(function_rows[name].get("reads", [])) for name in function_slice),
-            *(set(function_rows[name].get("modifies", [])) for name in function_slice),
+            *(
+                set(function_rows[name].get("reads", []))
+                for name in selected_blueprint_functions
+            ),
+            *(
+                set(function_rows[name].get("modifies", []))
+                for name in selected_blueprint_functions
+            ),
         )
     )
-    parameter_rows = {
+    blueprint_parameter_rows = {
         item["sourceName"]: item
         for item in system["parameters"]
         if item["sourceAsset"] == BLUEPRINT_ASSET
     }
-    parameters = [dict(parameter_rows[name]) for name in referenced_parameters if name in parameter_rows]
-    local_graph_symbols = sorted(set(referenced_parameters) - set(parameter_rows))
+    parameters = [
+        dict(blueprint_parameter_rows[name])
+        for name in referenced_blueprint_symbols
+        if name in blueprint_parameter_rows
+    ]
+    for parameter in parameters:
+        name = parameter["sourceName"]
+        parameter["selectedSunSliceReadBy"] = [
+            function_name
+            for function_name in selected_blueprint_functions
+            if name in function_rows[function_name].get("reads", [])
+        ]
+        parameter["selectedSunSliceModifiedBy"] = [
+            function_name
+            for function_name in selected_blueprint_functions
+            if name in function_rows[function_name].get("modifies", [])
+        ]
+    local_graph_symbols = sorted(
+        set(referenced_blueprint_symbols) - set(blueprint_parameter_rows)
+    )
+
+    external_function_name = "Current Global Occlusion"
+    external_function = next(
+        item
+        for item in system["functions"]
+        if item.get("sourceAsset") == PLAYER_OCCLUSION_ASSET
+        and item.get("sourceName") == external_function_name
+    )
+    referenced_external_symbols = sorted(
+        set(external_function.get("reads", []))
+        | set(external_function.get("modifies", []))
+    )
+    external_parameter_rows = {
+        item["sourceName"]: item
+        for item in system["parameters"]
+        if item["sourceAsset"] == PLAYER_OCCLUSION_ASSET
+    }
+    parameters.extend(
+        dict(external_parameter_rows[name])
+        for name in referenced_external_symbols
+        if name in external_parameter_rows
+    )
+    for parameter in parameters:
+        if parameter["sourceAsset"] != PLAYER_OCCLUSION_ASSET:
+            continue
+        name = parameter["sourceName"]
+        parameter["selectedSunSliceReadBy"] = (
+            [external_function_name]
+            if name in external_function.get("reads", [])
+            else []
+        )
+        parameter["selectedSunSliceModifiedBy"] = (
+            [external_function_name]
+            if name in external_function.get("modifies", [])
+            else []
+        )
+    external_local_graph_symbols = sorted(
+        set(referenced_external_symbols) - set(external_parameter_rows)
+    )
+    parameter_coverage = {
+        "status": "VERIFIED_SELECTED_FUNCTION_REFERENCE_COVERAGE",
+        "selectedBlueprintFunctions": selected_blueprint_functions,
+        "selectedBlueprintFunctionCount": len(selected_blueprint_functions),
+        "referencedBlueprintSymbolCount": len(referenced_blueprint_symbols),
+        "blueprintParameterCount": sum(
+            item["sourceAsset"] == BLUEPRINT_ASSET for item in parameters
+        ),
+        "blueprintLocalSymbolCount": len(local_graph_symbols),
+        "externalSupportFunctions": [
+            {
+                "sourceAsset": PLAYER_OCCLUSION_ASSET,
+                "sourceName": external_function_name,
+            }
+        ],
+        "externalParameterCount": sum(
+            item["sourceAsset"] == PLAYER_OCCLUSION_ASSET for item in parameters
+        ),
+        "externalLocalSymbolCount": len(external_local_graph_symbols),
+        "coverageRule": (
+            "union of reads/modifies for value, writer-support, orientation and scheduling "
+            "functions plus the selected external PlayerOcclusion support function"
+        ),
+    }
     parameter_writer_contracts = [
         parameter_writer_contract(
             raw_graphs[formula["graph"]], parameter, formula
@@ -3024,8 +3927,11 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
     cached_sun_vector["units"] = {
         "value": "DIRECTION_VECTOR_DIMENSIONLESS",
         "evidence": "UDS writer and Sun Height graph plus UE vector semantics",
-        "status": "PARTIAL",
-        "note": "branch-by-branch normalization is part of the remaining trajectory closure",
+        "status": "VERIFIED_ENGINE_SEMANTICS",
+        "note": (
+            "the final Normal(candidate,0.0001) produces a unit direction when the candidate "
+            "exceeds the authored tolerance, otherwise the UE zero vector"
+        ),
     }
     cached_sun_vector["coordinateSpace"] = {
         "value": "UNREAL_ENGINE_WORLD_DIRECTIONAL_LIGHT_RAY_DIRECTION",
@@ -3039,11 +3945,13 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
     cached_sun_vector["missingEvidence"] = [
         item
         for item in cached_sun_vector.get("missingEvidence", [])
-        if item not in {"explicit units", "explicit coordinate space"}
+        if item
+        not in {
+            "explicit units",
+            "explicit coordinate space",
+            "branch-by-branch unit-length guarantee and exact trajectory inputs",
+        }
     ]
-    cached_sun_vector["missingEvidence"].append(
-        "branch-by-branch unit-length guarantee and exact trajectory inputs"
-    )
 
     sun_world_rotation = parameter_by_name["Sun World Rotation"]
     sun_world_rotation["units"] = {
@@ -3063,15 +3971,14 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
     sun_world_rotation["missingEvidence"] = [
         item
         for item in sun_world_rotation.get("missingEvidence", [])
-        if item not in {"explicit units", "explicit coordinate space"}
+        if item
+        not in {
+            "explicit units",
+            "explicit coordinate space",
+            "complete AP - Sun Root Vector value/control-flow closure",
+        }
     ]
-    sun_world_rotation["missingEvidence"].append(
-        "complete AP - Sun Root Vector value/control-flow closure"
-    )
 
-    parameter_writer_support_names = internal_function_closure(
-        function_rows, PARAMETER_WRITER_SUPPORT_ROOTS
-    )
     parameter_writer_support_graphs = [
         normalized_graph(raw_graphs[name])
         for name in parameter_writer_support_names
@@ -3088,13 +3995,6 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
         )
     ]
     external_support_ledger = external_support_formula_ledger()
-    orientation_function_names = internal_function_closure(
-        function_rows, ORIENTATION_ROOT_FUNCTIONS
-    )
-    if tuple(orientation_function_names) != EXPECTED_ORIENTATION_FUNCTION_SLICE:
-        raise AssertionError(
-            f"Sun orientation dependency slice changed: {orientation_function_names}"
-        )
     orientation_graphs = [
         normalized_graph(raw_graphs[name]) for name in orientation_function_names
     ]
@@ -3116,16 +4016,22 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
     curves_by_asset = {item["sourceAsset"]: item for item in system["curves"]}
     curves = [curves_by_asset[asset] for asset in SUN_CURVES]
     curve_fixtures = [build_curve_fixture(curve) for curve in curves]
+    ap_sun_root_vector = build_ap_sun_root_vector_contract(blueprint, raw_graphs)
     ledger = formula_ledger()
+    next(
+        item for item in ledger if item["function"] == "Current Sun Light Intensity"
+    )["branchEvidence"] = build_sun_light_intensity_branch_evidence(raw_graphs)
     contract = {
         "schema": "solum.p63.10.uds-sun-values-contract/v1",
         "status": "PARTIAL",
         "completionEligible": False,
         "completionBlockers": [
             "runtime values/defaults have not been changed",
-            "Calendar local D0 and four timer initial/reset values remain PARTIAL",
-            "engine tick/delegate lifecycle and external editor/UDW cadence remain PARTIAL",
-            "independent read-only re-review is required after coordinate, orientation and occlusion closure",
+            (
+                "the expanded selected-slice parameter matrix still contains PARTIAL/UNKNOWN "
+                "parameter fields that must be resolved or explicitly bounded before runtime"
+            ),
+            "fresh independent read-only re-review is required after blocker fixes",
             "user visual QA is pending",
         ],
         "source": {
@@ -3141,6 +4047,7 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
         "functionSlice": function_slice,
         "graphs": graphs,
         "parameters": parameters,
+        "parameterCoverage": parameter_coverage,
         "parameterWriterContracts": parameter_writer_contracts,
         "parameterWriterSchedule": parameter_writer_schedule,
         "celestialWriterContracts": celestial_writer_contracts,
@@ -3160,8 +4067,10 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
         "schedulingFunctionSlice": list(SUN_SCHEDULING_FUNCTION_SLICE),
         "schedulingGraphs": scheduling_graphs,
         "orientationFormulaLedger": orientation_formula_ledger,
+        "apSunRootVector": ap_sun_root_vector,
         "astronomySourceAssets": astronomy_assets,
         "localGraphSymbols": local_graph_symbols,
+        "externalLocalGraphSymbols": external_local_graph_symbols,
         "curves": curves,
         "curveFixtures": curve_fixtures,
         "materialFunctionSlice": [material_functions[asset] for asset in material_assets],
@@ -3173,12 +4082,11 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
             "udsBehavior": "source-backed current Sun radius/light/disk color and intensity evaluation",
             "requiredVisualResult": "UDS angular size, light/disk curves, horizon scaling and directional coupling without guessed constants",
             "proposedSolumFilamentImplementation": (
-                "blocked until remaining writer initialization/lifecycle evidence passes independent "
-                "review"
+                "blocked until all Sun-path contract blockers pass independent review"
             ),
             "currentDifferences": "current runtime defaults/adapters and authored formulas are not UDS authority",
             "estimatedGpuCost": "low per sky fragment after CPU-side values; exact split still under review",
-            "estimatedCpuCost": "low per adaptive UDS cache/update-group step; engine callback cadence remains PARTIAL",
+            "estimatedCpuCost": "low per exact adaptive UDS cache/update-group schedule",
             "riskOfBehaviorLoss": "critical",
             "verification": "node equations, curve evaluator fixtures, synchronized material/light runtime dump and device captures",
             "prohibitedSimplifications": [
@@ -3196,7 +4104,11 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
 Status: **PARTIAL**. Runtime edits are blocked.
 
 - Blueprint function slice: {len(function_slice)} exact graphs, {sum(item['nodeCount'] for item in graphs)} nodes, {sum(item['edgeCount'] for item in graphs)} edges.
-- Referenced Blueprint parameters: {len(parameters)}; local input/output symbols: {len(local_graph_symbols)}.
+- Selected Sun Blueprint functions: {parameter_coverage['selectedBlueprintFunctionCount']};
+  referenced Blueprint parameters: {parameter_coverage['blueprintParameterCount']}; local graph
+  symbols: {parameter_coverage['blueprintLocalSymbolCount']}.
+- External PlayerOcclusion support parameters: {parameter_coverage['externalParameterCount']};
+  external local graph symbols: {parameter_coverage['externalLocalSymbolCount']}.
 - Derived Sun parameter writers: {len(parameter_writer_contracts)} exact K2 slices; support functions:
   {len(parameter_writer_support_graphs)} exact graphs.
 - Celestial orientation/eclipse writers: {len(celestial_writer_contracts)} exact K2 slices across
@@ -3208,15 +4120,17 @@ Status: **PARTIAL**. Runtime edits are blocked.
 - Real-Sun path: exact UTC/date/seasonal/equation-of-time/geographic graph and seven local
   functions published. The authored Equation-of-Time curve has
   {astronomy_assets['equationOfTime']['keyCount']} exact keys. Calendar scalar/map inputs,
-  operations and write order are source-backed; the candidate numeric prefix arrays remain
-  `PARTIAL` until UE Blueprint VM initialization of the empty local `Day Count` default is proven.
+  operations, write order and numeric prefix arrays are `VERIFIED` through the UDS graph and UE
+  5.5 UFunction-frame zero-initialization semantics.
 - Calendar initialization control-flow graphs:
-  {len(calendar_initialization_schedule['controlFlow'])}; direct activation through
-  `Update Static Variables` is published, while concrete first-run/cadence remains `PARTIAL`.
-- Writer control-flow graphs: {len(parameter_writer_schedule['controlFlow'])}; runtime schedule remains
-  `PARTIAL` until first-update, timer and delegate behavior is closed.
+  {len(calendar_initialization_schedule['controlFlow'])}; direct activation and authored startup
+  order through `Update Static Variables` are exact. Arbitrary external pre-startup calls remain
+  outside what static assets can constrain.
+- Writer control-flow graphs: {len(parameter_writer_schedule['controlFlow'])}; the overarching
+  startup, Runtime Tick, delegate order, adaptive timers and reset state are source-backed in
+  `sunScheduling`.
 - Scheduling source graphs preserved losslessly at graph/topology level:
-  {len(scheduling_graphs)}; semantic cadence ledger remains in progress.
+  {len(scheduling_graphs)}; local Android-runtime Sun cadence is `VERIFIED_SOURCE_CONTRACT`.
 - UE world direction -> SOLUM/Filament world direction: exact orthonormal handedness conversion
   published; Sun body/light-vector sign is source-backed, runtime remains `NOT_IMPLEMENTED`.
 - Authored curves: {len(curves)}.
@@ -3229,7 +4143,8 @@ Status: **PARTIAL**. Runtime edits are blocked.
 
 No render behavior was changed. The previously missing UDS_PlayerOcclusion dependency and authored
 Equation-of-Time curve are now exact and source-backed. Calendar startup ordering is exact; runtime
-work remains blocked on exact first-update/cadence evidence and a fresh independent read-only review.
+work remains blocked on the explicitly listed parameter-matrix gaps and a fresh independent
+read-only re-review. `AP - Sun Root Vector` cache/update/atlas semantics are now source-reduced.
 UE rotation/vector operators and the serialized 90-degree yaw literal now have official engine
 semantics in `coordinateMapping`. See CHECKPOINT_01_REVIEW.md.
 """
@@ -3239,6 +4154,11 @@ semantics in `coordinateMapping`. See CHECKPOINT_01_REVIEW.md.
         "nodes": sum(item["nodeCount"] for item in graphs),
         "edges": sum(item["edgeCount"] for item in graphs),
         "parameters": len(parameters),
+        "blueprintParameters": parameter_coverage["blueprintParameterCount"],
+        "externalParameters": parameter_coverage["externalParameterCount"],
+        "selectedBlueprintFunctions": parameter_coverage[
+            "selectedBlueprintFunctionCount"
+        ],
         "parameterWriters": len(parameter_writer_contracts),
         "celestialWriters": len(celestial_writer_contracts),
         "parameterWriterSupportFunctions": len(parameter_writer_support_graphs),
@@ -3254,6 +4174,7 @@ semantics in `coordinateMapping`. See CHECKPOINT_01_REVIEW.md.
             for status in sorted({item["status"] for item in orientation_formula_ledger})
         },
         "localGraphSymbols": local_graph_symbols,
+        "externalLocalGraphSymbols": external_local_graph_symbols,
         "curves": len(curves),
         "curveFixtures": len(curve_fixtures),
         "materialFunctions": len(material_assets),
@@ -3271,10 +4192,16 @@ semantics in `coordinateMapping`. See CHECKPOINT_01_REVIEW.md.
 def self_test(output: Path, summary: dict[str, Any]) -> None:
     if summary["functions"] != len(EXPECTED_FUNCTION_SLICE):
         raise AssertionError("Sun function dependency slice is incomplete")
-    if tuple(summary["localGraphSymbols"]) != EXPECTED_LOCAL_GRAPH_SYMBOLS:
-        raise AssertionError(
-            f"unexpected Sun local graph symbols: {summary['localGraphSymbols']}"
-        )
+    if (
+        summary["selectedBlueprintFunctions"]
+        != EXPECTED_SELECTED_BLUEPRINT_FUNCTION_COUNT
+        or summary["blueprintParameters"] != EXPECTED_BLUEPRINT_PARAMETER_COUNT
+        or len(summary["localGraphSymbols"])
+        != EXPECTED_BLUEPRINT_LOCAL_SYMBOL_COUNT
+        or summary["externalParameters"] != EXPECTED_EXTERNAL_PARAMETER_COUNT
+        or summary["externalLocalGraphSymbols"]
+    ):
+        raise AssertionError("selected Sun parameter/symbol coverage changed")
     if summary["parameterWriters"] != len(DERIVED_SUN_PARAMETER_WRITERS):
         raise AssertionError("derived Sun parameter writer slice is incomplete")
     if summary["celestialWriters"] != len(CELESTIAL_SUN_PARAMETER_WRITERS):
@@ -3297,6 +4224,31 @@ def self_test(output: Path, summary: dict[str, Any]) -> None:
     payload = read_json(output / "P63_10_UDS_SUN_VALUES_CONTRACT.json")
     if payload.get("status") != "PARTIAL" or payload.get("completionEligible") is not False:
         raise AssertionError("Sun checkpoint must remain explicitly incomplete")
+    parameter_coverage = payload["parameterCoverage"]
+    parameter_names = {
+        item["sourceName"]
+        for item in payload["parameters"]
+        if item["sourceAsset"] == BLUEPRINT_ASSET
+    }
+    if (
+        parameter_coverage["status"]
+        != "VERIFIED_SELECTED_FUNCTION_REFERENCE_COVERAGE"
+        or parameter_coverage["selectedBlueprintFunctionCount"]
+        != EXPECTED_SELECTED_BLUEPRINT_FUNCTION_COUNT
+        or parameter_coverage["blueprintParameterCount"]
+        != EXPECTED_BLUEPRINT_PARAMETER_COUNT
+        or parameter_coverage["blueprintLocalSymbolCount"]
+        != EXPECTED_BLUEPRINT_LOCAL_SYMBOL_COUNT
+        or parameter_coverage["externalParameterCount"]
+        != EXPECTED_EXTERNAL_PARAMETER_COUNT
+        or not REQUIRED_TRAJECTORY_PARAMETERS <= parameter_names
+        or any(
+            not item.get("selectedSunSliceReadBy")
+            and not item.get("selectedSunSliceModifiedBy")
+            for item in payload["parameters"]
+        )
+    ):
+        raise AssertionError("Sun selected-function parameter matrix is incomplete")
     rendered = json.dumps(payload, ensure_ascii=False)
     forbidden = ("/storage/emulated/", "/data/data/com.termux/", "udsRoot")
     leaks = [token for token in forbidden if token in rendered]
@@ -3593,6 +4545,81 @@ def self_test(output: Path, summary: dict[str, Any]) -> None:
         or first_use["externalPublicInvocationCoverage"]["status"] != "PARTIAL"
     ):
         raise AssertionError("Calendar pre-first-use audit changed")
+    scheduler = payload["sunScheduling"]
+    startup = scheduler["startup"]
+    runtime_tick = scheduler["runtimeTick"]
+    increment = scheduler["incrementCacheTimer"]
+    if (
+        scheduler["status"] != "VERIFIED_SOURCE_CONTRACT"
+        or scheduler["implementationStatus"] != "NOT_IMPLEMENTED"
+        or startup["status"] != "VERIFIED_AUTHORED_BLUEPRINT_ORDER"
+        or startup["beginPlayPath"]["nodes"]
+        != [5123, 6734, 6402, 12777, 6940, 3015]
+        or startup["operationOrder"]["status"] != "VERIFIED"
+        or any(
+            item["status"] != "VERIFIED"
+            for item in startup["operationOrder"]["orderPaths"]
+        )
+        or startup["cacheInitializationPath"]["nodes"]
+        != [3580, 3563, 13026, 3544]
+        or startup["cacheCall"]["cacheGroup"] != -1
+        or startup["cacheCall"]["startingCacheFill"] is not True
+        or startup["activeUpdateSpeed"]["value"] != 4
+        or startup["engineLifecycleOrder"]["status"]
+        != "VERIFIED_DEFAULT_ACTOR_RUNTIME"
+    ):
+        raise AssertionError("Sun authored startup schedule changed")
+    cadence = runtime_tick["cadence"]
+    if (
+        runtime_tick["status"] != "VERIFIED_UDS_CONDITIONAL_RUNTIME_CADENCE"
+        or runtime_tick["receiveTickEntry"]["nodes"]
+        != [5124, 12778, 5213, 6403]
+        or cadence["normal"]["path"]["nodes"] != [6403, 6735, 7094, 1632]
+        or cadence["halfRateAboveThreshold"]["entryPath"]["nodes"]
+        != [6403, 6404, 12779, 6941]
+        or cadence["halfRateAboveThreshold"]["flipFlopAPath"]["nodes"]
+        != [6941, 1631]
+        or cadence["halfRateAboveThreshold"]["flipFlopBPath"]["nodes"]
+        != [6941, 7095]
+        or cadence["halfRateAboveThreshold"]["flipFlopSemantics"]
+        != {
+            "status": "VERIFIED_ENGINE_SEMANTICS",
+            "initialBranch": "A",
+            "oddCalls": "A",
+            "evenCalls": "B",
+            "source": UE_SEQUENCE_SOURCE,
+        }
+        or cadence["halfRateBelowThreshold"]["path"]["nodes"]
+        != [6403, 6404, 7094, 1632]
+        or len(runtime_tick["bindings"]) != 17
+        or len(runtime_tick["conditionalBindingPaths"]) != 11
+        or any(
+            path["status"] != "VERIFIED"
+            for path in runtime_tick["conditionalBindingPaths"]
+        )
+        or runtime_tick["engineOrderEvidence"]["status"] != "VERIFIED"
+    ):
+        raise AssertionError("Sun Runtime Tick/delegate schedule changed")
+    initial_state = increment["verifiedInitialState"]
+    rolling_buffer = initial_state["Change Speed Rolling Buffer"]
+    if (
+        increment["status"] != "VERIFIED_FORMULA_AND_INITIAL_STATE"
+        or increment["unresolvedInitialState"]
+        or initial_state["Cache Properties Step"]["value"] != 0
+        or initial_state["Minimum Active Update Speed"]["value"] != 0
+        or rolling_buffer["status"]
+        != "VERIFIED_UDS_RESIZE_PLUS_UE_ZERO_CONSTRUCTION"
+        or rolling_buffer["valueAfterStartup"] != [0.0] * 30
+        or initial_state["rollingBufferAppend"]["status"]
+        != "VERIFIED_COMPILED_BYTECODE"
+        or payload["sunScheduling"]["hardReset"]["status"] != "VERIFIED"
+        or scheduler["completionBlockers"]
+        != [
+            "SOLUM runtime implementation has not started",
+            "fresh independent read-only review is required",
+        ]
+    ):
+        raise AssertionError("Sun adaptive-cache initial state changed")
     orientation_graphs = {
         item["sourceName"]: item for item in payload["orientationGraphs"]
     }
@@ -3635,10 +4662,13 @@ def self_test(output: Path, summary: dict[str, Any]) -> None:
         "Day Count at the Start of a Month": "VERIFIED",
         "Number of Days in a Year": "VERIFIED",
         "Offset Date by a Number of Days": "VERIFIED",
-        "Static Properties - Calendar": "PARTIAL",
+        "Static Properties - Calendar": "VERIFIED",
         "Force Valid Day": "VERIFIED",
         "Simulation Horizon Compensation": "VERIFIED",
-        "AP - Sun Root Vector": "PARTIAL",
+        "Get Cached Color": "VERIFIED",
+        "Lights Update Degree Threshold Test": "VERIFIED",
+        "Update Atlas Light Vectors": "VERIFIED",
+        "AP - Sun Root Vector": "VERIFIED",
         "Cache Sun and Moon Orientation": "PARTIAL",
         "Approximate Real Sun Moon and Stars": "PARTIAL",
     }
@@ -3647,25 +4677,66 @@ def self_test(output: Path, summary: dict[str, Any]) -> None:
         for item in payload["orientationFormulaLedger"]
     } != expected_orientation_statuses:
         raise AssertionError("orientation formula status ledger changed")
+    ap_sun_root = payload["apSunRootVector"]
+    ap_decision = ap_sun_root["componentRotationDecision"]
+    ap_side_effects = ap_sun_root["postRotationSideEffects"]
+    if (
+        ap_sun_root["status"] != "VERIFIED"
+        or ap_sun_root["implementationStatus"] != "NOT_IMPLEMENTED"
+        or ap_sun_root["bytecodeEvidence"]["status"] != "VERIFIED"
+        or ap_sun_root["bytecodeEvidence"]["atlasHorizonComparison"]
+        != "compiled Less_DoubleDouble(ForwardVector.z,0.0)"
+        or ap_sun_root["valuePath"]["execPath"]["nodes"]
+        != [5429, 1895, 12438, 12440, 4406, 6198]
+        or ap_sun_root["valuePath"]["cacheRead"]["property"]
+        != "NewEnumerator13"
+        or ap_decision["forced"]["updatePath"]["nodes"]
+        != [6198, 6197, 6654, 1892]
+        or ap_decision["periodic"]["angleThresholdEnabledPath"]["nodes"]
+        != [6198, 6201, 6202, 6199, 6200, 6654, 1892]
+        or ap_decision["periodic"]["angleThresholdDisabledPath"]["nodes"]
+        != [6198, 6201, 6202, 6199, 6654, 1892]
+        or ap_decision["angleOnly"]["updatePath"]["nodes"]
+        != [6198, 6201, 6203, 6200, 6654, 1892]
+        or ap_decision["degreeThreshold"]["status"] != "VERIFIED"
+        or ap_side_effects["periodicTimestamp"]["path"]["nodes"]
+        != [1892, 5130, 6204, 12439]
+        or ap_side_effects["atlasVectors"]["path"]["nodes"]
+        != [1892, 5130, 6196, 1886]
+        or ap_side_effects["atlasVectors"]["operationOrder"]["nodes"]
+        != [5795, 4131, 4132, 4130]
+        or len(ap_sun_root["contractSha256"]) != 64
+    ):
+        raise AssertionError("AP - Sun Root Vector semantic contract changed")
     astronomy = payload["astronomySourceAssets"]
     if (
-        astronomy["status"] != "PARTIAL"
+        astronomy["status"] != "VERIFIED"
         or astronomy["implementationStatus"] != "NOT_IMPLEMENTED"
         or astronomy["equationOfTime"]["status"] != "VERIFIED"
         or astronomy["equationOfTime"]["keyCount"] != 13
-        or astronomy["calendar"]["status"] != "PARTIAL"
-        or astronomy["calendar"]["candidateDefaultRuntimeDerivedValues"]
-        != {
-            "status": "PARTIAL_LOCAL_DAY_COUNT_DEFAULT_NOT_YET_ENGINE_VERIFIED",
-            "requiredInitialAccumulator": 0,
-            "Month Lengths": [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31],
-            "Month Lengths (Leap Year)": [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31],
-            "Day Count At Start of Each Month": [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334],
-            "Day Count At Start of Each Month (Leap Year)": [0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335],
-            "Number of Days in Year": 365,
-        }
+        or astronomy["calendar"]["status"] != "VERIFIED"
     ):
         raise AssertionError("real-Sun source-asset coverage changed")
+    calendar_defaults = astronomy["calendar"][
+        "candidateDefaultRuntimeDerivedValues"
+    ]
+    if (
+        calendar_defaults["status"]
+        != "VERIFIED_UDS_GRAPH_PLUS_UE_SCRIPT_LOCAL_ZERO_INIT"
+        or calendar_defaults["requiredInitialAccumulator"] != 0
+        or calendar_defaults["Month Lengths"]
+        != [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        or calendar_defaults["Month Lengths (Leap Year)"]
+        != [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        or calendar_defaults["Day Count At Start of Each Month"]
+        != [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
+        or calendar_defaults["Day Count At Start of Each Month (Leap Year)"]
+        != [0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335]
+        or calendar_defaults["Number of Days in Year"] != 365
+        or astronomy["calendar"]["initialAccumulatorEvidence"]["status"]
+        != "VERIFIED"
+    ):
+        raise AssertionError("real-Sun Calendar default derivation changed")
     if any(
         "path" in key.lower() or "physical" in key.lower() or "provenance" in key.lower()
         for key in astronomy["equationOfTime"]["keys"][0]
@@ -3683,6 +4754,27 @@ def self_test(output: Path, summary: dict[str, Any]) -> None:
             raise AssertionError(
                 f"formula {formula['function']} cites absent nodes: {missing_operations}"
             )
+    sun_light_formula = next(
+        item
+        for item in payload["formulaLedger"]
+        if item["function"] == "Current Sun Light Intensity"
+    )
+    sun_light_ast = sun_light_formula["ast"]
+    sun_light_branches = sun_light_formula["branchEvidence"]
+    if (
+        sun_light_ast["skyAtmosphereUnscaled"]["MapRangeClamped"]
+        != ["Cached Sun Vector.z", 0.157, 0.113, 0.0, "Sun Light Intensity"]
+        or sun_light_ast["legacyUnscaled"]["multiply"][0]["MapRangeClamped"]
+        != ["Cached Sun Vector.z", 0.0, 0.15, "Sun Light Intensity", 0.0]
+        or sun_light_branches["status"] != "VERIFIED_RAW_BRANCH_AND_DATAFLOW"
+        or sun_light_branches["skyAtmosphereTrue"]["execPath"]["nodes"]
+        != [6383, 12748]
+        or sun_light_branches["skyAtmosphereTrue"]["valueNode"] != 2836
+        or sun_light_branches["legacyFalse"]["execPath"]["nodes"]
+        != [6383, 6729, 12749]
+        or sun_light_branches["legacyFalse"]["valueNode"] != 4635
+    ):
+        raise AssertionError("Current Sun Light Intensity branch semantics changed")
     if set(MATERIAL_SEMANTICS) != {
         item["sourceAsset"] for item in payload["materialFormulaLedger"]
     }:

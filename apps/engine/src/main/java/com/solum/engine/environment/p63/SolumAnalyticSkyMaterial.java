@@ -4,7 +4,8 @@ package com.solum.engine.environment.p63;
 public final class SolumAnalyticSkyMaterial {
     public static final String ASSET_PATH = "env/p63/analytic_sky_mobile.filamat";
     public static final float SUN_LUMINANCE_SAFETY_MAX_NITS = 1_000_000.0f;
-    public static final float SUN_LUX_SAFETY_MAX = 1_000_000.0f;
+    /** Project-exposure-calibrated Filament direct-light range; separate from visual nits. */
+    public static final float SUN_LUX_SAFETY_MAX = 100.0f;
     public static final float MOON_LUMINANCE_SAFETY_MAX_NITS = 100_000.0f;
     public static final float MOON_LUX_SAFETY_MAX = 100.0f;
 

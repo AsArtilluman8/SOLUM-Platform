@@ -6,7 +6,11 @@ package com.solum.engine.environment.p63;
  */
 public final class SolumCelestialControlState {
     public static final float DEFAULT_TIME = 960.0f;
-    public static final float DEFAULT_SUN_ANGULAR_SIZE = 0.96f;
+    /** Exact UDS CDO Sun Scale. Current Sun Radius converts this degree value directly to radians. */
+    public static final float DEFAULT_SUN_ANGULAR_SIZE = 1.20f;
+    public static final float UDS_DEFAULT_SUN_LIGHT_INTENSITY_LUX = 5.0f;
+    public static final float UDS_DEFAULT_SUN_DISK_INTENSITY = 4.0f;
+    public static final float UDS_DEFAULT_SUN_SOFTNESS = 3.8f;
     public static final float DEFAULT_MOON_ANGULAR_SIZE = 1.02f;
     public static final float PHYSICAL_SUN_ANGULAR_DIAMETER_REFERENCE = 0.533f;
     public static final float PHYSICAL_MOON_ANGULAR_DIAMETER_REFERENCE = 0.518f;
@@ -46,19 +50,22 @@ public final class SolumCelestialControlState {
     public float timeSpeed = 1.0f;
     public float dayLengthMinutes = SolumTimeSystem.DEFAULT_DAY_LENGTH_MINUTES;
 
-    public float sunLightLux = 25.0f;
-    public float sunVisualBrightness = 1.0f;
+    public float sunLightLux = UDS_DEFAULT_SUN_LIGHT_INTENSITY_LUX;
+    /** Exact UDS Sun Disk Intensity input; the historic field name is retained for state compatibility. */
+    public float sunVisualBrightness = UDS_DEFAULT_SUN_DISK_INTENSITY;
     public float sunEmissive = 2.20f;
     public float sunEdgeSoftness = 0.72f;
     public float sunAngularSizeDegrees = DEFAULT_SUN_ANGULAR_SIZE;
     public float sunElevationOffsetDegrees = 0.0f;
     public final float[] sunTint = {1.0f, 1.0f, 1.0f};
+    public final float[] sunLightTint = {1.0f, 1.0f, 1.0f};
     public float sunDiscLuminanceNits = 35_000.0f;
     public float sunHaloSize = 2.8f;
     public float sunHaloFalloff = 5.5f;
     public float sunBloomContribution = 0.35f;
     public float sunExposureWeight = 1.0f;
-    public float sunLimbDarkening = 0.55f;
+    /** Exact UDS Sun Softness input; the historic field name is retained for state compatibility. */
+    public float sunLimbDarkening = UDS_DEFAULT_SUN_SOFTNESS;
     public float sunDiscVisibility = 1.0f;
     /** Exact UDS default/manual Sun trajectory controls; separate from legacy art offsets. */
     public boolean udsExactSunTrajectory = true;
@@ -194,10 +201,12 @@ public final class SolumCelestialControlState {
     }
 
     public void resetSun() {
-        sunEnabled = true; sunLightLux = 25.0f; sunVisualBrightness = 1.0f;
+        sunEnabled = true; sunLightLux = UDS_DEFAULT_SUN_LIGHT_INTENSITY_LUX;
+        sunVisualBrightness = UDS_DEFAULT_SUN_DISK_INTENSITY;
         sunEmissive = 2.20f; sunEdgeSoftness = 0.72f;
         sunDiscLuminanceNits = 35_000.0f; sunHaloSize = 2.8f; sunHaloFalloff = 5.5f;
-        sunBloomContribution = 0.35f; sunExposureWeight = 1.0f; sunLimbDarkening = 0.55f;
+        sunBloomContribution = 0.35f; sunExposureWeight = 1.0f;
+        sunLimbDarkening = UDS_DEFAULT_SUN_SOFTNESS;
         sunDiscVisibility = 1.0f;
         udsExactSunTrajectory = true; udsDaylightSavingsTime = false;
         udsDawnTime = 600.0f; udsDuskTime = 1800.0f;
@@ -206,31 +215,20 @@ public final class SolumCelestialControlState {
         sunAngularSizeDegrees = DEFAULT_SUN_ANGULAR_SIZE; sunElevationOffsetDegrees = 0.0f;
         sunGlowEnabled = true; sunGlow = 0.48f; bloomLikeEnabled = true; bloomLikeResponse = 0.055f;
         setSunTint(1.0f, 1.0f, 1.0f);
+        setSunLightTint(1.0f, 1.0f, 1.0f);
     }
 
     public void applySunPreset(String preset) {
-        if ("Soft".equals(preset)) {
-            sunLightLux = 6.0f; sunDiscLuminanceNits = 7_500.0f; sunEmissive = 1.15f; sunAngularSizeDegrees = 0.76f;
-            sunHaloSize = 3.2f; sunHaloFalloff = 4.5f; sunBloomContribution = 0.16f;
-            setSunTint(1.0f, 1.0f, 1.0f);
-        } else if ("Physical Noon".equals(preset)) {
-            sunLightLux = 50.0f; sunDiscLuminanceNits = 100_000.0f; sunEmissive = 1.55f; sunAngularSizeDegrees = 0.68f;
-            sunHaloSize = 2.2f; sunHaloFalloff = 6.5f; sunBloomContribution = 0.42f;
-            setSunTint(1.0f, 1.0f, 1.0f);
-        } else if ("Golden Hour".equals(preset)) {
-            sunLightLux = 12.0f; sunDiscLuminanceNits = 42_000.0f; sunEmissive = 1.45f; sunAngularSizeDegrees = 0.72f;
-            sunHaloSize = 4.0f; sunHaloFalloff = 3.8f; sunBloomContribution = 0.38f;
-            sunElevationOffsetDegrees = -4.0f; setSunTint(1.0f, 1.0f, 1.0f);
-        } else if ("Overcast".equals(preset)) {
-            sunLightLux = 3.0f; sunDiscLuminanceNits = 4_000.0f; sunEmissive = 0.95f; sunAngularSizeDegrees = 0.82f;
-            sunHaloSize = 5.0f; sunHaloFalloff = 3.0f; sunBloomContribution = 0.08f;
-            setSunTint(1.0f, 1.0f, 1.0f);
-        } else if ("Custom".equals(preset)) {
+        if ("Custom".equals(preset)) {
             sanitize(); return;
-        } else {
-            resetSun();
         }
-        sunGlowEnabled = true; bloomLikeEnabled = bloomLikeResponse > 0.0f;
+        float preservedTime = time;
+        resetSun();
+        time = preservedTime;
+        if ("UDS Dawn".equals(preset)) time = udsDawnTime;
+        else if ("UDS Noon".equals(preset) || "Physical Noon".equals(preset)) time = 1200.0f;
+        else if ("UDS Dusk".equals(preset)) time = udsDuskTime;
+        // Legacy names remain load-compatible, but no longer inject invented HDR/size/tint values.
         sanitize();
     }
 
@@ -359,8 +357,14 @@ public final class SolumCelestialControlState {
 
     public void setSunTint(float red, float green, float blue) {
         sunTint[0] = finiteClamp(red, 0.0f, 1.0f, 1.0f);
-        sunTint[1] = finiteClamp(green, 0.0f, 1.0f, 0.92f);
-        sunTint[2] = finiteClamp(blue, 0.0f, 1.0f, 0.72f);
+        sunTint[1] = finiteClamp(green, 0.0f, 1.0f, 1.0f);
+        sunTint[2] = finiteClamp(blue, 0.0f, 1.0f, 1.0f);
+    }
+
+    public void setSunLightTint(float red, float green, float blue) {
+        sunLightTint[0] = finiteClamp(red, 0.0f, 1.0f, 1.0f);
+        sunLightTint[1] = finiteClamp(green, 0.0f, 1.0f, 1.0f);
+        sunLightTint[2] = finiteClamp(blue, 0.0f, 1.0f, 1.0f);
     }
 
     public void setMoonTint(float red, float green, float blue) {
@@ -397,8 +401,10 @@ public final class SolumCelestialControlState {
         time = finiteClamp(time, 0.0f, 2400.0f, DEFAULT_TIME);
         timeSpeed = finiteClamp(timeSpeed, 0.0f, 8.0f, 1.0f);
         dayLengthMinutes = finiteClamp(dayLengthMinutes, 1.0f, 1440.0f, SolumTimeSystem.DEFAULT_DAY_LENGTH_MINUTES);
-        sunLightLux = finiteClamp(sunLightLux, 0.0f, SolumAnalyticSkyMaterial.SUN_LUX_SAFETY_MAX, 25.0f);
-        sunVisualBrightness = finiteClamp(sunVisualBrightness, 0.0f, 2.0f, 1.0f);
+        sunLightLux = finiteClamp(sunLightLux, 0.0f, SolumAnalyticSkyMaterial.SUN_LUX_SAFETY_MAX,
+            UDS_DEFAULT_SUN_LIGHT_INTENSITY_LUX);
+        sunVisualBrightness = finiteClamp(sunVisualBrightness, 0.0f, 20.0f,
+            UDS_DEFAULT_SUN_DISK_INTENSITY);
         sunEmissive = finiteClamp(sunEmissive, 0.0f, SUN_EMISSIVE_GAIN_SAFETY_MAX, 2.20f);
         sunDiscLuminanceNits = finiteClamp(sunDiscLuminanceNits, 0.0f,
             SolumAnalyticSkyMaterial.SUN_LUMINANCE_SAFETY_MAX_NITS, 35_000.0f);
@@ -406,18 +412,18 @@ public final class SolumCelestialControlState {
         sunHaloFalloff = finiteClamp(sunHaloFalloff, 0.1f, 100.0f, 5.5f);
         sunBloomContribution = finiteClamp(sunBloomContribution, 0.0f, 32.0f, 0.35f);
         sunExposureWeight = finiteClamp(sunExposureWeight, 0.001f, 32.0f, 1.0f);
-        sunLimbDarkening = finiteClamp(sunLimbDarkening, 0.0f, 8.0f, 0.55f);
+        sunLimbDarkening = finiteClamp(sunLimbDarkening, 0.5f, 8.0f, UDS_DEFAULT_SUN_SOFTNESS);
         sunDiscVisibility = finiteClamp(sunDiscVisibility, 0.0f, 1.0f, 1.0f);
         sunEdgeSoftness = finiteClamp(sunEdgeSoftness, 0.0f, 1.0f, 0.72f);
         sunAngularSizeDegrees = finiteClamp(sunAngularSizeDegrees, 0.02f, 10.0f, DEFAULT_SUN_ANGULAR_SIZE);
         sunElevationOffsetDegrees = finiteClamp(sunElevationOffsetDegrees, -90.0f, 90.0f, 0.0f);
-        udsDawnTime = finiteClamp(udsDawnTime, 0.0f, 2399.0f, 600.0f);
-        udsDuskTime = finiteClamp(udsDuskTime, 1.0f, 2400.0f, 1800.0f);
+        udsDawnTime = finiteClamp(udsDawnTime, 50.0f, 2350.0f, 600.0f);
+        udsDuskTime = finiteClamp(udsDuskTime, 50.0f, 2350.0f, 1800.0f);
         if (udsDawnTime >= udsDuskTime) { udsDawnTime = 600.0f; udsDuskTime = 1800.0f; }
-        udsSunPitchDegrees = finiteClamp(udsSunPitchDegrees, -3600.0f, 3600.0f, 30.0f);
-        udsSunYawDegrees = finiteClamp(udsSunYawDegrees, -3600.0f, 3600.0f, 0.0f);
+        udsSunPitchDegrees = finiteClamp(udsSunPitchDegrees, -85.0f, 85.0f, 30.0f);
+        udsSunYawDegrees = finiteClamp(udsSunYawDegrees, 0.0f, 360.0f, 0.0f);
         udsSunVerticalOffset = finiteClamp(udsSunVerticalOffset, -1.0f, 1.0f, 0.0f);
-        udsExtendDawnAndDusk = finiteClamp(udsExtendDawnAndDusk, 0.0f, 5.0f, 0.0f);
+        udsExtendDawnAndDusk = finiteClamp(udsExtendDawnAndDusk, 0.0f, 4.0f, 0.0f);
         moonPhaseAngleDegrees = finiteClamp(moonPhaseAngleDegrees, 0.0f, 180.0f, 68.4f);
         moonPhase = 1.0f - moonPhaseAngleDegrees / 180.0f;
         moonAngularSizeDegrees = finiteClamp(moonAngularSizeDegrees, 0.02f, 10.0f, DEFAULT_MOON_ANGULAR_SIZE);
@@ -487,6 +493,7 @@ public final class SolumCelestialControlState {
         cameraOrbitSensitivity = finiteClamp(cameraOrbitSensitivity, 0.0002f, 0.050f, DEFAULT_CAMERA_ORBIT_SENSITIVITY);
         cameraZoomSensitivity = finiteClamp(cameraZoomSensitivity, 0.007f, 0.040f, DEFAULT_CAMERA_ZOOM_SENSITIVITY);
         setSunTint(sunTint[0], sunTint[1], sunTint[2]);
+        setSunLightTint(sunLightTint[0], sunLightTint[1], sunLightTint[2]);
         setMoonTint(moonTint[0], moonTint[1], moonTint[2]);
         setStarTint(starTint[0], starTint[1], starTint[2]);
         setCloudTint(cloudTint[0], cloudTint[1], cloudTint[2]);

@@ -17,7 +17,7 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
             Bundle result = new Bundle();
             try {
                 runViewRegression();
-                result.putString("P63_VIEW_TEST", "PASS P63.3 analytic controls; nine tabs; log/exact luminance; circular color picker; Activity recreation restores shared state");
+                result.putString("P63_VIEW_TEST", "PASS P63.10 exact UDS Sun controls; ten tabs; integrated Weather; circular color picker; Activity recreation restores shared state");
                 finish(Activity.RESULT_OK, result);
             } catch (Throwable error) {
                 result.putString("P63_VIEW_TEST", "FAIL " + error.getClass().getSimpleName() + " " + error.getMessage());
@@ -38,13 +38,15 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
         View moonContent = tagged(activity, "p63.tab.content.moon", View.class);
         View starsContent = tagged(activity, "p63.tab.content.stars", View.class);
         View cloudsContent = tagged(activity, "p63.tab.content.clouds", View.class);
+        View weatherContent = tagged(activity, "p63.tab.content.weather", View.class);
         View cameraContent = tagged(activity, "p63.tab.content.camera", View.class);
         View postFxContent = tagged(activity, "p63.tab.content.postfx", View.class);
         View debugContent = tagged(activity, "p63.tab.content.debug", View.class);
         require(quickContent.getVisibility() == View.VISIBLE, "Quick must be the default inner tab");
         require(atmosphereContent.getVisibility() == View.GONE && sunContent.getVisibility() == View.GONE
             && moonContent.getVisibility() == View.GONE && starsContent.getVisibility() == View.GONE
-            && cloudsContent.getVisibility() == View.GONE && cameraContent.getVisibility() == View.GONE
+            && cloudsContent.getVisibility() == View.GONE && weatherContent.getVisibility() == View.GONE
+            && cameraContent.getVisibility() == View.GONE
             && postFxContent.getVisibility() == View.GONE
             && debugContent.getVisibility() == View.GONE, "only Quick may be visible by default");
         Button sunTab = tagged(activity, "p63.tab.sun", Button.class);
@@ -76,36 +78,41 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
             "Zoom + button did not decrease camera distance");
         runOnMainSync(sunTab::performClick);
         waitForIdleSync();
-        SeekBar slider = tagged(activity, "p63.log.slider.sun_light", SeekBar.class);
-        EditText exact = tagged(activity, "p63.numeric.sun_light", EditText.class);
-        Button apply = tagged(activity, "p63.numeric.apply.sun_light", Button.class);
-        runOnMainSync(() -> { exact.setText("27500"); apply.performClick(); });
+        SeekBar slider = tagged(activity, "p63.slider.uds_sun_light_intensity_·_lux", SeekBar.class);
+        EditText exact = tagged(activity, "p63.numeric.uds_sun_light_intensity_·_lux", EditText.class);
+        Button apply = tagged(activity, "p63.numeric.apply.uds_sun_light_intensity_·_lux", Button.class);
+        runOnMainSync(() -> { exact.setText("7.5"); apply.performClick(); });
         waitForIdleSync();
         int exactProgress = slider.getProgress();
-        require(exactProgress > 0 && exactProgress < 1000,
-            "numeric Apply did not synchronize logarithmic SeekBar thumb");
+        require(exactProgress > 0 && exactProgress < slider.getMax(),
+            "numeric Apply did not synchronize exact UDS Sun Light slider thumb");
 
-        Button physicalNoon = tagged(activity, "p63.sun_preset.physical_noon", Button.class);
-        runOnMainSync(physicalNoon::performClick);
+        Button udsNoon = tagged(activity, "p63.sun_preset.uds_noon", Button.class);
+        runOnMainSync(udsNoon::performClick);
         waitForIdleSync();
-        require(slider.getProgress() > exactProgress, "physical preset did not synchronize log thumb");
+        require(slider.getProgress() < exactProgress,
+            "UDS Noon preset did not restore the extracted 5 lux default");
 
         Button reset = tagged(activity, "p63.sun_reset", Button.class);
         runOnMainSync(reset::performClick);
         waitForIdleSync();
-        require(slider.getProgress() > exactProgress, "reset did not synchronize physical Sun default");
+        require(slider.getProgress() < exactProgress,
+            "Sun reset did not restore the extracted UDS light default");
 
-        SeekBar discSlider = tagged(activity, "p63.log.slider.sun_disc_luminance", SeekBar.class);
-        EditText discExact = tagged(activity, "p63.numeric.sun_disc_luminance", EditText.class);
-        Button discApply = tagged(activity, "p63.numeric.apply.sun_disc_luminance", Button.class);
-        runOnMainSync(() -> { discExact.setText("250000"); discApply.performClick(); });
+        SeekBar discSlider = tagged(activity, "p63.slider.uds_sun_disk_intensity", SeekBar.class);
+        EditText discExact = tagged(activity, "p63.numeric.uds_sun_disk_intensity", EditText.class);
+        Button discApply = tagged(activity, "p63.numeric.apply.uds_sun_disk_intensity", Button.class);
+        runOnMainSync(() -> { discExact.setText("7.5"); discApply.performClick(); });
         waitForIdleSync();
-        require(discSlider.getProgress() == 1000 && discExact.getText().toString().startsWith("250000"),
-            "exact Sun luminance above slider range was not retained safely");
+        int discProgress = discSlider.getProgress();
+        require(discProgress > 0 && discProgress < discSlider.getMax()
+                && discExact.getText().toString().startsWith("7.5"),
+            "exact UDS Sun Disk Intensity did not reach state and slider");
         runOnMainSync(() -> { discExact.setText("Infinity"); discApply.performClick(); });
         waitForIdleSync();
-        require(discExact.getText().toString().startsWith("250000"),
-            "non-finite Sun luminance did not keep the prior finite value");
+        require(discExact.getText().toString().startsWith("7.5")
+                && discSlider.getProgress() == discProgress,
+            "non-finite UDS Sun Disk Intensity did not keep the prior finite value");
 
         Button color = tagged(activity, "p63.color.open.sun", Button.class);
         runOnMainSync(color::performClick);
@@ -120,7 +127,7 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
         P63HsvColorPickerDialog resetDialog = ((FilamentGlbPreviewActivity)activity).getP63ColorPickerDialogForTest();
         runOnMainSync(() -> { resetDialog.setHueForTest(300.0f); resetDialog.setSaturationValueForTest(1.0f, 1.0f); resetDialog.resetDraftForTest(); resetDialog.applyDraftForTest(); });
         waitForIdleSync();
-        require(color.getText().toString().contains("#FFEBB8") || color.getText().toString().contains("#FFEBB7"),
+        require(color.getText().toString().contains("#FFFFFF"),
             "color picker Reset did not restore the Sun default");
 
         Button cloudsTab = tagged(activity, "p63.tab.clouds", Button.class);
@@ -134,6 +141,17 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
         Button mediumQuality = tagged(activity, "p63.cloud_quality.medium", Button.class);
         runOnMainSync(mediumQuality::performClick);
         waitForIdleSync();
+
+        Button weatherTab = tagged(activity, "p63.tab.weather", Button.class);
+        runOnMainSync(weatherTab::performClick);
+        waitForIdleSync();
+        require(weatherContent.getVisibility() == View.VISIBLE,
+            "Weather tab did not expose integrated controls");
+        tagged(activity, "p63.weather.preset.clear_skies", Button.class);
+        tagged(activity, "p63.weather.preset.rain_thunderstorm", Button.class);
+        tagged(activity, "p63.weather.trigger_lightning", Button.class);
+        tagged(activity, "p63.slider.weather_transition_seconds", SeekBar.class);
+        tagged(activity, "p63.slider.rain", SeekBar.class);
 
         Button atmosphereTab = tagged(activity, "p63.tab.atmosphere", Button.class);
         runOnMainSync(atmosphereTab::performClick);
@@ -154,15 +172,16 @@ public final class P63CelestialControlsViewTest extends Instrumentation {
         waitForIdleSync();
         require(starColor.getText().toString().contains("#00FF00"), "Star color wheel did not update state");
 
-        runOnMainSync(() -> { exact.setText("24500"); apply.performClick(); });
+        runOnMainSync(() -> { exact.setText("6.5"); apply.performClick(); });
         waitForIdleSync();
         int persistedProgress = slider.getProgress();
         runOnMainSync(activity::finish);
         waitForIdleSync();
         Activity recreated = startActivitySync(intent);
         waitForIdleSync();
-        SeekBar restored = tagged(recreated, "p63.log.slider.sun_light", SeekBar.class);
-        require(restored.getProgress() == persistedProgress, "Activity recreation did not restore state/log thumb");
+        SeekBar restored = tagged(recreated, "p63.slider.uds_sun_light_intensity_·_lux", SeekBar.class);
+        require(restored.getProgress() == persistedProgress,
+            "Activity recreation did not restore exact UDS Sun state/thumb");
         runOnMainSync(recreated::finish);
     }
 

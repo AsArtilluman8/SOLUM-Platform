@@ -8,6 +8,7 @@ public final class SolumEnvironmentLightingState {
     public final float[] sunVisualPosition = {0.0f, 0.0f, 0.0f};
     public final float[] moonVisualPosition = {0.0f, 0.0f, 0.0f};
     public final float[] sunColor = {1.0f, 0.96f, 0.9f};
+    public final float[] sunDiskColor = {1.0f, 1.0f, 1.0f, 1.0f};
     public final float[] moonColor = {0.446f, 0.557f, 0.865f};
     public float sunElevation;
     public float moonElevation;
@@ -23,6 +24,10 @@ public final class SolumEnvironmentLightingState {
     public float sunLux;
     public float moonLux;
     public float sunDiskBrightness;
+    public float sunRadiusRadians;
+    public float sunSoftness = SolumCelestialControlState.UDS_DEFAULT_SUN_SOFTNESS;
+    public float sunHeight;
+    public float sunDirectionalBalance = 1.0f;
     public float moonDiskBrightness;
     public float moonPhase = 0.62f;
     public float starVisibility;
@@ -34,4 +39,6 @@ public final class SolumEnvironmentLightingState {
     public long iblRevision;
     public String sunTrajectorySource = "SOLUM_LEGACY_SOLAR_ORBIT";
     public String sunTrajectoryStatus = "APPROXIMATION";
+    public String sunValuesSource = "SOLUM_LEGACY_SUN_VALUES";
+    public String sunValuesStatus = "APPROXIMATION";
 }

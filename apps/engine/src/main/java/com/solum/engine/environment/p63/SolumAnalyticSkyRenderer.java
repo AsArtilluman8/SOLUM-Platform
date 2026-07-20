@@ -19,7 +19,7 @@ import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
 import java.util.Locale;
 
-/** One persistent full-screen triangle and one material instance for all P63.3 sky visuals. */
+/** One persistent full-screen triangle and one material instance for all P63.4 sky visuals. */
 public final class SolumAnalyticSkyRenderer {
     private final Engine engine;
     private final Scene scene;
@@ -55,16 +55,19 @@ public final class SolumAnalyticSkyRenderer {
         state.uniformUpdateCount = uniformUpdateCount;
         state.lastSkyError = lastError;
         state.moonSource = resources == null ? "UNAVAILABLE" : resources.moonSource;
-        state.starSource = resources == null ? "SOLUM_NATIVE_PROCEDURAL" : resources.starSource;
-        state.cloudSource = "SOLUM_NATIVE_PROCEDURAL_SPHERICAL_SHELL";
+        state.starSource = resources == null ? "UNAVAILABLE" : resources.starSource;
+        state.cloudSource = resources == null ? "DISABLED_MISSING_EXACT_UDS_CLOUD_PAYLOAD" : resources.cloudSource;
+        state.auroraSource = resources == null ? "UNAVAILABLE" : resources.auroraSource;
         state.resourceProvenance = (resources == null ? "UNAVAILABLE" : resources.moonSource)
-            + ";" + (resources == null ? "SOLUM_NATIVE_PROCEDURAL" : resources.starSource)
+            + ";" + (resources == null ? "UNAVAILABLE" : resources.starSource)
+            + ";" + (resources == null ? "DISABLED_MISSING_EXACT_UDS_CLOUD_PAYLOAD" : resources.cloudSource)
+            + ";" + (resources == null ? "UNAVAILABLE" : resources.auroraSource)
             + ";FILAMENT_ADAPTED;SOLUM_NATIVE";
         state.materialVariant = variantName(state.cloudQuality);
 
         if (!available || !state.analyticSky) {
             setActive(false);
-            state.activeRenderer = available ? "analytic_disabled" : "legacy_fallback_material_unavailable";
+            state.activeRenderer = available ? "analytic_disabled" : "safe_color_fallback_material_unavailable";
             state.skyDrawCalls = 0;
             return false;
         }
@@ -81,7 +84,7 @@ public final class SolumAnalyticSkyRenderer {
             available = false;
             setActive(false);
             state.lastSkyError = lastError;
-            state.activeRenderer = "legacy_fallback_uniform_error";
+            state.activeRenderer = "safe_color_fallback_uniform_error";
             state.skyDrawCalls = 0;
             return false;
         }
@@ -137,15 +140,27 @@ public final class SolumAnalyticSkyRenderer {
             resources = new SolumAnalyticSkyResources(assets, engine);
             instance.setParameter("moonAlbedo", resources.moonAlbedo, resources.moonSampler);
             instance.setParameter("moonNormal", resources.moonNormal, resources.moonSampler);
-            instance.setParameter("realStars", resources.realStars, resources.starSampler);
             instance.setParameter("tilingStars", resources.tilingStars, resources.starSampler);
+            instance.setParameter("starsNoise", resources.starsNoise, resources.starSampler);
+            instance.setParameter("cloudFormationVolume", resources.cloudFormationVolume,
+                resources.cloudVolumeSampler);
+            instance.setParameter("cloudErosionVolume", resources.cloudErosionVolume,
+                resources.cloudVolumeSampler);
+            instance.setParameter("cloudProfile", resources.cloudProfile, resources.cloudProfileSampler);
+            instance.setParameter("auroraShape", resources.auroraShape, resources.cloudSampler);
 
-            FloatBuffer vertices = ByteBuffer.allocateDirect(6 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
-            vertices.put(-1.0f).put(-1.0f).put(3.0f).put(-1.0f).put(-1.0f).put(3.0f).flip();
+            // Filament uses reverse-Z. The device-domain material converts OpenGL clip Z with
+            // z = z * -0.5 + 0.5, therefore an input Z of 1.0 lands at the far plane (0.0).
+            // The old FLOAT2 buffer supplied an implicit Z of 0.0, placing the sky at 0.5 and
+            // depth-testing it in front of distant opaque stage geometry.
+            FloatBuffer vertices = ByteBuffer.allocateDirect(9 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+            vertices.put(-1.0f).put(-1.0f).put(1.0f)
+                .put(3.0f).put(-1.0f).put(1.0f)
+                .put(-1.0f).put(3.0f).put(1.0f).flip();
             ShortBuffer indices = ByteBuffer.allocateDirect(3 * 2).order(ByteOrder.nativeOrder()).asShortBuffer();
             indices.put((short)0).put((short)1).put((short)2).flip();
             vertexBuffer = new VertexBuffer.Builder().vertexCount(3).bufferCount(1)
-                .attribute(VertexBuffer.VertexAttribute.POSITION, 0, VertexBuffer.AttributeType.FLOAT2, 0, 8)
+                .attribute(VertexBuffer.VertexAttribute.POSITION, 0, VertexBuffer.AttributeType.FLOAT3, 0, 12)
                 .build(engine);
             vertexBuffer.setBufferAt(engine, 0, vertices);
             indexBuffer = new IndexBuffer.Builder().indexCount(3)
@@ -181,12 +196,16 @@ public final class SolumAnalyticSkyRenderer {
         instance.setParameter("atmosphereArt", state.sunsetSaturation, state.sunsetContrast, 0.0f, 0.0f);
         instance.setParameter("skyArtTint", state.skyArtTint[0], state.skyArtTint[1], state.skyArtTint[2]);
 
-        float sunRadius = (float)Math.toRadians(state.sunAngularDiameterDegrees * 0.5f);
+        float sunRadius = state.udsExactSunValues ? state.sunRadiusRadians
+            : (float)Math.toRadians(state.sunAngularDiameterDegrees * 0.5f);
         instance.setParameter("sun0", sunRadius, state.sunDiscLuminanceNits, state.sunLimbDarkening,
             state.analyticSun ? 1.0f : 0.0f);
         instance.setParameter("sun1", state.sunHaloSize, state.sunHaloFalloff,
             state.sunBloomContribution, state.sunExposureWeight);
         instance.setParameter("sunTint", state.sunTint[0], state.sunTint[1], state.sunTint[2]);
+        instance.setParameter("sunEmissiveGain", state.sunEmissiveGain);
+        instance.setParameter("sunDiscVisibility", state.sunDiscVisibility);
+        instance.setParameter("sunExactValues", state.udsExactSunValues ? 1.0f : 0.0f);
 
         float moonRadius = (float)Math.toRadians(state.moonAngularDiameterDegrees * 0.5f);
         instance.setParameter("moon0", moonRadius, state.moonVisualLuminanceNits, state.moonEarthshine,
@@ -202,6 +221,7 @@ public final class SolumAnalyticSkyRenderer {
         instance.setParameter("starTint", state.starTint[0], state.starTint[1], state.starTint[2]);
         instance.setParameter("siderealRotation", state.siderealRotationDegrees);
         instance.setParameter("starTextureAvailable", resources.starTextureAvailable);
+        instance.setParameter("cloudTextureAvailable", resources.cloudTextureAvailable);
 
         instance.setParameter("cloud0", state.cloudCoverage, state.cloudDensity, state.cloudSoftness,
             state.analyticClouds ? 1.0f : 0.0f);
@@ -209,7 +229,18 @@ public final class SolumAnalyticSkyRenderer {
             state.cloudErosion, state.cloudWindSpeed);
         instance.setParameter("cloud2", state.cloudEvolution, state.cloudSilverLining,
             state.cloudBrightness, SolumAnalyticSkyMaterial.qualityIndex(state.cloudQuality));
+        instance.setParameter("cloud3", state.cloudTypeIndex, state.cloudWindDirectionRadians,
+            state.cloudShadowStrength, state.lightShaftStrength);
+        instance.setParameter("celestialLight", state.sunLightLux, state.moonLightLux,
+            state.cloudShadowStrength, state.lightShaftStrength);
+        instance.setParameter("weather0", state.weatherRain, state.weatherSnow,
+            state.weatherDust, state.lightningFlash);
         instance.setParameter("cloudArtTint", state.cloudArtTint[0], state.cloudArtTint[1], state.cloudArtTint[2]);
+        instance.setParameter("aurora0", state.auroraEnabled ? 1.0f : 0.0f, state.auroraIntensity,
+            state.auroraScale, state.auroraSpeed);
+        instance.setParameter("aurora1", state.auroraShapeSpeed, state.auroraPower,
+            state.auroraHorizonHeight, resources.auroraTextureAvailable);
+        instance.setParameter("auroraColor", state.auroraColor[0], state.auroraColor[1], state.auroraColor[2]);
         instance.setParameter("elapsedSeconds", state.elapsedSeconds);
         uniformUpdateCount++;
     }

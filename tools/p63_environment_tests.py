@@ -344,22 +344,45 @@ def validate_p63_3() -> None:
             "reverse-Z sky triangle is pinned to the far plane and cannot cut opaque stage objects")
     require("analyticAtmosphere" in material and "airMass" in material and "rayleighPhase" in material
             and "hgPhase" in material and "ozoneScale" in material, "Rayleigh/Mie/ozone/optical-air-mass material")
-    require("analyticSun" in material and "sunDiscLuminanceNits" in controls and "sunLightLux" in controls,
-            "analytic Sun visual luminance is separate from direct lux")
-    require("sunEmissiveGain" in material and "sky.sunEmissiveGain = controls.sunEmissive" in controller
-            and "Sun Material Brightness" in activity and "5_000.0f" in activity,
-            "Sun material brightness has logarithmic 5000x UI and is independent from direct lux")
+    sun_values = (JAVA / "SolumUdsSunValues.java").read_text(encoding="utf-8")
+    rich_curve = (JAVA / "SolumUdsRichCurve.java").read_text(encoding="utf-8")
+    require("VERIFIED_UDS_SUN_VALUE_FORMULAS" in sun_values
+            and "DIRECTIONAL_INTENSITY" in sun_values
+            and "SUN_DISK_COLOR" in sun_values and "SUN_LIGHT_COLOR" in sun_values
+            and "previous.leaveTangent * difference" in rich_curve,
+            "exact UDS Sun formulas and unweighted FRichCurve evaluator are runtime-owned")
+    require("sunExactValues" in material and "currentSunDiskColor" in controller
+            and "currentSunLightIntensityLux" in controller
+            and "PARTIAL_UDS_CLOUD_VALUE_WRITERS_NOT_MAPPED" in sun_values,
+            "exact clear-sky Sun values reach the shader and cloud writer gap remains explicit")
+    require("UDS Sun Light Intensity · lux" in activity
+            and "UDS Sun Disk Intensity" in activity and "UDS Sun Scale · angular radius" in activity
+            and "UDS Sun Softness" in activity and "UDS Sun Pitch" in activity
+            and "UDS Sun Vertical Offset" in activity and "UDS Extend Dawn and Dusk" in activity
+            and "Sun Material Brightness" not in activity and "Sun HDR Disc Luminance" not in activity,
+            "Sun UI exposes source-backed UDS controls and removes ignored artistic value controls")
+    view_test = (ROOT / "apps/engine/src/androidTest/java/com/solum/engine/P63CelestialControlsViewTest.java").read_text(encoding="utf-8")
+    require("p63.slider.uds_sun_light_intensity_·_lux" in view_test
+            and "p63.sun_preset.uds_noon" in view_test
+            and "p63.slider.uds_sun_disk_intensity" in view_test
+            and "p63.log.slider.sun_light" not in view_test
+            and "p63.sun_preset.physical_noon" not in view_test
+            and "sun_disc_luminance" not in view_test,
+            "Android view regression follows exact UDS Sun controls instead of removed HDR controls")
     require("acos(clamp(dot(viewDirection, lightDirection)" in material
-            and "udsSoftness" in material and "3.8 / 0.55" in material
+            and "udsSoftness" in material and "clamp(materialParams.sun0.z, 0.5, 8.0)" in material
+            and "return materialParams.sunTint * disk * discVisibility * (1.0 - cloudOpacity)" in material
             and "haloWindow" not in material,
-            "exact UDS Sun disk softness replaces painted concentric halo layers")
+            "exact UDS Sun radius/softness/color topology replaces artistic disk energy")
     require("glowAlpha *= glowAlpha * moonFacing" in material
             and "moonTextureIntensity = mix(0.3, 0.6" in material
             and "safePow(max(0.0, geometricNdotL), 1.6)" in material,
             "exact UDS Moon glow, day/night texture intensity and phase contrast")
     require("safeVisualLuminance" in material and "safeSunMaterialBrightness" in material
             and "log2(1.0 + max(0.0, nits))" in material and "clamp(gain, 0.0, 10000.0)" in material
-            and "vec3(64.0)" in material, "finite HDR shoulder prevents white-frame overflow")
+            and "if (materialParams.sunExactValues < 0.5) color = min(color, vec3(64.0))" in material
+            and "color = clamp(color, vec3(0.0), vec3(64.0))" not in material,
+            "finite HDR shoulder remains isolated to the explicit legacy fallback")
     require("sunDiscVisibility" in material and "sunDiscVisibility" in controls
             and "Sun disc visibility" in activity and "* discVisibility" in material
             and "controls.sunDiscVisibility > 0.001f" in activity,
@@ -528,7 +551,7 @@ def validate_p63_3() -> None:
             and "uniform updates=" in activity and "dynamic IBL=" in activity,
             "analytic debug counters and IBL truth")
     require("Capture Visual QA" in activity and "debugGetNextFrameCallback" in activity
-            and "solum.p63_9.weather_recovery_qa" in activity
+            and "solum.p63_10_1.exact_sun_qa" in activity
             and '"controlState"' in activity and '"captureTruthGate"' in activity
             and '"starPayloadReady"' in activity,
             "actual Filament frame plus full sanitized renderer/control truth capture")

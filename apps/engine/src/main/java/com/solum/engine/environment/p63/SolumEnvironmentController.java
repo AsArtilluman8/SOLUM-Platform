@@ -8,6 +8,8 @@ public final class SolumEnvironmentController {
     private final SolumCelestialControlState celestialControls = new SolumCelestialControlState();
     private final SolumUdsSunTrajectory.Inputs udsSunTrajectoryInputs = new SolumUdsSunTrajectory.Inputs();
     private final SolumUdsSunTrajectory.Output udsSunTrajectoryOutput = new SolumUdsSunTrajectory.Output();
+    private final SolumUdsSunValues.Inputs udsSunValueInputs = new SolumUdsSunValues.Inputs();
+    private final SolumUdsSunValues.Output udsSunValueOutput = new SolumUdsSunValues.Output();
     private final SolumSeasonalWeatherPolicy seasonalWeather;
     private final SolumPrecipitationOcclusion occlusion;
     private SolumWeatherState weatherFrom;
@@ -498,14 +500,43 @@ public final class SolumEnvironmentController {
                 l.sunTrajectorySource = "SOLUM_LEGACY_SOLAR_ORBIT";
                 l.sunTrajectoryStatus = "APPROXIMATION_USER_SELECTED";
             }
-            float day = smoothStep(-0.08f, 0.10f, l.sunElevation);
+            boolean exactSunValues = celestialControls.udsExactSunTrajectory && sunTrajectoryValid;
+            if (exactSunValues) {
+                populateUdsSunValueInputs();
+                SolumUdsSunValues.evaluate(udsSunValueInputs, udsSunValueOutput);
+                l.sunLux = celestialControls.sunEnabled
+                    ? udsSunValueOutput.currentSunLightIntensityLux : 0.0f;
+                l.sunDiskBrightness = celestialControls.sunEnabled
+                    && maxRgb(udsSunValueOutput.currentSunDiskColor) > 0.0001f
+                    ? celestialControls.sunDiscVisibility : 0.0f;
+                copy3(udsSunValueOutput.currentSunLightColor, l.sunColor);
+                System.arraycopy(udsSunValueOutput.currentSunDiskColor, 0, l.sunDiskColor, 0, 4);
+                l.sunRadiusRadians = udsSunValueOutput.currentSunRadiusRadians;
+                l.sunSoftness = udsSunValueOutput.sunSoftness;
+                l.sunHeight = udsSunValueOutput.sunHeight;
+                l.sunDirectionalBalance = udsSunValueOutput.scaledDirectionalBalance;
+                l.sunValuesSource = "UDS.Current Sun Radius/Light/Disk + extracted FRichCurves";
+                l.sunValuesStatus = celestialControls.cloudsEnabled
+                    ? SolumUdsSunValues.CLOUD_RUNTIME_STATUS : SolumUdsSunValues.CLEAR_RUNTIME_STATUS;
+            } else {
+                float day = smoothStep(-0.08f, 0.10f, l.sunElevation);
+                l.sunLux = celestialControls.sunEnabled && sunTrajectoryValid
+                    ? celestialControls.sunLightLux * day : 0.0f;
+                l.sunDiskBrightness = celestialControls.sunEnabled && sunTrajectoryValid
+                    ? celestialControls.sunVisualBrightness * smoothStep(-0.04f, 0.06f, l.sunElevation) : 0.0f;
+                System.arraycopy(celestialControls.sunTint, 0, l.sunColor, 0, 3);
+                l.sunDiskColor[0] = celestialControls.sunTint[0];
+                l.sunDiskColor[1] = celestialControls.sunTint[1];
+                l.sunDiskColor[2] = celestialControls.sunTint[2];
+                l.sunDiskColor[3] = 1.0f;
+                l.sunValuesSource = "SOLUM_LEGACY_SUN_VALUES";
+                l.sunValuesStatus = "APPROXIMATION_USER_SELECTED";
+            }
             float night = smoothStep(-0.08f, 0.10f, l.moonElevation);
             float phaseAngle = (float)Math.toRadians(celestialControls.moonPhaseAngleDegrees);
             float phaseLight = ((float)Math.sin(phaseAngle)
                 + ((float)Math.PI - phaseAngle) * (float)Math.cos(phaseAngle)) / (float)Math.PI;
             phaseLight = Math.max(0.0f, Math.min(1.0f, phaseLight));
-            l.sunLux = celestialControls.sunEnabled && sunTrajectoryValid ? celestialControls.sunLightLux * day : 0.0f;
-            l.sunDiskBrightness = celestialControls.sunEnabled && sunTrajectoryValid ? celestialControls.sunVisualBrightness * smoothStep(-0.04f, 0.06f, l.sunElevation) : 0.0f;
             l.moonLux = celestialControls.moonEnabled ? celestialControls.moonLightLux * night * phaseLight : 0.0f;
             l.moonDiskBrightness = celestialControls.moonEnabled ? celestialControls.moonVisualBrightness * night : 0.0f;
             l.moonPhase = celestialControls.moonPhase;
@@ -516,10 +547,8 @@ public final class SolumEnvironmentController {
                 float opticalDepth = celestialControls.cloudCoverage * celestialControls.cloudDensity
                     * celestialControls.cloudShadowStrength * 3.4f;
                 float cloudTransmission = (float)Math.exp(-Math.max(0.0f, opticalDepth));
-                l.sunLux *= cloudTransmission;
                 l.moonLux *= cloudTransmission;
             }
-            System.arraycopy(celestialControls.sunTint, 0, l.sunColor, 0, 3);
             System.arraycopy(celestialControls.moonTint, 0, l.moonColor, 0, 3);
             celestialControls.activeSkySource = celestialControls.analyticSky
                 ? "FILAMENT_ADAPTED_ANALYTIC_" + skySource(l.sunElevation)
@@ -550,6 +579,49 @@ public final class SolumEnvironmentController {
         // SOLUM's environment dome has no independently rotated sky actor; its source-equivalent
         // actor yaw is therefore the verified zero default.
         udsSunTrajectoryInputs.actorYawDegrees = 0.0;
+    }
+
+    private void populateUdsSunValueInputs() {
+        udsSunValueInputs.cachedSunVectorZ = udsSunTrajectoryOutput.ueCachedSunVector[2];
+        // UDS CDO defaults to its legacy sky-material branch, not UE SkyAtmosphere/space mode.
+        udsSunValueInputs.usingSkyAtmosphere = false;
+        udsSunValueInputs.usingSpaceMode = false;
+        udsSunValueInputs.sunLightIntensityLux = celestialControls.sunLightLux;
+        udsSunValueInputs.sunDiskIntensity = celestialControls.sunVisualBrightness;
+        udsSunValueInputs.sunScaleDegrees = celestialControls.sunAngularSizeDegrees;
+        udsSunValueInputs.scaleSunRadiusNearHorizon = 1.0;
+        udsSunValueInputs.sunSoftness = celestialControls.sunLimbDarkening;
+        udsSunValueInputs.directionalBalance = 1.0;
+        udsSunValueInputs.lightingBrightnessDay = 1.0;
+        udsSunValueInputs.lightingBrightnessDawnDusk = 1.0;
+        udsSunValueInputs.lightingBrightnessNight = 1.0;
+        udsSunValueInputs.eclipsePercent = 1.0;
+        udsSunValueInputs.saturation = 1.0;
+        // Exact UDS Cloud Coverage 0-3/paint writers are part of the cloud checkpoint. The Sun
+        // evaluator stays in its verified clear-sky boundary instead of guessing a 0-1 mapping.
+        udsSunValueInputs.localCloudCoverage = 0.0;
+        udsSunValueInputs.fog = 1.0;
+        udsSunValueInputs.applyFlatCloudiness = false;
+        udsSunValueInputs.cloudPaintCanSubtractCoverage = false;
+        udsSunValueInputs.cachedDirectionalLightDimming = 1.0;
+        udsSunValueInputs.cachedDirectionalInscatteringMultiplier = 1.0;
+        udsSunValueInputs.cachedInvertedGlobalOcclusion = 0.0;
+        udsSunValueInputs.sunLightIntensityMultiplierInInteriors = 1.0;
+        udsSunValueInputs.fadeDownHighSunLightIntensityBelowHorizon = true;
+        setColor4(udsSunValueInputs.sunLightColor, celestialControls.sunLightTint);
+        setColor4(udsSunValueInputs.sunDiskTint, celestialControls.sunTint);
+        udsSunValueInputs.cachedSolarEclipseTint[0] = 1.0f;
+        udsSunValueInputs.cachedSolarEclipseTint[1] = 1.0f;
+        udsSunValueInputs.cachedSolarEclipseTint[2] = 1.0f;
+        udsSunValueInputs.cachedSolarEclipseTint[3] = 1.0f;
+    }
+
+    private static void setColor4(float[] out, float[] rgb) {
+        out[0] = rgb[0]; out[1] = rgb[1]; out[2] = rgb[2]; out[3] = 1.0f;
+    }
+
+    private static float maxRgb(float[] color) {
+        return Math.max(color[0], Math.max(color[1], color[2]));
     }
 
     private static void updateSunDerivedState(SolumEnvironmentLightingState lighting) {
@@ -587,7 +659,7 @@ public final class SolumEnvironmentController {
         copy3(state.lighting.moonVisualDirection, sky.moonDirection);
         SolumAnalyticSkyMaterial.moonToSunDirection(sky.moonDirection, controls.moonPhaseAngleDegrees,
             sky.moonToSunDirection);
-        copy3(controls.sunTint, sky.sunTint);
+        copy3(state.lighting.sunDiskColor, sky.sunTint);
         copy3(controls.moonTint, sky.moonTint);
         copy3(controls.starTint, sky.starTint);
         copy3(controls.cloudTint, sky.cloudArtTint);
@@ -607,14 +679,19 @@ public final class SolumEnvironmentController {
         sky.sunsetSaturation = controls.sunsetSaturation;
         sky.sunsetContrast = controls.sunsetContrast;
         sky.horizonWarmth = controls.horizonWarmth;
+        sky.udsExactSunValues = controls.udsExactSunTrajectory
+            && SolumUdsSunTrajectory.CONTRACT_STATUS.equals(state.lighting.sunTrajectoryStatus)
+            && SolumUdsSunValues.CONTRACT_STATUS.equals(udsSunValueOutput.formulaStatus);
+        sky.sunValuesStatus = state.lighting.sunValuesStatus;
         sky.sunDiscLuminanceNits = controls.sunDiscLuminanceNits;
         sky.sunEmissiveGain = controls.sunEmissive;
         sky.sunAngularDiameterDegrees = controls.sunAngularSizeDegrees;
+        sky.sunRadiusRadians = state.lighting.sunRadiusRadians;
         sky.sunHaloSize = controls.sunHaloSize;
         sky.sunHaloFalloff = controls.sunHaloFalloff;
         sky.sunBloomContribution = controls.sunBloomContribution;
         sky.sunExposureWeight = controls.sunExposureWeight;
-        sky.sunLimbDarkening = controls.sunLimbDarkening;
+        sky.sunLimbDarkening = state.lighting.sunSoftness;
         sky.sunDiscVisibility = controls.sunDiscVisibility;
         sky.moonPhaseAngleDegrees = controls.moonPhaseAngleDegrees;
         sky.moonVisualLuminanceNits = controls.moonVisualLuminanceNits;

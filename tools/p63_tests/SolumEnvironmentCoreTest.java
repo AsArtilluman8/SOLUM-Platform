@@ -82,6 +82,7 @@ public final class SolumEnvironmentCoreTest {
 
         require(controller.getState().getFeatureStatus().get("interior_exclusion") == EnvironmentFeatureStatus.FUNCTIONAL, "classification truth present");
         testExactUdsSunTrajectory(env);
+        testExactUdsSunValues();
         testCanonicalCelestialCoordinates();
         testCameraGestureOwnership();
         testAnalyticSky();
@@ -199,22 +200,25 @@ public final class SolumEnvironmentCoreTest {
         controller.setTime(1200.0f);
         controller.update(0.1f);
         float sunLux = controller.getState().lighting.sunLux;
-        float sunVisual = controller.getState().lighting.sunDiskBrightness;
-        require(close(sunLux, 4.0f) && close(sunVisual, 1.5f), "sun visual/light separation values");
+        float[] sunDisk = controller.getState().lighting.sunDiskColor.clone();
+        require(close(sunLux, 4.0f) && sunDisk[0] > 0.0f,
+            "UDS Sun disk intensity and direct light are evaluated separately");
         controls.sunVisualBrightness = 0.25f;
         controls.sunEmissive = 1.35f;
         controller.update(0.1f);
         require(close(controller.getState().lighting.sunLux, sunLux), "sun visual edit does not change directional light");
-        require(close(controller.getState().lighting.sunDiskBrightness, 0.25f), "sun visual edit applies independently");
-        require(close(controls.sunEmissive, 1.35f) && close(controller.getState().lighting.sunLux, sunLux),
-            "sun emissive is independent from sun directional light intensity");
-        require(close(controller.getState().analyticSky.sunEmissiveGain, 1.35f),
-            "sun material emissive gain reaches the analytic sky uniform state");
+        require(controller.getState().lighting.sunDiskColor[0] < sunDisk[0] * 0.18f,
+            "UDS Sun Disk Intensity changes disk energy without changing direct lux");
+        require(close(controls.sunEmissive, 1.35f) && close(controller.getState().lighting.sunLux, sunLux)
+            && controller.getState().analyticSky.udsExactSunValues,
+            "legacy emissive state is ignored while exact UDS Sun values own the shader");
+        float[] exactDiskBeforeLegacyGain = controller.getState().lighting.sunDiskColor.clone();
         controls.sunEmissive = 5_000.0f;
         controller.update(0.1f);
         require(close(controller.getState().analyticSky.sunEmissiveGain, 5_000.0f)
-            && close(controller.getState().lighting.sunLux, sunLux),
-            "5000x material brightness remains finite and independent from direct lux");
+            && close(controller.getState().lighting.sunLux, sunLux)
+            && vectorClose(controller.getState().lighting.sunDiskColor, exactDiskBeforeLegacyGain),
+            "legacy persisted HDR gain remains finite but cannot replace exact UDS disk values");
         controls.sunDiscVisibility = 0.0f;
         controller.update(0.1f);
         require(close(controller.getState().analyticSky.sunDiscVisibility, 0.0f)
@@ -259,7 +263,8 @@ public final class SolumEnvironmentCoreTest {
         controls.moonLightLux = Float.POSITIVE_INFINITY;
         controls.exposureCompensation = Float.NEGATIVE_INFINITY;
         controls.sanitize();
-        require(close(controls.sunLightLux, 25.0f) && close(controls.sunDiscLuminanceNits, 35_000.0f)
+        require(close(controls.sunLightLux, SolumCelestialControlState.UDS_DEFAULT_SUN_LIGHT_INTENSITY_LUX)
+            && close(controls.sunDiscLuminanceNits, 35_000.0f)
             && close(controls.moonLightLux, 0.15f)
             && close(controls.exposureCompensation, 0.0f), "no NaN or Infinity crosses state boundary");
         controls.sunLightLux = 2_000_000.0f; controls.sunDiscLuminanceNits = 2_000_000.0f;
@@ -288,6 +293,39 @@ public final class SolumEnvironmentCoreTest {
         require(controls.auroraEnabled && close(controls.auroraIntensity, 0.90f)
             && controller.getState().analyticSky.auroraEnabled,
             "verified UDS-derived Aurora preset reaches analytic uniform state");
+    }
+
+    private static void testExactUdsSunValues() {
+        require(close(SolumUdsSunValues.directionalIntensityCurve(-0.3393186405301094),
+            0.8499964f, 0.00001f), "UDS Directional_Light_Intensity cubic fixture");
+        require(close(SolumUdsSunValues.directionalIntensityCurve(-0.028693096712231636),
+            0.2592117f, 0.00001f), "UDS directional intensity second cubic segment fixture");
+
+        float[] color = new float[4];
+        SolumUdsSunValues.sunDiskColorCurve(0.5389501750469208, color);
+        require(close(color[0], 0.5716651f, 0.00001f)
+            && close(color[1], 0.10358332f, 0.00001f)
+            && close(color[2], 0.028450984f, 0.00001f),
+            "UDS Sun_Disk_Color cubic fixture");
+        SolumUdsSunValues.sunLightColorCurve(0.55, color);
+        require(close(color[0], 0.85f, 0.00001f)
+            && close(color[1], 0.4082125f, 0.00001f)
+            && close(color[2], 0.09264997f, 0.00001f),
+            "UDS Sun_Light_Color linear fixture");
+
+        SolumUdsSunValues.Inputs inputs = new SolumUdsSunValues.Inputs();
+        SolumUdsSunValues.Output output = new SolumUdsSunValues.Output();
+        inputs.cachedSunVectorZ = -0.8660254037844386;
+        inputs.usingSkyAtmosphere = true;
+        SolumUdsSunValues.evaluate(inputs, output);
+        require(SolumUdsSunValues.CONTRACT_STATUS.equals(output.formulaStatus)
+            && close(output.currentSunRadiusRadians, (float)Math.toRadians(1.2), 0.000001f)
+            && close(output.currentSunLightIntensityLux, 5.0f)
+            && close(output.currentSunDiskIntensity, 860.21506f, 0.001f)
+            && close(output.currentSunDiskColor[0], 412.68817f, 0.001f)
+            && close(output.currentSunDiskColor[1], 360.71938f, 0.001f)
+            && close(output.currentSunDiskColor[2], 262.96768f, 0.001f),
+            "UDS noon radius/light/disk formula fixture");
     }
 
     private static void testIntegratedWeather(SolumEnvironmentPackage env) {

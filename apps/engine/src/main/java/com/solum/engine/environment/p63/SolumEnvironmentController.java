@@ -6,6 +6,9 @@ public final class SolumEnvironmentController {
     private final SolumTimeSystem time = new SolumTimeSystem();
     private final SolumCelestialSystem celestial = new SolumCelestialSystem();
     private final SolumCelestialControlState celestialControls = new SolumCelestialControlState();
+    private final SolumUdsSunTrajectory.Inputs udsSunTrajectoryInputs = new SolumUdsSunTrajectory.Inputs();
+    private final SolumUdsSunTrajectory.Output udsSunTrajectoryOutput = new SolumUdsSunTrajectory.Output();
+    private final SolumSeasonalWeatherPolicy seasonalWeather;
     private final SolumPrecipitationOcclusion occlusion;
     private SolumWeatherState weatherFrom;
     private SolumWeatherState weatherTarget;
@@ -27,12 +30,15 @@ public final class SolumEnvironmentController {
     private long audioLightningEvent = -1L;
     private int sunTintMode, moonTintMode, cloudTintMode;
     private boolean celestialOnlyMode;
+    private float smartWeatherRemaining;
+    private int smartWeatherDecisionIndex;
 
     public SolumEnvironmentController(SolumEnvironmentPackage envPackage) {
         if (envPackage == null) throw new IllegalArgumentException("environment_package_missing");
         envPackage.validate();
         this.envPackage = envPackage;
         rngState = envPackage.deterministicSeed == 0 ? 1 : envPackage.deterministicSeed;
+        seasonalWeather = new SolumSeasonalWeatherPolicy(rngState);
         time.configure(envPackage.initialTime, envPackage.previewDaySeconds);
         celestial.configure(envPackage.dawn, envPackage.dusk, envPackage.sunIntensity, envPackage.sunDiskIntensity,
             envPackage.moonIntensity, envPackage.moonPhase, envPackage.starsIntensity);
@@ -44,7 +50,11 @@ public final class SolumEnvironmentController {
         occlusion = new SolumPrecipitationOcclusion(16, 16, 1.0f, -8.0f, -8.0f);
         SolumInteriorExclusionVolume room = new SolumInteriorExclusionVolume("p63_test_room", 2.0f, 0.0f, -2.0f, 7.0f, 4.1f, 3.0f);
         occlusion.addExclusion(room);
+        SolumInteriorExclusionVolume celestialRoom = new SolumInteriorExclusionVolume(
+            "p63_celestial_stage_room", 2.0f, 0.0f, 3.3f, 7.2f, 3.8f, 7.7f);
+        occlusion.addExclusion(celestialRoom);
         for (int z = 6; z <= 10; z++) for (int x = 10; x <= 15; x++) occlusion.setRoofHeight(x, z, 4.1f);
+        for (int z = 11; z <= 15; z++) for (int x = 10; x <= 15; x++) occlusion.setRoofHeight(x, z, 3.8f);
         update(0.0f);
     }
 
@@ -55,6 +65,13 @@ public final class SolumEnvironmentController {
     public SolumPrecipitationOcclusion getOcclusion() { return occlusion; }
 
     public void selectWeather(String id, float transitionSeconds) {
+        celestialControls.smartWeatherEnabled = false;
+        selectWeatherInternal(id, transitionSeconds);
+        state.smartWeatherDecision = "manual_preset";
+        state.smartWeatherNextSeconds = 0.0f;
+    }
+
+    private void selectWeatherInternal(String id, float transitionSeconds) {
         SolumWeatherState target = envPackage.findPreset(id);
         if (target == null || !id.equals(target.id)) throw new IllegalArgumentException("unknown_weather_preset_" + id);
         weatherFrom = state.weather.copy(); weatherTarget = target.copy(); transitionElapsed = 0.0f;
@@ -75,10 +92,46 @@ public final class SolumEnvironmentController {
     public void transitionTime(float hundredths, float seconds) { celestialControls.time = SolumCelestialControlState.finiteClamp(hundredths, 0.0f, 2400.0f, 960.0f); time.transitionTo(celestialControls.time, seconds); }
     public void setTimePaused(boolean paused) { celestialControls.timePaused = paused; time.setPaused(paused); }
     public void setTimeSpeed(float speed) { celestialControls.timeSpeed = SolumCelestialControlState.finiteClamp(speed, 0.0f, 8.0f, 1.0f); time.setSpeed(celestialControls.timeSpeed); }
+    public void setDayLengthMinutes(float minutes) {
+        celestialControls.dayLengthMinutes = SolumCelestialControlState.finiteClamp(minutes, 1.0f, 1440.0f,
+            SolumTimeSystem.DEFAULT_DAY_LENGTH_MINUTES);
+        time.setDayLengthMinutes(celestialControls.dayLengthMinutes);
+    }
     public void setAudioVolume(float value) { celestialControls.masterVolume = SolumCelestialControlState.finiteClamp(value, 0.0f, 1.0f, 0.45f); state.audio.masterVolume = celestialControls.masterVolume; }
     public void setAudioMuted(boolean muted) { celestialControls.muted = muted; state.audio.muted = muted; }
+    public void setSmartWeatherEnabled(boolean enabled) {
+        celestialControls.smartWeatherEnabled = enabled;
+        // Enabling smart weather intentionally returns cloud ownership to weather. Disabling it
+        // must not do that: a restored/manual cloud snapshot may explicitly own the sky controls.
+        if (enabled) celestialControls.weatherDrivesSky = true;
+        smartWeatherRemaining = 0.0f;
+        if (!enabled) {
+            state.smartWeatherDecision = "disabled";
+            state.smartWeatherNextSeconds = 0.0f;
+        }
+    }
+
+    /** Gives the analytic cloud panel stable ownership until weather drive is enabled again. */
+    public void takeManualCloudControl() {
+        celestialControls.weatherDrivesSky = false;
+        celestialControls.smartWeatherEnabled = false;
+        smartWeatherRemaining = 0.0f;
+        state.smartWeatherDecision = "manual_cloud_override";
+        state.smartWeatherNextSeconds = 0.0f;
+    }
+    public void setClimateProfile(String profile) {
+        celestialControls.climateProfile = SolumSeasonalWeatherPolicy.sanitizeProfile(profile);
+        state.smartWeatherProfile = celestialControls.climateProfile;
+        smartWeatherRemaining = 0.0f;
+    }
     public void setCameraPosition(float x, float y, float z) { cameraX=x; cameraY=y; cameraZ=z; }
-    public void triggerLightning() { if (state.weather.lightningEnabled >= 0.5f) beginStrike(); }
+    public void triggerLightning() {
+        if (celestialControls.lightningEnabled && state.weather.lightningEnabled >= 0.5f
+                && state.precipitation.rain >= 0.72f && state.precipitation.snow <= 0.001f
+                && state.weather.cloudCoverage >= 0.72f && state.weather.cloudDensity >= 0.75f) {
+            beginStrike();
+        }
+    }
     public void setSunScale(float value) { sunScale = clamp(value); }
     public void setSunDiskScale(float value) { sunDiskScale = Math.max(0.25f, Math.min(2.0f, value)); }
     public void setMoonScale(float value) { moonScale = clamp(value); }
@@ -107,9 +160,8 @@ public final class SolumEnvironmentController {
         celestialControls.sanitize();
         time.set(celestialControls.time);
         time.setSpeed(celestialControls.timeSpeed);
+        time.setDayLengthMinutes(celestialControls.dayLengthMinutes);
         time.setPaused(celestialControls.timePaused);
-        state.requestedPreset = "P63_3_ANALYTIC_SKY";
-        state.activePreset = state.requestedPreset;
         state.weatherTransitionActive = false;
         state.setFeatureStatus("analytic_sky_single_draw", EnvironmentFeatureStatus.FUNCTIONAL);
         state.setFeatureStatus("full_sphere_atmosphere", EnvironmentFeatureStatus.FUNCTIONAL);
@@ -120,8 +172,15 @@ public final class SolumEnvironmentController {
         state.setFeatureStatus("world_space_stars", EnvironmentFeatureStatus.PLACEHOLDER);
         state.setFeatureStatus("analytic_stars", EnvironmentFeatureStatus.FUNCTIONAL);
         state.setFeatureStatus("clouds", EnvironmentFeatureStatus.FUNCTIONAL);
-        state.setFeatureStatus("world_space_rain", EnvironmentFeatureStatus.PLACEHOLDER);
-        state.setFeatureStatus("world_space_snow", EnvironmentFeatureStatus.PLACEHOLDER);
+        state.setFeatureStatus("world_space_rain", EnvironmentFeatureStatus.UNSUPPORTED);
+        state.setFeatureStatus("world_space_snow", EnvironmentFeatureStatus.UNSUPPORTED);
+        state.setFeatureStatus("sand_dust_world_space", EnvironmentFeatureStatus.UNSUPPORTED);
+        state.setFeatureStatus("puddle_ripple_vfx", EnvironmentFeatureStatus.UNSUPPORTED);
+        state.setFeatureStatus("lightning_bolt_vfx", EnvironmentFeatureStatus.UNSUPPORTED);
+        state.setFeatureStatus("wind", EnvironmentFeatureStatus.FUNCTIONAL);
+        state.setFeatureStatus("lightning_transient_light", EnvironmentFeatureStatus.FUNCTIONAL);
+        state.setFeatureStatus("wetness", EnvironmentFeatureStatus.FUNCTIONAL);
+        state.setFeatureStatus("verified_weather_audio", EnvironmentFeatureStatus.PROTOTYPE);
         state.setFeatureStatus("prepared_ibl_reflections", EnvironmentFeatureStatus.PLACEHOLDER);
     }
 
@@ -138,57 +197,147 @@ public final class SolumEnvironmentController {
     }
 
     public void setWeatherValue(String field, float value) {
+        celestialControls.smartWeatherEnabled = false;
+        state.smartWeatherDecision = "manual_controls";
+        state.smartWeatherNextSeconds = 0.0f;
         state.weatherTransitionActive = false;
-        if ("cloudCoverage".equals(field)) state.weather.cloudCoverage=clamp(value);
-        else if ("cloudDensity".equals(field)) state.weather.cloudDensity=clamp(value);
-        else if ("fogDensity".equals(field)) state.weather.fogDensity=clamp(value)*0.12f;
-        else if ("rain".equals(field)) state.weather.rain=clamp(value);
-        else if ("snow".equals(field)) state.weather.snow=clamp(value);
-        else if ("windSpeed".equals(field)) state.weather.windSpeed=clamp(value);
-        else if ("lightningPotential".equals(field)) { state.weather.lightningPotential=clamp(value); state.weather.lightningEnabled=value>0.01f?1.0f:0.0f; }
-        else if ("wetnessTarget".equals(field)) state.weather.wetnessTarget=clamp(value);
-        else if ("snowTarget".equals(field)) state.weather.snowTarget=clamp(value);
+        if ("cloudCoverage".equals(field)) state.weather.cloudCoverage=finiteUnit(value, state.weather.cloudCoverage);
+        else if ("cloudDensity".equals(field)) state.weather.cloudDensity=finiteUnit(value, state.weather.cloudDensity);
+        else if ("fogDensity".equals(field)) state.weather.fogDensity=finiteUnit(value, state.weather.fogDensity/0.12f)*0.12f;
+        else if ("rain".equals(field)) {
+            state.weather.rain=finiteUnit(value, state.weather.rain);
+            if (state.weather.rain > 0.0f) { state.weather.snow=0.0f; state.weather.dust=0.0f; }
+        }
+        else if ("snow".equals(field)) {
+            state.weather.snow=finiteUnit(value, state.weather.snow);
+            if (state.weather.snow > 0.0f) {
+                state.weather.rain=0.0f; state.weather.dust=0.0f;
+                state.weather.lightningPotential=0.0f; state.weather.lightningEnabled=0.0f;
+            }
+        }
+        else if ("dust".equals(field)) {
+            state.weather.dust=finiteUnit(value, state.weather.dust);
+            if (state.weather.dust > 0.0f) {
+                state.weather.rain=0.0f; state.weather.snow=0.0f;
+                state.weather.lightningPotential=0.0f; state.weather.lightningEnabled=0.0f;
+            }
+        }
+        else if ("windSpeed".equals(field)) state.weather.windSpeed=finiteUnit(value, state.weather.windSpeed);
+        else if ("windGust".equals(field)) state.weather.windGust=finiteUnit(value, state.weather.windGust);
+        else if ("windTurbulence".equals(field)) state.weather.windTurbulence=finiteUnit(value, state.weather.windTurbulence);
+        else if ("windDirectionDeg".equals(field)) state.weather.windDirectionDeg=
+            SolumCelestialControlState.finiteClamp(value, -3600.0f, 3600.0f, state.weather.windDirectionDeg);
+        else if ("lightningPotential".equals(field)) {
+            state.weather.lightningPotential=finiteUnit(value, state.weather.lightningPotential);
+            state.weather.lightningEnabled=state.weather.lightningPotential>0.01f && state.weather.rain>=0.75f
+                && state.weather.cloudCoverage>=0.72f && state.weather.cloudDensity>=0.75f ? 1.0f : 0.0f;
+        }
+        else if ("wetnessTarget".equals(field)) state.weather.wetnessTarget=finiteUnit(value, state.weather.wetnessTarget);
+        else if ("snowTarget".equals(field)) state.weather.snowTarget=finiteUnit(value, state.weather.snowTarget);
         state.requestedPreset = "Manual"; state.activePreset = "Manual"; state.weather.id="Manual"; state.weather.name="Manual";
         weatherFrom=state.weather.copy(); weatherTarget=state.weather.copy();
     }
 
     public SolumEnvironmentState update(float deltaSeconds) {
         float dt = Math.max(0.0f, Math.min(0.1f, deltaSeconds));
-        if (celestialOnlyMode) enforceCelestialOnlyWeather(); else updateWeather(dt);
+        updateSmartWeather(dt);
+        updateWeather(dt);
+        if (celestialOnlyMode && celestialControls.weatherDrivesSky) applyWeatherToCelestialControls();
         state.timeOfDay = time.update(dt);
         celestialControls.time = state.timeOfDay;
         celestial.update(state.timeOfDay, state.weather, state.lighting);
         applyCelestialOverrides();
+        state.cameraInside = occlusion.isInterior(cameraX, cameraY, cameraZ);
+        state.cameraUnderRoof = occlusion.hasRoofAbove(cameraX, cameraY, cameraZ);
         if (celestialOnlyMode) {
-            updateCelestialClouds(dt); updateAtmosphere();
-            updateAnalyticSkyState(dt);
+            updateIntegratedWind(dt); updateCelestialClouds(dt); updateAtmosphere();
             state.fog.density = 0.0f;
             state.fog.maximumOpacity = 0.0f;
-            state.lighting.lightningLumens = 0.0f;
-            state.lightning.active = false;
-            state.lightning.enabled = false;
-            state.surface.wetness = state.surface.puddle = state.surface.snowCover = state.surface.ice = 0.0f;
+            updateIntegratedWeather(dt);
+            updateAnalyticSkyState(dt);
             state.audio.masterVolume = celestialControls.masterVolume;
             state.audio.muted = celestialControls.muted;
         } else {
             updateWind(dt); updateClouds(dt); updateFog(); updatePrecipitation();
             updateLightning(dt); updateSurface(dt); applySurfaceOverrides(); updateAudio(dt); updateIbl();
         }
-        state.cameraInside = occlusion.isInterior(cameraX, cameraY, cameraZ);
-        state.cameraUnderRoof = occlusion.hasRoofAbove(cameraX, cameraY, cameraZ);
         state.frameRevision++;
         return state;
     }
 
-    private void enforceCelestialOnlyWeather() {
-        SolumWeatherState w = state.weather;
-        w.cloudCoverage = celestialControls.cloudsEnabled ? celestialControls.cloudCoverage : 0.0f;
-        w.cloudDensity = celestialControls.cloudsEnabled ? celestialControls.cloudDensity : 0.0f;
-        w.fogDensity = 0.0f;
-        w.rain = 0.0f; w.snow = 0.0f; w.dust = 0.0f; w.windSpeed = 0.0f;
-        w.windGust = 0.0f; w.windTurbulence = 0.0f; w.lightningEnabled = 0.0f;
-        w.lightningPotential = 0.0f; w.wetnessTarget = 0.0f; w.snowTarget = 0.0f;
-        w.lightingScale = 1.0f; w.ambientScale = 1.0f; w.exposure = 1.0f;
+    private void updateSmartWeather(float dt) {
+        if (!celestialControls.smartWeatherEnabled) {
+            state.smartWeatherNextSeconds = 0.0f;
+            return;
+        }
+        smartWeatherRemaining -= dt;
+        if (smartWeatherRemaining > 0.0f) {
+            state.smartWeatherNextSeconds = smartWeatherRemaining;
+            return;
+        }
+        SolumSeasonalWeatherPolicy.Decision decision = seasonalWeather.decide(
+            celestialControls.climateProfile, smartWeatherDecisionIndex++);
+        if (envPackage.findPreset(decision.presetId) == null) {
+            celestialControls.smartWeatherEnabled = false;
+            state.smartWeatherDecision = "disabled_missing_preset_" + decision.presetId;
+            return;
+        }
+        selectWeatherInternal(decision.presetId, decision.transitionSeconds);
+        smartWeatherRemaining = decision.holdSeconds;
+        state.smartWeatherSeason = decision.season;
+        state.smartWeatherProfile = decision.profile;
+        state.smartWeatherDecision = decision.presetId + " · " + decision.evidence;
+        state.smartWeatherNextSeconds = smartWeatherRemaining;
+    }
+
+    private void applyWeatherToCelestialControls() {
+        SolumWeatherState weather = state.weather;
+        celestialControls.cloudsEnabled = weather.cloudCoverage > 0.015f;
+        celestialControls.cloudCoverage = clamp(weather.cloudCoverage);
+        celestialControls.cloudDensity = clamp(weather.cloudDensity);
+        celestialControls.cloudSoftness = clamp(0.78f - weather.cloudDensity * 0.20f
+            + (1.0f - weather.windTurbulence) * 0.05f);
+        // UDS computes 0.7 km * Layer Height Scale * Volumetric Clouds Scale. The packaged
+        // weather thickness is normalized, so 0.5 + value is its bounded Layer Height Scale.
+        celestialControls.cloudHeightKm = SolumCelestialControlState.UDS_CLOUD_BOTTOM_ALTITUDE_KM;
+        celestialControls.cloudThicknessKm = SolumCelestialControlState.UDS_CLOUD_LAYER_HEIGHT_KM
+            * (0.5f + clamp(weather.cloudThickness));
+        celestialControls.cloudSpeed = 0.10f + weather.windSpeed * 0.92f;
+        celestialControls.cloudEvolution = 0.14f + weather.windTurbulence * 0.86f;
+        celestialControls.cloudBrightness = clamp(0.98f - weather.cloudCoverage * 0.14f
+            - weather.dust * 0.10f);
+        celestialControls.cloudType = weather.lightningEnabled >= 0.5f ? "Storm"
+            : (weather.cloudCoverage >= 0.70f ? "Stratocumulus" : "Cumulus");
+        celestialControls.activeCloudPreset = "Weather · " + weather.name;
+        celestialControls.cloudWindDirectionDegrees = weather.windDirectionDeg;
+    }
+
+    private void updateIntegratedWeather(float dt) {
+        if (celestialControls.precipitationEnabled) updatePrecipitation();
+        else clearPrecipitation();
+        if (celestialControls.lightningEnabled) updateLightning(dt);
+        else clearLightning();
+        if (celestialControls.surfaceWeatherEnabled) {
+            updateSurface(dt);
+            applySurfaceOverrides();
+        } else {
+            state.surface.wetness = state.surface.puddle = state.surface.snowCover = 0.0f;
+            state.surface.ice = state.surface.dust = 0.0f;
+        }
+        updateAudio(dt);
+    }
+
+    private void clearPrecipitation() {
+        SolumPrecipitationState precipitation = state.precipitation;
+        precipitation.rain = precipitation.snow = precipitation.dust = 0.0f;
+        precipitation.rainParticles = precipitation.snowParticles = precipitation.dustParticles = 0;
+    }
+
+    private void clearLightning() {
+        state.lightning.active = false;
+        state.lightning.enabled = false;
+        state.lightning.flash = 0.0f;
+        state.lighting.lightningLumens = 0.0f;
     }
 
     private void updateWeather(float dt) {
@@ -209,6 +358,24 @@ public final class SolumEnvironmentController {
         w.x=(float)Math.sin(radians)*magnitude; w.z=(float)Math.cos(radians)*magnitude;
     }
 
+    private void updateIntegratedWind(float dt) {
+        float speed = clamp(state.weather.windSpeed);
+        float turbulence = clamp(state.weather.windTurbulence);
+        windPhase += dt * (0.45f + speed * 1.8f + turbulence * 0.65f);
+        SolumWindState wind = state.wind;
+        wind.directionDeg = state.weather.windDirectionDeg;
+        wind.speed = speed;
+        float gustWave = 0.55f + 0.28f * (float)Math.sin(windPhase)
+            + 0.17f * (float)Math.sin(windPhase * 2.37f + 1.1f);
+        wind.gust = clamp(state.weather.windGust * gustWave);
+        wind.turbulence = turbulence;
+        wind.phase = windPhase;
+        double radians = Math.toRadians(wind.directionDeg);
+        float magnitude = speed * (0.35f + wind.gust * 0.85f);
+        wind.x = (float)Math.sin(radians) * magnitude;
+        wind.z = (float)Math.cos(radians) * magnitude;
+    }
+
     private void updateClouds(float dt) {
         SolumCloudState c=state.clouds; cloudPhase+=dt;
         c.coverage=state.weather.cloudCoverage; c.density=state.weather.cloudDensity; c.height=state.weather.cloudHeight; c.thickness=state.weather.cloudThickness;
@@ -226,10 +393,10 @@ public final class SolumEnvironmentController {
         c.softness = celestialControls.cloudSoftness;
         c.brightness = celestialControls.cloudBrightness;
         c.speed = celestialControls.cloudSpeed;
-        c.height = 14.0f;
-        c.thickness = 0.35f + celestialControls.cloudDensity * 0.55f;
-        c.offsetX += dt * celestialControls.cloudSpeed * 1.15f;
-        c.offsetZ += dt * celestialControls.cloudSpeed * 0.32f;
+        c.height = celestialControls.cloudHeightKm;
+        c.thickness = celestialControls.cloudThicknessKm;
+        c.offsetX += dt * state.wind.x * (0.65f + celestialControls.cloudSpeed * 0.50f);
+        c.offsetZ += dt * state.wind.z * (0.65f + celestialControls.cloudSpeed * 0.50f);
         if (c.offsetX > 44.0f) c.offsetX -= 44.0f;
         if (c.offsetZ > 36.0f) c.offsetZ -= 36.0f;
         c.lightAttenuation = 1.0f - c.coverage * 0.52f;
@@ -267,7 +434,15 @@ public final class SolumEnvironmentController {
 
     private void updatePrecipitation() {
         SolumEnvironmentQuality q=envPackage.findQuality(state.quality); SolumPrecipitationState p=state.precipitation;
-        p.rain=state.weather.rain; p.snow=state.weather.snow; p.dust=state.weather.dust; p.particleLimit=q.particleLimit;
+        float cloudGate = smoothStep(0.48f, 0.70f, state.weather.cloudCoverage)
+            * smoothStep(0.46f, 0.72f, state.weather.cloudDensity);
+        float rain = clamp(state.weather.rain * cloudGate);
+        float snow = clamp(state.weather.snow * cloudGate);
+        float dust = clamp(state.weather.dust * smoothStep(0.12f, 0.35f, state.weather.windSpeed));
+        if (rain >= snow && rain >= dust) { snow = 0.0f; dust = 0.0f; }
+        else if (snow >= dust) { rain = 0.0f; dust = 0.0f; }
+        else { rain = 0.0f; snow = 0.0f; }
+        p.rain=rain; p.snow=snow; p.dust=dust; p.particleLimit=q.particleLimit;
         float total=Math.max(0.0001f,p.rain+p.snow+p.dust); int active=(int)(q.particleLimit*clamp(total));
         p.rainParticles=(int)(active*p.rain/total);p.snowParticles=(int)(active*p.snow/total);p.dustParticles=Math.max(0,active-p.rainParticles-p.snowParticles);
         p.windTiltX=state.wind.x;p.windTiltZ=state.wind.z;p.blockedCells=0;p.exposedCells=0;
@@ -275,8 +450,14 @@ public final class SolumEnvironmentController {
     }
 
     private void updateLightning(float dt) {
-        SolumLightningState l=state.lightning; l.enabled=state.weather.lightningEnabled>=0.5f&&state.weather.lightningPotential>0.01f;
-        if(!l.enabled){l.active=false;l.flash=0;nextStrike=0;return;}
+        SolumLightningState l=state.lightning;
+        l.enabled=state.weather.lightningEnabled>=0.5f
+            && state.weather.lightningPotential>0.01f
+            && state.precipitation.rain>=0.72f
+            && state.precipitation.snow<=0.001f
+            && state.weather.cloudCoverage>=0.72f
+            && state.weather.cloudDensity>=0.75f;
+        if(!l.enabled){l.active=false;l.flash=0;nextStrike=0;state.lighting.lightningLumens=0.0f;return;}
         if(l.active){strikeElapsed+=dt;float alpha=clamp(strikeElapsed/Math.max(0.1f,strikeDuration));float pulse=(float)Math.pow(Math.max(0.0,Math.sin(alpha*Math.PI*7.0)),12.0);l.flash=state.weather.lightningPotential*Math.max((float)Math.exp(-alpha*8.0),pulse*(1.0f-alpha));if(alpha>=1){l.active=false;l.flash=0;}}
         else {if(nextStrike<=0)nextStrike=scheduleStrike();nextStrike-=dt;if(nextStrike<=0)beginStrike();}
         state.lighting.lightningLumens=l.flash*l.lightIntensity*4200.0f;
@@ -285,9 +466,9 @@ public final class SolumEnvironmentController {
     private void beginStrike(){SolumLightningState l=state.lightning;l.active=true;l.eventIndex++;strikeElapsed=0;rngState=xorshift(rngState);strikeDuration=lerp(envPackage.lightningDurationMin,envPackage.lightningDurationMax,random());rngState=xorshift(rngState);l.strikeX=(random()-0.5f)*18.0f;rngState=xorshift(rngState);l.strikeZ=-3.0f-random()*14.0f;l.distanceKm=0.25f+random()*2.75f;l.thunderDelaySeconds=l.distanceKm*envPackage.thunderDelayPerKm;nextStrike=scheduleStrike();}
     private float scheduleStrike(){rngState=xorshift(rngState);float average=60.0f/Math.max(0.1f,envPackage.lightningFrequency);return envPackage.lightningSpawnPeriod+average*(0.4f+random()*1.2f);}
 
-    private void updateSurface(float dt){SolumSurfaceWeatherState s=state.surface;float exposure=state.cameraInside||state.cameraUnderRoof?0.0f:1.0f;float target=clamp(Math.max(state.weather.wetnessTarget,state.weather.rain*0.96f))*(1.0f-state.weather.dust*0.82f);float wetRate=(0.35f+state.weather.rain*1.65f)/Math.max(1,envPackage.wetCoverageSeconds);float dryRate=(0.3f+0.7f*clamp(state.lighting.sunElevation)+state.weather.dust*1.4f)/Math.max(1,envPackage.drySeconds);s.wetness=approach(s.wetness,target,dt*(s.wetness<target?wetRate:dryRate));s.exposedWetness=s.wetness;s.coveredWetness=approach(s.coveredWetness,0,dt*dryRate*0.3f);float puddleTarget=clamp((s.wetness-0.45f)*1.8f)*envPackage.puddleCoverage*(0.35f+state.weather.rain);s.puddle=approach(s.puddle,puddleTarget,dt*(state.weather.rain>0?0.06f:0.012f));float snowTarget=clamp(Math.max(state.weather.snowTarget,state.weather.snow*0.9f));s.snowCover=approach(s.snowCover,snowTarget,dt*(state.weather.snow>0?0.025f+state.weather.snow*0.05f:0.008f));s.exposedSnow=s.snowCover;s.interiorSnow=0.0f;s.ice=clamp(Math.min(s.wetness*0.72f,s.snowCover*0.58f+state.weather.snow*0.22f));s.dust=approach(s.dust,state.weather.dust,dt*(state.weather.dust>0?0.05f:0.008f));s.roughnessScale=lerp(1.0f,0.24f,s.wetness);s.reflectionBoost=s.wetness*0.75f+s.puddle*0.6f+s.ice*0.35f;if(exposure==0){s.interiorSnow=0;s.coveredWetness=Math.min(s.coveredWetness,0.08f);}}
+    private void updateSurface(float dt){SolumSurfaceWeatherState s=state.surface;float exposure=state.cameraInside||state.cameraUnderRoof?0.0f:1.0f;float rain=state.precipitation.rain;float snow=state.precipitation.snow;float dust=state.precipitation.dust;float target=clamp(Math.max(state.weather.wetnessTarget*rain,rain*0.96f))*(1.0f-dust*0.82f);float wetRate=(0.35f+rain*1.65f)/Math.max(1,envPackage.wetCoverageSeconds);float dryRate=(0.3f+0.7f*clamp(state.lighting.sunElevation)+dust*1.4f)/Math.max(1,envPackage.drySeconds);s.wetness=approach(s.wetness,target,dt*(s.wetness<target?wetRate:dryRate));s.exposedWetness=s.wetness;s.coveredWetness=approach(s.coveredWetness,0,dt*dryRate*0.3f);float puddleTarget=clamp((s.wetness-0.45f)*1.8f)*envPackage.puddleCoverage*(0.35f+rain);s.puddle=approach(s.puddle,puddleTarget,dt*(rain>0?0.06f:0.012f));float snowTarget=clamp(Math.max(state.weather.snowTarget*snow,snow*0.9f));s.snowCover=approach(s.snowCover,snowTarget,dt*(snow>0?0.025f+snow*0.05f:0.008f));s.exposedSnow=s.snowCover;s.interiorSnow=0.0f;s.ice=clamp(Math.min(s.wetness*0.72f,s.snowCover*0.58f+snow*0.22f));s.dust=approach(s.dust,dust,dt*(dust>0?0.05f:0.008f));s.roughnessScale=lerp(1.0f,0.24f,s.wetness);s.reflectionBoost=s.wetness*0.75f+s.puddle*0.6f+s.ice*0.35f;if(exposure==0){s.interiorSnow=0;s.coveredWetness=Math.min(s.coveredWetness,0.08f);}}
 
-    private void updateAudio(float dt){SolumEnvironmentAudioState a=state.audio;float rate=Math.min(1,dt*1.8f);a.rainGain=lerp(a.rainGain,state.weather.rain,rate);a.windGain=lerp(a.windGain,clamp(state.weather.windSpeed+state.weather.windGust*0.3f),rate);a.snowGain=lerp(a.snowGain,state.weather.snow,rate);a.sandGain=lerp(a.sandGain,state.weather.dust*clamp(state.weather.windSpeed+0.2f),rate);float interior=state.cameraInside||state.cameraUnderRoof?0.28f:1.0f;a.interiorAttenuation=lerp(a.interiorAttenuation,interior,Math.min(1,dt*2.5f));a.lowPassMix=1.0f-a.interiorAttenuation;a.activeProfile=state.weather.rain>0.05f?"rain":(state.weather.snow>0.05f?"snow":(state.weather.dust>0.05f?"sand":(state.weather.windSpeed>0.25f?"wind":"calm")));if(state.lightning.eventIndex!=audioLightningEvent){audioLightningEvent=state.lightning.eventIndex;a.thunderPendingSeconds=state.lightning.thunderDelaySeconds;}else if(a.thunderPendingSeconds>=0)a.thunderPendingSeconds-=dt;}
+    private void updateAudio(float dt){SolumEnvironmentAudioState a=state.audio;float rate=Math.min(1,dt*1.8f);float precipitationExposure=state.cameraInside||state.cameraUnderRoof?0.0f:1.0f;float windExposure=state.cameraInside||state.cameraUnderRoof?0.18f:1.0f;a.rainGain=lerp(a.rainGain,state.precipitation.rain*precipitationExposure,rate);a.windGain=lerp(a.windGain,clamp(state.weather.windSpeed+state.weather.windGust*0.3f)*windExposure,rate);a.snowGain=lerp(a.snowGain,state.precipitation.snow*precipitationExposure,rate);a.sandGain=lerp(a.sandGain,state.precipitation.dust*windExposure,rate);float interior=state.cameraInside||state.cameraUnderRoof?0.22f:1.0f;a.interiorAttenuation=lerp(a.interiorAttenuation,interior,Math.min(1,dt*2.5f));a.lowPassMix=1.0f-a.interiorAttenuation;a.activeProfile=a.rainGain>0.05f?"rain":(a.snowGain>0.05f?"snow":(a.sandGain>0.05f?"sand":(a.windGain>0.25f?"wind":"calm")));if(state.lightning.eventIndex>0&&state.lightning.eventIndex!=audioLightningEvent){audioLightningEvent=state.lightning.eventIndex;a.thunderPendingSeconds=state.lightning.thunderDelaySeconds;}else if(a.thunderPendingSeconds>=0)a.thunderPendingSeconds-=dt;}
 
     private void updateIbl(){String slot;if(state.weather.snow>0.12f)slot="snow";else if(state.weather.lightningEnabled>=0.5f)slot="storm";else if(state.weather.rain>0.1f||state.weather.cloudCoverage>0.64f)slot="overcast";else if(state.weather.dust>0.1f)slot="sand";else if(state.lighting.sunElevation<0.03f)slot="night";else if(state.lighting.sunElevation<0.26f)slot="sunset";else slot="day";if(!slot.equals(lastIblSlot)){lastIblSlot=slot;state.lighting.iblSlot=slot;state.lighting.iblRevision++;}state.lighting.iblBlend=(state.weatherTransitionActive?0.58f+Math.abs(state.weatherTransitionAlpha-0.5f)*0.84f:1.0f)*iblIntensityScale;}
 
@@ -297,20 +478,47 @@ public final class SolumEnvironmentController {
             celestialControls.sanitize();
             SolumCelestialCoordinateSystem.update(state.timeOfDay,
                 celestialControls.sunElevationOffsetDegrees, celestialControls.moonElevationOffsetDegrees, l);
+            boolean sunTrajectoryValid = true;
+            if (celestialControls.udsExactSunTrajectory) {
+                populateUdsSunTrajectoryInputs();
+                SolumUdsSunTrajectory.evaluate(udsSunTrajectoryInputs, udsSunTrajectoryOutput);
+                copy3(udsSunTrajectoryOutput.filamentLightDirection, l.sunDirection);
+                copy3(udsSunTrajectoryOutput.filamentVisualDirection, l.sunVisualDirection);
+                l.sunTimeInRange = udsSunTrajectoryOutput.timeInRange;
+                l.sunTimeCycleDegrees = udsSunTrajectoryOutput.timeCycleDegrees;
+                l.sunExtendDawnDuskZ = udsSunTrajectoryOutput.extendDawnDuskZ;
+                l.sunTrajectorySource = "UDS.Cache Sun and Moon Orientation/Set Time Cycle Degrees";
+                l.sunTrajectoryStatus = udsSunTrajectoryOutput.status;
+                updateSunDerivedState(l);
+                sunTrajectoryValid = SolumUdsSunTrajectory.CONTRACT_STATUS.equals(udsSunTrajectoryOutput.status);
+            } else {
+                l.sunTimeInRange = state.timeOfDay;
+                l.sunTimeCycleDegrees = 0.0f;
+                l.sunExtendDawnDuskZ = 1.0f;
+                l.sunTrajectorySource = "SOLUM_LEGACY_SOLAR_ORBIT";
+                l.sunTrajectoryStatus = "APPROXIMATION_USER_SELECTED";
+            }
             float day = smoothStep(-0.08f, 0.10f, l.sunElevation);
             float night = smoothStep(-0.08f, 0.10f, l.moonElevation);
             float phaseAngle = (float)Math.toRadians(celestialControls.moonPhaseAngleDegrees);
             float phaseLight = ((float)Math.sin(phaseAngle)
                 + ((float)Math.PI - phaseAngle) * (float)Math.cos(phaseAngle)) / (float)Math.PI;
             phaseLight = Math.max(0.0f, Math.min(1.0f, phaseLight));
-            l.sunLux = celestialControls.sunEnabled ? celestialControls.sunLightLux * day : 0.0f;
-            l.sunDiskBrightness = celestialControls.sunEnabled ? celestialControls.sunVisualBrightness * smoothStep(-0.04f, 0.06f, l.sunElevation) : 0.0f;
+            l.sunLux = celestialControls.sunEnabled && sunTrajectoryValid ? celestialControls.sunLightLux * day : 0.0f;
+            l.sunDiskBrightness = celestialControls.sunEnabled && sunTrajectoryValid ? celestialControls.sunVisualBrightness * smoothStep(-0.04f, 0.06f, l.sunElevation) : 0.0f;
             l.moonLux = celestialControls.moonEnabled ? celestialControls.moonLightLux * night * phaseLight : 0.0f;
             l.moonDiskBrightness = celestialControls.moonEnabled ? celestialControls.moonVisualBrightness * night : 0.0f;
             l.moonPhase = celestialControls.moonPhase;
             float starFade = 1.0f - smoothStep(-0.18f, 0.06f, l.sunElevation);
             l.starVisibility = celestialControls.starsEnabled
                 ? clamp(celestialControls.starBrightness * starFade) : 0.0f;
+            if (celestialControls.cloudsEnabled) {
+                float opticalDepth = celestialControls.cloudCoverage * celestialControls.cloudDensity
+                    * celestialControls.cloudShadowStrength * 3.4f;
+                float cloudTransmission = (float)Math.exp(-Math.max(0.0f, opticalDepth));
+                l.sunLux *= cloudTransmission;
+                l.moonLux *= cloudTransmission;
+            }
             System.arraycopy(celestialControls.sunTint, 0, l.sunColor, 0, 3);
             System.arraycopy(celestialControls.moonTint, 0, l.moonColor, 0, 3);
             celestialControls.activeSkySource = celestialControls.analyticSky
@@ -325,6 +533,33 @@ public final class SolumEnvironmentController {
         l.sunAboveHorizon = l.sunElevationDegrees > 0.0f;
         l.moonAboveHorizon = l.moonElevationDegrees > 0.0f;
         if(!Float.isNaN(manualMoonPhase))l.moonPhase=manualMoonPhase;l.sunLux*=sunScale;l.sunDiskBrightness*=sunScale;l.moonLux*=moonScale;l.moonDiskBrightness*=moonScale;l.starVisibility=clamp(l.starVisibility*starBrightness);if(sunTintMode==1){l.sunColor[0]=1;l.sunColor[1]*=0.84f;l.sunColor[2]*=0.62f;}else if(sunTintMode==2){l.sunColor[0]*=0.82f;l.sunColor[1]*=0.92f;l.sunColor[2]=1;}if(moonTintMode==1){l.moonColor[0]=0.68f;l.moonColor[1]=0.72f;l.moonColor[2]=0.78f;}else if(moonTintMode==2){l.moonColor[0]=0.35f;l.moonColor[1]=0.50f;l.moonColor[2]=1.0f;}
+    }
+
+    private void populateUdsSunTrajectoryInputs() {
+        udsSunTrajectoryInputs.timeOfDay = state.timeOfDay;
+        udsSunTrajectoryInputs.dawnTime = celestialControls.udsDawnTime;
+        udsSunTrajectoryInputs.duskTime = celestialControls.udsDuskTime;
+        udsSunTrajectoryInputs.daylightSavingsTime = celestialControls.udsDaylightSavingsTime;
+        udsSunTrajectoryInputs.simulateRealSun = false;
+        udsSunTrajectoryInputs.simulateRealMoon = false;
+        udsSunTrajectoryInputs.manuallyPositionSunTarget = false;
+        udsSunTrajectoryInputs.sunPitchDegrees = celestialControls.udsSunPitchDegrees;
+        udsSunTrajectoryInputs.sunYawDegrees = celestialControls.udsSunYawDegrees;
+        udsSunTrajectoryInputs.sunVerticalOffset = celestialControls.udsSunVerticalOffset;
+        udsSunTrajectoryInputs.extendDawnAndDusk = celestialControls.udsExtendDawnAndDusk;
+        // SOLUM's environment dome has no independently rotated sky actor; its source-equivalent
+        // actor yaw is therefore the verified zero default.
+        udsSunTrajectoryInputs.actorYawDegrees = 0.0;
+    }
+
+    private static void updateSunDerivedState(SolumEnvironmentLightingState lighting) {
+        float elevation = Math.max(-1.0f, Math.min(1.0f, lighting.sunVisualDirection[1]));
+        lighting.sunElevation = elevation;
+        lighting.sunElevationDegrees = (float)Math.toDegrees(Math.asin(elevation));
+        float azimuth = (float)Math.toDegrees(Math.atan2(
+            lighting.sunVisualDirection[0], -lighting.sunVisualDirection[2]));
+        lighting.sunAzimuthDegrees = azimuth < 0.0f ? azimuth + 360.0f : azimuth;
+        lighting.sunAboveHorizon = lighting.sunElevationDegrees > 0.0f;
     }
 
     private static String skySource(float sunElevation) {
@@ -343,7 +578,7 @@ public final class SolumEnvironmentController {
         sky.analyticSky = controls.skyEnabled && controls.analyticSky;
         sky.analyticSun = controls.sunEnabled && controls.analyticSun;
         sky.analyticMoon = controls.moonEnabled && controls.analyticMoon;
-        sky.analyticStars = controls.starsEnabled && controls.analyticStars;
+        sky.analyticStars = controls.starsEnabled && controls.analyticStars && controls.starDensity > 0.001f;
         sky.analyticClouds = controls.cloudsEnabled && controls.analyticClouds;
         sky.legacyCelestialFallback = controls.legacyCelestialFallback;
         sky.oldIbl = true;
@@ -357,9 +592,14 @@ public final class SolumEnvironmentController {
         copy3(controls.starTint, sky.starTint);
         copy3(controls.cloudTint, sky.cloudArtTint);
         copy3(controls.skyArtTint, sky.skyArtTint);
-        sky.turbidity = controls.turbidity;
+        copy3(controls.auroraColor, sky.auroraColor);
+        float weatherHumidity = celestialOnlyMode && controls.weatherDrivesSky
+            ? clamp(state.weather.humidity) : 0.0f;
+        float weatherDust = celestialOnlyMode && controls.weatherDrivesSky
+            ? clamp(state.weather.dust) : 0.0f;
+        sky.turbidity = controls.turbidity + weatherHumidity * 1.35f + weatherDust * 3.0f;
         sky.rayleigh = controls.rayleigh;
-        sky.mie = controls.mie;
+        sky.mie = controls.mie * (1.0f + weatherHumidity * 0.32f + weatherDust * 0.80f);
         sky.mieG = controls.mieG;
         sky.ozone = controls.ozone;
         sky.horizonHaze = controls.horizonHaze;
@@ -368,12 +608,14 @@ public final class SolumEnvironmentController {
         sky.sunsetContrast = controls.sunsetContrast;
         sky.horizonWarmth = controls.horizonWarmth;
         sky.sunDiscLuminanceNits = controls.sunDiscLuminanceNits;
+        sky.sunEmissiveGain = controls.sunEmissive;
         sky.sunAngularDiameterDegrees = controls.sunAngularSizeDegrees;
         sky.sunHaloSize = controls.sunHaloSize;
         sky.sunHaloFalloff = controls.sunHaloFalloff;
         sky.sunBloomContribution = controls.sunBloomContribution;
         sky.sunExposureWeight = controls.sunExposureWeight;
         sky.sunLimbDarkening = controls.sunLimbDarkening;
+        sky.sunDiscVisibility = controls.sunDiscVisibility;
         sky.moonPhaseAngleDegrees = controls.moonPhaseAngleDegrees;
         sky.moonVisualLuminanceNits = controls.moonVisualLuminanceNits;
         sky.moonEarthshine = controls.moonEarthshine;
@@ -399,6 +641,24 @@ public final class SolumEnvironmentController {
         sky.cloudSilverLining = controls.cloudSilverLining;
         sky.cloudBrightness = controls.cloudBrightness;
         sky.cloudQuality = controls.cloudQuality;
+        sky.cloudTypeIndex = "Stratocumulus".equals(controls.cloudType) ? 1.0f
+            : ("Cirrus".equals(controls.cloudType) ? 2.0f : ("Storm".equals(controls.cloudType) ? 3.0f : 0.0f));
+        sky.cloudWindDirectionRadians = (float)Math.toRadians(controls.cloudWindDirectionDegrees);
+        sky.cloudShadowStrength = controls.cloudShadowStrength;
+        sky.lightShaftStrength = controls.lightShaftsEnabled ? controls.lightShaftStrength : 0.0f;
+        sky.sunLightLux = state.lighting.sunLux;
+        sky.moonLightLux = state.lighting.moonLux;
+        sky.weatherRain = state.precipitation.rain;
+        sky.weatherSnow = state.precipitation.snow;
+        sky.weatherDust = state.precipitation.dust;
+        sky.lightningFlash = state.lightning.flash;
+        sky.auroraEnabled = controls.auroraEnabled;
+        sky.auroraIntensity = controls.auroraIntensity;
+        sky.auroraScale = controls.auroraScale;
+        sky.auroraSpeed = controls.auroraSpeed;
+        sky.auroraShapeSpeed = controls.auroraShapeSpeed;
+        sky.auroraPower = controls.auroraPower;
+        sky.auroraHorizonHeight = controls.auroraHorizonHeight;
     }
 
     private static void copy3(float[] source, float[] target) {
@@ -416,6 +676,7 @@ public final class SolumEnvironmentController {
     }
 
     private static float smoothStep(float a,float b,float value){float t=Math.max(0.0f,Math.min(1.0f,(value-a)/Math.max(0.0001f,b-a)));return t*t*(3.0f-2.0f*t);}
+    private static float finiteUnit(float value, float fallback){return SolumCelestialControlState.finiteClamp(value,0.0f,1.0f,fallback);}
     private void applySurfaceOverrides(){if(!Float.isNaN(manualPuddle))state.surface.puddle=manualPuddle;if(!Float.isNaN(manualSnowCover)){state.surface.snowCover=manualSnowCover;state.surface.exposedSnow=manualSnowCover;}if(!Float.isNaN(manualIce))state.surface.ice=manualIce;state.surface.interiorSnow=0;}
 
     private float random(){return (rngState&0xffffffffL)/4294967296.0f;}private static int xorshift(int v){v^=v<<13;v^=v>>>17;v^=v<<5;return v;}private static float clamp(float v){return Math.max(0,Math.min(1,v));}private static float lerp(float a,float b,float t){return a+(b-a)*t;}private static float approach(float v,float target,float amount){return v<target?Math.min(target,v+amount):Math.max(target,v-amount);}

@@ -13,6 +13,9 @@ public final class SolumEnvironmentLightingState {
     public float moonElevation;
     public float sunElevationDegrees;
     public float sunAzimuthDegrees;
+    public float sunTimeInRange;
+    public float sunTimeCycleDegrees;
+    public float sunExtendDawnDuskZ = 1.0f;
     public float moonElevationDegrees;
     public float moonAzimuthDegrees;
     public boolean sunAboveHorizon;
@@ -29,4 +32,6 @@ public final class SolumEnvironmentLightingState {
     public String iblSlot = "day";
     public float iblBlend = 1.0f;
     public long iblRevision;
+    public String sunTrajectorySource = "SOLUM_LEGACY_SOLAR_ORBIT";
+    public String sunTrajectoryStatus = "APPROXIMATION";
 }

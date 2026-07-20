@@ -1,6 +1,8 @@
 package com.solum.engine.environment.p63;
 
 import java.util.Arrays;
+import java.util.Calendar;
+import java.util.TimeZone;
 import java.nio.ByteBuffer;
 
 public final class SolumEnvironmentCoreTest {
@@ -15,6 +17,13 @@ public final class SolumEnvironmentCoreTest {
         require(env.getPresets().size() == 13, "13 presets");
         require(SolumTimeSystem.wrap(2401.0f) == 1.0f, "time wraps above midnight");
         require(SolumTimeSystem.wrap(-1.0f) == 2399.0f, "time wraps below midnight");
+        require(close(SolumTimeSystem.fromClock(17, 30), 1750.0f)
+            && SolumTimeSystem.clockHour(1750.0f) == 17
+            && SolumTimeSystem.clockMinute(1750.0f) == 30, "exact game clock conversion");
+        SolumTimeSystem pacedTime = new SolumTimeSystem();
+        pacedTime.set(1200.0f); pacedTime.setPaused(false); pacedTime.setDayLengthMinutes(60.0f);
+        for (int i = 0; i < 100; i++) pacedTime.update(0.1f);
+        require(close(pacedTime.getTime(), 1206.666f, 0.02f), "60 real minute game-day pacing");
 
         SolumEnvironmentController controller = new SolumEnvironmentController(env);
         for (String id : IDS) {
@@ -72,13 +81,90 @@ public final class SolumEnvironmentCoreTest {
         require(controller.getState().surface.snowCover < snowPeak, "snow melts/fades");
 
         require(controller.getState().getFeatureStatus().get("interior_exclusion") == EnvironmentFeatureStatus.FUNCTIONAL, "classification truth present");
+        testExactUdsSunTrajectory(env);
         testCanonicalCelestialCoordinates();
         testCameraGestureOwnership();
         testAnalyticSky();
         testCelestialOnly(env);
+        testIntegratedWeather(env);
+        testSeasonalWeatherPolicy();
         System.out.println("P63_CORE_TEST=PASS presets=" + Arrays.toString(IDS)
             + " stars=" + starsA.getStars().size()
             + " lightningEvents=" + controller.getState().lightning.eventIndex);
+    }
+
+    private static void testExactUdsSunTrajectory(SolumEnvironmentPackage env) {
+        SolumUdsSunTrajectory.Inputs inputs = new SolumUdsSunTrajectory.Inputs();
+        SolumUdsSunTrajectory.Output output = new SolumUdsSunTrajectory.Output();
+
+        inputs.timeOfDay = 600.0;
+        SolumUdsSunTrajectory.evaluate(inputs, output);
+        require(SolumUdsSunTrajectory.CONTRACT_STATUS.equals(output.status)
+            && close(output.timeCycleDegrees, 90.0f)
+            && vectorClose(output.filamentLightDirection, new float[] {-1.0f, 0.0f, 0.0f})
+            && vectorClose(output.filamentVisualDirection, new float[] {1.0f, 0.0f, 0.0f}),
+            "exact UDS dawn fixture and UE-to-Filament mapping");
+
+        inputs.timeOfDay = 1200.0;
+        SolumUdsSunTrajectory.evaluate(inputs, output);
+        require(close(output.timeCycleDegrees, 180.0f)
+            && vectorClose(output.ueCachedSunVector, new float[] {0.5f, 0.0f, -0.8660254f})
+            && vectorClose(output.filamentVisualDirection, new float[] {0.0f, 0.8660254f, 0.5f}),
+            "exact UDS noon fixture");
+
+        inputs.timeOfDay = 1800.0;
+        SolumUdsSunTrajectory.evaluate(inputs, output);
+        require(close(output.timeCycleDegrees, 270.0f)
+            && vectorClose(output.filamentVisualDirection, new float[] {-1.0f, 0.0f, 0.0f}),
+            "exact UDS dusk fixture");
+
+        inputs.timeOfDay = 1200.0;
+        inputs.daylightSavingsTime = true;
+        SolumUdsSunTrajectory.evaluate(inputs, output);
+        require(close(output.timeInRange, 1100.0f) && close(output.timeCycleDegrees, 165.0f),
+            "UDS daylight-savings subtracts exactly 100 time units");
+        inputs.daylightSavingsTime = false;
+
+        inputs.timeOfDay = 600.0;
+        inputs.sunYawDegrees = 90.0;
+        SolumUdsSunTrajectory.evaluate(inputs, output);
+        require(vectorClose(output.filamentVisualDirection, new float[] {0.0f, 0.0f, 1.0f}),
+            "UDS Sun Yaw rotates the world-space orbit");
+        inputs.sunYawDegrees = 0.0;
+
+        inputs.timeOfDay = 900.0;
+        inputs.extendDawnAndDusk = 5.0;
+        SolumUdsSunTrajectory.evaluate(inputs, output);
+        require(close(output.extendDawnDuskZ, 0.2725f),
+            "UDS Extend Dawn and Dusk source formula");
+        inputs.extendDawnAndDusk = 0.0;
+
+        inputs.simulateRealSun = true;
+        SolumUdsSunTrajectory.evaluate(inputs, output);
+        require(SolumUdsSunTrajectory.REAL_SUN_STATUS.equals(output.status)
+            && close(length(output.filamentVisualDirection), 0.0f),
+            "unimplemented real-date Sun branch fails closed without a fake orbit");
+        inputs.simulateRealSun = false;
+        inputs.manuallyPositionSunTarget = true;
+        SolumUdsSunTrajectory.evaluate(inputs, output);
+        require(SolumUdsSunTrajectory.MANUAL_TARGET_STATUS.equals(output.status)
+            && close(length(output.filamentVisualDirection), 0.0f),
+            "unimplemented world-target Sun branch fails closed without a coordinate approximation");
+
+        SolumEnvironmentController controller = new SolumEnvironmentController(env);
+        controller.setCelestialOnlyMode(true);
+        controller.getCelestialControls().applyCloudPreset("Clear");
+        controller.setTime(1200.0f);
+        controller.update(0.0f);
+        SolumEnvironmentLightingState lighting = controller.getState().lighting;
+        require(SolumUdsSunTrajectory.CONTRACT_STATUS.equals(lighting.sunTrajectoryStatus)
+            && close(lighting.sunTimeCycleDegrees, 180.0f)
+            && vectorClose(lighting.sunVisualDirection, new float[] {0.0f, 0.8660254f, 0.5f})
+            && SolumCelestialCoordinateSystem.consistentBodyAndLightDirection(
+                lighting.sunVisualDirection, lighting.sunDirection),
+            "controller publishes exact UDS Sun as the canonical renderer direction");
+        require(close(length(lighting.moonVisualDirection), 1.0f),
+            "exact Sun integration leaves the independent Moon path intact");
     }
 
     private static void testCelestialOnly(SolumEnvironmentPackage env) {
@@ -86,14 +172,30 @@ public final class SolumEnvironmentCoreTest {
         controller.setCelestialOnlyMode(true);
         SolumCelestialControlState controls = controller.getCelestialControls();
         require(controls.oldIblActive && !controls.p63IblEnabled, "old IBL remains active");
-        require(controls.cloudsEnabled && controls.starsEnabled && !controls.precipitationEnabled
-            && !controls.surfaceWeatherEnabled && !controls.lightningEnabled && !controls.proceduralAudioEnabled,
-            "P63.3 enables analytic stars/clouds while deferred weather remains off");
+        require(close(controls.cameraOrbitSensitivity, 0.002f), "camera orbit defaults to one-fifth sensitivity");
+        require(close(controls.dayLengthMinutes, 60.0f), "celestial day length no longer defaults to four minutes");
+        require(controls.cloudsEnabled && controls.starsEnabled && controls.precipitationEnabled
+            && controls.surfaceWeatherEnabled && controls.lightningEnabled
+            && controls.verifiedWeatherAudioEnabled && controls.weatherDrivesSky
+            && !controls.proceduralAudioEnabled,
+            "P63.8 enables integrated weather while generated audio remains off");
         require(controls.analyticSky && controls.analyticSun && controls.analyticMoon
             && controls.analyticStars && controls.analyticClouds && controls.legacyCelestialFallback,
             "analytic feature flags default on with legacy fallback");
+        controls.weatherDrivesSky = false;
+        controller.setSmartWeatherEnabled(false);
+        require(!controls.weatherDrivesSky,
+            "disabling smart weather preserves restored manual cloud ownership");
+        controller.setSmartWeatherEnabled(true);
+        require(controls.weatherDrivesSky && controls.smartWeatherEnabled,
+            "enabling smart weather intentionally owns analytic clouds");
+        controller.takeManualCloudControl();
+        require(!controls.weatherDrivesSky && !controls.smartWeatherEnabled
+            && "manual_cloud_override".equals(controller.getState().smartWeatherDecision),
+            "manual cloud edit has stable ownership and stops procedural overwrite");
         controls.sunLightLux = 4.0f;
         controls.sunVisualBrightness = 1.5f;
+        controls.applyCloudPreset("Clear");
         controller.setTime(1200.0f);
         controller.update(0.1f);
         float sunLux = controller.getState().lighting.sunLux;
@@ -106,6 +208,19 @@ public final class SolumEnvironmentCoreTest {
         require(close(controller.getState().lighting.sunDiskBrightness, 0.25f), "sun visual edit applies independently");
         require(close(controls.sunEmissive, 1.35f) && close(controller.getState().lighting.sunLux, sunLux),
             "sun emissive is independent from sun directional light intensity");
+        require(close(controller.getState().analyticSky.sunEmissiveGain, 1.35f),
+            "sun material emissive gain reaches the analytic sky uniform state");
+        controls.sunEmissive = 5_000.0f;
+        controller.update(0.1f);
+        require(close(controller.getState().analyticSky.sunEmissiveGain, 5_000.0f)
+            && close(controller.getState().lighting.sunLux, sunLux),
+            "5000x material brightness remains finite and independent from direct lux");
+        controls.sunDiscVisibility = 0.0f;
+        controller.update(0.1f);
+        require(close(controller.getState().analyticSky.sunDiscVisibility, 0.0f)
+            && close(controller.getState().analyticSky.sunEmissiveGain, 5_000.0f),
+            "Sun visibility reaches the shader independently from the saved HDR gain control");
+        controls.sunDiscVisibility = 1.0f;
         controls.moonPhaseAngleDegrees = 138.6f;
         controls.moonLightLux = 0.4f;
         controller.setTime(0.0f);
@@ -121,7 +236,12 @@ public final class SolumEnvironmentCoreTest {
         controls.applyCloudPreset("Cloudy");
         controller.update(0.1f);
         require(controls.cloudsEnabled && close(controls.cloudCoverage, 0.82f)
-            && close(controller.getState().clouds.coverage, 0.82f), "cloud preset updates renderer state");
+            && close(controller.getState().clouds.coverage, 0.82f)
+            && "Stratocumulus".equals(controls.cloudType), "cloud preset updates density family and renderer state");
+        controls.moonLightLux = 0.0f;
+        controller.update(0.1f);
+        require(close(controller.getState().analyticSky.moonLightLux, 0.0f),
+            "night cloud Moon input follows direct Moon lux with no constant emission");
         controls.applyCloudPreset("Clear");
         controller.update(0.1f);
         require(!controls.cloudsEnabled && close(controller.getState().clouds.coverage, 0.0f), "Clear preset hides cloud layers");
@@ -139,20 +259,119 @@ public final class SolumEnvironmentCoreTest {
         controls.moonLightLux = Float.POSITIVE_INFINITY;
         controls.exposureCompensation = Float.NEGATIVE_INFINITY;
         controls.sanitize();
-        require(close(controls.sunLightLux, 35_000.0f) && close(controls.sunDiscLuminanceNits, 35_000.0f)
+        require(close(controls.sunLightLux, 25.0f) && close(controls.sunDiscLuminanceNits, 35_000.0f)
             && close(controls.moonLightLux, 0.15f)
             && close(controls.exposureCompensation, 0.0f), "no NaN or Infinity crosses state boundary");
         controls.sunLightLux = 2_000_000.0f; controls.sunDiscLuminanceNits = 2_000_000.0f;
+        controls.sunEmissive = 2_000_000.0f;
         controls.moonLightLux = 999.0f; controls.bloomLikeResponse = 999.0f;
+        controls.lensFlareIntensity = Float.POSITIVE_INFINITY;
+        controls.lensFlareGhostCount = 999.0f;
         controls.sanitize();
         require(close(controls.sunLightLux, SolumAnalyticSkyMaterial.SUN_LUX_SAFETY_MAX)
             && close(controls.sunDiscLuminanceNits, SolumAnalyticSkyMaterial.SUN_LUMINANCE_SAFETY_MAX_NITS)
+            && close(controls.sunEmissive, SolumCelestialControlState.SUN_EMISSIVE_GAIN_SAFETY_MAX)
             && close(controls.moonLightLux, SolumAnalyticSkyMaterial.MOON_LUX_SAFETY_MAX)
-            && close(controls.bloomLikeResponse, 0.12f), "large but finite physical safety ranges");
+            && close(controls.bloomLikeResponse, 0.25f)
+            && close(controls.lensFlareIntensity, 0.55f) && close(controls.lensFlareGhostCount, 8.0f),
+            "large but finite physical and lens-flare safety ranges");
+        controls.applyLensFlarePreset("Cinematic");
+        require(controls.lensFlareEnabled && controls.lensFlareStarburst
+            && controls.lensFlareGhostCount == 6.0f && controls.lensFlareIntensity > 0.5f,
+            "renderer-native lens flare preset control truth");
         testContinuousMoonDirections();
         controls.applyScenarioPreset("Milky Way Night");
         require(close(controls.time, 0.0f) && close(controls.milkyWayIntensity, 0.75f)
-            && !controls.cloudsEnabled, "analytic scenario preset inputs");
+            && !controls.cloudsEnabled && controls.timePaused, "analytic scenario preset inputs");
+        controls.applyScenarioPreset("Aurora Night");
+        controller.update(0.1f);
+        require(controls.auroraEnabled && close(controls.auroraIntensity, 0.90f)
+            && controller.getState().analyticSky.auroraEnabled,
+            "verified UDS-derived Aurora preset reaches analytic uniform state");
+    }
+
+    private static void testIntegratedWeather(SolumEnvironmentPackage env) {
+        SolumEnvironmentController controller = new SolumEnvironmentController(env);
+        controller.setCelestialOnlyMode(true);
+        SolumCelestialControlState controls = controller.getCelestialControls();
+        controller.selectWeather("Clear_Skies", 0.0f);
+        controller.update(0.1f);
+        require(close(controller.getState().precipitation.rain, 0.0f)
+            && close(controller.getState().precipitation.snow, 0.0f),
+            "clear analytic sky cannot precipitate");
+        float finiteCoverage = controller.getState().weather.cloudCoverage;
+        controller.setWeatherValue("cloudCoverage", Float.NaN);
+        controller.setWeatherValue("windDirectionDeg", Float.POSITIVE_INFINITY);
+        require(close(controller.getState().weather.cloudCoverage, finiteCoverage)
+            && Float.isFinite(controller.getState().weather.windDirectionDeg),
+            "weather runtime boundary rejects NaN and Infinity");
+
+        controller.selectWeather("Rain", 2.0f);
+        for (int i = 0; i < 8; i++) controller.update(0.1f);
+        require(controller.getState().precipitation.rain < controller.getState().weather.rain,
+            "rain is suppressed while storm clouds are still building");
+        for (int i = 0; i < 20; i++) controller.update(0.1f);
+        require(controller.getState().precipitation.rain > 0.05f
+            && close(controller.getState().precipitation.snow, 0.0f),
+            "rain starts only after sufficient cloud coverage/density");
+        require(controller.getState().analyticSky.weatherRain > 0.05f,
+            "resolved rain reaches analytic cloud-lighting uniform");
+
+        controller.setCameraPosition(4.6f, 1.6f, 5.5f);
+        for (int i = 0; i < 30; i++) controller.update(0.1f);
+        require(controller.getState().cameraInside && controller.getState().cameraUnderRoof,
+            "celestial diagnostic room is an interior roof volume");
+        require(controller.getState().audio.rainGain < 0.02f,
+            "rain audio is suppressed under the celestial roof");
+
+        controller.setWeatherValue("snow", 0.8f);
+        controller.setWeatherValue("cloudCoverage", 0.9f);
+        controller.setWeatherValue("cloudDensity", 0.9f);
+        controller.update(0.1f);
+        require(controller.getState().precipitation.snow > 0.0f
+            && close(controller.getState().precipitation.rain, 0.0f)
+            && !controller.getState().lightning.enabled,
+            "snow excludes rain and storm lightning");
+
+        controller.selectWeather("Rain_Thunderstorm", 0.0f);
+        controller.setCameraPosition(-5.0f, 1.6f, -5.0f);
+        controller.update(0.1f);
+        controller.triggerLightning();
+        controller.update(0.1f);
+        require(controller.getState().lightning.eventIndex > 0
+            && controller.getState().precipitation.rain > 0.72f,
+            "lightning can trigger only in a dense heavy-rain storm");
+
+        controls.precipitationEnabled = false;
+        controller.update(0.1f);
+        require(close(controller.getState().precipitation.rain, 0.0f),
+            "weather precipitation feature can fail closed independently");
+    }
+
+    private static void testSeasonalWeatherPolicy() {
+        SolumSeasonalWeatherPolicy policy = new SolumSeasonalWeatherPolicy(1597463007);
+        Calendar winter = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+        winter.clear();
+        winter.set(2026, Calendar.JANUARY, 15);
+        for (int index = 0; index < 32; index++) {
+            SolumSeasonalWeatherPolicy.Decision arid = policy.decide(
+                SolumSeasonalWeatherPolicy.ARID, index, winter);
+            require(!arid.presetId.startsWith("Snow"),
+                "arid smart weather never invents seasonal snow");
+            SolumSeasonalWeatherPolicy.Decision tropical = policy.decide(
+                SolumSeasonalWeatherPolicy.TROPICAL, index, winter);
+            require(!tropical.presetId.startsWith("Snow") && !tropical.presetId.startsWith("Sand"),
+                "tropical smart weather remains rain/cloud/clear bounded");
+        }
+        SolumSeasonalWeatherPolicy.Decision north = policy.decide(
+            SolumSeasonalWeatherPolicy.TEMPERATE_NORTH, 4, winter);
+        SolumSeasonalWeatherPolicy.Decision repeated = policy.decide(
+            SolumSeasonalWeatherPolicy.TEMPERATE_NORTH, 4, winter);
+        require(north.presetId.equals(repeated.presetId)
+            && close(north.transitionSeconds, repeated.transitionSeconds)
+            && close(north.holdSeconds, repeated.holdSeconds)
+            && "Winter".equals(north.season),
+            "season/date policy is deterministic for an explicit climate profile");
     }
 
     private static void testContinuousMoonDirections() {
@@ -267,7 +486,8 @@ public final class SolumEnvironmentCoreTest {
         for (String id : IDS) {
             SolumWeatherState state = new SolumWeatherState();
             state.id = id; state.name = id; state.cloudHeight = 15.0f; state.cloudDensity = 0.45f;
-            state.cloudCoverage = id.contains("Clear") ? 0.08f : 0.55f;
+            state.cloudCoverage = id.contains("Clear") ? 0.08f : 0.78f;
+            state.cloudDensity = id.contains("Clear") ? 0.34f : 0.82f;
             state.windDirectionDeg = 180.0f; state.windSpeed = id.contains("Storm") || id.contains("Blizzard") ? 1.0f : 0.28f;
             state.windGust = 0.45f; state.windTurbulence = 0.35f; state.humidity = 0.5f;
             if (id.startsWith("Rain")) { state.rain = id.endsWith("Light") ? 0.28f : 0.82f; state.wetnessTarget = 0.82f; }
@@ -281,6 +501,7 @@ public final class SolumEnvironmentCoreTest {
     }
 
     private static boolean close(float a, float b) { return Math.abs(a - b) < 0.001f; }
+    private static boolean close(float a, float b, float tolerance) { return Math.abs(a - b) < tolerance; }
     private static float length(float[] value) { return (float)Math.sqrt(value[0] * value[0] + value[1] * value[1] + value[2] * value[2]); }
     private static float dot(float[] a, float[] b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
     private static boolean vectorClose(float[] a, float[] b) { return close(a[0], b[0]) && close(a[1], b[1]) && close(a[2], b[2]); }

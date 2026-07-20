@@ -160,20 +160,29 @@ def validate_p63_2a() -> None:
     gltf, binary = read_glb(stage)
     names = {node.get("name", "") for node in gltf.get("nodes", [])}
     required = {
-        "P63_CELESTIAL_STAGE_ROOT", "P63_STAGE_GROUND", "P63_MATTE_SPHERE", "P63_ROUGH_METAL",
+        "P63_CELESTIAL_STAGE_ROOT", "P63_HORIZON_LANDSCAPE", "P63_STAGE_GROUND",
+        "P63_REFLECTION_PAD", "P63_TREE_TRUNK", "P63_TREE_CROWN_TOP",
+        "P63_MATTE_SPHERE", "P63_ROUGH_METAL",
         "P63_POLISHED_METAL", "P63_GLASS", "P63_VERTICAL_WALL", "P63_SHADOW_PILLAR",
         "P63_CAMERA_ORBIT_TARGET", "P63_NORMAL_SCALE_REFERENCE", "P63_ROOF", "P63_INTERIOR_FLOOR",
         "P63_SUN_HALO_OUTER", "P63_SUN_HALO", "P63_SUN_GLOW_INNER", "P63_SUN_DISK",
         "P63_MOON_HALO", "P63_MOON_GLOW_INNER", "P63_MOON_PHASE_00", "P63_MOON_PHASE_64",
         "P63_STAR_S0_G0", "P63_STAR_S4_G7", "P63_CLOUD_0", "P63_CLOUD_11",
+        "P63_RAIN_CELL_0_0", "P63_SNOW_CELL_0_0", "P63_DUST_CELL_0_0",
+        "P63_WET_SURFACE", "P63_PUDDLE", "P63_SNOW_SURFACE", "P63_ICE_SURFACE",
+        "P63_LIGHTNING_BOLT", "P63_FLAG",
     }
     require(required <= names, "P63.2B diagnostic and celestial nodes")
     phase_nodes = sorted(name for name in names if name.startswith("P63_MOON_PHASE_"))
     require(len(phase_nodes) == 65, "65 deterministic single-disc analytic moon phases")
     require("P63_MOON_SHADOW" not in names and "P63_MOON_DISK" not in names,
             "celestial stage has no secondary black occluder or legacy moon disc")
-    prohibited = ("RAIN", "SNOW", "DUST", "PUDDLE", "LIGHTNING")
-    require(not any(any(token in name for token in prohibited) for name in names), "P63.2B excludes precipitation and lightning")
+    require(len([name for name in names if name.startswith("P63_RAIN_CELL_")]) == 25,
+            "celestial stage has 25 camera-local world-space rain cells")
+    require(len([name for name in names if name.startswith("P63_SNOW_CELL_")]) == 25,
+            "celestial stage has 25 camera-local world-space snow cells")
+    require(len([name for name in names if name.startswith("P63_DUST_CELL_")]) == 25,
+            "celestial stage has 25 camera-local world-space dust cells")
     require(len([name for name in names if name.startswith("P63_STAR_S")]) == 40,
             "five non-square star size levels across eight density groups")
     require(len([name for name in names if name.startswith("P63_CLOUD_")]) == 12,
@@ -187,7 +196,8 @@ def validate_p63_2a() -> None:
     require(all("normalTexture" not in material for material in phase_materials), "moon normal remains unbound without tangent path")
     require("emissiveTexture" in materials["P63_2A_SunDisk"] and all("emissiveTexture" in material for material in phase_materials),
             "sun and moon emissive is texture-masked and preserves disc/phase falloff")
-    for node_name in ("P63_STAGE_GROUND", "P63_INTERIOR_FLOOR", "P63_MATTE_SPHERE", "P63_ROUGH_METAL",
+    for node_name in ("P63_HORIZON_LANDSCAPE", "P63_STAGE_GROUND", "P63_INTERIOR_FLOOR",
+                      "P63_MATTE_SPHERE", "P63_ROUGH_METAL",
                       "P63_POLISHED_METAL", "P63_GLASS", "P63_VERTICAL_WALL", "P63_SHADOW_PILLAR", "P63_ROOF"):
         validate_node_winding(gltf, binary, node_name)
 
@@ -241,6 +251,8 @@ def validate_p63_2a() -> None:
     activity = ACTIVITY.read_text(encoding="utf-8")
     adapter = (JAVA / "SolumFilamentEnvironmentAdapter.java").read_text(encoding="utf-8")
     coordinates = (JAVA / "SolumCelestialCoordinateSystem.java").read_text(encoding="utf-8")
+    uds_sun = (JAVA / "SolumUdsSunTrajectory.java").read_text(encoding="utf-8")
+    controller_source = (JAVA / "SolumEnvironmentController.java").read_text(encoding="utf-8")
     analytic_sky = (JAVA / "SolumAnalyticSky.java").read_text(encoding="utf-8")
     audio_source = (JAVA / "SolumEnvironmentAudioSystem.java").read_text(encoding="utf-8")
     require("intensity * 30000.0f * blend" not in activity, "bad indirect-light multiplier absent")
@@ -254,16 +266,26 @@ def validate_p63_2a() -> None:
     controls = (JAVA / "SolumCelestialControlState.java").read_text(encoding="utf-8")
     require('applyP63CameraPreset("Overview")' in activity and "DEFAULT_CAMERA_ZOOM_SENSITIVITY = 0.021f" in controls,
             "diagnostic camera framing and 1.5x zoom")
-    require("P63_CAMERA_MIN_DISTANCE = 2.0f" in activity and "P63_CAMERA_MAX_DISTANCE = 45.0f" in activity
-            and "applyP63CameraBoundsAtGestureEnd()" in activity, "camera gesture distance and ground-plane bounds")
+    require("P63_CAMERA_MIN_DISTANCE = 2.8f" in activity and "P63_CAMERA_MAX_DISTANCE = 70.0f" in activity
+            and "P63_CAMERA_TARGET_MAX_Y = 4.5f" in activity
+            and "P63_CAMERA_TARGET_MIN_Z = -5.0f" in activity
+            and "correctedTargetX = clamp" in activity and "correctedTargetZ = clamp" in activity
+            and "applyP63CameraBoundsAtGestureEnd()" in activity,
+            "camera distance and finite stage-target bounds")
     require("GestureDetector" not in activity and "TWO_FINGER_PENDING" in gesture and "changesDistance()" in gesture,
             "single gesture owner separates orbit pan and pinch")
     update_loop = activity[activity.index("private void updateP63Environment"):activity.index("private void applyP63PreparedIbl")]
     require("applyP63CameraBoundsAtGestureEnd" not in update_loop, "camera manipulator is never replaced mid-gesture/per-frame")
     require("positionRelativeToCamera" in coordinates and "cameraX + bodyDirection[0] * safeRadius" in coordinates, "camera-relative celestial disks")
     require("consistentBodyAndLightDirection" in coordinates and "sunVisualDirection" in adapter, "single canonical visual/light direction")
+    require("VERIFIED_UDS_DEFAULT_MANUAL_SUN_TRAJECTORY" in uds_sun
+            and "NOT_IMPLEMENTED_FAIL_CLOSED" in uds_sun
+            and "SolumUdsSunTrajectory.evaluate" in controller_source
+            and "sunTrajectoryValid" in controller_source,
+            "verified UDS manual Sun trajectory owns P63 direction and unsupported branches fail closed")
     require("SAMPLER_CUBEMAP" in adapter and "SRGB8_A8" in adapter and "linearColor" in analytic_sky, "camera-inside analytic full sky cubemap")
-    require("P63_SUN_HALO" in adapter and "P63_MOON_HALO" in adapter and "PROTOTYPE_HOOK_ONLY" in activity, "safe halo/bloom and shafts hook")
+    require("P63_SUN_HALO" in adapter and "P63_MOON_HALO" in adapter
+            and "SKY_ONLY_CLOUD_TRANSMITTANCE" in activity, "safe halo/bloom and analytic sky shafts hook")
     celestial_geometry = adapter[adapter.index("private void applyCelestialGeometry"):adapter.index("private void applyCloudGeometry")]
     celestial_only = celestial_geometry[:celestial_geometry.index("if (controller.isCelestialOnlyMode())") + 1200]
     require("MOON_PHASE_NAMES" in celestial_only and "setLayerVisible" in celestial_only,
@@ -272,7 +294,7 @@ def validate_p63_2a() -> None:
     phase_function = generator_source[generator_source.index("def moon_phase_png"):generator_source.index("def sun_disc_png")]
     require(not any(token in phase_function.lower() for token in ("bayer", "checker", "x %", "y %", "random.")),
             "no dither/stipple moon phase branch")
-    for section in ("quick", "atmosphere", "sun", "moon", "stars", "clouds", "camera", "postfx", "debug"):
+    for section in ("quick", "atmosphere", "sun", "moon", "stars", "clouds", "weather", "camera", "postfx", "debug"):
         require(f'{{"{section}",' in activity and f'"p63.tab.content." + key' in activity, f"Environment tab: {section}")
     require("P63HsvColorPickerDialog.show" in activity and "HueSaturationWheelView" in picker and "ValueBarView" in picker,
             "Sun/Moon/Stars/Clouds circular HSV picker with value control")
@@ -283,6 +305,10 @@ def validate_p63_2a() -> None:
     require("applyCloudPreset" in controls and "updateCelestialClouds" in (JAVA / "SolumEnvironmentController.java").read_text(encoding="utf-8")
             and "P63_2B_CloudLayer" in generator_source, "layered cloud controls and presets are renderer-backed")
     require("setLooping(false)" in audio_source and "makeLoop" not in audio_source and "procedural" in audio_source, "verified playback is non-looped and non-procedural")
+    require("setAutomaticWeatherEnabled" in audio_source
+            and "VERIFIED_NON_LOOPING_SINGLE_VOICE" in audio_source
+            and "preferredWeatherRole" in audio_source,
+            "verified UDS WAV weather playback is automatic without synthetic loops")
     android_test = ROOT / "apps/engine/src/androidTest/java/com/solum/engine/P63CelestialControlsViewTest.java"
     require(android_test.is_file() and "Activity recreation restores shared state" in android_test.read_text(encoding="utf-8")
             and "tabs switch correctly" in android_test.read_text(encoding="utf-8"), "real Android View tab/color test added")
@@ -308,61 +334,148 @@ def validate_p63_3() -> None:
     controller = controller_path.read_text(encoding="utf-8")
     adapter = adapter_path.read_text(encoding="utf-8")
     activity = ACTIVITY.read_text(encoding="utf-8")
+    generator_source = (ROOT / "tools/generate_p63_environment_assets.py").read_text(encoding="utf-8")
 
     require("vertexDomain : device" in material and "getWorldFromClipMatrix()" in material,
             "device-domain full-screen analytic sky")
+    require("VertexBuffer.AttributeType.FLOAT3" in renderer
+            and ".put(-1.0f).put(-1.0f).put(1.0f)" in renderer
+            and "implicit Z of 0.0" in renderer,
+            "reverse-Z sky triangle is pinned to the far plane and cannot cut opaque stage objects")
     require("analyticAtmosphere" in material and "airMass" in material and "rayleighPhase" in material
             and "hgPhase" in material and "ozoneScale" in material, "Rayleigh/Mie/ozone/optical-air-mass material")
     require("analyticSun" in material and "sunDiscLuminanceNits" in controls and "sunLightLux" in controls,
             "analytic Sun visual luminance is separate from direct lux")
-    require("limb" in material and "fwidth(distance)" in material and "sunHaloFalloff" in controls,
-            "Sun limb AA and finite halo controls")
-    require("safeVisualLuminance" in material and "log2(1.0 + max(0.0, nits))" in material
-            and "vec3(64.0)" in material, "finite HDR display mapping prevents white-frame overflow")
+    require("sunEmissiveGain" in material and "sky.sunEmissiveGain = controls.sunEmissive" in controller
+            and "Sun Material Brightness" in activity and "5_000.0f" in activity,
+            "Sun material brightness has logarithmic 5000x UI and is independent from direct lux")
+    require("acos(clamp(dot(viewDirection, lightDirection)" in material
+            and "udsSoftness" in material and "3.8 / 0.55" in material
+            and "haloWindow" not in material,
+            "exact UDS Sun disk softness replaces painted concentric halo layers")
+    require("glowAlpha *= glowAlpha * moonFacing" in material
+            and "moonTextureIntensity = mix(0.3, 0.6" in material
+            and "safePow(max(0.0, geometricNdotL), 1.6)" in material,
+            "exact UDS Moon glow, day/night texture intensity and phase contrast")
+    require("safeVisualLuminance" in material and "safeSunMaterialBrightness" in material
+            and "log2(1.0 + max(0.0, nits))" in material and "clamp(gain, 0.0, 10000.0)" in material
+            and "vec3(64.0)" in material, "finite HDR shoulder prevents white-frame overflow")
+    require("sunDiscVisibility" in material and "sunDiscVisibility" in controls
+            and "Sun disc visibility" in activity and "* discVisibility" in material
+            and "controls.sunDiscVisibility > 0.001f" in activity,
+            "Sun visibility consistently gates disc, halo and native lens flare")
     material_helpers = (JAVA / "SolumAnalyticSkyMaterial.java").read_text(encoding="utf-8")
     require("SUN_LUMINANCE_SAFETY_MAX_NITS = 1_000_000.0f" in material_helpers
             and "Float.isNaN(value) || Float.isInfinite(value)" in controls, "large finite Sun ceiling")
 
     require("moonToSunDirection" in state and "moonToSunDirection" in controller,
             "continuous Moon direction is state/uniform driven")
-    require("normalPerpendicular" in material and "smoothstep(-terminatorWidth, terminatorWidth, nDotL)" in material
-            and "moonEarthshine" in controls, "spherical Moon normal, smooth terminator and earthshine")
-    require("materialParams_moonAlbedo" in material and "materialParams_moonNormal" in material,
-            "verified Moon albedo and normal are sampled")
+    require("normalPerpendicular" in material and "smoothstep(-terminatorWidth, terminatorWidth, geometricNdotL)" in material
+            and "earthPhase" in material and "earthshineStrength" in material and "moonEarthshine" in controls,
+            "spherical Moon normal, smooth terminator and phase-correct earthshine")
+    require("materialParams.moon0.z * (0.005 / 0.018)" in material
+            and "haloPhase = sqrt(illuminatedFraction)" in material,
+            "Moon dark side maps the saved control to exact UDS 0.005 and cannot brighten the halo")
+    require("craterRelief" in material and "geometricNdotL" in material
+            and "dot(perturbed, moonToSun)" in material,
+            "Moon crater normal cannot warp the geometric phase terminator")
+    require("materialParams_moonAlbedo" in material and "materialParams_moonNormal" in material
+            and "materialParams_moonNormal, uv).xzy" in material,
+            "exact 1K UDS Moon albedo and packed RBG phase normal are sampled")
     require("analytic_continuous_uniform" in adapter and "hideLegacyCelestialGeometry" in adapter,
             "analytic Moon has no phase-node recreation or secondary occluder")
 
-    require("analyticStars" in material and "proceduralStar" in material and "fwidth(direction.x)" in material,
-            "radial subpixel stars with deterministic fallback")
-    require("materialParams_realStars" in material and "materialParams_tilingStars" in material
-            and "1.0 - smoothstep(-0.18, 0.055, lightDirection.y)" in material,
-            "UDS stars and continuous day/night fade")
-    require("(1.0 - cloudOpacity) * (1.0 - moonMask)" in material,
+    require("analyticStars" in material and "udsTilingStarUvs" in material
+            and "topRadius" in material and "bottomRadius" in material
+            and "* topRadius * 3.0" in material and "* bottomRadius * 3.0" in material,
+            "exact UDS Tiling_Stars_UVs top/bottom world-direction projection")
+    require("name : tilingStars" in material and "name : starsNoise" in material
+            and "name : realStars" not in material and "materialParams.starTextureAvailable < 0.5" in material
+            and "1.0 - smoothstep(-0.20, 0.070, lightDirection.y)" in material,
+            "exact UDS star payload is required and fades continuously with daylight")
+    require("materialParams_tilingStars" in material and "materialParams_starsNoise" in material
+            and "hash43" not in material and "gridFrequency" not in material,
+            "failed procedural grid is removed from visible runtime sampling")
+    require("milkySignal" not in material and "stars + milky" not in material,
+            "unverified Milky Way semantics remain unbound")
+    require("cloudOcclusion * (1.0 - moonMask)" in material,
             "star cloud and Moon occlusion hooks")
 
     require("cloudShellLayer" in material and "raySphere" in material and "baseCloud" in material
             and "highCloud" in material, "camera-centered base/cirrus spherical cloud layers")
-    require("1.0 - exp(-density" in material and "hgPhase(cosine, 0.88)" in material
-            and "sunTransmittance" in material, "Beer-Lambert and forward-scattering cloud lighting")
+    require("viewTransmittanceCloud *= exp(-sampleDensity" in material
+            and "hgPhase(cosine, 0.88)" in material and "sunTransmittance" in material,
+            "Beer-Lambert and forward-scattering cloud lighting")
     require("materialParams.cloudArtTint" in material and "lighting * materialParams.cloud2.z" in material,
             "Cloud Art Tint is a multiplier after physical lighting")
-    require("High Experimental" in controls and "quality > 1.5" in material and "raymarch" not in material.lower(),
-            "Low/Medium/High shell tiers without default raymarch")
+    require("sampler3d, name : cloudFormationVolume" in material
+            and "sampler3d, name : cloudErosionVolume" in material and "udsCloudDensity" in material
+            and "sampleIndex < 12" in material and "sampleCount = quality > 1.5 ? 12.0" in material,
+            "exact UDS volume raymarch uses bounded 5/8/12 quality tiers")
+    require("materialParams_cloudFormationVolume" in material
+            and "materialParams_cloudErosionVolume" in material
+            and "materialParams_cloudProfile" in material
+            and "safePow(profile.g, 3.0)" in material and "finalDensity / 3.0" in material
+            and "cloudTextureAvailable" in material,
+            "UDS FormationVolume, separate 3D_Cells erosion and Cloud_Profile bind fail-closed")
+    require("localPosition.xz / 12.0" in material and "coverage03" in material
+            and "finalDensity / 6.5" in material and "taperedCoverage" in material
+            and "formationRgb.b * formationRgb.b" in material,
+            "exact UDS 12 km formation scale and conservative-density coverage/profile graph")
+    require("safePow(erosionRgb.r, 3.0)" in material
+            and "fract(erosionUv * 2.0 + erosionRgb)" in material
+            and "fract(erosionUv * 4.0 + erosionRgb)" in material
+            and "* 0.2 * erosionRgb.b" in material
+            and "* 10.0 * materialParams.cloud0.y" in material,
+            "exact UDS volumetric MPC defaults drive erosion, HF detail and extinction scale")
+    require("opacity *= softEdge" not in material,
+            "cloud opacity is not suppressed after Beer-Lambert integration")
+    require("materialParams.celestialLight.y" in material and "moonAmbient" not in material
+            and "coreDarkening" in material and "ambientFloor" in material and "cloudType" in material,
+            "night cloud lighting follows Moon lux and density instead of constant blue emission")
+    require("darkestCore = mix(0.86, 0.64" in material and "moonForward = min(1.0" in material,
+            "dense clouds keep bounded multiple-scattering fill without Moon-driven glow")
+    require("High Experimental" in controls and "quality > 1.5" in material
+            and "texture(materialParams_cloudErosionVolume" in material,
+            "Low/Medium/High exact UDS volume raymarch tiers")
+    require("mirrorRepeat" in material and "mirrorRepeat(uv1)" in material
+            and "setAuroraColor(0.20f, 1.0f, 0.55f)" in controls
+            and "directionPlane = viewDirection.xz" in material
+            and "azimuth * 6.0" in material and "azimuth * 11.0" in material,
+            "Aurora uses continuous XZ panners and periodic azimuth harmonics without a sphere seam")
+    require("materialParams.cloud1.w * 0.02" in material and "materialParams.cloud2.x * 0.01" in material
+            and "materialParams.weather0.w" in material,
+            "UDS volume masses use exact movement/formation scales and receive bounded lightning illumination")
+    require("UDS_CLOUD_BOTTOM_ALTITUDE_KM = 0.60f" in controls
+            and "UDS_CLOUD_LAYER_HEIGHT_KM = 0.70f" in controls
+            and "* (0.5f + clamp(weather.cloudThickness))" in controller,
+            "exact UDS cloud bottom/layer defaults drive manual presets and procedural weather")
+    require("takeManualCloudControl" in controller and "beginP63ManualCloudEdit" in activity
+            and "if (enabled) celestialControls.weatherDrivesSky = true" in controller,
+            "manual cloud sliders persist without per-frame weather or restore overwrite")
+    require("applyCelestialOldIblScale" in adapter and "oldIblIntensityScale" in state
+            and "clamp(scale, 0.003f, 1.0f)" in activity
+            and "STATIC_PREPARED_OR_USER_IBL_SCALED_NOT_CAPTURED_FROM_ANALYTIC_SKY" in state,
+            "old IBL stays active but follows bounded day/night/cloud intensity without dynamic capture")
+    require('P63_HORIZON_LANDSCAPE", horizon_mesh, (0, -0.18, -2), (140, 1, 140)' in generator_source,
+            "diagnostic landscape is lowered to avoid coplanar floor artifacts")
 
     require(renderer.count("new Material.Builder()") == 1 and renderer.count("new RenderableManager.Builder(1)") == 1,
             "one permanent material and one sky renderable")
     uniform_method = renderer[renderer.index("private void applyUniforms"):renderer.index("private void setActive")]
     require("uniformUpdateCount++" in renderer and "materialRebuildCount" in renderer
             and "new Texture.Builder" not in uniform_method, "uniform-only hot path without texture/material rebuild")
-    require("legacy_fallback_material_unavailable" in renderer and "legacyCelestialFallback" in adapter,
-            "automatic legacy fallback on material failure")
-    require("state.clouds.visibleGroups = controls.cloudsEnabled ? 12 : 0" in adapter,
-            "material failure restores legacy cloud fallback budget")
+    require("safe_color_fallback_material_unavailable" in renderer and "legacyCelestialFallback" in adapter,
+            "automatic safe color fallback on material failure")
+    require("state.clouds.visibleGroups = 0" in adapter
+            and "SAFE_COLOR_SKY_FALLBACK_NO_CELESTIAL_GEOMETRY" in adapter,
+            "material failure cannot restore rejected celestial geometry")
     require("for (String[] sizeNames : STAR_VARIANT_NAMES)" in adapter and "for (String name : CLOUD_NAMES)" in adapter,
             "legacy star/cloud geometry is explicitly hidden in analytic mode")
 
     manifest = json.loads((P63 / "P63_3_SKY_TRUTH_MANIFEST.json").read_text(encoding="utf-8"))
-    allowed = {"UDS_VERIFIED", "UDS_DERIVED_MAPPING", "FILAMENT_ADAPTED", "SOLUM_NATIVE", "UNKNOWN", "UNAVAILABLE"}
+    allowed = {"UDS_VERIFIED", "UDS_VERIFIED_TEXTURESOURCE", "UDS_DERIVED_MAPPING",
+               "FILAMENT_ADAPTED", "SOLUM_NATIVE", "REMOVED_FAILED_DEVICE_QA", "UNKNOWN", "UNAVAILABLE"}
     require(manifest["upstream"]["commit"] == "579991668ebeadceece05d79b62f21964028553f", "pinned Filament upstream")
     require(all(item["provenance"] in allowed for item in manifest["resources"]), "manifest provenance vocabulary")
     for item in manifest["resources"]:
@@ -371,17 +484,42 @@ def validate_p63_3() -> None:
         if resource_path and resource_path.startswith("apps/") and expected_hash:
             require(sha256(ROOT / resource_path) == expected_hash, f"manifest hash: {resource_path}")
     hashes = {item.get("sha256") for item in manifest["resources"]}
-    require({"8a8ff79b0d06946bfd09efcada50cc4a9891076b7f2a00b49fa8e182bbb6e375",
-             "1b0e0306afc8626bdf1e06f809c6f3fe01b3cb997234ca2653a5ef89af9a9998",
-             "feb52ae23909cd4a9faf1f9384d1661711c5dedc07dde31e4dda444e7745f69c",
-             "841f09169dc0e955a580c0faef8b1a62372d06e5340b701b757a64f51242e8c5"} <= hashes,
-            "verified Moon/star hashes")
-    require("MOON_ALBEDO_PATHS" in resources and "starTextureAvailable = 1.0f" in resources,
-            "verified private resources bind with procedural fallback")
+    require({"c6daee4dbef46f3386e8cbfd072a2a147c4ad6ee8e63079e984d66174036fdbc",
+             "b572f2a159cdde1ff46ce0155532335d3b34af57e7975885b50773fd72c8c523",
+             "79806790a7cfa957fbc8b047877bd839562f00efd51f4131085a4a5d8f04003f",
+             "d6880501884cd0aa2c71e0f71833fc224af67d25a340263826d444ccd4921b4f",
+             "f72817da26cf693302ca4fa6ca1df7e8598e24bca1dc3b39da8347b8dc955a37",
+             "09704806f7f221e90e172c97d5ba6981ae32630d2fc2cb64e9c788fe3a252f7c",
+             "d945e178d5ca7c9ee5fffc9d014b9fe8c463176dc419e55da0c813db1e1c5847",
+             "63615c2368e1357b39ee4bb1d1b5af6f0b294fac5d3e9569c5c256996d5106f1"} <= hashes,
+            "verified Moon, stars and exact UDS volumetric cloud hashes")
+    require("MOON_ALBEDO_PATHS" in resources
+            and "UDS_EXACT_TEXTURESOURCE_MOON_COLOR_1024+MOON_PHASENORMAL_1024_RBG" in resources
+            and "LoadedTexture moonColorLoaded = loadFirst(assets, MOON_ALBEDO_PATHS, true, true" in resources
+            and "LoadedTexture moonNormalLoaded = loadFirst(assets, MOON_NORMAL_PATHS, false, true" in resources
+            and "UDS_EXACT_TEXTURE_PAYLOADS+PARTIAL_TILING_STARS_UVS_3_0_VS_UDS_2_5" in resources
+            and "DISABLED_MISSING_EXACT_UDS_STAR_PAYLOAD" in resources
+            and "tilingStarsLoaded.path != null && starsNoiseLoaded.path != null" in resources,
+            "exact UDS star payloads bind fail-closed and report partial UV mapping")
+    require("CLOUD_FORMATION_VOLUME_PATHS" in resources and "CLOUD_EROSION_VOLUME_PATHS" in resources
+            and "CLOUD_PROFILE_PATHS" in resources
+            and "Texture.Sampler.SAMPLER_3D" in resources
+            and "uds_cloud_volume_npy_contract_mismatch" in resources
+            and "VolumeSpec.FORMATION" in resources and "VolumeSpec.EROSION" in resources
+            and "cloudTextureAvailable = 1.0f" in resources
+            and "DISABLED_MISSING_EXACT_UDS_CLOUD_PAYLOAD" in resources,
+            "exact UDS cloud volume/profile bind with strict NPY validation and no fallback")
+    require("AURORA_SHAPE_PATHS" in resources and "auroraTextureAvailable = 1.0f" in resources
+            and "ParticleClouds.png" in resources, "verified UDS-derived Aurora mobile resource")
+    require("TextureSampler.MinFilter.LINEAR" in resources
+            and "TextureSampler.MinFilter.LINEAR_MIPMAP_LINEAR" in resources
+            and "GEN_MIPMAPPABLE" in resources and "generateMipmaps(engine)" in resources,
+            "exact 2D star and auxiliary textures retain mip filtering")
 
     presets = json.loads((P63 / "P63_3_SKY_PRESETS.json").read_text(encoding="utf-8"))["presets"]
-    require(len(presets) == 14 and all({"inputs", "expectedVisibleResult", "quality", "provenance", "cameraPreset"} <= item.keys()
-                                       for item in presets), "14 complete sky verification presets")
+    require(len(presets) == 15 and all({"inputs", "expectedVisibleResult", "quality", "provenance", "cameraPreset"} <= item.keys()
+                                       for item in presets), "15 complete sky verification presets")
+    require(any(item["id"] == "Aurora Night" for item in presets), "Aurora verification preset")
     require('"atmosphere", "Atmosphere"' in activity and '"p63.log.slider." + key' in activity
             and "numeric safety=0.." in activity, "Atmosphere tab and log/exact physical controls")
     for key in ("sun", "moon", "stars", "clouds"):
@@ -389,12 +527,54 @@ def validate_p63_3() -> None:
     require("active sky renderer=" in activity and " · rebuild=" in activity
             and "uniform updates=" in activity and "dynamic IBL=" in activity,
             "analytic debug counters and IBL truth")
+    require("Capture Visual QA" in activity and "debugGetNextFrameCallback" in activity
+            and "solum.p63_9.weather_recovery_qa" in activity
+            and '"controlState"' in activity and '"captureTruthGate"' in activity
+            and '"starPayloadReady"' in activity,
+            "actual Filament frame plus full sanitized renderer/control truth capture")
+    require("FILAMENT_NATIVE_HDR_SOURCE" in activity and "bloom.lensFlare = nativeFlare" in activity
+            and "bloom.starburst = nativeFlare" in activity, "Filament native HDR lens flare and Sun Star")
+    require("REMOVED_NO_CANVAS_OVERLAY" in activity and "SunGlareOverlayView" not in activity
+            and "RadialGradient" not in activity,
+            "legacy constant Canvas glare is removed")
+    require("getForwardVector" in activity and "lensFlareInCameraView" in activity
+            and "armed_waiting_for_visible_sun" in activity, "lens flare is camera-angle gated and QA-visible")
+    require("Sky crepuscular scattering uses cloud transmittance" in activity
+            and "not depth-aware terrain volumetrics" in activity and "No radial Canvas overlay" in activity,
+            "sky-only crepuscular scattering is accurately classified")
+    require("PREF_P63_USER_SNAPSHOT" in activity and "Save Sky Settings" in activity
+            and "Set exact clock" in activity and "Day length" in activity, "manual Save plus exact clock/day length controls")
+    require("skyHemisphere" in material and "horizonLift" not in material
+            and "viewDirection.y < 0.0" in material,
+            "below-horizon rays are rejected without hiding valid horizon cloud occlusion")
+    require('tabButton("Sky / IBL"' not in activity and "tab == WorkspaceTab.IBL" in activity
+            and "return WorkspaceTab.ENVIRONMENT" in activity,
+            "legacy IBL tab is hidden and old saved selection migrates to Environment")
+    require("stagePath = P63_2A_STAGE_ASSET_PATH" in activity and "P63_HORIZON_LANDSCAPE" in generator_source
+            and "P63_REFLECTION_PAD" in generator_source and "P63_TREE_CROWN_TOP" in generator_source,
+            "deterministic public diagnostic stage contains landscape, reflection pad and wind tree")
     for flag in ("analyticSky", "analyticSun", "analyticMoon", "analyticStars", "analyticClouds", "legacyCelestialFallback"):
         require(flag in controls and flag in activity, f"runtime feature flag: {flag}")
+    for flag in ("precipitationEnabled", "surfaceWeatherEnabled", "lightningEnabled",
+                 "verifiedWeatherAudioEnabled", "weatherDrivesSky", "smartWeatherEnabled",
+                 "climateProfile"):
+        require(flag in controls and flag in activity, f"integrated weather feature flag: {flag}")
+    require('"weather", "Weather"' in activity and "buildP63WeatherTab" in activity
+            and "Weather transition seconds" in activity and "Trigger valid storm lightning" in activity
+            and "Season/date smart weather" in activity,
+            "separate Weather tab exposes transitions, smart policy and physically gated storm controls")
+    require("cloudGate = smoothStep" in controller and "state.precipitation.rain>=0.72f" in controller
+            and "state.cameraInside||state.cameraUnderRoof?0.0f:1.0f" in controller,
+            "rain/snow cloud gate, lightning gate and shelter attenuation are runtime-backed")
 
     require("intensity * 30000.0f * blend" not in activity, "forbidden IndirectLight multiplier absent")
     require("float rawIntensity = intensity * blend" in activity and "clamp(rawIntensity, 0.0f, 2.0f)" in activity,
             "IndirectLight 0..2 clamp unchanged")
+    vfx_contract = json.loads((P63 / "P63_9_UDS_WEATHER_VFX_CONTRACT.json").read_text(encoding="utf-8"))
+    require(len(vfx_contract["systems"]) == 7
+            and vfx_contract["runtime"]["precipitationVisuals"] == "UNSUPPORTED_FAIL_CLOSED"
+            and vfx_contract["runtime"]["lightningTransientLight"] == "ACTIVE",
+            "UDS weather VFX contract separates verified state/light/audio from unsupported renderers")
     require("getWaterColor" not in material and "waterControl" not in material
             and "dynamicIbl" not in material,
             "water and dynamic IBL excluded from material")
@@ -409,7 +589,12 @@ def validate_ibl_assets() -> None:
         require(data.startswith(b"#?RADIANCE\n"), f"{slot} Radiance HDR header")
         require(b"-Y 64 +X 128" in data[:512], f"{slot} prepared HDR dimensions")
     captures = json.loads((P63 / "P63_CAPTURE_SCENARIOS.json").read_text(encoding="utf-8"))
-    require(len(captures["scenarios"]) >= 10 and captures["deviceVerificationRequired"], "capture-ready visual QA scenarios")
+    contract = captures["captureContract"]
+    require(len(captures["scenarios"]) >= 10 and captures["deviceVerificationRequired"]
+            and contract["scenarioLockRequired"]
+            and "captureTruthGate" in contract["requiredState"]
+            and "FILAMENT_V1_71_4_FIXED_WORLD_GRID_PROCEDURAL" in contract["rejectStarSources"],
+            "capture-ready scenarios reject stale procedural-star and hidden-Sun flare truth")
 
 
 def validate_ui_preservation() -> None:
@@ -440,7 +625,10 @@ def validate_runtime_wiring() -> None:
     require("LightManager.Type.POINT" in adapter and "lightningLumens" in adapter, "lightning uses transient Filament point light")
     require("setMaterial4(\"P63_WET_SURFACE\"" in adapter and "P63_PUDDLE" in adapter and "P63_ICE_SURFACE" in adapter, "surface material response hooks")
     require("applyPreparedIbl" in adapter and "iblRevision" in adapter, "thresholded prepared IBL hook")
-    require("blocksPrecipitation" in adapter and "P63_RAIN_CELL" in adapter and "P63_SNOW_CELL" in adapter, "world-space precipitation occlusion hook")
+    require("old rods, diamonds and orange dust meshes" in adapter
+            and 'setTransform(RAIN_NAMES[index], 0, 0, 0, 0.001f' in adapter
+            and 'setTransform("P63_LIGHTNING_BOLT", 0, 0, 0, 0.001f' in adapter,
+            "unverified precipitation/ripple/bolt geometry fails closed")
     require("new float[16]" not in adapter[adapter.index("private void setTransform"):], "no per-transform hot-path matrix allocation")
 
 
@@ -479,7 +667,7 @@ def main() -> None:
     validate_runtime_wiring()
     compile_and_run_core()
     run_legacy_environment_regression()
-    print("P63_ENVIRONMENT_TESTS=PASS p63_3=true presets=14 analyticSky=true legacyFallback=true oldIbl=true dynamicIbl=false")
+    print("P63_ENVIRONMENT_TESTS=PASS p63_9=true presets=15 weatherPresets=13 aurora=true smartWeather=true vfxFailClosed=true analyticSky=true oldIblScaled=true dynamicIbl=false")
 
 
 if __name__ == "__main__":

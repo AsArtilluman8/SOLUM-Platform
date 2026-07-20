@@ -154,6 +154,153 @@ REQUIRED_TRAJECTORY_PARAMETERS = {
     "Year",
 }
 
+SOURCE_RESOLVED_TRAJECTORY_INPUTS = {
+    "Daylight Savings Time": {
+        "type": "BoolProperty",
+        "default": False,
+        "range": {"allowedValues": [False, True]},
+        "units": "BOOLEAN_DIMENSIONLESS",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FLAG",
+    },
+    "Manually Position Sun Target": {
+        "type": "BoolProperty",
+        "default": False,
+        "range": {"allowedValues": [False, True]},
+        "units": "BOOLEAN_DIMENSIONLESS",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FLAG",
+    },
+    "North Yaw": {
+        "type": "DoubleProperty",
+        "default": 0.0,
+        "range": {"uiMin": 0.0, "uiMax": 360.0},
+        "units": "Degrees",
+        "coordinateSpace": "UNREAL_ENGINE_WORLD_YAW_OFFSET_ABOUT_POSITIVE_Z",
+    },
+    "Simulate Real Sun": {
+        "type": "BoolProperty",
+        "default": False,
+        "range": {"allowedValues": [False, True]},
+        "units": "BOOLEAN_DIMENSIONLESS",
+        "coordinateSpace": "NOT_APPLICABLE_SCALAR_FLAG",
+    },
+    "Time Zone": {
+        "type": "DoubleProperty",
+        "default": 0.0,
+        "range": {"uiMin": -12.0, "uiMax": 12.0},
+        "units": "Hours",
+        "coordinateSpace": "NOT_APPLICABLE_TEMPORAL_OFFSET",
+    },
+}
+
+SUN_RUNTIME_STAGE1_PARAMETERS = (
+    "Apply Flat Cloudiness",
+    "Cached Directional Inscattering Multiplier",
+    "Cached Directional Light Dimming",
+    "Cached Inverted Global Occlusion",
+    "Cached Solar Eclipse Tint",
+    "Cached Sun Vector",
+    "Cloud Paint Can Subtract Coverage",
+    "Current Scene Lighting Brightness Scale",
+    "Directional Balance",
+    "Directional Intensity Curve",
+    "Directional Light Scattering Curve",
+    "Eclipse Percent",
+    "Fade Down High Sun Light Intensity Below Horizon",
+    "Fog",
+    "Local Cloud Coverage",
+    "Saturation",
+    "Scale Sun Radius as it Nears Horizon",
+    "Sun Disk Color Curve",
+    "Sun Disk Intensity",
+    "Sun Disk Tint",
+    "Sun Light Color",
+    "Sun Light Intensity",
+    "Sun Light Intensity Multiplier in Interiors",
+    "Sun Scale",
+    "Sun Softness",
+    "Sun World Rotation",
+    "Using Sky Atmosphere",
+    "Using Space Mode",
+)
+
+SUN_RUNTIME_STAGE2_PARAMETERS = (
+    "Calendar",
+    "Day",
+    "Month",
+    "Year",
+    "Time of Day",
+    "Time Zone",
+    "Daylight Savings Time",
+    "Use System Time",
+    "Latitude",
+    "Longitude",
+    "North Yaw",
+    "Compensate Simulation for Flat Fog Horizon",
+    "Manually Position Sun Target",
+    "Sun Target",
+    "Simulate Real Sun",
+    "Simulate Real Moon",
+    "Sun Pitch",
+    "Sun Yaw",
+    "Sun Vertical Offset",
+    "Dawn Time",
+    "Dusk Time",
+    "Extend Dawn and Dusk",
+    "Time Cycle Degrees",
+    "Cached Sun Vector",
+    "Cached Sun Z Vector",
+    "Active Cache Group",
+    "Cache Group Timer Indexes",
+    "Cache Group Timers",
+    "Cached Colors Old",
+    "Cached Colors New",
+    "Cached Colors Last Accessed",
+    "Filling Starting Cache",
+    "Sun World Rotation",
+    "Sun Mobility",
+    "Use Forced Light Update",
+    "Use Periodic Light Update",
+    "Use Angle Threshold Light Update",
+    "Lights Update Degree Threshold",
+    "Lights Update Period",
+    "Last Sun Light Periodic Update Time",
+)
+
+SUN_RUNTIME_STAGE2_LOCAL_STATE = (
+    "Change Tolerance",
+    "Extend Dawn Dusk Multiplier",
+    "Real Sun Position",
+)
+
+SUN_RUNTIME_SCHEDULER_STATE = (
+    "Active Update Speed",
+    "Cache Group Timers",
+    "Cache Group Timers Clear",
+    "Cache Properties Step",
+    "Cache Steps Multiplier",
+    "Change Speed Rolling Buffer",
+    "Composite Context Change Speed",
+    "Composite Weather Change Speed",
+    "Current Cache Timer Speed",
+    "Disable All Runtime Updating",
+    "Fast Cache Toggle",
+    "Fast Cache Toggle Speed",
+    "Half Rate Tick",
+    "Half Rate Tick Framerate Threshold",
+    "Hard Cache Reset Change Speed Threshold",
+    "High Priority Update Step",
+    "Last Delayed Change Speed",
+    "Low Priority Set Toggle",
+    "Max Property Cache Period",
+    "Min Property Cache Period",
+    "Minimum Active Update Speed",
+    "Modifiers Animating",
+    "Run Context",
+    "Tick Delta Seconds",
+    "Time of Day Change Speed",
+    "Transitioning Sky Light Intensity",
+)
+
 
 def coordinate_mapping_contract() -> dict[str, Any]:
     """Publish engine semantics separately from UDS-authored behavior.
@@ -1769,6 +1916,351 @@ def blueprint_value_type(pin_type: dict[str, Any]) -> str:
     return f"K2Pin<{category}:{subcategory}>"
 
 
+def resolve_trajectory_input_evidence(
+    blueprint: dict[str, Any],
+    raw_graphs: dict[str, dict[str, Any]],
+    selected_graph_names: list[str],
+) -> dict[str, dict[str, Any]]:
+    """Close type/default facts only where raw Blueprint evidence is unanimous.
+
+    NewVariables.VarType is still an opaque serialized EdGraphPinType in this extractor. The
+    generated K2 variable pins expose the resolved type without guessing. An empty authored
+    Blueprint default is treated as zero only when the decoded CDO has no override, using UE's
+    documented UObject zero-initialization semantics.
+    """
+    variables = blueprint_variable_rows(blueprint)
+    cdo = blueprint_cdo_properties(blueprint)
+    result: dict[str, dict[str, Any]] = {}
+    for name, expected in SOURCE_RESOLVED_TRAJECTORY_INPUTS.items():
+        row = variables.get(name)
+        if row is None:
+            raise AssertionError(f"missing Blueprint NewVariables row: {name}")
+        authored_default = nested_field(row, "DefaultValue")
+        if authored_default not in ("", None) or name in cdo:
+            raise AssertionError(
+                f"trajectory input no longer has an empty default/no CDO override: {name}"
+            )
+        occurrences = []
+        pin_types = []
+        for graph_name in selected_graph_names:
+            for node in raw_graphs[graph_name].get("nodes", []):
+                if variable_reference(node) != name:
+                    continue
+                value_pins = [
+                    pin
+                    for pin in node.get("pins", [])
+                    if pin.get("name") == name
+                    and pin.get("direction")
+                    == ("input" if node.get("class") == "K2Node_VariableSet" else "output")
+                ]
+                if len(value_pins) != 1:
+                    raise AssertionError(
+                        f"ambiguous resolved K2 variable pin for {name} in {graph_name}"
+                    )
+                pin_type = compact_type(value_pins[0].get("type"))
+                pin_types.append(pin_type)
+                occurrences.append(
+                    {
+                        "sourceGraph": raw_graphs[graph_name]["graph"],
+                        "node": node["export_index"],
+                        "nodeClass": node.get("class"),
+                        "pinType": pin_type,
+                    }
+                )
+        if not occurrences:
+            raise AssertionError(f"no selected raw K2 pin evidence for {name}")
+        canonical_types = {
+            json.dumps(pin_type, ensure_ascii=False, sort_keys=True)
+            for pin_type in pin_types
+        }
+        if len(canonical_types) != 1:
+            raise AssertionError(f"inconsistent selected K2 pin types for {name}")
+        resolved_type = blueprint_value_type(pin_types[0])
+        if resolved_type != expected["type"]:
+            raise AssertionError(
+                f"trajectory input type changed for {name}: {resolved_type}"
+            )
+        result[name] = {
+            "status": "VERIFIED_RAW_K2_TYPE_AND_ENGINE_ZERO_DEFAULT",
+            "type": resolved_type,
+            "default": expected["default"],
+            "range": expected["range"],
+            "units": expected["units"],
+            "coordinateSpace": expected["coordinateSpace"],
+            "authoredBlueprintDefault": authored_default or "",
+            "decodedCdoOverride": False,
+            "engineZeroInitializationSource": UE_OBJECT_ZERO_INIT_SOURCE,
+            "pinEvidence": occurrences,
+        }
+    return result
+
+
+def build_sun_runtime_parameter_gate(
+    parameters: list[dict[str, Any]],
+    coordinate_mapping: dict[str, Any],
+) -> dict[str, Any]:
+    """Publish the exact minimum Stage 1/2 runtime gate without hiding unresolved fields."""
+    by_name = {
+        item["sourceName"]: item
+        for item in parameters
+        if item["sourceAsset"] == BLUEPRINT_ASSET
+    }
+    required = set(SUN_RUNTIME_STAGE1_PARAMETERS) | set(SUN_RUNTIME_STAGE2_PARAMETERS)
+    missing_parameters = sorted(required - set(by_name))
+    if missing_parameters:
+        raise AssertionError(f"Sun runtime gate parameters are absent: {missing_parameters}")
+    missing_scheduler_state = sorted(set(SUN_RUNTIME_SCHEDULER_STATE) - set(by_name))
+    if missing_scheduler_state:
+        raise AssertionError(
+            f"Sun runtime scheduler state is absent: {missing_scheduler_state}"
+        )
+
+    def resolved_field(value: Any) -> bool:
+        return value not in (None, "", "UNKNOWN")
+
+    def row(name: str) -> dict[str, Any]:
+        parameter = by_name[name]
+        property_type = parameter.get("type", "UNKNOWN")
+        range_value = parameter.get("range", {})
+        if isinstance(range_value, dict) and range_value.get("status") != "UNKNOWN":
+            range_policy = {
+                "status": "VERIFIED_AUTHORED_RANGE",
+                "value": range_value,
+            }
+        elif property_type == "BoolProperty":
+            range_policy = {
+                "status": "VERIFIED_TYPE_DOMAIN",
+                "value": {"allowedValues": [False, True]},
+            }
+        elif property_type.startswith("ObjectProperty"):
+            range_policy = {
+                "status": "VERIFIED_REFERENCE_DOMAIN_BOUNDARY",
+                "value": "decoded object class or null; no invented numeric clamp",
+            }
+        else:
+            range_policy = {
+                "status": "UNKNOWN",
+                "value": "no authored range and no source-backed runtime boundary yet",
+            }
+
+        units = parameter.get("units", {})
+        units_known = isinstance(units, dict) and units.get("evidence") not in {
+            None,
+            "UNKNOWN",
+        }
+        if not units_known and property_type in {
+            "BoolProperty",
+            "IntProperty",
+            "ObjectProperty",
+        }:
+            units = {
+                "value": "NOT_APPLICABLE_NON_NUMERIC_OR_DISCRETE_TYPE",
+                "status": "VERIFIED_TYPE_SEMANTICS",
+            }
+            units_known = True
+
+        coordinate = parameter.get("coordinateSpace", {})
+        coordinate_known = isinstance(coordinate, dict) and coordinate.get(
+            "evidence"
+        ) not in {None, "UNKNOWN"}
+        non_spatial_types = {
+            "BoolProperty",
+            "IntProperty",
+            "DoubleProperty",
+            "ObjectProperty",
+            "StructProperty<LinearColor</Script/CoreUObject>>",
+        }
+        if not coordinate_known and property_type in non_spatial_types:
+            coordinate = {
+                "value": "NOT_APPLICABLE_NON_SPATIAL_VALUE",
+                "status": "VERIFIED_TYPE_SEMANTICS",
+                "note": "formula ledger remains authoritative for scalar angular/time meaning",
+            }
+            coordinate_known = True
+
+        update = parameter.get("updateFrequency", {})
+        if parameter.get("derivedRuntimeValue"):
+            update_policy = {
+                "status": parameter["derivedRuntimeValue"]["status"],
+                "value": "EXACT_DERIVED_WRITER_AND_SUN_SCHEDULING_CONTRACT",
+                "sourceGraph": parameter["derivedRuntimeValue"]["sourceGraph"],
+            }
+        elif parameter.get("celestialRuntimeValue"):
+            update_policy = {
+                "status": parameter["celestialRuntimeValue"]["status"],
+                "value": "EXACT_CELESTIAL_WRITER_AND_SUN_SCHEDULING_CONTRACT",
+                "sourceGraph": parameter["celestialRuntimeValue"]["sourceGraph"],
+            }
+        elif update.get("status") in {"VERIFIED", "VERIFIED_BOUNDARY"}:
+            update_policy = update
+        else:
+            update_policy = {
+                "status": "VERIFIED_EXTERNAL_MUTATION_BOUNDARY",
+                "value": "READ_WHEN_SELECTED_UDS_FUNCTION_EXECUTES",
+                "mutationCadence": "NOT_IMPLEMENTED_EXTERNAL_CALLER_BOUNDARY",
+                "selectedReaders": parameter.get("selectedSunSliceReadBy", []),
+                "selectedWriters": parameter.get("selectedSunSliceModifiedBy", []),
+            }
+
+        formula_source = parameter.get("derivedRuntimeValue") or parameter.get(
+            "celestialRuntimeValue"
+        )
+        formula_policy = (
+            {
+                "status": formula_source["status"],
+                "value": "EXACT_SOURCE_WRITER",
+                "sourceGraph": formula_source["sourceGraph"],
+            }
+            if formula_source
+            else {
+                "status": "NOT_IMPLEMENTED_BOUNDARY",
+                "value": "authored/runtime input; no replacement formula may be invented",
+            }
+        )
+        field_status = {
+            "type": property_type != "UNKNOWN",
+            "default": resolved_field(parameter.get("default")),
+            "rangeOrBoundary": range_policy["status"] != "UNKNOWN",
+            "unitsOrNA": units_known,
+            "coordinateOrNA": coordinate_known,
+            "readWrite": bool(
+                parameter.get("selectedSunSliceReadBy")
+                or parameter.get("selectedSunSliceModifiedBy")
+            ),
+            "updatePolicy": update_policy["status"]
+            not in {"UNKNOWN", "PARTIAL", "NOT_IMPLEMENTED"},
+            "formulaOrInputBoundary": formula_policy["status"]
+            not in {"UNKNOWN", "PARTIAL", "NOT_IMPLEMENTED"},
+        }
+        blockers = sorted(key for key, value in field_status.items() if not value)
+        return {
+            "sourceName": name,
+            "sourceAsset": parameter["sourceAsset"],
+            "type": property_type,
+            "default": parameter.get("default"),
+            "rangePolicy": range_policy,
+            "units": units,
+            "coordinateSpace": coordinate,
+            "readBy": parameter.get("selectedSunSliceReadBy", []),
+            "modifiedBy": parameter.get("selectedSunSliceModifiedBy", []),
+            "updatePolicy": update_policy,
+            "formulaPolicy": formula_policy,
+            "fieldStatus": field_status,
+            "runtimeEligible": not blockers,
+            "blockers": blockers,
+        }
+
+    stage1 = [row(name) for name in SUN_RUNTIME_STAGE1_PARAMETERS]
+    stage2 = [row(name) for name in SUN_RUNTIME_STAGE2_PARAMETERS]
+    control_boundaries = [
+        *[
+            {
+                "name": f"local function state: {name}",
+                "status": "PARTIAL",
+                "source": "selected exact UDS Sun graph topology/local symbol coverage",
+                "required": "resolved pin type/default/value-flow before runtime",
+            }
+            for name in SUN_RUNTIME_STAGE2_LOCAL_STATE
+        ],
+        {
+            "name": "Sun scheduling state",
+            "status": "PARTIAL",
+            "source": "sunScheduling exact startup/ReceiveTick/cache/update/reset contract",
+            "requiredClassState": list(SUN_RUNTIME_SCHEDULER_STATE),
+            "requiredLocalState": ["Delayed Change Speed", "Change Speed This Frame"],
+            "deferredConditionalBindingDependencies": [
+                "Adjust for Path Tracer",
+                "Animate Time of Day",
+                "Project Mode",
+                "Time of Day Specific Modifiers",
+                "Ultra Dynamic Weather",
+                "Use System Time",
+                "Using Player Occlusion",
+            ],
+            "androidEditorOnlyBoundaries": [
+                "Level Editor Tick",
+                "Editor Sequence Cache Speedup",
+            ],
+            "deferredNonSunCacheProperties": (
+                "the 116-parameter Cache Properties body is not silently included in Sun-only "
+                "runtime; non-Sun cached values stay owned by their later system stages"
+            ),
+            "required": "all listed scheduler state and exact cadence must be implemented/tested",
+        },
+        {
+            "name": "Only Calculate Sun caller pin",
+            "status": "PARTIAL",
+            "sourceGraph": f"{BLUEPRINT_ASSET}: Approximate Real Sun Moon and Stars",
+            "required": "resolved Bool pin/default and exact call-site policy",
+        },
+        {
+            "name": "Actor Rotation",
+            "status": "VERIFIED_SOURCE_BOUNDARY",
+            "source": "K2_GetActorRotation nodes in exact Sun trajectory graphs",
+            "requiredTarget": "SOLUM world transform; NOT_IMPLEMENTED",
+        },
+        {
+            "name": "Cache Color inputs and NewEnumerator13 index",
+            "status": "PARTIAL",
+            "sourceGraph": f"{BLUEPRINT_ASSET}: Cache Color / AP - Sun Root Vector",
+            "verified": "Event, Update Group and Set Value pins plus authored enum literal",
+            "unresolved": "numeric UDS_CachedProperties NewEnumerator13 ordinal",
+        },
+        {
+            "name": "Sun Parent current component rotation",
+            "status": "VERIFIED_SOURCE_BOUNDARY",
+            "sourceGraph": f"{BLUEPRINT_ASSET}: AP - Sun Root Vector",
+            "requiredTarget": "Filament directional-light transform owner; NOT_IMPLEMENTED",
+        },
+        {
+            "name": "Cloud Shadows MID atlas-light side effect",
+            "status": "PARTIAL",
+            "sourceGraph": f"{BLUEPRINT_ASSET}: AP - Sun Root Vector / Update Atlas Light Vectors",
+            "deferredOwner": "cloud-lighting stage",
+            "required": "preserve ordered Up/Forward/Right writes or explicitly disable AP atlas branch",
+        },
+        {
+            "name": "GetGameTimeInSeconds",
+            "status": "VERIFIED_SOURCE_BOUNDARY",
+            "sourceGraph": f"{BLUEPRINT_ASSET}: AP - Sun Root Vector",
+            "requiredTarget": "SOLUM monotonic game-time provider; NOT_IMPLEMENTED",
+        },
+        {
+            "name": "UE to Filament direction and visual-body sign",
+            "status": coordinate_mapping["status"],
+            "source": "coordinateMapping",
+            "requiredTarget": "NOT_IMPLEMENTED",
+        },
+    ]
+    blocked_rows = [
+        {"stage": stage, "sourceName": item["sourceName"], "blockers": item["blockers"]}
+        for stage, rows in (("STAGE1", stage1), ("STAGE2", stage2))
+        for item in rows
+        if not item["runtimeEligible"]
+    ]
+    blocked_controls = [
+        item["name"] for item in control_boundaries if item["status"] == "PARTIAL"
+    ]
+    payload = {
+        "status": "BLOCKED" if blocked_rows or blocked_controls else "VERIFIED",
+        "implementationStatus": "NOT_IMPLEMENTED",
+        "runtimeImplementationAllowed": not blocked_rows and not blocked_controls,
+        "stage1BaseEvaluator": stage1,
+        "stage2SunTrajectoryAndLight": stage2,
+        "controlBoundaries": control_boundaries,
+        "blockedRows": blocked_rows,
+        "blockedControlBoundaries": blocked_controls,
+        "prohibitedSimplification": (
+            "runtime may implement only rows with runtimeEligible=true; unresolved fields stay "
+            "source boundaries and must never receive guessed constants"
+        ),
+    }
+    payload["contractSha256"] = sha256_bytes(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    )
+    return payload
+
+
 def parameter_writer_contract(
     raw_graph: dict[str, Any], parameter: str, formula: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2519,6 +3011,227 @@ def celestial_orientation_formula_ledger() -> list[dict[str, Any]]:
             ],
         },
         {
+            "function": "Sun Z Vector",
+            "status": "VERIFIED",
+            "implementationStatus": "NOT_IMPLEMENTED",
+            "source": f"{BLUEPRINT_ASSET}: Sun Z Vector",
+            "equation": (
+                "actorYaw=GetActorRotation().yaw; real=RotateAngleAxis("
+                "RotateAngleAxis((1,0,0),Latitude,(0,-1,0)),NorthYaw+actorYaw,(0,0,1)); "
+                "manual=RotateAngleAxis(RotateAngleAxis((1,0,0),SunPitch,(0,-1,0)),"
+                "SunYaw+actorYaw,(0,0,1)); return SelectVector(real,manual,SimulateRealSun)"
+            ),
+            "ast": {
+                "actorYaw": {"BreakRotator.yaw": {"K2_GetActorRotation": "self"}},
+                "real": {
+                    "RotateAngleAxis": [
+                        {
+                            "RotateAngleAxis": [
+                                [1.0, 0.0, 0.0],
+                                "Latitude",
+                                [0.0, -1.0, 0.0],
+                            ]
+                        },
+                        {"add": ["North Yaw", "actorYaw"]},
+                        [0.0, 0.0, 1.0],
+                    ]
+                },
+                "manual": {
+                    "RotateAngleAxis": [
+                        {
+                            "RotateAngleAxis": [
+                                [1.0, 0.0, 0.0],
+                                "Sun Pitch",
+                                [0.0, -1.0, 0.0],
+                            ]
+                        },
+                        {"add": ["Sun Yaw", "actorYaw"]},
+                        [0.0, 0.0, 1.0],
+                    ]
+                },
+                "return": {"SelectVector": ["real", "manual", "Simulate Real Sun"]},
+            },
+            "authoredConstants": {
+                "baseVector": [1.0, 0.0, 0.0],
+                "pitchAxis": [0.0, -1.0, 0.0],
+                "yawAxis": [0.0, 0.0, 1.0],
+            },
+            "sourceNodes": [
+                "SelectVector",
+                "RotateAngleAxis",
+                "K2_GetActorRotation",
+                "BreakRotator",
+                "Add_DoubleDouble",
+                "Simulate Real Sun",
+                "Sun Yaw",
+                "Sun Pitch",
+                "North Yaw",
+                "Latitude",
+            ],
+        },
+        {
+            "function": "Set Time Cycle Degrees",
+            "status": "VERIFIED",
+            "implementationStatus": "NOT_IMPLEMENTED",
+            "source": f"{BLUEPRINT_ASSET}: Set Time Cycle Degrees",
+            "equation": (
+                "if SimulateRealSun&&SimulateRealMoon do nothing; otherwise TimeInRange=("
+                "TimeOfDay+(DaylightSavingsTime?-100:0)+2400)%2400; if SimulateRealSun "
+                "TimeCycleDegrees=TimeInRange*0.15; otherwise Daytime=TimeInRange>DawnTime&&"
+                "TimeInRange<DuskTime and map daytime Dawn..Dusk to 90..270, else map the "
+                "wrapped Dusk..Dawn interval to 270..450 then modulo 360"
+            ),
+            "ast": {
+                "run": {"not": {"and": ["Simulate Real Sun", "Simulate Real Moon"]}},
+                "timeInRange": {
+                    "Percent_FloatFloat": [
+                        {
+                            "add": [
+                                "Time of Day",
+                                {"select": [-100.0, 0.0, "Daylight Savings Time"]},
+                                2400.0,
+                            ]
+                        },
+                        2400.0,
+                    ]
+                },
+                "realSun": {"set Time Cycle Degrees": {"multiply": ["Time in Range", 0.15]}},
+                "manualSun": {
+                    "daytime": {
+                        "and": [
+                            {"greater": ["Time in Range", "Dawn Time"]},
+                            {"less": ["Time in Range", "Dusk Time"]},
+                        ]
+                    },
+                    "day": {
+                        "MapRangeClamped": [
+                            "Time in Range",
+                            "Dawn Time",
+                            "Dusk Time",
+                            90.0,
+                            270.0,
+                        ]
+                    },
+                    "night": {
+                        "Percent_FloatFloat": [
+                            {
+                                "MapRangeClamped": [
+                                    {
+                                        "select": [
+                                            {"add": ["Time in Range", 2400.0]},
+                                            "Time in Range",
+                                            {"lessEqual": ["Time in Range", "Dawn Time"]},
+                                        ]
+                                    },
+                                    "Dusk Time",
+                                    {"add": ["Dawn Time", 2400.0]},
+                                    270.0,
+                                    450.0,
+                                ]
+                            },
+                            360.0,
+                        ]
+                    },
+                },
+            },
+            "sourceNodes": [
+                "SelectFloat",
+                "MapRangeClamped",
+                "Percent_FloatFloat",
+                "Not_PreBool",
+                "BooleanAND",
+                "Add_DoubleDouble",
+                "Multiply_DoubleDouble",
+                "Greater_DoubleDouble",
+                "Less_DoubleDouble",
+                "LessEqual_DoubleDouble",
+                "Simulate Real Sun",
+                "Simulate Real Moon",
+                "Daylight Savings Time",
+                "Time of Day",
+                "Time in Range",
+                "Dawn Time",
+                "Dusk Time",
+                "Time Cycle Degrees",
+                "Daytime",
+                "K2Node_IfThenElse",
+            ],
+        },
+        {
+            "function": "Cache Color",
+            "status": "VERIFIED",
+            "implementationStatus": "NOT_IMPLEMENTED",
+            "source": f"{BLUEPRINT_ASSET}: Cache Color",
+            "equation": (
+                "index=int(Property). During FillingStartingCache set New/Old/LastAccessed[index]"
+                "=SetValue, register Event, and mark its ApplyProperty binding false. Otherwise "
+                "NeedUpdate=LastAccessed[index]!=SetValue; if false mark binding false; if true "
+                "and Old[index] is near SetValue within ChangeTolerance, refresh New/Old/"
+                "LastAccessed and mark binding false; if not near, shift Old=New, set New=SetValue, "
+                "mark binding true, and set CacheGroupTimerIndexes[index]=9-ActiveCacheGroup"
+            ),
+            "ast": {
+                "index": {"Conv_ByteToInt": "Property"},
+                "startingCache": {
+                    "if": "Filling Starting Cache",
+                    "then": [
+                        {"Cached Colors New[index]": "Set Value"},
+                        {"Cached Colors Old[index]": "Set Value"},
+                        {"Cached Colors Last Accessed[index]": "Set Value"},
+                        {"AddDelegate": "Event"},
+                        {"Set Apply Property Event Binding": [False, "Update Group", "Event"]},
+                    ],
+                },
+                "incremental": {
+                    "needUpdate": {
+                        "notEqual": ["Cached Colors Last Accessed[index]", "Set Value"]
+                    },
+                    "noUpdate": {
+                        "Set Apply Property Event Binding": [False, "Update Group", "Event"]
+                    },
+                    "nearOld": {
+                        "condition": {
+                            "LinearColor_IsNearEqual": [
+                                "Cached Colors Old[index]",
+                                "Set Value",
+                                "Change Tolerance",
+                            ]
+                        },
+                        "then": [
+                            {"Cached Colors New[index]": "Set Value"},
+                            {"Cached Colors Old[index]": "Set Value"},
+                            {"Cached Colors Last Accessed[index]": "Set Value"},
+                            {"AddDelegate": "Event"},
+                            {"Set Apply Property Event Binding": [False, "Update Group", "Event"]},
+                        ],
+                        "else": [
+                            {"Cached Colors Old[index]": "Cached Colors New[index]"},
+                            {"Cached Colors New[index]": "Set Value"},
+                            {"Set Apply Property Event Binding": [True, "Update Group", "Event"]},
+                            {"Cache Group Timer Indexes[index]": {"subtract": [9, "Active Cache Group"]}},
+                        ],
+                    },
+                },
+            },
+            "sourceNodes": [
+                "Conv_ByteToInt",
+                "LinearColor_IsNearEqual",
+                "Set Apply Property Event Binding",
+                "Array_Set",
+                "K2Node_GetArrayItem",
+                "K2Node_IfThenElse",
+                "Subtract_IntInt",
+                "NotEqual_LinearColorLinearColor",
+                "K2Node_AddDelegate",
+                "Filling Starting Cache",
+                "Cached Colors Last Accessed",
+                "Cached Colors Old",
+                "Cached Colors New",
+                "Cache Group Timer Indexes",
+                "Active Cache Group",
+            ],
+        },
+        {
             "function": "Get Cached Color",
             "status": "VERIFIED",
             "implementationStatus": "NOT_IMPLEMENTED",
@@ -3014,6 +3727,28 @@ def build_sun_light_intensity_branch_evidence(
             "linked_to", []
         )
     }
+
+    def linked(node_index: int, pin_name: str) -> set[int]:
+        return {
+            link.get("owning_node_index")
+            for link in _raw_node_pin(nodes[node_index], pin_name).get("linked_to", [])
+        }
+
+    def variable(node_index: int) -> str | None:
+        return nested_field(
+            nodes[node_index].get("properties", {}).get("VariableReference"),
+            "MemberName",
+        )
+
+    identity_chain = {
+        "skyValue": [9441, 2838, 2836],
+        "skyOutB": [9440, 2836],
+        "legacyValue": [9436, 2839, 2833],
+        "legacyCurveTime": [9436, 2839, 2835],
+        "legacyOutA": [9447, 2833],
+        "legacyCurve": [9439, 2835],
+        "legacyProduct": [2833, 2835, 4635],
+    }
     if (
         condition_name != "Using Sky Atmosphere"
         or condition_sources != {9445}
@@ -3023,8 +3758,25 @@ def build_sun_light_intensity_branch_evidence(
         or _raw_node_operation(nodes[2833]) != "MapRangeClamped"
         or _raw_node_operation(nodes[2835]) != "GetFloatValue"
         or _raw_node_operation(nodes[4635]) != "Multiply_DoubleDouble"
+        or _raw_node_operation(nodes[2838]) != "BreakVector"
+        or _raw_node_operation(nodes[2839]) != "BreakVector"
+        or variable(9441) != "Cached Sun Vector"
+        or variable(9440) != "Sun Light Intensity"
+        or variable(9436) != "Cached Sun Vector"
+        or variable(9447) != "Sun Light Intensity"
+        or variable(9439) != "Directional Intensity Curve"
+        or linked(2836, "Value") != {2838}
+        or linked(2838, "InVec") != {9441}
+        or linked(2836, "OutRangeB") != {9440}
+        or linked(2833, "Value") != {2839}
+        or linked(2835, "InTime") != {2839}
+        or linked(2839, "InVec") != {9436}
+        or linked(2833, "OutRangeA") != {9447}
+        or linked(2835, "self") != {9439}
+        or linked(4635, "A") != {2833}
+        or linked(4635, "B") != {2835}
     ):
-        raise AssertionError("Current Sun Light Intensity branch topology changed")
+        raise AssertionError("Current Sun Light Intensity branch/value identity changed")
 
     def authored_float(node_index: int, pin_name: str) -> float:
         return float(_raw_node_pin(nodes[node_index], pin_name).get("default_value"))
@@ -3068,6 +3820,7 @@ def build_sun_light_intensity_branch_evidence(
         "status": "VERIFIED_RAW_BRANCH_AND_DATAFLOW",
         "sourceGraph": graph["graph"],
         "condition": {"node": 9445, "parameter": condition_name},
+        "identityChain": identity_chain,
         "skyAtmosphereTrue": {
             "execPath": _verified_exec_path(raw_graphs, graph_name, [6383, 12748]),
             "valueNode": 2836,
@@ -3711,6 +4464,9 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
         | set(orientation_function_names)
         | set(SUN_SCHEDULING_FUNCTION_SLICE)
     )
+    trajectory_input_evidence = resolve_trajectory_input_evidence(
+        blueprint, raw_graphs, selected_blueprint_functions
+    )
     referenced_blueprint_symbols = sorted(
         set().union(
             *(
@@ -3923,6 +4679,46 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
         parameter["extractionStatus"] = "PARTIAL"
 
     parameter_by_name = {item["sourceName"]: item for item in parameters}
+    for name, evidence in trajectory_input_evidence.items():
+        parameter = parameter_by_name[name]
+        parameter["type"] = evidence["type"]
+        parameter["default"] = evidence["default"]
+        parameter["range"] = evidence["range"]
+        parameter["units"] = {
+            "value": evidence["units"],
+            "evidence": "raw K2 type plus parameter semantics",
+            "status": "VERIFIED_TYPE_SEMANTICS",
+        }
+        parameter["coordinateSpace"] = {
+            "value": evidence["coordinateSpace"],
+            "evidence": (
+                "raw K2 scalar type and exact Sun trajectory formulas; N/A is explicit for "
+                "non-spatial scalar inputs"
+            ),
+            "status": "VERIFIED_TYPE_AND_GRAPH_SEMANTICS",
+        }
+        parameter["runtimeInputEvidence"] = evidence
+        parameter["updateFrequency"] = {
+            "value": "EXTERNAL_CONFIGURATION_INPUT_CONSUMED_BY_UDS_SUN_SCHEDULER",
+            "mutationCadence": "EXTERNAL_CALLER_BOUNDARY",
+            "consumptionCadence": "Cache Sun and Moon Orientation / exact Sun scheduling contract",
+            "status": "VERIFIED_BOUNDARY",
+        }
+        parameter["missingEvidence"] = [
+            item
+            for item in parameter.get("missingEvidence", [])
+            if item
+            not in {
+                "typed CDO default",
+                "property type",
+                "explicit units",
+                "explicit coordinate space",
+                "exact update frequency",
+            }
+        ]
+        parameter["extractionStatus"] = (
+            "VERIFIED" if not parameter["missingEvidence"] else "PARTIAL"
+        )
     cached_sun_vector = parameter_by_name["Cached Sun Vector"]
     cached_sun_vector["units"] = {
         "value": "DIRECTION_VECTOR_DIMENSIONLESS",
@@ -3978,6 +4774,9 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
             "complete AP - Sun Root Vector value/control-flow closure",
         }
     ]
+    sun_runtime_parameter_gate = build_sun_runtime_parameter_gate(
+        parameters, coordinate_mapping
+    )
 
     parameter_writer_support_graphs = [
         normalized_graph(raw_graphs[name])
@@ -4028,8 +4827,8 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
         "completionBlockers": [
             "runtime values/defaults have not been changed",
             (
-                "the expanded selected-slice parameter matrix still contains PARTIAL/UNKNOWN "
-                "parameter fields that must be resolved or explicitly bounded before runtime"
+                "sunRuntimeParameterGate remains BLOCKED; its exact Stage1/Stage2 rows and "
+                "control boundaries must pass before runtime"
             ),
             "fresh independent read-only re-review is required after blocker fixes",
             "user visual QA is pending",
@@ -4048,6 +4847,8 @@ def build(dataset: Path, system_contract_path: Path, output: Path) -> dict[str, 
         "graphs": graphs,
         "parameters": parameters,
         "parameterCoverage": parameter_coverage,
+        "trajectoryInputEvidence": trajectory_input_evidence,
+        "sunRuntimeParameterGate": sun_runtime_parameter_gate,
         "parameterWriterContracts": parameter_writer_contracts,
         "parameterWriterSchedule": parameter_writer_schedule,
         "celestialWriterContracts": celestial_writer_contracts,
@@ -4133,6 +4934,11 @@ Status: **PARTIAL**. Runtime edits are blocked.
   {len(scheduling_graphs)}; local Android-runtime Sun cadence is `VERIFIED_SOURCE_CONTRACT`.
 - UE world direction -> SOLUM/Filament world direction: exact orthonormal handedness conversion
   published; Sun body/light-vector sign is source-backed, runtime remains `NOT_IMPLEMENTED`.
+- Explicit runtime gate: {len(sun_runtime_parameter_gate['stage1BaseEvaluator'])} Stage 1 base
+  evaluator rows and {len(sun_runtime_parameter_gate['stage2SunTrajectoryAndLight'])} Stage 2
+  trajectory/light rows. Gate status is `{sun_runtime_parameter_gate['status']}` with
+  {len(sun_runtime_parameter_gate['blockedRows'])} blocked rows and
+  {len(sun_runtime_parameter_gate['blockedControlBoundaries'])} blocked control boundaries.
 - Authored curves: {len(curves)}.
 - Material Function dependency slice: {len(material_assets)}.
 - Blueprint formula ledger: {sum(item['status'] == 'VERIFIED' for item in ledger)} `VERIFIED`,
@@ -4143,8 +4949,8 @@ Status: **PARTIAL**. Runtime edits are blocked.
 
 No render behavior was changed. The previously missing UDS_PlayerOcclusion dependency and authored
 Equation-of-Time curve are now exact and source-backed. Calendar startup ordering is exact; runtime
-work remains blocked on the explicitly listed parameter-matrix gaps and a fresh independent
-read-only re-review. `AP - Sun Root Vector` cache/update/atlas semantics are now source-reduced.
+work remains blocked on the exact `sunRuntimeParameterGate` rows and a fresh independent read-only
+re-review. `AP - Sun Root Vector` cache/update/atlas semantics are now source-reduced.
 UE rotation/vector operators and the serialized 90-degree yaw literal now have official engine
 semantics in `coordinateMapping`. See CHECKPOINT_01_REVIEW.md.
 """
@@ -4249,6 +5055,83 @@ def self_test(output: Path, summary: dict[str, Any]) -> None:
         )
     ):
         raise AssertionError("Sun selected-function parameter matrix is incomplete")
+    trajectory_evidence = payload["trajectoryInputEvidence"]
+    if set(trajectory_evidence) != set(SOURCE_RESOLVED_TRAJECTORY_INPUTS):
+        raise AssertionError("source-resolved trajectory input set changed")
+    for name, expected in SOURCE_RESOLVED_TRAJECTORY_INPUTS.items():
+        evidence = trajectory_evidence[name]
+        parameter = next(
+            item
+            for item in payload["parameters"]
+            if item["sourceAsset"] == BLUEPRINT_ASSET and item["sourceName"] == name
+        )
+        if (
+            evidence["status"]
+            != "VERIFIED_RAW_K2_TYPE_AND_ENGINE_ZERO_DEFAULT"
+            or evidence["type"] != expected["type"]
+            or evidence["default"] != expected["default"]
+            or not evidence["pinEvidence"]
+            or any(
+                blueprint_value_type(item["pinType"]) != expected["type"]
+                for item in evidence["pinEvidence"]
+            )
+            or parameter["type"] != expected["type"]
+            or parameter["default"] != expected["default"]
+            or parameter["updateFrequency"]["status"] != "VERIFIED_BOUNDARY"
+        ):
+            raise AssertionError(f"trajectory input evidence changed: {name}")
+    runtime_gate = payload["sunRuntimeParameterGate"]
+    if (
+        runtime_gate["status"] != "BLOCKED"
+        or runtime_gate["runtimeImplementationAllowed"] is not False
+        or tuple(
+            item["sourceName"] for item in runtime_gate["stage1BaseEvaluator"]
+        )
+        != SUN_RUNTIME_STAGE1_PARAMETERS
+        or tuple(
+            item["sourceName"]
+            for item in runtime_gate["stage2SunTrajectoryAndLight"]
+        )
+        != SUN_RUNTIME_STAGE2_PARAMETERS
+        or not runtime_gate["blockedRows"]
+        or not runtime_gate["blockedControlBoundaries"]
+        or not {
+            f"local function state: {name}"
+            for name in SUN_RUNTIME_STAGE2_LOCAL_STATE
+        }
+        <= {
+            item["name"] for item in runtime_gate["controlBoundaries"]
+        }
+        or len(runtime_gate["contractSha256"]) != 64
+    ):
+        raise AssertionError("Sun Stage1/Stage2 runtime parameter gate changed")
+    scheduling_gate = next(
+        item
+        for item in runtime_gate["controlBoundaries"]
+        if item["name"] == "Sun scheduling state"
+    )
+    if (
+        scheduling_gate["status"] != "PARTIAL"
+        or tuple(scheduling_gate["requiredClassState"])
+        != SUN_RUNTIME_SCHEDULER_STATE
+        or "Disable All Runtime Updating"
+        not in scheduling_gate["requiredClassState"]
+        or scheduling_gate["requiredLocalState"]
+        != ["Delayed Change Speed", "Change Speed This Frame"]
+        or scheduling_gate["deferredConditionalBindingDependencies"]
+        != [
+            "Adjust for Path Tracer",
+            "Animate Time of Day",
+            "Project Mode",
+            "Time of Day Specific Modifiers",
+            "Ultra Dynamic Weather",
+            "Use System Time",
+            "Using Player Occlusion",
+        ]
+        or scheduling_gate["androidEditorOnlyBoundaries"]
+        != ["Level Editor Tick", "Editor Sequence Cache Speedup"]
+    ):
+        raise AssertionError("Sun scheduler runtime/deferred boundary changed")
     rendered = json.dumps(payload, ensure_ascii=False)
     forbidden = ("/storage/emulated/", "/data/data/com.termux/", "udsRoot")
     leaks = [token for token in forbidden if token in rendered]
@@ -4665,6 +5548,9 @@ def self_test(output: Path, summary: dict[str, Any]) -> None:
         "Static Properties - Calendar": "VERIFIED",
         "Force Valid Day": "VERIFIED",
         "Simulation Horizon Compensation": "VERIFIED",
+        "Sun Z Vector": "VERIFIED",
+        "Set Time Cycle Degrees": "VERIFIED",
+        "Cache Color": "VERIFIED",
         "Get Cached Color": "VERIFIED",
         "Lights Update Degree Threshold Test": "VERIFIED",
         "Update Atlas Light Vectors": "VERIFIED",
@@ -4773,8 +5659,49 @@ def self_test(output: Path, summary: dict[str, Any]) -> None:
         or sun_light_branches["legacyFalse"]["execPath"]["nodes"]
         != [6383, 6729, 12749]
         or sun_light_branches["legacyFalse"]["valueNode"] != 4635
+        or sun_light_branches["identityChain"]
+        != {
+            "skyValue": [9441, 2838, 2836],
+            "skyOutB": [9440, 2836],
+            "legacyValue": [9436, 2839, 2833],
+            "legacyCurveTime": [9436, 2839, 2835],
+            "legacyOutA": [9447, 2833],
+            "legacyCurve": [9439, 2835],
+            "legacyProduct": [2833, 2835, 4635],
+        }
     ):
         raise AssertionError("Current Sun Light Intensity branch semantics changed")
+    orientation_formulas = {
+        item["function"]: item for item in payload["orientationFormulaLedger"]
+    }
+    sun_z = orientation_formulas["Sun Z Vector"]
+    time_cycle = orientation_formulas["Set Time Cycle Degrees"]
+    cache_color = orientation_formulas["Cache Color"]
+    if (
+        sun_z["status"] != "VERIFIED"
+        or sun_z["ast"]["return"]
+        != {"SelectVector": ["real", "manual", "Simulate Real Sun"]}
+        or sun_z["authoredConstants"]
+        != {
+            "baseVector": [1.0, 0.0, 0.0],
+            "pitchAxis": [0.0, -1.0, 0.0],
+            "yawAxis": [0.0, 0.0, 1.0],
+        }
+        or time_cycle["status"] != "VERIFIED"
+        or time_cycle["ast"]["run"]
+        != {"not": {"and": ["Simulate Real Sun", "Simulate Real Moon"]}}
+        or time_cycle["ast"]["realSun"]
+        != {"set Time Cycle Degrees": {"multiply": ["Time in Range", 0.15]}}
+        or cache_color["status"] != "VERIFIED"
+        or cache_color["ast"]["index"] != {"Conv_ByteToInt": "Property"}
+        or cache_color["ast"]["incremental"]["nearOld"]["else"][-1]
+        != {
+            "Cache Group Timer Indexes[index]": {
+                "subtract": [9, "Active Cache Group"]
+            }
+        }
+    ):
+        raise AssertionError("Sun trajectory/cache semantic AST changed")
     if set(MATERIAL_SEMANTICS) != {
         item["sourceAsset"] for item in payload["materialFormulaLedger"]
     }:

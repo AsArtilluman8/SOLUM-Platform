@@ -7,7 +7,11 @@ This file is a high-level roadmap, not a locked implementation schedule. Complex
 Current working architecture notes:
 
 - [`docs/SOLUM_UDS_RENDERER_WORKING_PLAN.md`](docs/SOLUM_UDS_RENDERER_WORKING_PLAN.md)
+- [`docs/runtime/SOLUM_SLPK_PRISM_FLUX_GOVERNOR.md`](docs/runtime/SOLUM_SLPK_PRISM_FLUX_GOVERNOR.md)
+- [`tasks/P65_SLPK_PRISM_FLUX_SAFE_SPIKE.md`](tasks/P65_SLPK_PRISM_FLUX_SAFE_SPIKE.md)
 - [`docs/CODEX_MODEL_SELECTION.md`](docs/CODEX_MODEL_SELECTION.md)
+
+The runtime-format document separates implemented foundations, local experiments, simulations, project-required work, device-required work, and negative results. The P65 task is the safe Codex entry point for testing one real exact asset path without enabling several optimizations at once.
 
 ## Stage 1 — Public OSS foundation
 
@@ -52,6 +56,8 @@ Rule: SSR is manual-only and must never be part of default presets, not even Ult
 - ORM packing and deduplication.
 - Asset manifest system.
 - Refine SLPK as a package, provenance, dependency, and streaming layer.
+- Validate one raw/passthrough exact SLPK path before adding compression, paging, or adaptive runtime behavior.
+- Preserve standard payload formats and use SLPK as the versioned package and streaming layer rather than replacing every codec.
 
 ## Stage 5 — Procedural Asset Economy and perceptual rendering
 
@@ -67,7 +73,10 @@ Goal: make large worlds from small high-quality bases and spend quality where it
 - Mask painter foundation.
 - LOD and collision generation.
 - Research cluster/meshlet visibility, cluster LOD, HZB occlusion, streaming, and attention-based shading/update quality.
+- Add Prism and Flux modules one at a time behind flags, beginning in telemetry-only or `OBSERVE` state.
+- Keep `STRICT_EXACT`, `DISTRIBUTION_EXACT`, and `BOUNDED_PERCEPTUAL` as separate quality contracts.
 - Do not claim optimization gains before honest renderer telemetry is validated.
+- Do not combine independent microbenchmark multipliers into a total-engine speed claim.
 
 ## Stage 6 — Physical Material System
 

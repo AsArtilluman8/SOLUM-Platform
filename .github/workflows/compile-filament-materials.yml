@@ -1,0 +1,149 @@
+name: Filament v1.71.4 SOLUM adaptive TAA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: filament-v1714-solum-adaptive-taa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-filament-android-arm64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+
+    env:
+      FILAMENT_COMMIT: a0ecdbbeba5f1005bbad0a4c8b2fe6955788cdee
+      FILAMENT_DIR: filament-src
+      PROFILER_PATCH_FILE: third_party/filament-solum/patches/0001-solum-async-framegraph-gpu-profiler.patch
+      ADAPTIVE_TAA_PATCH_FILE: third_party/filament-solum/patches/0002-solum-adaptive-taa-history.patch
+      LOG_DIR: filament-ci-logs
+
+    steps:
+      - name: Checkout wrapper repository
+        uses: actions/checkout@v4
+
+      - name: Checkout exact Filament runtime baseline
+        uses: actions/checkout@v4
+        with:
+          repository: google/filament
+          ref: ${{ env.FILAMENT_COMMIT }}
+          path: ${{ env.FILAMENT_DIR }}
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Verify source and apply the SOLUM patch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$(git -C "$FILAMENT_DIR" rev-parse HEAD)" = "$FILAMENT_COMMIT"
+          test -f "$PROFILER_PATCH_FILE"
+          test -f "$ADAPTIVE_TAA_PATCH_FILE"
+          sha256sum "$PROFILER_PATCH_FILE" "$ADAPTIVE_TAA_PATCH_FILE" \
+            | tee filament-solum-patches.sha256
+          git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$PROFILER_PATCH_FILE"
+          git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$PROFILER_PATCH_FILE"
+          git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$ADAPTIVE_TAA_PATCH_FILE"
+          git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$ADAPTIVE_TAA_PATCH_FILE"
+          git -C "$FILAMENT_DIR" diff --check
+          git -C "$FILAMENT_DIR" diff --stat | tee filament-profiler-diff-stat.txt
+          test "$(git -C "$FILAMENT_DIR" diff --name-only | wc -l)" -eq 15
+          ! git -C "$FILAMENT_DIR" diff | grep -E 'flushAndWait|waitForGpu|fenceWait'
+          git -C "$FILAMENT_DIR" diff | grep -F 'FrameGraph::ExecutionHooks'
+          git -C "$FILAMENT_DIR" diff | grep -F 'getTimerQueryValue'
+          git -C "$FILAMENT_DIR" diff | grep -F 'clearCompletedFence'
+          git -C "$FILAMENT_DIR" diff | grep -F 'solumAdaptiveHistoryRejection'
+          git -C "$FILAMENT_DIR" diff | grep -F 'adaptiveHistoryRejection'
+          git -C "$FILAMENT_DIR" diff | grep -F 'descriptorMatches'
+          git -C "$FILAMENT_DIR" diff | grep -F 'historyValid'
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install host dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y clang cmake git libc++-dev libc++abi-dev \
+            libglu1-mesa-dev ninja-build pkg-config unzip zip
+
+      - name: Install Filament requested Android NDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd "$FILAMENT_DIR"
+          NDK_VERSION="$(sed -n 's/^GITHUB_NDK_VERSION=//p' build/common/versions)"
+          test -n "$NDK_VERSION"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION"
+          echo "FILAMENT_NDK_VERSION=$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Build Android arm64-v8a release artifacts
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p "$LOG_DIR"
+          cd "$FILAMENT_DIR"
+          export CC=clang
+          export CXX=clang++
+          FILAMENT_NDK_VERSION="$FILAMENT_NDK_VERSION" \
+            ./build.sh -p android -q arm64-v8a -i release \
+            2>&1 | tee "../$LOG_DIR/build-android-arm64-release.log"
+
+      - name: Prove Java and JNI profiler API
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p "$LOG_DIR"
+          FILAMENT_AAR="$(find "$FILAMENT_DIR" -type f -name 'filament-android*.aar' | head -n 1)"
+          test -n "$FILAMENT_AAR"
+          unzip -p "$FILAMENT_AAR" classes.jar > /tmp/filament-profiler-classes.jar
+          javap -classpath /tmp/filament-profiler-classes.jar \
+            com.google.android.filament.Renderer | tee "$LOG_DIR/renderer-api.txt"
+          grep -F 'startSolumGpuProfiler(int, int)' "$LOG_DIR/renderer-api.txt"
+          grep -F 'stopSolumGpuProfiler()' "$LOG_DIR/renderer-api.txt"
+          JNI_SO="$(find "$FILAMENT_DIR" -type f -name 'libfilament-jni.so' | head -n 1)"
+          test -n "$JNI_SO"
+          readelf -Ws "$JNI_SO" | tee "$LOG_DIR/filament-jni-symbols.txt"
+          grep -F 'Renderer_nStartSolumGpuProfiler' "$LOG_DIR/filament-jni-symbols.txt"
+          grep -F 'Renderer_nStopSolumGpuProfiler' "$LOG_DIR/filament-jni-symbols.txt"
+          grep -F 'View_nGetSolumAdaptiveTaaAbiVersion' "$LOG_DIR/filament-jni-symbols.txt"
+
+      - name: Collect checksummed artifacts
+        if: always()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ARTIFACT_DIR="filament-solum-adaptive-taa-artifacts"
+          mkdir -p "$ARTIFACT_DIR/logs" "$ARTIFACT_DIR/aars" "$ARTIFACT_DIR/native"
+          cp -R "$LOG_DIR"/. "$ARTIFACT_DIR/logs/" || true
+          cp filament-solum-patches.sha256 filament-profiler-diff-stat.txt \
+            "$ARTIFACT_DIR/" || true
+          find "$FILAMENT_DIR" -type f -path '*/build/outputs/aar/*.aar' \
+            -print -exec cp -v {} "$ARTIFACT_DIR/aars/" \; || true
+          find "$FILAMENT_DIR/out" -type f -name '*.aar' \
+            -print -exec cp -v {} "$ARTIFACT_DIR/aars/" \; || true
+          find "$FILAMENT_DIR" -type f -path '*/arm64-v8a/*.so' \
+            -print -exec cp -v {} "$ARTIFACT_DIR/native/" \; || true
+          printf '%s\n' "$FILAMENT_COMMIT" > "$ARTIFACT_DIR/filament-source-commit.txt"
+          find "$ARTIFACT_DIR" -type f ! -name SHA256SUMS.txt -print0 \
+            | sort -z | xargs -0 sha256sum \
+            > "$ARTIFACT_DIR/SHA256SUMS.txt"
+
+      - name: Upload adaptive TAA build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: filament-v1714-solum-adaptive-taa-arm64
+          path: filament-solum-adaptive-taa-artifacts/**
+          if-no-files-found: error

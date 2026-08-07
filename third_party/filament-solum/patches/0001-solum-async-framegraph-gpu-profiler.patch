@@ -1,0 +1,729 @@
+From 0000000000000000000000000000000000000001 Mon Sep 17 00:00:00 2001
+Subject: [PATCH] filament: add bounded async SOLUM framegraph GPU profiler
+
+Base: google/filament v1.71.4@a0ecdbbeba5f1005bbad0a4c8b2fe6955788cdee
+
+Debug-only and disabled by default. Uses backend TimerQuery scopes around the accepted
+frame, named View, and a rotating bounded window of real active FrameGraph passes.
+The 20-handle budget respects the v1.71.4 Vulkan 32-timer pool and its four FrameInfo
+owners. Results are polled asynchronously; the profiler never waits for GPU completion.
+JSON marks nested timings as non-additive and reports coverage, pending, dropped and error
+scope counts.
+
+diff --git a/android/filament-android/src/main/cpp/Renderer.cpp b/android/filament-android/src/main/cpp/Renderer.cpp
+index c2d7dd3d4d77db980854b6e9e6b75985a4d021ce..12de9408f3306bea899a8d1e8122183647d3d409 100644
+--- a/android/filament-android/src/main/cpp/Renderer.cpp
++++ b/android/filament-android/src/main/cpp/Renderer.cpp
+@@ -22,6 +22,7 @@
+ #include <filament/Viewport.h>
+ #include <backend/PixelBufferDescriptor.h>
+ 
++#include <algorithm>
+ #include <exception>
+ 
+ #include "common/CallbackUtils.h"
+@@ -250,3 +251,24 @@ Java_com_google_android_filament_Renderer_nGetFrameToSkipCount(JNIEnv *, jclass
+     Renderer *renderer = (Renderer *) nativeRenderer;
+     return renderer->getFrameToSkipCount();
+ }
++
++extern "C" JNIEXPORT jboolean JNICALL
++Java_com_google_android_filament_Renderer_nStartSolumGpuProfiler(JNIEnv *env, jclass,
++        jlong nativeRenderer, jint maxSampledFrames, jint samplePeriod) {
++    Renderer* renderer = (Renderer*) nativeRenderer;
++    return wrapJni<jboolean>(env, [=]() {
++        return (jboolean) renderer->startSolumGpuProfiler(
++                uint32_t(std::max(1, maxSampledFrames)),
++                uint32_t(std::max(1, samplePeriod)));
++    });
++}
++
++extern "C" JNIEXPORT jstring JNICALL
++Java_com_google_android_filament_Renderer_nStopSolumGpuProfiler(JNIEnv *env, jclass,
++        jlong nativeRenderer) {
++    Renderer* renderer = (Renderer*) nativeRenderer;
++    return wrapJni<jstring>(env, [=]() {
++        utils::CString snapshot = renderer->stopSolumGpuProfiler();
++        return env->NewStringUTF(snapshot.c_str());
++    });
++}
+diff --git a/android/filament-android/src/main/java/com/google/android/filament/Renderer.java b/android/filament-android/src/main/java/com/google/android/filament/Renderer.java
+index 4b8663ab671b701f55a86b1ba43c2858087a728c..9678ae1c64b454b4955805b6acd868b8a30f50ab 100644
+--- a/android/filament-android/src/main/java/com/google/android/filament/Renderer.java
++++ b/android/filament-android/src/main/java/com/google/android/filament/Renderer.java
+@@ -754,6 +754,17 @@ public class Renderer {
+         return nGetFrameToSkipCount(getNativeObject());
+     }
+ 
++    /** Starts a bounded asynchronous SOLUM frame / View / FrameGraph-pass GPU capture. */
++    public boolean startSolumGpuProfiler(int maxSampledFrames, int samplePeriod) {
++        return nStartSolumGpuProfiler(getNativeObject(), maxSampledFrames, samplePeriod);
++    }
++
++    /** Stops capture without waiting for the GPU and returns a compact JSON snapshot. */
++    @NonNull
++    public String stopSolumGpuProfiler() {
++        return nStopSolumGpuProfiler(getNativeObject());
++    }
++
+     public long getNativeObject() {
+         if (mNativeObject == 0) {
+             throw new IllegalStateException("Calling method on destroyed Renderer");
+@@ -798,4 +809,7 @@ public class Renderer {
+ 
+     private static native void nSkipNextFrames(long nativeObject, int frameCount);
+     private static native int nGetFrameToSkipCount(long nativeObject);
++    private static native boolean nStartSolumGpuProfiler(long nativeObject,
++            int maxSampledFrames, int samplePeriod);
++    private static native String nStopSolumGpuProfiler(long nativeObject);
+ }
+diff --git a/filament/include/filament/Renderer.h b/filament/include/filament/Renderer.h
+index 62ae8411d30f0dee7e915d98d0c2027c7a636147..58dcebfcba0f26fced98296fad952c14b7645bf5 100644
+--- a/filament/include/filament/Renderer.h
++++ b/filament/include/filament/Renderer.h
+@@ -22,6 +22,7 @@
+ #include <filament/FilamentAPI.h>
+ 
+ #include <utils/compiler.h>
++#include <utils/CString.h>
+ #include <utils/FixedCapacityVector.h>
+ 
+ #include <math/vec4.h>
+@@ -127,6 +128,16 @@ public:
+      */
+     size_t getMaxFrameHistorySize() const noexcept;
+ 
++    /** SOLUM fork debug API. Disabled until explicitly started. */
++    bool startSolumGpuProfiler(uint32_t maxSampledFrames = 120,
++            uint32_t samplePeriod = 4);
++
++    /**
++     * Stops capture and returns completed frame, View, and FrameGraph-pass GPU intervals as JSON.
++     * Pending queries are reported and are never waited on.
++     */
++    utils::CString stopSolumGpuProfiler();
++
+     /**
+      * Use FrameRateOptions to set the desired frame rate and control how quickly the system
+      * reacts to GPU load changes.
+diff --git a/filament/src/Renderer.cpp b/filament/src/Renderer.cpp
+index 4f57adbb30c1592ea467d20a39aa47109bd4fa87..a468601132e458d7ad6078f30fe3bd9594cfe7b7 100644
+--- a/filament/src/Renderer.cpp
++++ b/filament/src/Renderer.cpp
+@@ -127,4 +127,13 @@ size_t Renderer::getMaxFrameHistorySize() const noexcept {
+     return downcast(this)->getMaxFrameHistorySize();
+ }
+ 
++bool Renderer::startSolumGpuProfiler(uint32_t const maxSampledFrames,
++        uint32_t const samplePeriod) {
++    return downcast(this)->startSolumGpuProfiler(maxSampledFrames, samplePeriod);
++}
++
++utils::CString Renderer::stopSolumGpuProfiler() {
++    return downcast(this)->stopSolumGpuProfiler();
++}
++
+ } // namespace filament
+diff --git a/filament/src/details/Renderer.cpp b/filament/src/details/Renderer.cpp
+index ae2f67b8a0a9161dce3cdbf0b4f70fef94deffd4..a3ba1cf8fc29029661b2d9e0ec07533d5dacbbfa 100644
+--- a/filament/src/details/Renderer.cpp
++++ b/filament/src/details/Renderer.cpp
+@@ -68,11 +68,16 @@
+ #include <utils/debug.h>
+ 
+ #include <algorithm>
++#include <array>
++#include <cctype>
+ #include <cmath>
+ #include <chrono>
+ #include <limits>
+ #include <memory>
++#include <sstream>
++#include <string>
+ #include <utility>
++#include <vector>
+ 
+ #include <stddef.h>
+ #include <stdint.h>
+@@ -91,11 +96,394 @@ namespace filament {
+ 
+ using namespace backend;
+ 
++class SolumGpuProfiler {
++    // VulkanQueryManager in v1.71.4 has 32 timer handles total. FrameInfo owns four.
++    // Keep a safety margin for other engine users and rotate a pass window across frames.
++    static constexpr size_t QUERY_COUNT = 20;
++    static constexpr size_t PASS_QUERY_BUDGET = 12;
++    static constexpr size_t RECORD_LIMIT = 8192;
++
++    struct Slot {
++        TimerQueryHandle handle{};
++        bool pending = false;
++        uint32_t frameId = 0;
++        uint32_t passOrdinal = UINT32_MAX;
++        std::string kind;
++        std::string view;
++        std::string pass;
++    };
++
++    struct Record {
++        uint32_t frameId;
++        uint64_t elapsedNs;
++        uint32_t passOrdinal;
++        std::string kind;
++        std::string view;
++        std::string pass;
++    };
++
++    struct Aggregate {
++        std::string owner;
++        uint64_t totalNs = 0;
++        uint64_t maxNs = 0;
++        uint32_t count = 0;
++    };
++
++public:
++    explicit SolumGpuProfiler(FEngine& engine) noexcept : mEngine(engine) {
++        mHooks.user = this;
++        mHooks.beginPass = [](void* user, DriverApi& driver, char const* name) noexcept {
++            static_cast<SolumGpuProfiler*>(user)->beginPass(driver, name);
++        };
++        mHooks.endPass = [](void* user, DriverApi& driver) noexcept {
++            static_cast<SolumGpuProfiler*>(user)->endPass(driver);
++        };
++    }
++
++    bool start(uint32_t maxSampledFrames, uint32_t samplePeriod) {
++        DriverApi& driver = mEngine.getDriverApi();
++        if (!initialize(driver)) {
++            return false;
++        }
++        poll(driver, QUERY_COUNT);
++        if (mOutstanding != 0) {
++            return false;
++        }
++        mRecords.clear();
++        mMaxSampledFrames = std::max(1u, maxSampledFrames);
++        mSamplePeriod = std::max(1u, samplePeriod);
++        mFrameOrdinal = 0;
++        mSampledFrames = 0;
++        mDroppedScopes = 0;
++        mErrorScopes = 0;
++        mObservedPasses = 0;
++        mUnsampledPasses = 0;
++        mNextPassWindowStart = 0;
++        mFrameToken = -1;
++        mViewToken = -1;
++        mPassToken = -1;
++        mCapturing = true;
++        mSampleFrame = false;
++        return true;
++    }
++
++    void terminate(DriverApi& driver) noexcept {
++        mCapturing = false;
++        for (Slot& slot : mSlots) {
++            if (slot.handle) {
++                driver.destroyTimerQuery(slot.handle);
++            }
++            slot = {};
++        }
++        mInitialized = false;
++        mSupported = false;
++        mOutstanding = 0;
++    }
++
++    void beginFrame(DriverApi& driver, uint32_t frameId) noexcept {
++        if (mInitialized) {
++            poll(driver, 128);
++        }
++        mCurrentFrameId = frameId;
++        mFrameOrdinal++;
++        mSampleFrame = mCapturing && mSampledFrames < mMaxSampledFrames &&
++                ((mFrameOrdinal - 1u) % mSamplePeriod == 0u);
++        if (!mSampleFrame) {
++            return;
++        }
++        mFramePassOrdinal = 0;
++        mPassWindowStart = mNextPassWindowStart;
++        mSampledFrames++;
++        mFrameToken = beginScope(driver, "frame", "SOLUM_AcceptedFrame", "");
++    }
++
++    void endFrame(DriverApi& driver) noexcept {
++        if (!mSampleFrame) {
++            return;
++        }
++        endScope(driver, mFrameToken);
++        mFrameToken = -1;
++        mObservedPasses += mFramePassOrdinal;
++        if (mFramePassOrdinal > 0) {
++            mNextPassWindowStart = uint32_t(
++                    (mPassWindowStart + PASS_QUERY_BUDGET) % mFramePassOrdinal);
++        }
++        mSampleFrame = false;
++    }
++
++    FrameGraph::ExecutionHooks const* beginView(DriverApi& driver,
++            char const* viewName) noexcept {
++        if (!mSampleFrame) {
++            return nullptr;
++        }
++        mCurrentView = viewName ? viewName : "UNNAMED_VIEW";
++        mViewToken = beginScope(driver, "view", mCurrentView.c_str(), "");
++        return &mHooks;
++    }
++
++    void endView(DriverApi& driver) noexcept {
++        endScope(driver, mViewToken);
++        mViewToken = -1;
++        mCurrentView.clear();
++    }
++
++    utils::CString stop() {
++        DriverApi& driver = mEngine.getDriverApi();
++        mCapturing = false;
++        if (mInitialized) {
++            poll(driver, QUERY_COUNT);
++        }
++
++        char const* status = "UNAVAILABLE";
++        if (!mRecords.empty()) {
++            status = mOutstanding == 0 ? "AVAILABLE" : "AVAILABLE_PARTIAL_PENDING";
++        } else if (mOutstanding != 0) {
++            status = "PENDING";
++        }
++
++        std::vector<Aggregate> aggregates;
++        for (Record const& record : mRecords) {
++            std::string owner = classify(record);
++            auto pos = std::find_if(aggregates.begin(), aggregates.end(),
++                    [&owner](Aggregate const& aggregate) { return aggregate.owner == owner; });
++            if (pos == aggregates.end()) {
++                aggregates.push_back({ std::move(owner), record.elapsedNs,
++                        record.elapsedNs, 1 });
++            } else {
++                pos->totalNs += record.elapsedNs;
++                pos->maxNs = std::max(pos->maxNs, record.elapsedNs);
++                pos->count++;
++            }
++        }
++
++        std::ostringstream out;
++        out << "{\"schema\":\"solum.filament_gpu_profiler/v1\",\"status\":\""
++            << status
++            << "\",\"source\":\"backend_timer_query_async\""
++            << ",\"scopeSemantics\":\"nested_not_additive\""
++            << ",\"queryHandleBudget\":" << QUERY_COUNT
++            << ",\"passWindowBudget\":" << PASS_QUERY_BUDGET
++            << ",\"samplePeriod\":" << mSamplePeriod
++            << ",\"sampledFrames\":" << mSampledFrames
++            << ",\"observedPasses\":" << mObservedPasses
++            << ",\"intentionallyUnsampledPasses\":" << mUnsampledPasses
++            << ",\"completedScopes\":" << mRecords.size()
++            << ",\"pendingScopes\":" << mOutstanding
++            << ",\"droppedScopes\":" << mDroppedScopes
++            << ",\"errorScopes\":" << mErrorScopes
++            << ",\"aggregates\":[";
++        bool first = true;
++        for (Aggregate const& aggregate : aggregates) {
++            if (!first) {
++                out << ',';
++            }
++            first = false;
++            out << "{\"owner\":\"" << escape(aggregate.owner)
++                << "\",\"count\":" << aggregate.count
++                << ",\"totalGpuNs\":" << aggregate.totalNs
++                << ",\"maxGpuNs\":" << aggregate.maxNs << '}';
++        }
++        out << "],\"records\":[";
++        first = true;
++        for (Record const& record : mRecords) {
++            if (!first) {
++                out << ',';
++            }
++            first = false;
++            out << "{\"frameId\":" << record.frameId
++                << ",\"kind\":\"" << escape(record.kind)
++                << "\",\"owner\":\"" << escape(classify(record))
++                << "\",\"view\":\"" << escape(record.view)
++                << "\",\"pass\":\"" << escape(record.pass) << "\"";
++            if (record.kind == "pass") {
++                out << ",\"passOrdinal\":" << record.passOrdinal;
++            }
++            out << ",\"gpuNs\":" << record.elapsedNs << '}';
++        }
++        out << "]}";
++        return utils::CString(out.str().c_str());
++    }
++
++private:
++    bool initialize(DriverApi& driver) noexcept {
++        if (mInitialized) {
++            return mSupported;
++        }
++        mInitialized = true;
++        mSupported = driver.isFrameTimeSupported();
++        if (!mSupported) {
++            return false;
++        }
++        for (Slot& slot : mSlots) {
++            slot.handle = driver.createTimerQuery();
++            if (!slot.handle) {
++                mSupported = false;
++                break;
++            }
++        }
++        if (!mSupported) {
++            for (Slot& slot : mSlots) {
++                if (slot.handle) {
++                    driver.destroyTimerQuery(slot.handle);
++                    slot.handle = {};
++                }
++            }
++        }
++        return mSupported;
++    }
++
++    int32_t beginScope(DriverApi& driver, char const* kind,
++            char const* view, char const* pass,
++            uint32_t passOrdinal = UINT32_MAX) noexcept {
++        if (mOutstanding == QUERY_COUNT || mRecords.size() >= RECORD_LIMIT) {
++            mDroppedScopes++;
++            return -1;
++        }
++        Slot& slot = mSlots[mIssueIndex];
++        if (slot.pending || !slot.handle) {
++            mDroppedScopes++;
++            return -1;
++        }
++        slot.pending = true;
++        slot.frameId = mCurrentFrameId;
++        slot.passOrdinal = passOrdinal;
++        slot.kind = kind ? kind : "unknown";
++        slot.view = view ? view : "";
++        slot.pass = pass ? pass : "";
++        int32_t const token = int32_t(mIssueIndex);
++        mIssueIndex = (mIssueIndex + 1u) % QUERY_COUNT;
++        mOutstanding++;
++        driver.beginTimerQuery(slot.handle);
++        return token;
++    }
++
++    void endScope(DriverApi& driver, int32_t token) noexcept {
++        if (token >= 0) {
++            driver.endTimerQuery(mSlots[size_t(token)].handle);
++        }
++    }
++
++    void beginPass(DriverApi& driver, char const* name) noexcept {
++        uint32_t const ordinal = mFramePassOrdinal++;
++        if (ordinal < mPassWindowStart ||
++                ordinal >= mPassWindowStart + PASS_QUERY_BUDGET) {
++            mUnsampledPasses++;
++            mPassToken = -1;
++            return;
++        }
++        mPassToken = beginScope(driver, "pass", mCurrentView.c_str(), name, ordinal);
++    }
++
++    void endPass(DriverApi& driver) noexcept {
++        endScope(driver, mPassToken);
++        mPassToken = -1;
++    }
++
++    void poll(DriverApi& driver, size_t budget) noexcept {
++        while (budget-- && mOutstanding) {
++            Slot& slot = mSlots[mPollIndex];
++            uint64_t elapsed = 0;
++            TimerQueryResult const result = driver.getTimerQueryValue(slot.handle, &elapsed);
++            if (result == TimerQueryResult::NOT_READY) {
++                break;
++            }
++            if (result == TimerQueryResult::AVAILABLE && mRecords.size() < RECORD_LIMIT) {
++                mRecords.push_back({ slot.frameId, elapsed, slot.passOrdinal,
++                        std::move(slot.kind),
++                        std::move(slot.view), std::move(slot.pass) });
++            } else {
++                mErrorScopes++;
++            }
++            slot.pending = false;
++            slot.passOrdinal = UINT32_MAX;
++            slot.kind.clear();
++            slot.view.clear();
++            slot.pass.clear();
++            mPollIndex = (mPollIndex + 1u) % QUERY_COUNT;
++            mOutstanding--;
++        }
++    }
++
++    static std::string escape(std::string const& text) {
++        std::string out;
++        out.reserve(text.size());
++        for (char c : text) {
++            if (c == '\\' || c == '\"') {
++                out.push_back('\\');
++            }
++            if (c == '\n' || c == '\r' || c == '\t') {
++                c = ' ';
++            }
++            out.push_back(c);
++        }
++        return out;
++    }
++
++    static std::string classify(Record const& record) {
++        if (record.kind == "frame") {
++            return "FILAMENT_FRAME";
++        }
++        if (record.kind == "view") {
++            return "VIEW_TOTAL";
++        }
++        std::string name = record.pass;
++        std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
++            return char(std::tolower(c));
++        });
++        if (name.find("shadow") != std::string::npos) return "SHADOWS";
++        if (name.find("structure") != std::string::npos ||
++                name.find("depth") != std::string::npos) return "DEPTH_STRUCTURE";
++        if (name.find("ambient occlusion") != std::string::npos ||
++                name.find("ssao") != std::string::npos) return "SSAO";
++        if (name.find("reflection") != std::string::npos ||
++                name.find("ssr") != std::string::npos) return "SSR_REFRACTION";
++        if (name.find("transparent") != std::string::npos) return "TRANSPARENT";
++        if (name.find("bloom") != std::string::npos) return "BLOOM";
++        if (name.find("taa") != std::string::npos ||
++                name.find("fxaa") != std::string::npos ||
++                name.find("anti alias") != std::string::npos) return "ANTI_ALIASING";
++        if (name.find("upscale") != std::string::npos) return "UPSCALE";
++        if (name.find("present") != std::string::npos ||
++                name.find("blit") != std::string::npos) return "PRESENT_BLIT";
++        if (name.find("color") != std::string::npos) return "OPAQUE_COLOR";
++        return "OTHER_OR_MERGED";
++    }
++
++    FEngine& mEngine;
++    std::array<Slot, QUERY_COUNT> mSlots{};
++    std::vector<Record> mRecords;
++    FrameGraph::ExecutionHooks mHooks{};
++    std::string mCurrentView;
++    size_t mIssueIndex = 0;
++    size_t mPollIndex = 0;
++    size_t mOutstanding = 0;
++    uint32_t mCurrentFrameId = 0;
++    uint32_t mFrameOrdinal = 0;
++    uint32_t mSampledFrames = 0;
++    uint32_t mMaxSampledFrames = 120;
++    uint32_t mSamplePeriod = 4;
++    uint32_t mDroppedScopes = 0;
++    uint32_t mErrorScopes = 0;
++    uint32_t mObservedPasses = 0;
++    uint32_t mUnsampledPasses = 0;
++    uint32_t mFramePassOrdinal = 0;
++    uint32_t mPassWindowStart = 0;
++    uint32_t mNextPassWindowStart = 0;
++    int32_t mFrameToken = -1;
++    int32_t mViewToken = -1;
++    int32_t mPassToken = -1;
++    bool mInitialized = false;
++    bool mSupported = false;
++    bool mCapturing = false;
++    bool mSampleFrame = false;
++};
++
+ FRenderer::FRenderer(FEngine& engine) :
+         mEngine(engine),
+         mFrameSkipper(),
+         mRenderTargetHandle(engine.getDefaultRenderTarget()),
+         mFrameInfoManager(engine, engine.getDriverApi()),
++        mSolumGpuProfiler(std::make_unique<SolumGpuProfiler>(engine)),
+         mHdrTranslucent(TextureFormat::RGBA16F),
+         mHdrQualityMedium(TextureFormat::R11F_G11F_B10F),
+         mHdrQualityHigh(TextureFormat::RGB16F),
+@@ -195,6 +583,7 @@ void FRenderer::terminate(FEngine& engine) {
+         engine.execute();
+     }
+ 
++    mSolumGpuProfiler->terminate(driver);
+     mFrameInfoManager.terminate(engine);
+     mFrameSkipper.terminate(driver);
+     mResourceAllocator->terminate();
+@@ -446,6 +835,7 @@ bool FRenderer::beginFrame(FSwapChain* swapChain, uint64_t vsyncSteadyClockTimeN
+         mFrameInfoManager.beginFrame(swapChain, driver, {
+             .historySize = mFrameRateOptions.history
+         }, mFrameId, appVsync);
++        mSolumGpuProfiler->beginFrame(driver, mFrameId);
+ 
+         // ask the engine to do what it needs to (e.g. updates light buffer, materials...)
+         engine.prepare(driver);
+@@ -501,6 +891,7 @@ void FRenderer::endFrame() {
+     mSwapChain->commit(driver);
+     mSwapChain = nullptr;
+ 
++    mSolumGpuProfiler->endFrame(driver);
+     mFrameInfoManager.endFrame(driver);
+     mFrameSkipper.submitFrame(driver);
+ 
+@@ -1578,7 +1969,12 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+     //fg.export_graphviz(graphviz, view.getName());
+     //DLOG(INFO) << graphviz.c_str();
+ 
+-    fg.execute(driver);
++    FrameGraph::ExecutionHooks const* hooks =
++            mSolumGpuProfiler->beginView(driver, view.getName());
++    fg.execute(driver, hooks);
++    if (hooks) {
++        mSolumGpuProfiler->endView(driver);
++    }
+ 
+     // save the current history entry and destroy the oldest entry
+     view.commitFrameHistory(engine);
+@@ -1586,4 +1982,13 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+     recordHighWatermark(commandArena.getListener().getHighWatermark());
+ }
+ 
++bool FRenderer::startSolumGpuProfiler(uint32_t const maxSampledFrames,
++        uint32_t const samplePeriod) {
++    return mSolumGpuProfiler->start(maxSampledFrames, samplePeriod);
++}
++
++utils::CString FRenderer::stopSolumGpuProfiler() {
++    return mSolumGpuProfiler->stop();
++}
++
+ } // namespace filament
+diff --git a/filament/src/details/Renderer.h b/filament/src/details/Renderer.h
+index 0729a1595f7a2979fb1ee5bbde06f9d0523254e3..65a1abfa42c69561b430c0f07a189b896802ef97 100644
+--- a/filament/src/details/Renderer.h
++++ b/filament/src/details/Renderer.h
+@@ -63,6 +63,7 @@ class Driver;
+ class FEngine;
+ class FRenderTarget;
+ class FView;
++class SolumGpuProfiler;
+ 
+ /*
+  * A concrete implementation of the Renderer Interface.
+@@ -165,6 +166,9 @@ public:
+         return MAX_FRAMETIME_HISTORY;
+     }
+ 
++    bool startSolumGpuProfiler(uint32_t maxSampledFrames, uint32_t samplePeriod);
++    utils::CString stopSolumGpuProfiler();
++
+ private:
+     friend class Renderer;
+     using Command = RenderPass::Command;
+@@ -211,6 +215,7 @@ private:
+     size_t mCommandsHighWatermark = 0;
+     uint32_t mFrameId = 1; // id 0 is reserved for standalone views
+     FrameInfoManager mFrameInfoManager;
++    std::unique_ptr<SolumGpuProfiler> mSolumGpuProfiler;
+     backend::TextureFormat mHdrTranslucent;
+     backend::TextureFormat mHdrQualityMedium;
+     backend::TextureFormat mHdrQualityHigh;
+diff --git a/filament/src/fg/FrameGraph.cpp b/filament/src/fg/FrameGraph.cpp
+index bd906e08c267244e9429810ce02f839285ed5dc5..339cda127c86b4c7c2c32721fc481583ed05f24b 100644
+--- a/filament/src/fg/FrameGraph.cpp
++++ b/filament/src/fg/FrameGraph.cpp
+@@ -220,7 +220,8 @@ FrameGraph& FrameGraph::compile() noexcept {
+     return *this;
+ }
+ 
+-void FrameGraph::execute(backend::DriverApi& driver) noexcept {
++void FrameGraph::execute(backend::DriverApi& driver,
++        ExecutionHooks const* hooks) noexcept {
+ 
+     bool const useProtectedMemory = mMode == Mode::PROTECTED;
+     auto const& passNodes = mPassNodes;
+@@ -238,6 +239,9 @@ void FrameGraph::execute(backend::DriverApi& driver) noexcept {
+         assert_invariant(!node->isCulled());
+ 
+         FILAMENT_TRACING_NAME(FILAMENT_TRACING_CATEGORY_FILAMENT, node->getName());
++        if (hooks && hooks->beginPass) {
++            hooks->beginPass(hooks->user, driver, node->getName());
++        }
+         driver.pushGroupMarker(node->getName());
+ 
+         // devirtualize resourcesList
+@@ -256,6 +260,9 @@ void FrameGraph::execute(backend::DriverApi& driver) noexcept {
+             resource->destroy(context);
+         }
+         driver.popGroupMarker();
++        if (hooks && hooks->endPass) {
++            hooks->endPass(hooks->user, driver);
++        }
+     }
+     driver.popGroupMarker();
+ 
+diff --git a/filament/src/fg/FrameGraph.h b/filament/src/fg/FrameGraph.h
+index bc24473d4ff443dec2fe1868c754333d20aaa519..83822eeffd6e6c4d2a5b533ab72f36874bc55b71 100644
+--- a/filament/src/fg/FrameGraph.h
++++ b/filament/src/fg/FrameGraph.h
+@@ -312,12 +312,19 @@ public:
+      */
+     FrameGraph& compile() noexcept;
+ 
++    struct ExecutionHooks {
++        void* user = nullptr;
++        void (*beginPass)(void*, backend::DriverApi&, char const*) noexcept = nullptr;
++        void (*endPass)(void*, backend::DriverApi&) noexcept = nullptr;
++    };
++
+     /**
+      * Execute all referenced passes
+      *
+      * @param driver a reference to the backend to execute the commands
+      */
+-    void execute(backend::DriverApi& driver) noexcept;
++    void execute(backend::DriverApi& driver,
++            ExecutionHooks const* hooks = nullptr) noexcept;
+ 
+     /**
+      * Forwards a resource to another one which gets replaced.
+diff --git a/filament/backend/src/vulkan/VulkanAsyncHandles.h b/filament/backend/src/vulkan/VulkanAsyncHandles.h
+index 7e99993..f8d2c07 100644
+--- a/filament/backend/src/vulkan/VulkanAsyncHandles.h
++++ b/filament/backend/src/vulkan/VulkanAsyncHandles.h
+@@ -249,2 +249,2 @@ struct VulkanTimerQuery : public HwTimerQuery, fvkmemory::ThreadSafeResource {
+-    bool isCompleted() noexcept {
++    std::shared_ptr<VulkanCmdFence> getCompletedFence() noexcept {
+         std::lock_guard const lock(mFenceMutex);
+@@ -256,3 +256,13 @@ struct VulkanTimerQuery : public HwTimerQuery, fvkmemory::ThreadSafeResource {
+         // This fence indicates that the corresponding buffer has been completed.
+-        return mFence && mFence->getStatus() == VK_SUCCESS;
++        return mFence && mFence->getStatus() == VK_SUCCESS ? mFence : nullptr;
++    }
++
++    void clearCompletedFence(std::shared_ptr<VulkanCmdFence> const& completedFence) noexcept {
++        std::lock_guard const lock(mFenceMutex);
++        // TimerQuery handles can be reused after AVAILABLE is consumed. Clear only the exact
++        // completed generation observed by the synchronous caller; never clear a newer fence
++        // that beginQuery may already have installed on the backend thread.
++        if (mFence == completedFence) {
++            mFence.reset();
++        }
+     }
+diff --git a/filament/backend/src/vulkan/VulkanDriver.cpp b/filament/backend/src/vulkan/VulkanDriver.cpp
+index 3b1447d..b87de97 100644
+--- a/filament/backend/src/vulkan/VulkanDriver.cpp
++++ b/filament/backend/src/vulkan/VulkanDriver.cpp
+@@ -1841,3 +1841,4 @@ TimerQueryResult VulkanDriver::getTimerQueryValue(Handle<HwTimerQuery> tqh, uint
+     auto vtq = resource_ptr<VulkanTimerQuery>::cast(&mResourceManager, tqh);
+-    if (!vtq->isCompleted()) {
++    auto const completedFence = vtq->getCompletedFence();
++    if (!completedFence) {
+         return TimerQueryResult::NOT_READY;
+@@ -1856,2 +1857,3 @@ TimerQueryResult VulkanDriver::getTimerQueryValue(Handle<HwTimerQuery> tqh, uint
+         *elapsedTime = 0;
++        vtq->clearCompletedFence(completedFence);
+         return TimerQueryResult::ERROR;
+@@ -1864,2 +1866,6 @@ TimerQueryResult VulkanDriver::getTimerQueryValue(Handle<HwTimerQuery> tqh, uint
+     *elapsedTime = uint64_t(float(end - begin) * period);
++    // AVAILABLE is a one-shot result. Without consuming the retained fence, a frontend caller
++    // that reuses this handle can observe the previous generation before the queued beginQuery
++    // installs the next fence and can incorrectly attribute an old duration to a new scope.
++    vtq->clearCompletedFence(completedFence);
+     return TimerQueryResult::AVAILABLE;
+-- 
+2.39.5

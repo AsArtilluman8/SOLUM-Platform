@@ -1,0 +1,271 @@
+diff --git a/android/filament-android/src/main/cpp/View.cpp b/android/filament-android/src/main/cpp/View.cpp
+index e00929a..d8f0847 100644
+--- a/android/filament-android/src/main/cpp/View.cpp
++++ b/android/filament-android/src/main/cpp/View.cpp
+@@ -627,3 +627,12 @@ Java_com_google_android_filament_View_nIsChannelDepthClearEnabled(JNIEnv *env, j
+     View* view = (View*) nativeView;
+     return (jboolean)view->isChannelDepthClearEnabled((uint8_t) channel);
+ }
++
++// Capability marker consumed through dlsym by the SOLUM runtime bridge. Keeping this separate
++// from the public Android View API lets the exact R6 path fail closed on older AARs.
++extern "C"
++JNIEXPORT jint JNICALL
++Java_com_google_android_filament_View_nGetSolumAdaptiveTaaAbiVersion(
++        JNIEnv*, jclass) {
++    return 1;
++}
+diff --git a/filament/include/filament/Options.h b/filament/include/filament/Options.h
+index dc0d0a2..e0a9de5 100644
+--- a/filament/include/filament/Options.h
++++ b/filament/include/filament/Options.h
+@@ -631,6 +631,8 @@ struct TemporalAntiAliasingOptions {
+     bool preventFlickering = false;
+     /** whether to apply history reprojection (debug option) */
+     bool historyReprojection = true;
++    /** SOLUM fork: adaptive current-neighborhood/depth/camera history rejection. */
++    bool solumAdaptiveHistoryRejection = false;
+ };
+ 
+ /**
+diff --git a/filament/src/FrameHistory.h b/filament/src/FrameHistory.h
+index c016ec1..666f42d 100644
+--- a/filament/src/FrameHistory.h
++++ b/filament/src/FrameHistory.h
+@@ -22,6 +22,7 @@
+ 
+ #include <math/mat4.h>
+ #include <math/vec2.h>
++#include <math/vec3.h>
+ 
+ #include <stdint.h>
+ 
+@@ -36,6 +37,9 @@ struct FrameHistoryEntry {
+         FrameGraphTexture::Descriptor desc;
+         math::mat4 projection;     // world space to clip space
+         math::float2 jitter{};
++        math::float3 cameraForward{};
++        math::float3 cameraUp{};
++        bool cameraBasisValid = false;
+         uint32_t frameId = 0;   // used for halton sequence
+     } taa;
+     struct {
+diff --git a/filament/src/PostProcessManager.cpp b/filament/src/PostProcessManager.cpp
+index 03ba703..7017107 100644
+--- a/filament/src/PostProcessManager.cpp
++++ b/filament/src/PostProcessManager.cpp
+@@ -2905,6 +2905,9 @@ void PostProcessManager::TaaJitterCamera(
+ 
+     // compute projection
+     current.projection = inoutCameraInfo->projection * inoutCameraInfo->getUserViewMatrix();
++    current.cameraForward = inoutCameraInfo->getForwardVector();
++    current.cameraUp = normalize(inoutCameraInfo->model[1].xyz);
++    current.cameraBasisValid = true;
+     current.frameId = previous.frameId + 1;
+ 
+     auto jitterPosition = [pattern = taaOptions.jitterPattern](size_t const frameIndex) -> float2 {
+@@ -2960,6 +2963,7 @@ void PostProcessManager::configureTemporalAntiAliasingMaterial(backend::DriverAp
+         { "useYCoCg", taaOptions.useYCoCg },
+         { "hdr", taaOptions.hdr },
+         { "preventFlickering", taaOptions.preventFlickering },
++        { "adaptiveHistoryRejection", taaOptions.solumAdaptiveHistoryRejection },
+         { "boxType", int32_t(taaOptions.boxType) },
+         { "boxClipping", int32_t(taaOptions.boxClipping) },
+         { "varianceGamma", taaOptions.varianceGamma },
+@@ -3025,14 +3029,38 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::taa(FrameGraph& fg,
+     auto const& previous = frameHistory.getPrevious().*pTaa;
+     auto& current = frameHistory.getCurrent().*pTaa;
+ 
++    auto taaOutputDesc = fg.getDescriptor(input);
++    if (taaOptions.upscaling > 1.0f) {
++        taaOutputDesc.width  *= taaOptions.upscaling;
++        taaOutputDesc.height *= taaOptions.upscaling;
++    }
++
++    float cameraAngularDelta = 0.0f;
++    if (previous.cameraBasisValid && current.cameraBasisValid) {
++        float const forwardDot = clamp(
++                dot(previous.cameraForward, current.cameraForward), -1.0f, 1.0f);
++        float const upDot = clamp(dot(previous.cameraUp, current.cameraUp), -1.0f, 1.0f);
++        cameraAngularDelta = std::acos(std::min(forwardDot, upDot));
++    }
++    constexpr float CAMERA_MOTION_FULL_RADIANS = 0.13962634f; // 8 degrees
++    constexpr float CAMERA_CUT_RADIANS = 1.04719755f; // 60 degrees
++    float const cameraAngularMotion = saturate(
++            cameraAngularDelta / CAMERA_MOTION_FULL_RADIANS);
++    bool const descriptorMatches = previous.desc.width == taaOutputDesc.width &&
++            previous.desc.height == taaOutputDesc.height &&
++            previous.desc.format == taaOutputDesc.format;
++    bool const cameraCut = previous.cameraBasisValid && current.cameraBasisValid &&
++            cameraAngularDelta >= CAMERA_CUT_RADIANS;
++    bool const historyValid = previous.color.handle && descriptorMatches && !cameraCut;
++
+     // if we don't have a history yet, just use the current color buffer as history
+     FrameGraphId<FrameGraphTexture> colorHistory = input;
+-    if (UTILS_LIKELY(previous.color.handle)) {
++    if (UTILS_LIKELY(historyValid)) {
+         colorHistory = fg.import("TAA history", previous.desc,
+                 FrameGraphTexture::Usage::SAMPLEABLE, previous.color);
+     }
+ 
+-    mat4 const& historyProjection = previous.color.handle ?
++    mat4 const& historyProjection = historyValid ?
+             previous.projection : current.projection;
+ 
+     struct TAAData {
+@@ -3044,11 +3072,7 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::taa(FrameGraph& fg,
+     };
+     auto const& taaPass = fg.addPass<TAAData>("TAA",
+             [&](FrameGraph::Builder& builder, auto& data) {
+-                auto desc = fg.getDescriptor(input);
+-                if (taaOptions.upscaling > 1.0f) {
+-                    desc.width  *= taaOptions.upscaling;
+-                    desc.height *= taaOptions.upscaling;
+-                }
++                auto const desc = taaOutputDesc;
+                 data.color = builder.sample(input);
+                 data.depth = builder.sample(depth);
+                 data.history = builder.sample(colorHistory);
+@@ -3103,6 +3127,8 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::taa(FrameGraph& fg,
+                         .filterMin = SamplerMinFilter::LINEAR
+                 });
+                 mi->setParameter("alpha", taaOptions.feedback);
++                mi->setParameter("cameraAngularMotion", cameraAngularMotion);
++                mi->setParameter("historyValid", historyValid ? 1.0f : 0.0f);
+ 
+                 // jitter is negated here because the material wants the sample jitter offset
+                 // not the projection matrix offset
+diff --git a/filament/src/materials/antiAliasing/taa/taa.mat b/filament/src/materials/antiAliasing/taa/taa.mat
+index f174bb0..9fb5088 100644
+--- a/filament/src/materials/antiAliasing/taa/taa.mat
++++ b/filament/src/materials/antiAliasing/taa/taa.mat
+@@ -24,6 +24,14 @@ material {
+             type : float,
+             name : alpha
+         },
++        {
++            type : float,
++            name : cameraAngularMotion
++        },
++        {
++            type : float,
++            name : historyValid
++        },
+         {
+             type : mat4,
+             name : reprojection,
+@@ -91,6 +99,11 @@ material {
+             name : preventFlickering,
+             default : false
+         },
++        {
++            type : bool,
++            name : adaptiveHistoryRejection,
++            default : false
++        },
+         {
+             type : bool,
+             name : hdr,
+@@ -124,6 +137,8 @@ vertex {
+ 
+ fragment {
+ 
++#include "../../utils/depthUtils.fs"
++
+ /* Clipping box type */
+ 
+ // min/max neighborhood
+@@ -330,12 +345,17 @@ void postProcess(inout PostProcessInputs postProcess) {
+     // destination uv interpolated to pixel center
+     highp vec4 uv = variable_vertex;
+ 
+-    if (materialConstants_historyReprojection) {
++    highp float currentDepth = 0.0;
++    if (materialConstants_historyReprojection ||
++            materialConstants_adaptiveHistoryRejection) {
+         // read the depth buffer center sample for reprojection
+-        highp float depth = textureLod(materialParams_depth, uv.xy, 0.0).r;
++        currentDepth = textureLod(materialParams_depth, uv.xy, 0.0).r;
++    }
++
++    if (materialConstants_historyReprojection) {
+         // reproject history to current frame
+         uv.zw = uvToRenderTargetUV(uv.zw);
+-        highp vec4 q = materialParams.reprojection * vec4(uv.zw, depth, 1.0);
++        highp vec4 q = materialParams.reprojection * vec4(uv.zw, currentDepth, 1.0);
+         uv.zw = (q.xy * (1.0 / q.w)) * 0.5 + 0.5;
+         uv.zw = uvToRenderTargetUV(uv.zw);
+     }
+@@ -374,6 +394,17 @@ void postProcess(inout PostProcessInputs postProcess) {
+     vec4 filtered = textureLod(materialParams_color, p, 0.0);
+ 
+     float confidence = 1.0;
++    float adaptiveMismatch = 0.0;
++    float adaptiveDepthEdge = 0.0;
++
++    if (materialConstants_adaptiveHistoryRejection) {
++        // Current-depth derivatives are deliberately used instead of a previous-depth buffer.
++        // This rejects history more aggressively at silhouettes without adding a texture fetch.
++        highp float viewDepth = min(abs(linearizeDepth(currentDepth)), 1000000.0);
++        highp float relativeDepthGradient =
++                fwidth(viewDepth) / max(viewDepth, 0.01);
++        adaptiveDepthEdge = smoothstep(0.01, 0.08, relativeDepthGradient);
++    }
+ 
+     if (materialConstants_filterInput ||
+             materialConstants_boxClipping != BOX_CLIPPING_NONE) {
+@@ -389,6 +420,32 @@ void postProcess(inout PostProcessInputs postProcess) {
+         s[7] = textureLodOffset(materialParams_color, p, 0.0, ivec2(-1,  1)).rgb;
+         s[8] = textureLodOffset(materialParams_color, p, 0.0, ivec2( 1,  1)).rgb;
+ 
++        if (materialConstants_adaptiveHistoryRejection) {
++            // HDR-stable mismatch against the already-fetched current 3x3 neighborhood.
++            // Five samples are sufficient for the discriminator and add ALU, not fetches.
++            highp vec3 m0 = tonemap(max(s[0], vec3(0.0)));
++            highp vec3 m1 = m0 * m0;
++            const int adaptiveSampleCount = 5;
++            for (int i = 1; i < adaptiveSampleCount; i++) {
++                highp vec3 c = tonemap(max(s[i], vec3(0.0)));
++                m0 += c;
++                m1 += c * c;
++            }
++            highp vec3 mean = m0 * (1.0 / float(adaptiveSampleCount));
++            highp vec3 variance = max(m1 * (1.0 / float(adaptiveSampleCount)) -
++                    mean * mean, vec3(0.0));
++            highp vec3 sigma = sqrt(variance);
++            highp vec3 historyDelta = abs(tonemap(max(history.rgb, vec3(0.0))) - mean);
++            highp float normalizedMismatch = max3(historyDelta / (sigma + vec3(0.02)));
++            adaptiveMismatch = smoothstep(1.0, 3.0, normalizedMismatch);
++
++            // A reprojected sample outside the history viewport is never valid history.
++            if (any(lessThan(uv.zw, vec2(0.0))) ||
++                    any(greaterThan(uv.zw, vec2(1.0)))) {
++                adaptiveMismatch = 1.0;
++            }
++        }
++
+         // the box can be used for deringing or history correction
+         vec3 box5min = min(s[0],    min(min(s[1], s[2]), min(s[3], s[4])));
+         vec3 box5max = max(s[0],    max(max(s[1], s[2]), max(s[3], s[4])));
+@@ -499,6 +556,21 @@ void postProcess(inout PostProcessInputs postProcess) {
+         alpha *= diff * diff;
+     }
+ 
++    if (materialConstants_adaptiveHistoryRejection) {
++        // 0.08 remains the stable-pixel base. Camera motion and current-depth edges only
++        // raise a conservative current-frame floor; a true color mismatch can reach 1.0.
++        float motionFloor = mix(materialParams.alpha, 0.35,
++                saturate(materialParams.cameraAngularMotion));
++        float depthEdgeFloor = mix(materialParams.alpha, 0.35, adaptiveDepthEdge);
++        float mismatchAlpha = mix(materialParams.alpha, 1.0, adaptiveMismatch);
++        alpha = max(alpha, max(motionFloor, max(depthEdgeFloor, mismatchAlpha)));
++    }
++
++    // Camera cuts and descriptor changes are explicit full-history resets.
++    if (materialParams.historyValid < 0.5) {
++        alpha = 1.0;
++    }
++
+     // go back to RGB space before tonemapping
+     if (isColorYCoCg) {
+         filtered.rgb = YCoCg_RGB(filtered.rgb);

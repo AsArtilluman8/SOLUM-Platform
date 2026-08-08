@@ -83,6 +83,7 @@ jobs:
           git -C "$FILAMENT_DIR" diff | grep -F 'SOLUM V1 cached shading'
           git -C "$FILAMENT_DIR" diff | grep -F 'Export SOLUM V1 shading cache'
           git -C "$FILAMENT_DIR" diff | grep -F 'CommandTypeFlags::DEPTH'
+          git -C "$FILAMENT_DIR" diff | grep -F 'Variant(Variant::DEPTH_VARIANT)'
 
       - name: Set up Java 17
         uses: actions/setup-java@v4

@@ -1,4 +1,4 @@
-name: Filament v1.71.4 SOLUM previous-depth TAA
+name: Filament v1.71.4 SOLUM previous-depth stable accumulation
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: filament-v1714-solum-previous-depth-taa-${{ github.ref }}
+  group: filament-v1714-solum-prev-depth-stable-accum-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -21,6 +21,7 @@ jobs:
       PROFILER_PATCH_FILE: third_party/filament-solum/patches/0001-solum-async-framegraph-gpu-profiler.patch
       ADAPTIVE_TAA_PATCH_FILE: third_party/filament-solum/patches/0002-solum-adaptive-taa-history.patch
       PREVIOUS_DEPTH_TAA_PATCH_FILE: third_party/filament-solum/patches/0003-solum-taa-previous-depth-history.patch
+      STABLE_ACCUM_TAA_PATCH_FILE: third_party/filament-solum/patches/0004-solum-taa-prev-depth-stable-accum.patch
       LOG_DIR: filament-ci-logs
 
     steps:
@@ -44,8 +45,9 @@ jobs:
           test -f "$PROFILER_PATCH_FILE"
           test -f "$ADAPTIVE_TAA_PATCH_FILE"
           test -f "$PREVIOUS_DEPTH_TAA_PATCH_FILE"
+          test -f "$STABLE_ACCUM_TAA_PATCH_FILE"
           sha256sum "$PROFILER_PATCH_FILE" "$ADAPTIVE_TAA_PATCH_FILE" \
-            "$PREVIOUS_DEPTH_TAA_PATCH_FILE" \
+            "$PREVIOUS_DEPTH_TAA_PATCH_FILE" "$STABLE_ACCUM_TAA_PATCH_FILE" \
             | tee filament-solum-patches.sha256
           git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$PROFILER_PATCH_FILE"
           git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$PROFILER_PATCH_FILE"
@@ -53,6 +55,8 @@ jobs:
           git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$ADAPTIVE_TAA_PATCH_FILE"
           git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$PREVIOUS_DEPTH_TAA_PATCH_FILE"
           git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$PREVIOUS_DEPTH_TAA_PATCH_FILE"
+          git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$STABLE_ACCUM_TAA_PATCH_FILE"
+          git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$STABLE_ACCUM_TAA_PATCH_FILE"
           git -C "$FILAMENT_DIR" diff --check
           git -C "$FILAMENT_DIR" diff --stat | tee filament-profiler-diff-stat.txt
           test "$(git -C "$FILAMENT_DIR" diff --name-only | wc -l)" -eq 16
@@ -67,6 +71,9 @@ jobs:
           git -C "$FILAMENT_DIR" diff | grep -F 'solumPreviousDepthHistoryRejection'
           git -C "$FILAMENT_DIR" diff | grep -F 'TAA previous depth history'
           git -C "$FILAMENT_DIR" diff | grep -F 'adaptivePreviousDepthMismatch'
+          git -C "$FILAMENT_DIR" diff | grep -F 'solumPreviousDepthStableAccumulation'
+          git -C "$FILAMENT_DIR" diff | grep -F 'previousDepthStableAccumulation'
+          git -C "$FILAMENT_DIR" diff | grep -F 'colorBoundaryAlpha'
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -152,6 +159,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: filament-v1714-solum-previous-depth-taa-arm64
+          name: filament-v1714-solum-prev-depth-stable-accum-arm64
           path: filament-solum-adaptive-taa-artifacts/**
           if-no-files-found: error

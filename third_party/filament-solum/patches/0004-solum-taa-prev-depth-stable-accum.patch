@@ -1,0 +1,70 @@
+diff --git a/android/filament-android/src/main/cpp/View.cpp b/android/filament-android/src/main/cpp/View.cpp
+index 8b017d8..48b9fc1 100644
+--- a/android/filament-android/src/main/cpp/View.cpp
++++ b/android/filament-android/src/main/cpp/View.cpp
+@@ -634,5 +634,5 @@ extern "C"
+ JNIEXPORT jint JNICALL
+ Java_com_google_android_filament_View_nGetSolumAdaptiveTaaAbiVersion(
+         JNIEnv*, jclass) {
+-    return 2;
++    return 3;
+ }
+diff --git a/filament/include/filament/Options.h b/filament/include/filament/Options.h
+index e060879..4ed1623 100644
+--- a/filament/include/filament/Options.h
++++ b/filament/include/filament/Options.h
+@@ -635,4 +635,6 @@ struct TemporalAntiAliasingOptions {
+     bool solumAdaptiveHistoryRejection = false;
+     /** SOLUM fork: validate reprojected history against retained previous-frame depth. */
+     bool solumPreviousDepthHistoryRejection = false;
++    /** SOLUM fork: preserve legacy accumulation on depth-and-color validated pixels. */
++    bool solumPreviousDepthStableAccumulation = false;
+ };
+diff --git a/filament/src/PostProcessManager.cpp b/filament/src/PostProcessManager.cpp
+index 08c9edc..57ec7b1 100644
+--- a/filament/src/PostProcessManager.cpp
++++ b/filament/src/PostProcessManager.cpp
+@@ -2965,6 +2965,8 @@ void PostProcessManager::configureTemporalAntiAliasingMaterial(backend::DriverAp
+         { "preventFlickering", taaOptions.preventFlickering },
+         { "adaptiveHistoryRejection", taaOptions.solumAdaptiveHistoryRejection },
+         { "previousDepthHistoryRejection", taaOptions.solumPreviousDepthHistoryRejection },
++        { "previousDepthStableAccumulation",
++                taaOptions.solumPreviousDepthStableAccumulation },
+         { "boxType", int32_t(taaOptions.boxType) },
+         { "boxClipping", int32_t(taaOptions.boxClipping) },
+         { "varianceGamma", taaOptions.varianceGamma },
+diff --git a/filament/src/materials/antiAliasing/taa/taa.mat b/filament/src/materials/antiAliasing/taa/taa.mat
+index f5c8556..9f24f9c 100644
+--- a/filament/src/materials/antiAliasing/taa/taa.mat
++++ b/filament/src/materials/antiAliasing/taa/taa.mat
+@@ -115,6 +115,11 @@ material {
+             name : previousDepthHistoryRejection,
+             default : false
+         },
++        {
++            type : bool,
++            name : previousDepthStableAccumulation,
++            default : false
++        },
+         {
+             type : bool,
+             name : hdr,
+@@ -590,6 +595,16 @@ void postProcess(inout PostProcessInputs postProcess) {
+         float mismatchAlpha = mix(materialParams.alpha, 1.0, adaptiveMismatch);
+         float previousDepthAlpha = mix(materialParams.alpha, 1.0,
+                 adaptivePreviousDepthMismatch);
+-        alpha = max(alpha, max(motionFloor,
+-                max(depthEdgeFloor, max(mismatchAlpha, previousDepthAlpha))));
++        if (materialConstants_previousDepthStableAccumulation) {
++            // Depth-confirmed disocclusion is the only signal allowed to force current-only.
++            // Color uncertainty receives a bounded blend while a depth-and-color validated
++            // pixel retains the legacy feedback. Camera angular motion and current-depth
++            // derivatives must not globally weaken stable accumulation in this mode.
++            float colorBoundaryAlpha = mix(materialParams.alpha, 0.35,
++                    adaptiveMismatch);
++            alpha = max(alpha, max(colorBoundaryAlpha, previousDepthAlpha));
++        } else {
++            alpha = max(alpha, max(motionFloor,
++                    max(depthEdgeFloor, max(mismatchAlpha, previousDepthAlpha))));
++        }
+     }

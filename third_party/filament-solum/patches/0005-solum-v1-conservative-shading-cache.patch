@@ -71,7 +71,7 @@
      utils::CString stopSolumGpuProfiler();
 
 +    /** SOLUM conservative whole-view shading reuse. Disabled unless explicitly armed. */
-+    void setSolumV1ShadingReuse(View const* targetView, bool enabled,
++    void setSolumV1ShadingReuse(View const* UTILS_NULLABLE targetView, bool enabled,
 +            bool safeToReuse, uint64_t stateKey);
 +
 +    /** Returns bounded V1 decision counters and the last fail-closed reason as JSON. */
@@ -313,5 +313,4 @@
 +        disposer.destroy(std::move(last.solumV1.color.handle));
      }
  }
-
 

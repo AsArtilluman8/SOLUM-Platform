@@ -1,4 +1,4 @@
-name: Filament v1.71.4 SOLUM previous-depth stable accumulation
+name: Filament v1.71.4 SOLUM V1 conservative shading cache
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: filament-v1714-solum-prev-depth-stable-accum-${{ github.ref }}
+  group: filament-v1714-solum-v1-shading-cache-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -22,6 +22,7 @@ jobs:
       ADAPTIVE_TAA_PATCH_FILE: third_party/filament-solum/patches/0002-solum-adaptive-taa-history.patch
       PREVIOUS_DEPTH_TAA_PATCH_FILE: third_party/filament-solum/patches/0003-solum-taa-previous-depth-history.patch
       STABLE_ACCUM_TAA_PATCH_FILE: third_party/filament-solum/patches/0004-solum-taa-prev-depth-stable-accum.patch
+      V1_SHADING_CACHE_PATCH_FILE: third_party/filament-solum/patches/0005-solum-v1-conservative-shading-cache.patch
       LOG_DIR: filament-ci-logs
 
     steps:
@@ -46,8 +47,10 @@ jobs:
           test -f "$ADAPTIVE_TAA_PATCH_FILE"
           test -f "$PREVIOUS_DEPTH_TAA_PATCH_FILE"
           test -f "$STABLE_ACCUM_TAA_PATCH_FILE"
+          test -f "$V1_SHADING_CACHE_PATCH_FILE"
           sha256sum "$PROFILER_PATCH_FILE" "$ADAPTIVE_TAA_PATCH_FILE" \
             "$PREVIOUS_DEPTH_TAA_PATCH_FILE" "$STABLE_ACCUM_TAA_PATCH_FILE" \
+            "$V1_SHADING_CACHE_PATCH_FILE" \
             | tee filament-solum-patches.sha256
           git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$PROFILER_PATCH_FILE"
           git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$PROFILER_PATCH_FILE"
@@ -57,6 +60,8 @@ jobs:
           git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$PREVIOUS_DEPTH_TAA_PATCH_FILE"
           git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$STABLE_ACCUM_TAA_PATCH_FILE"
           git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$STABLE_ACCUM_TAA_PATCH_FILE"
+          git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$V1_SHADING_CACHE_PATCH_FILE"
+          git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$V1_SHADING_CACHE_PATCH_FILE"
           git -C "$FILAMENT_DIR" diff --check
           git -C "$FILAMENT_DIR" diff --stat | tee filament-profiler-diff-stat.txt
           test "$(git -C "$FILAMENT_DIR" diff --name-only | wc -l)" -eq 16
@@ -74,6 +79,10 @@ jobs:
           git -C "$FILAMENT_DIR" diff | grep -F 'solumPreviousDepthStableAccumulation'
           git -C "$FILAMENT_DIR" diff | grep -F 'previousDepthStableAccumulation'
           git -C "$FILAMENT_DIR" diff | grep -F 'colorBoundaryAlpha'
+          git -C "$FILAMENT_DIR" diff | grep -F 'setSolumV1ShadingReuse'
+          git -C "$FILAMENT_DIR" diff | grep -F 'SOLUM V1 cached shading'
+          git -C "$FILAMENT_DIR" diff | grep -F 'Export SOLUM V1 shading cache'
+          git -C "$FILAMENT_DIR" diff | grep -F 'CommandTypeFlags::DEPTH'
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -127,11 +136,16 @@ jobs:
             com.google.android.filament.Renderer | tee "$LOG_DIR/renderer-api.txt"
           grep -F 'startSolumGpuProfiler(int, int)' "$LOG_DIR/renderer-api.txt"
           grep -F 'stopSolumGpuProfiler()' "$LOG_DIR/renderer-api.txt"
+          grep -F 'setSolumV1ShadingReuse(com.google.android.filament.View, boolean, boolean, long)' \
+            "$LOG_DIR/renderer-api.txt"
+          grep -F 'getSolumV1ShadingReuseStats()' "$LOG_DIR/renderer-api.txt"
           JNI_SO="$(find "$FILAMENT_DIR" -type f -name 'libfilament-jni.so' | head -n 1)"
           test -n "$JNI_SO"
           readelf -Ws "$JNI_SO" | tee "$LOG_DIR/filament-jni-symbols.txt"
           grep -F 'Renderer_nStartSolumGpuProfiler' "$LOG_DIR/filament-jni-symbols.txt"
           grep -F 'Renderer_nStopSolumGpuProfiler' "$LOG_DIR/filament-jni-symbols.txt"
+          grep -F 'Renderer_nSetSolumV1ShadingReuse' "$LOG_DIR/filament-jni-symbols.txt"
+          grep -F 'Renderer_nGetSolumV1ShadingReuseStats' "$LOG_DIR/filament-jni-symbols.txt"
           grep -F 'View_nGetSolumAdaptiveTaaAbiVersion' "$LOG_DIR/filament-jni-symbols.txt"
 
       - name: Collect checksummed artifacts
@@ -159,6 +173,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: filament-v1714-solum-prev-depth-stable-accum-arm64
+          name: filament-v1714-solum-v1-shading-cache-arm64
           path: filament-solum-adaptive-taa-artifacts/**
           if-no-files-found: error

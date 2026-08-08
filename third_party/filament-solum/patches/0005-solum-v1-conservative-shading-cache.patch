@@ -1,0 +1,317 @@
+--- a/android/filament-android/src/main/cpp/Renderer.cpp
++++ b/android/filament-android/src/main/cpp/Renderer.cpp
+@@ -272,3 +272,24 @@
+         return env->NewStringUTF(snapshot.c_str());
+     });
+ }
++
++extern "C" JNIEXPORT void JNICALL
++Java_com_google_android_filament_Renderer_nSetSolumV1ShadingReuse(JNIEnv *env, jclass,
++        jlong nativeRenderer, jlong nativeView, jboolean enabled, jboolean safeToReuse,
++        jlong stateKey) {
++    Renderer* renderer = (Renderer*) nativeRenderer;
++    View* view = (View*) nativeView;
++    wrapJniBackend(env, [=]() {
++        renderer->setSolumV1ShadingReuse(view, enabled, safeToReuse, uint64_t(stateKey));
++    });
++}
++
++extern "C" JNIEXPORT jstring JNICALL
++Java_com_google_android_filament_Renderer_nGetSolumV1ShadingReuseStats(JNIEnv *env, jclass,
++        jlong nativeRenderer) {
++    Renderer* renderer = (Renderer*) nativeRenderer;
++    return wrapJni<jstring>(env, [=]() {
++        utils::CString snapshot = renderer->getSolumV1ShadingReuseStats();
++        return env->NewStringUTF(snapshot.c_str());
++    });
++}
+--- a/android/filament-android/src/main/java/com/google/android/filament/Renderer.java
++++ b/android/filament-android/src/main/java/com/google/android/filament/Renderer.java
+@@ -18,6 +18,7 @@
+
+ import androidx.annotation.IntRange;
+ import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
+
+ import java.nio.Buffer;
+ import java.nio.BufferOverflowException;
+@@ -765,6 +766,20 @@
+         return nStopSolumGpuProfiler(getNativeObject());
+     }
+
++    /** Arms SOLUM conservative shading reuse for one target View. */
++    public void setSolumV1ShadingReuse(@Nullable View targetView, boolean enabled,
++            boolean safeToReuse, long stateKey) {
++        nSetSolumV1ShadingReuse(getNativeObject(),
++                targetView == null ? 0 : targetView.getNativeObject(),
++                enabled, safeToReuse, stateKey);
++    }
++
++    /** Returns V1 decision counters and last fail-closed reason as JSON. */
++    @NonNull
++    public String getSolumV1ShadingReuseStats() {
++        return nGetSolumV1ShadingReuseStats(getNativeObject());
++    }
++
+     public long getNativeObject() {
+         if (mNativeObject == 0) {
+             throw new IllegalStateException("Calling method on destroyed Renderer");
+@@ -812,4 +827,7 @@
+     private static native boolean nStartSolumGpuProfiler(long nativeObject,
+             int maxSampledFrames, int samplePeriod);
+     private static native String nStopSolumGpuProfiler(long nativeObject);
++    private static native void nSetSolumV1ShadingReuse(long nativeObject, long nativeView,
++            boolean enabled, boolean safeToReuse, long stateKey);
++    private static native String nGetSolumV1ShadingReuseStats(long nativeObject);
+ }
+--- a/filament/include/filament/Renderer.h
++++ b/filament/include/filament/Renderer.h
+@@ -138,6 +138,13 @@
+      */
+     utils::CString stopSolumGpuProfiler();
+
++    /** SOLUM conservative whole-view shading reuse. Disabled unless explicitly armed. */
++    void setSolumV1ShadingReuse(View const* targetView, bool enabled,
++            bool safeToReuse, uint64_t stateKey);
++
++    /** Returns bounded V1 decision counters and the last fail-closed reason as JSON. */
++    utils::CString getSolumV1ShadingReuseStats() const;
++
+     /**
+      * Use FrameRateOptions to set the desired frame rate and control how quickly the system
+      * reacts to GPU load changes.
+--- a/filament/src/FrameHistory.h
++++ b/filament/src/FrameHistory.h
+@@ -49,6 +49,11 @@
+         FrameGraphTexture::Descriptor desc;
+         math::mat4 projection;
+     } ssr;
++    struct {
++        FrameGraphTexture color;
++        FrameGraphTexture::Descriptor desc;
++        uint64_t stateKey = 0;
++    } solumV1;
+ };
+
+ /*
+--- a/filament/src/Renderer.cpp
++++ b/filament/src/Renderer.cpp
+@@ -136,4 +136,14 @@
+     return downcast(this)->stopSolumGpuProfiler();
+ }
+
++void Renderer::setSolumV1ShadingReuse(View const* targetView, bool const enabled,
++        bool const safeToReuse, uint64_t const stateKey) {
++    downcast(this)->setSolumV1ShadingReuse(
++            targetView ? downcast(targetView) : nullptr, enabled, safeToReuse, stateKey);
++}
++
++utils::CString Renderer::getSolumV1ShadingReuseStats() const {
++    return downcast(this)->getSolumV1ShadingReuseStats();
++}
++
+ } // namespace filament
+--- a/filament/src/details/Renderer.cpp
++++ b/filament/src/details/Renderer.cpp
+@@ -1659,7 +1659,65 @@
+                 });
+     }
+
+-    passBuilder.commandTypeFlags(RenderPass::CommandTypeFlags::COLOR);
++    FrameGraphId<FrameGraphTexture> solumV1CachedColor;
++    bool solumV1CanCache = false;
++    bool solumV1Reuse = false;
++    if (mSolumV1.enabled && mSolumV1.targetView == &view) {
++        ++mSolumV1.consideredFrames;
++        char const* decision = "current_unknown";
++        solumV1CanCache = mSolumV1.safeToReuse;
++        if (!mSolumV1.safeToReuse) {
++            decision = "unsafe_state";
++        } else if (taaOptions.enabled) {
++            solumV1CanCache = false;
++            decision = "taa_enabled";
++        } else if (ssReflectionsOptions.enabled || view.isScreenSpaceRefractionEnabled()) {
++            solumV1CanCache = false;
++            decision = "ssr_or_refraction";
++        } else if (config.fogAsPostProcess || colorGradingConfig.customResolve) {
++            solumV1CanCache = false;
++            decision = "incompatible_color_path";
++        } else if (isRenderingMultiview || isProtectedContent || blendModeTranslucent) {
++            solumV1CanCache = false;
++            decision = "incompatible_target";
++        } else {
++            auto& previous = view.getFrameHistory().getPrevious().solumV1;
++            bool const descriptorMatches = previous.desc.width == colorBufferDesc.width &&
++                    previous.desc.height == colorBufferDesc.height &&
++                    previous.desc.depth == colorBufferDesc.depth &&
++                    previous.desc.levels == colorBufferDesc.levels &&
++                    previous.desc.samples == colorBufferDesc.samples &&
++                    previous.desc.type == colorBufferDesc.type &&
++                    previous.desc.format == colorBufferDesc.format;
++            if (!previous.color.handle) {
++                decision = "history_missing";
++            } else if (!descriptorMatches) {
++                decision = "descriptor_mismatch";
++            } else if (previous.stateKey != mSolumV1.stateKey) {
++                decision = "state_key_mismatch";
++            } else {
++                solumV1CachedColor = fg.import("SOLUM V1 cached shading", previous.desc,
++                        FrameGraphTexture::Usage::COLOR_ATTACHMENT |
++                                FrameGraphTexture::Usage::SAMPLEABLE,
++                        previous.color);
++                solumV1Reuse = true;
++                decision = "reused";
++            }
++        }
++        mSolumV1.lastDecision = decision;
++        if (solumV1Reuse) {
++            ++mSolumV1.reusedFrames;
++        } else {
++            ++mSolumV1.currentFrames;
++        }
++    } else if (mSolumV1.enabled) {
++        mSolumV1.lastDecision = "target_mismatch";
++    } else {
++        mSolumV1.lastDecision = "disabled";
++    }
++
++    passBuilder.commandTypeFlags(solumV1Reuse ?
++            RenderPass::CommandTypeFlags::DEPTH : RenderPass::CommandTypeFlags::COLOR);
+
+
+     // RenderPass::IS_INSTANCED_STEREOSCOPIC only applies to the color pass
+@@ -1701,13 +1759,18 @@
+     const_cast<RenderPass&>(pass).finalize(engine, driver);
+
+     // the color pass itself + color-grading as subpass if needed
++    auto colorPassConfig = config;
++    if (solumV1Reuse) {
++        colorPassConfig.clearFlags &= ~TargetBufferFlags::COLOR;
++    }
+     auto colorPassOutput = RendererUtils::colorPass(fg, "Color Pass", mEngine, view, {
++                .linearColor = solumV1CachedColor,
+                 .shadows = blackboard.get<FrameGraphTexture>("shadows"),
+                 .ssao = blackboard.get<FrameGraphTexture>("ssao"),
+                 .ssr = ssrConfig.ssr,
+                 .structure = structure
+             },
+-            colorBufferDesc, config, colorGradingConfigForColor, pass.getExecutor());
++            colorBufferDesc, colorPassConfig, colorGradingConfigForColor, pass.getExecutor());
+
+     if (UTILS_UNLIKELY(hasScreenSpaceRefraction)) {
+         // This cancels the colorPass() call above if refraction is active.
+@@ -1731,6 +1794,29 @@
+                 ppm.customResolveUncompressPass(fg, colorPassOutput.linearColor);
+     }
+
++    if (solumV1CanCache) {
++        struct ExportSolumV1HistoryData {
++            FrameGraphId<FrameGraphTexture> history;
++        };
++        uint64_t const stateKey = mSolumV1.stateKey;
++        fg.addPass<ExportSolumV1HistoryData>("Export SOLUM V1 shading cache",
++                [&](FrameGraph::Builder& builder, auto& data) {
++                    builder.sideEffect();
++                    data.history = builder.sample(colorPassOutput.linearColor);
++                }, [&view, stateKey, solumV1Reuse](
++                        FrameGraphResources const& resources, auto const& data) {
++                    auto& history = view.getFrameHistory();
++                    if (solumV1Reuse) {
++                        // The imported handle is now transferred to the current entry. Prevent
++                        // commitFrameHistory() from destroying it as the previous entry.
++                        history.getPrevious().solumV1.color = {};
++                    }
++                    auto& current = history.getCurrent().solumV1;
++                    current.stateKey = stateKey;
++                    resources.detach(data.history, &current.color, &current.desc);
++                });
++    }
++
+     // export the color buffer if screen-space reflections are enabled
+     if (ssReflectionsOptions.enabled) {
+         struct ExportSSRHistoryData {
+@@ -1991,4 +2077,36 @@
+     return mSolumGpuProfiler->stop();
+ }
+
++void FRenderer::setSolumV1ShadingReuse(FView const* const targetView, bool const enabled,
++        bool const safeToReuse, uint64_t const stateKey) noexcept {
++    bool const newSession = enabled && (!mSolumV1.enabled || mSolumV1.targetView != targetView);
++    if (newSession) {
++        mSolumV1.consideredFrames = 0;
++        mSolumV1.currentFrames = 0;
++        mSolumV1.reusedFrames = 0;
++    }
++    mSolumV1.targetView = targetView;
++    mSolumV1.enabled = enabled;
++    mSolumV1.safeToReuse = enabled && safeToReuse;
++    mSolumV1.stateKey = stateKey;
++    if (!enabled) {
++        mSolumV1.lastDecision = "disabled";
++    }
++}
++
++utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
++    uint64_t const decided = mSolumV1.currentFrames + mSolumV1.reusedFrames;
++    double const ratio = decided ?
++            double(mSolumV1.reusedFrames) / double(decided) : 0.0;
++    std::ostringstream out;
++    out << "{\"enabled\":" << (mSolumV1.enabled ? "true" : "false")
++        << ",\"safe\":" << (mSolumV1.safeToReuse ? "true" : "false")
++        << ",\"considered_frames\":" << mSolumV1.consideredFrames
++        << ",\"current_frames\":" << mSolumV1.currentFrames
++        << ",\"reused_frames\":" << mSolumV1.reusedFrames
++        << ",\"reuse_ratio\":" << ratio
++        << ",\"last_decision\":\"" << mSolumV1.lastDecision << "\"}";
++    return utils::CString(out.str().c_str());
++}
++
+ } // namespace filament
+--- a/filament/src/details/Renderer.h
++++ b/filament/src/details/Renderer.h
+@@ -168,6 +168,9 @@
+
+     bool startSolumGpuProfiler(uint32_t maxSampledFrames, uint32_t samplePeriod);
+     utils::CString stopSolumGpuProfiler();
++    void setSolumV1ShadingReuse(FView const* targetView, bool enabled,
++            bool safeToReuse, uint64_t stateKey) noexcept;
++    utils::CString getSolumV1ShadingReuseStats() const;
+
+ private:
+     friend class Renderer;
+@@ -216,6 +219,16 @@
+     uint32_t mFrameId = 1; // id 0 is reserved for standalone views
+     FrameInfoManager mFrameInfoManager;
+     std::unique_ptr<SolumGpuProfiler> mSolumGpuProfiler;
++    struct SolumV1State {
++        FView const* targetView = nullptr;
++        uint64_t stateKey = 0;
++        uint64_t consideredFrames = 0;
++        uint64_t currentFrames = 0;
++        uint64_t reusedFrames = 0;
++        bool enabled = false;
++        bool safeToReuse = false;
++        char const* lastDecision = "disabled";
++    } mSolumV1;
+     backend::TextureFormat mHdrTranslucent;
+     backend::TextureFormat mHdrQualityMedium;
+     backend::TextureFormat mHdrQualityHigh;
+--- a/filament/src/details/View.cpp
++++ b/filament/src/details/View.cpp
+@@ -1470,6 +1470,7 @@
+     disposer.destroy(std::move(last.taa.color.handle));
+     disposer.destroy(std::move(last.taa.depth.handle));
+     disposer.destroy(std::move(last.ssr.color.handle));
++    disposer.destroy(std::move(last.solumV1.color.handle));
+
+     // and then push the new history entry to the history stack
+     frameHistory.commit();
+@@ -1484,6 +1485,7 @@
+         disposer.destroy(std::move(last.taa.color.handle));
+         disposer.destroy(std::move(last.taa.depth.handle));
+         disposer.destroy(std::move(last.ssr.color.handle));
++        disposer.destroy(std::move(last.solumV1.color.handle));
+     }
+ }
+
+

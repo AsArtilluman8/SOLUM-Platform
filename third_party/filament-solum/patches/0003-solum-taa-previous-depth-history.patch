@@ -1,0 +1,263 @@
+diff --git a/android/filament-android/src/main/cpp/View.cpp b/android/filament-android/src/main/cpp/View.cpp
+index d8f0847..8b017d8 100644
+--- a/android/filament-android/src/main/cpp/View.cpp
++++ b/android/filament-android/src/main/cpp/View.cpp
+@@ -634,5 +634,5 @@ extern "C"
+ JNIEXPORT jint JNICALL
+ Java_com_google_android_filament_View_nGetSolumAdaptiveTaaAbiVersion(
+         JNIEnv*, jclass) {
+-    return 1;
++    return 2;
+ }
+diff --git a/filament/include/filament/Options.h b/filament/include/filament/Options.h
+index e0a9de5..e060879 100644
+--- a/filament/include/filament/Options.h
++++ b/filament/include/filament/Options.h
+@@ -633,6 +633,8 @@ struct TemporalAntiAliasingOptions {
+     bool historyReprojection = true;
+     /** SOLUM fork: adaptive current-neighborhood/depth/camera history rejection. */
+     bool solumAdaptiveHistoryRejection = false;
++    /** SOLUM fork: validate reprojected history against retained previous-frame depth. */
++    bool solumPreviousDepthHistoryRejection = false;
+ };
+
+ /**
+diff --git a/filament/src/FrameHistory.h b/filament/src/FrameHistory.h
+index 666f42d..456e74a 100644
+--- a/filament/src/FrameHistory.h
++++ b/filament/src/FrameHistory.h
+@@ -35,6 +35,8 @@ struct FrameHistoryEntry {
+     struct TemporalAA{
+         FrameGraphTexture color;
+         FrameGraphTexture::Descriptor desc;
++        FrameGraphTexture depth;
++        FrameGraphTexture::Descriptor depthDesc;
+         math::mat4 projection;     // world space to clip space
+         math::float2 jitter{};
+         math::float3 cameraForward{};
+diff --git a/filament/src/PostProcessManager.cpp b/filament/src/PostProcessManager.cpp
+index 7017107..08c9edc 100644
+--- a/filament/src/PostProcessManager.cpp
++++ b/filament/src/PostProcessManager.cpp
+@@ -2964,6 +2964,7 @@ void PostProcessManager::configureTemporalAntiAliasingMaterial(backend::DriverAp
+         { "hdr", taaOptions.hdr },
+         { "preventFlickering", taaOptions.preventFlickering },
+         { "adaptiveHistoryRejection", taaOptions.solumAdaptiveHistoryRejection },
++        { "previousDepthHistoryRejection", taaOptions.solumPreviousDepthHistoryRejection },
+         { "boxType", int32_t(taaOptions.boxType) },
+         { "boxClipping", int32_t(taaOptions.boxClipping) },
+         { "varianceGamma", taaOptions.varianceGamma },
+@@ -3034,6 +3035,7 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::taa(FrameGraph& fg,
+         taaOutputDesc.width  *= taaOptions.upscaling;
+         taaOutputDesc.height *= taaOptions.upscaling;
+     }
++    auto const currentDepthDesc = fg.getDescriptor(depth);
+
+     float cameraAngularDelta = 0.0f;
+     if (previous.cameraBasisValid && current.cameraBasisValid) {
+@@ -3049,9 +3051,17 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::taa(FrameGraph& fg,
+     bool const descriptorMatches = previous.desc.width == taaOutputDesc.width &&
+             previous.desc.height == taaOutputDesc.height &&
+             previous.desc.format == taaOutputDesc.format;
++    bool const depthDescriptorMatches =
++            previous.depthDesc.width == currentDepthDesc.width &&
++            previous.depthDesc.height == currentDepthDesc.height &&
++            previous.depthDesc.format == currentDepthDesc.format;
+     bool const cameraCut = previous.cameraBasisValid && current.cameraBasisValid &&
+             cameraAngularDelta >= CAMERA_CUT_RADIANS;
+-    bool const historyValid = previous.color.handle && descriptorMatches && !cameraCut;
++    bool const colorHistoryValid = previous.color.handle && descriptorMatches && !cameraCut;
++    bool const previousDepthHistoryValid = previous.depth.handle &&
++            depthDescriptorMatches && !cameraCut;
++    bool const historyValid = colorHistoryValid &&
++            (!taaOptions.solumPreviousDepthHistoryRejection || previousDepthHistoryValid);
+
+     // if we don't have a history yet, just use the current color buffer as history
+     FrameGraphId<FrameGraphTexture> colorHistory = input;
+@@ -3059,6 +3069,11 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::taa(FrameGraph& fg,
+         colorHistory = fg.import("TAA history", previous.desc,
+                 FrameGraphTexture::Usage::SAMPLEABLE, previous.color);
+     }
++    FrameGraphId<FrameGraphTexture> previousDepthHistory = depth;
++    if (taaOptions.solumPreviousDepthHistoryRejection && historyValid) {
++        previousDepthHistory = fg.import("TAA previous depth history", previous.depthDesc,
++                FrameGraphTexture::Usage::SAMPLEABLE, previous.depth);
++    }
+
+     mat4 const& historyProjection = historyValid ?
+             previous.projection : current.projection;
+@@ -3066,6 +3081,7 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::taa(FrameGraph& fg,
+     struct TAAData {
+         FrameGraphId<FrameGraphTexture> color;
+         FrameGraphId<FrameGraphTexture> depth;
++        FrameGraphId<FrameGraphTexture> previousDepth;
+         FrameGraphId<FrameGraphTexture> history;
+         FrameGraphId<FrameGraphTexture> output;
+         FrameGraphId<FrameGraphTexture> tonemappedOutput;
+@@ -3075,6 +3091,9 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::taa(FrameGraph& fg,
+                 auto const desc = taaOutputDesc;
+                 data.color = builder.sample(input);
+                 data.depth = builder.sample(depth);
++                if (taaOptions.solumPreviousDepthHistoryRejection) {
++                    data.previousDepth = builder.sample(previousDepthHistory);
++                }
+                 data.history = builder.sample(colorHistory);
+                 data.output = builder.createTexture("TAA output", desc);
+                 data.output = builder.write(data.output);
+@@ -3107,6 +3126,8 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::taa(FrameGraph& fg,
+
+                 auto const color = resources.getTexture(data.color);
+                 auto const depth = resources.getTexture(data.depth);
++                auto const previousDepth = taaOptions.solumPreviousDepthHistoryRejection
++                        ? resources.getTexture(data.previousDepth) : depth;
+                 auto const history = resources.getTexture(data.history);
+
+                 auto const& colorDesc = resources.getDescriptor(data.color);
+@@ -3122,6 +3143,7 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::taa(FrameGraph& fg,
+                 FMaterialInstance* mi = getMaterialInstance(driver, ma);
+                 mi->setParameter("color",  color, SamplerParams{});  // nearest
+                 mi->setParameter("depth",  depth, SamplerParams{});  // nearest
++                mi->setParameter("previousDepth", previousDepth, SamplerParams{}); // nearest
+                 mi->setParameter("history", history, SamplerParams{
+                         .filterMag = SamplerMagFilter::LINEAR,
+                         .filterMin = SamplerMinFilter::LINEAR
+@@ -3182,18 +3204,25 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::taa(FrameGraph& fg,
+                 colorGradingConfig.translucent ? RcasMode::ALPHA_PASSTHROUGH : RcasMode::OPAQUE);
+     }
+
+-    struct ExportColorHistoryData {
++    struct ExportTaaHistoryData {
+         FrameGraphId<FrameGraphTexture> color;
++        FrameGraphId<FrameGraphTexture> depth;
+     };
+-    fg.addPass<ExportColorHistoryData>("Export TAA history",
++    fg.addPass<ExportTaaHistoryData>("Export TAA history",
+             [&](FrameGraph::Builder& builder, auto& data) {
+                 // We need to use sideEffect here to ensure this pass won't be culled.
+                 // The "output" of this pass is going to be used during the next frame as
+                 // an "import".
+                 builder.sideEffect();
+                 data.color = builder.sample(history); // FIXME: an access must be declared for detach(), why?
+-            }, [&current](FrameGraphResources const& resources, auto const& data) {
++                if (taaOptions.solumPreviousDepthHistoryRejection) {
++                    data.depth = builder.sample(depth);
++                }
++            }, [&current, taaOptions](FrameGraphResources const& resources, auto const& data) {
+                 resources.detach(data.color, &current.color, &current.desc);
++                if (taaOptions.solumPreviousDepthHistoryRejection) {
++                    resources.detach(data.depth, &current.depth, &current.depthDesc);
++                }
+             });
+
+     return input;
+diff --git a/filament/src/details/View.cpp b/filament/src/details/View.cpp
+index 1fbc248..e7e026f 100644
+--- a/filament/src/details/View.cpp
++++ b/filament/src/details/View.cpp
+@@ -1468,6 +1468,7 @@ void FView::commitFrameHistory(FEngine& engine) noexcept {
+
+     FrameHistoryEntry& last = frameHistory.back();
+     disposer.destroy(std::move(last.taa.color.handle));
++    disposer.destroy(std::move(last.taa.depth.handle));
+     disposer.destroy(std::move(last.ssr.color.handle));
+
+     // and then push the new history entry to the history stack
+@@ -1481,6 +1482,7 @@ void FView::clearFrameHistory(FEngine& engine) noexcept {
+     for (size_t i = 0; i < frameHistory.size(); ++i) {
+         FrameHistoryEntry& last = frameHistory[i];
+         disposer.destroy(std::move(last.taa.color.handle));
++        disposer.destroy(std::move(last.taa.depth.handle));
+         disposer.destroy(std::move(last.ssr.color.handle));
+     }
+ }
+diff --git a/filament/src/materials/antiAliasing/taa/taa.mat b/filament/src/materials/antiAliasing/taa/taa.mat
+index 9fb5088..f5c8556 100644
+--- a/filament/src/materials/antiAliasing/taa/taa.mat
++++ b/filament/src/materials/antiAliasing/taa/taa.mat
+@@ -11,6 +11,12 @@ material {
+             precision: high,
+             filterable: false
+         },
++        {
++            type : sampler2d,
++            name : previousDepth,
++            precision: high,
++            filterable: false
++        },
+         {
+             type : float4,
+             name : colorViewport,
+@@ -104,6 +110,11 @@ material {
+             name : adaptiveHistoryRejection,
+             default : false
+         },
++        {
++            type : bool,
++            name : previousDepthHistoryRejection,
++            default : false
++        },
+         {
+             type : bool,
+             name : hdr,
+@@ -346,6 +357,8 @@ void postProcess(inout PostProcessInputs postProcess) {
+     highp vec4 uv = variable_vertex;
+
+     highp float currentDepth = 0.0;
++    highp float expectedPreviousDepth = 0.0;
++    highp float reprojectionClipW = 1.0;
+     if (materialConstants_historyReprojection ||
+             materialConstants_adaptiveHistoryRejection) {
+         // read the depth buffer center sample for reprojection
+@@ -356,6 +369,8 @@ void postProcess(inout PostProcessInputs postProcess) {
+         // reproject history to current frame
+         uv.zw = uvToRenderTargetUV(uv.zw);
+         highp vec4 q = materialParams.reprojection * vec4(uv.zw, currentDepth, 1.0);
++        expectedPreviousDepth = q.z * (1.0 / q.w);
++        reprojectionClipW = q.w;
+         uv.zw = (q.xy * (1.0 / q.w)) * 0.5 + 0.5;
+         uv.zw = uvToRenderTargetUV(uv.zw);
+     }
+@@ -396,6 +411,7 @@ void postProcess(inout PostProcessInputs postProcess) {
+     float confidence = 1.0;
+     float adaptiveMismatch = 0.0;
+     float adaptiveDepthEdge = 0.0;
++    float adaptivePreviousDepthMismatch = 0.0;
+
+     if (materialConstants_adaptiveHistoryRejection) {
+         // Current-depth derivatives are deliberately used instead of a previous-depth buffer.
+@@ -406,6 +422,23 @@ void postProcess(inout PostProcessInputs postProcess) {
+         adaptiveDepthEdge = smoothstep(0.01, 0.08, relativeDepthGradient);
+     }
+
++    if (materialConstants_previousDepthHistoryRejection) {
++        highp float previousDepth =
++                textureLod(materialParams_previousDepth, uv.zw, 0.0).r;
++        highp float depthDelta = abs(previousDepth - expectedPreviousDepth);
++        // Two local depth-footprint widths plus two 24-bit depth quantization steps.
++        // This scales with projection and surface slope instead of a scene-unit threshold.
++        highp float depthTolerance = max(2.0 * fwidth(expectedPreviousDepth),
++                2.0 / 16777216.0);
++        adaptivePreviousDepthMismatch = smoothstep(
++                depthTolerance, 2.0 * depthTolerance, depthDelta);
++        if (reprojectionClipW <= 0.0 ||
++                any(lessThan(uv.zw, vec2(0.0))) ||
++                any(greaterThan(uv.zw, vec2(1.0)))) {
++            adaptivePreviousDepthMismatch = 1.0;
++        }
++    }
++
+     if (materialConstants_filterInput ||
+             materialConstants_boxClipping != BOX_CLIPPING_NONE) {
+
+@@ -563,7 +596,10 @@ void postProcess(inout PostProcessInputs postProcess) {
+                 saturate(materialParams.cameraAngularMotion));
+         float depthEdgeFloor = mix(materialParams.alpha, 0.35, adaptiveDepthEdge);
+         float mismatchAlpha = mix(materialParams.alpha, 1.0, adaptiveMismatch);
+-        alpha = max(alpha, max(motionFloor, max(depthEdgeFloor, mismatchAlpha)));
++        float previousDepthAlpha = mix(materialParams.alpha, 1.0,
++                adaptivePreviousDepthMismatch);
++        alpha = max(alpha, max(motionFloor,
++                max(depthEdgeFloor, max(mismatchAlpha, previousDepthAlpha))));
+     }
+
+     // Camera cuts and descriptor changes are explicit full-history resets.

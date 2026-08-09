@@ -1,0 +1,76 @@
+diff --git a/filament/src/RenderPass.cpp b/filament/src/RenderPass.cpp
+index 8791c0d..a597477 100644
+--- a/filament/src/RenderPass.cpp
++++ b/filament/src/RenderPass.cpp
+@@ -1138,0 +1139,10 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
++                    // Regional already rendered authoritative current depth with the exact
++                    // depth variant.  Keeping depth writes enabled here makes masked materials
++                    // defer depth/stencil until after their expensive fragment work.  Convert
++                    // only originally depth-writing (opaque / masked) draws to an equal,
++                    // read-only depth test so Vulkan can reject REUSE pixels before PBR.  The
++                    // original depth state is preserved for transparent draws.
++                    if (pipeline.rasterState.depthWrite) {
++                        pipeline.rasterState.depthWrite = false;
++                        pipeline.rasterState.depthFunc = SamplerCompareFunc::E;
++                    }
+diff --git a/filament/src/details/Renderer.cpp b/filament/src/details/Renderer.cpp
+index 392baf4..0fc0b0e 100644
+--- a/filament/src/details/Renderer.cpp
++++ b/filament/src/details/Renderer.cpp
+@@ -1685,0 +1686 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++    bool solumV1RegionalCameraStatic = false;
+@@ -1833,0 +1835,12 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                        double maximumProjectionDelta = 0.0;
++                        for (size_t column = 0; column < 4; ++column) {
++                            for (size_t row = 0; row < 4; ++row) {
++                                maximumProjectionDelta = std::max(maximumProjectionDelta,
++                                        std::abs(solumV1PreviousProjection[column][row] -
++                                                solumV1CurrentProjection[column][row]));
++                            }
++                        }
++                        // An exact static-camera path has no disocclusion outside the conservative
++                        // moving-object envelope.  A tiny epsilon tolerates harmless double
++                        // roundoff while any real camera motion keeps the full stencil path.
++                        solumV1RegionalCameraStatic = maximumProjectionDelta <= 1.0e-12;
+@@ -2049,0 +2063,17 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++        // With a static camera, all changes are already covered by the conservative current +
++        // previous mover/shadow envelope.  Scissoring the current color executor is therefore a
++        // safe upper bound on submitted fragment coverage.  Camera motion keeps the full viewport
++        // and relies on current-depth reprojection + stencil for disocclusion correctness.
++        if (solumV1RegionalHasDirtyScissor && solumV1RegionalCameraStatic) {
++            regionalColorExecutor.overrideSolumDrawScissor(solumV1RegionalScissor);
++            ++mSolumV1.regionalCurrentScissorFrames;
++            mSolumV1.regionalCurrentCoverageUpperBound =
++                    mSolumV1.regionalDirtyCoverage;
++            mSolumV1.regionalReuseCoverageLowerBound =
++                    100.0 - mSolumV1.regionalDirtyCoverage;
++        } else {
++            mSolumV1.regionalCurrentCoverageUpperBound = 100.0;
++            mSolumV1.regionalReuseCoverageLowerBound = 0.0;
++        }
++        mSolumV1.regionalCameraStatic = solumV1RegionalCameraStatic;
++        ++mSolumV1.regionalEarlyDepthStencilFrames;
+@@ -2622,0 +2653,6 @@ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
++        << ",\"regional_camera_static\":"
++        << (mSolumV1.regionalCameraStatic ? "true" : "false")
++        << ",\"regional_current_coverage_upper_bound_percent\":"
++        << mSolumV1.regionalCurrentCoverageUpperBound
++        << ",\"regional_reuse_coverage_lower_bound_percent\":"
++        << mSolumV1.regionalReuseCoverageLowerBound
+@@ -2634,0 +2671,4 @@ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
++        << ",\"regional_early_depth_stencil_frames\":"
++        << mSolumV1.regionalEarlyDepthStencilFrames
++        << ",\"regional_current_scissor_frames\":"
++        << mSolumV1.regionalCurrentScissorFrames
+diff --git a/filament/src/details/Renderer.h b/filament/src/details/Renderer.h
+index f35667d..28598a1 100644
+--- a/filament/src/details/Renderer.h
++++ b/filament/src/details/Renderer.h
+@@ -262,0 +263,2 @@ private:
++        uint64_t regionalEarlyDepthStencilFrames = 0;
++        uint64_t regionalCurrentScissorFrames = 0;
+@@ -274,0 +277 @@ private:
++        bool regionalCameraStatic = false;
+@@ -277,0 +281,2 @@ private:
++        double regionalCurrentCoverageUpperBound = 100.0;
++        double regionalReuseCoverageLowerBound = 0.0;

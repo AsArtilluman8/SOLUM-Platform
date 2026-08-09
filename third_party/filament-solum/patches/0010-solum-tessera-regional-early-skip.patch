@@ -35,7 +35,11 @@ index 392baf4..34493aa 100644
 +++ b/filament/src/details/Renderer.cpp
 @@ -1685,0 +1686 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
 +    bool solumV1RegionalCameraStatic = false;
-@@ -1833,0 +1835,12 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+@@ -1686,0 +1688,3 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++    mSolumV1.regionalCameraStatic = false;
++    mSolumV1.regionalCurrentCoverageUpperBound = 100.0;
++    mSolumV1.regionalReuseCoverageLowerBound = 0.0;
+@@ -1833,0 +1838,12 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
 +                        double maximumProjectionDelta = 0.0;
 +                        for (size_t column = 0; column < 4; ++column) {
 +                            for (size_t row = 0; row < 4; ++row) {
@@ -48,9 +52,9 @@ index 392baf4..34493aa 100644
 +                        // moving-object envelope.  A tiny epsilon tolerates harmless double
 +                        // roundoff while any real camera motion keeps the full stencil path.
 +                        solumV1RegionalCameraStatic = maximumProjectionDelta <= 1.0e-12;
-@@ -2040,0 +2054 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+@@ -2040,0 +2057 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
 +        regionalColorConfig.readOnlyDepthStencil = true;
-@@ -2049,0 +2064,17 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+@@ -2049,0 +2067,17 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
 +        // With a static camera, all changes are already covered by the conservative current +
 +        // previous mover/shadow envelope.  Scissoring the current color executor is therefore a
 +        // safe upper bound on submitted fragment coverage.  Camera motion keeps the full viewport
@@ -68,14 +72,14 @@ index 392baf4..34493aa 100644
 +        }
 +        mSolumV1.regionalCameraStatic = solumV1RegionalCameraStatic;
 +        ++mSolumV1.regionalEarlyDepthStencilFrames;
-@@ -2622,0 +2654,6 @@ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
+@@ -2622,0 +2657,6 @@ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
 +        << ",\"regional_camera_static\":"
 +        << (mSolumV1.regionalCameraStatic ? "true" : "false")
 +        << ",\"regional_current_coverage_upper_bound_percent\":"
 +        << mSolumV1.regionalCurrentCoverageUpperBound
 +        << ",\"regional_reuse_coverage_lower_bound_percent\":"
 +        << mSolumV1.regionalReuseCoverageLowerBound
-@@ -2634,0 +2672,4 @@ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
+@@ -2634,0 +2675,4 @@ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
 +        << ",\"regional_early_depth_stencil_frames\":"
 +        << mSolumV1.regionalEarlyDepthStencilFrames
 +        << ",\"regional_current_scissor_frames\":"

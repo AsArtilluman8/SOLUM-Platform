@@ -1,0 +1,683 @@
+diff --git a/filament/src/PostProcessManager.cpp b/filament/src/PostProcessManager.cpp
+--- a/filament/src/PostProcessManager.cpp
++++ b/filament/src/PostProcessManager.cpp
+@@ -3674,6 +3674,71 @@
+     return ppQuadBlit->output;
+ }
+
++FrameGraphId<FrameGraphTexture> PostProcessManager::blitInto(FrameGraph& fg,
++        bool const translucent, FrameGraphId<FrameGraphTexture> const input,
++        FrameGraphId<FrameGraphTexture> const output, filament::Viewport const& vp,
++        SamplerMagFilter const filterMag, SamplerMinFilter const filterMin) noexcept {
++
++    uint32_t const layer = fg.getSubResourceDescriptor(input).layer;
++    float const levelOfDetail = fg.getSubResourceDescriptor(input).level;
++
++    struct QuadBlitIntoData {
++        FrameGraphId<FrameGraphTexture> input;
++        FrameGraphId<FrameGraphTexture> output;
++    };
++
++    auto const& ppQuadBlit = fg.addPass<QuadBlitIntoData>("Tessera Regional history prefill",
++            [&](FrameGraph::Builder& builder, auto& data) {
++                data.input = builder.sample(input);
++                data.output = builder.write(output,
++                        FrameGraphTexture::Usage::COLOR_ATTACHMENT);
++                builder.declareRenderPass(builder.getName(data.output), {
++                        .attachments = { .color = { data.output }},
++                        .clearFlags = TargetBufferFlags::DEPTH });
++            },
++            [=, this](FrameGraphResources const& resources,
++                    auto const& data, DriverApi& driver) {
++                bindPostProcessDescriptorSet(driver);
++                bindPerRenderableDescriptorSet(driver);
++                auto const color = resources.getTexture(data.input);
++                auto const& inputDesc = resources.getDescriptor(data.input);
++                auto const out = resources.getRenderPassInfo();
++
++                PostProcessMaterial const& material =
++                        getPostProcessMaterial(layer ? "blitArray" : "blitLow");
++                FMaterial const* const ma = material.getMaterial(mEngine);
++                auto* const mi = getMaterialInstance(driver, ma);
++                mi->setParameter("color", color, SamplerParams{
++                        .filterMag = filterMag,
++                        .filterMin = filterMin
++                });
++                mi->setParameter("viewport", float4{
++                        float(vp.left)   / inputDesc.width,
++                        float(vp.bottom) / inputDesc.height,
++                        float(vp.width)  / inputDesc.width,
++                        float(vp.height) / inputDesc.height
++                });
++                mi->setParameter("levelOfDetail", levelOfDetail);
++                if (layer) {
++                    mi->setParameter("layerIndex", layer);
++                }
++                mi->commit(driver, getUboManager());
++                mi->use(driver);
++
++                auto pipeline = getPipelineState(mi);
++                if (translucent) {
++                    pipeline.rasterState.blendFunctionSrcRGB = BlendFunction::ONE;
++                    pipeline.rasterState.blendFunctionSrcAlpha = BlendFunction::ONE;
++                    pipeline.rasterState.blendFunctionDstRGB = BlendFunction::ONE_MINUS_SRC_ALPHA;
++                    pipeline.rasterState.blendFunctionDstAlpha = BlendFunction::ONE_MINUS_SRC_ALPHA;
++                }
++                renderFullScreenQuad(out, pipeline, driver);
++                unbindAllDescriptorSets(driver);
++            });
++
++    return ppQuadBlit->output;
++}
++
+ FrameGraphId<FrameGraphTexture> PostProcessManager::blitDepth(FrameGraph& fg,
+         FrameGraphId<FrameGraphTexture> const input) noexcept {
+     auto const& inputDesc = fg.getDescriptor(input);
+diff --git a/filament/src/PostProcessManager.h b/filament/src/PostProcessManager.h
+--- a/filament/src/PostProcessManager.h
++++ b/filament/src/PostProcessManager.h
+@@ -296,6 +296,14 @@
+             backend::SamplerMagFilter filterMag,
+             backend::SamplerMinFilter filterMin) noexcept;
+
++    // Color blitter that writes into an existing external FrameGraph target. This is used by
++    // Tessera Regional to seed its persistent current HDR ping-pong slot without allocating a
++    // transient replacement every frame.
++    FrameGraphId<FrameGraphTexture> blitInto(FrameGraph& fg, bool translucent,
++            FrameGraphId<FrameGraphTexture> input, FrameGraphId<FrameGraphTexture> output,
++            Viewport const& vp, backend::SamplerMagFilter filterMag,
++            backend::SamplerMinFilter filterMin) noexcept;
++
+     // depth blitter using shaders
+     FrameGraphId<FrameGraphTexture> blitDepth(FrameGraph& fg,
+             FrameGraphId<FrameGraphTexture> input) noexcept;
+diff --git a/filament/src/details/Renderer.cpp b/filament/src/details/Renderer.cpp
+--- a/filament/src/details/Renderer.cpp
++++ b/filament/src/details/Renderer.cpp
+@@ -584,6 +584,8 @@
+         engine.execute();
+     }
+
++    // The fence above makes it safe to release the renderer-owned Regional HDR ping-pong slots.
++    invalidateSolumRegionalHistory("renderer_terminate");
+     mSolumGpuProfiler->terminate(driver);
+     mFrameInfoManager.terminate(engine);
+     mFrameSkipper.terminate(driver);
+@@ -1661,9 +1663,12 @@
+     }
+
+     FrameGraphId<FrameGraphTexture> solumV1CachedColor;
++    FrameGraphId<FrameGraphTexture> solumV1RegionalCurrentColor;
+     bool solumV1CanCache = false;
+     bool solumV1Reuse = false;
+     bool solumV1RegionalReuse = false;
++    bool solumV1RegionalResourcesReady = false;
++    uint64_t solumV1RegionalGeneration = 0;
+     backend::Viewport solumV1RegionalScissor{};
+     if (mSolumV1.enabled && mSolumV1.targetView == &view) {
+         ++mSolumV1.consideredFrames;
+@@ -1684,85 +1689,170 @@
+             solumV1CanCache = false;
+             decision = "incompatible_target";
+         } else {
+-            auto& previous = view.getFrameHistory().getPrevious().solumV1;
+-            bool const descriptorMatches = previous.desc.width == colorBufferDesc.width &&
+-                    previous.desc.height == colorBufferDesc.height &&
+-                    previous.desc.depth == colorBufferDesc.depth &&
+-                    previous.desc.levels == colorBufferDesc.levels &&
+-                    previous.desc.samples == colorBufferDesc.samples &&
+-                    previous.desc.type == colorBufferDesc.type &&
+-                    previous.desc.format == colorBufferDesc.format;
+-            if (!previous.color.handle) {
+-                decision = "history_missing";
+-            } else if (!descriptorMatches) {
+-                decision = "descriptor_mismatch";
+-            } else if (previous.stateKey != mSolumV1.stateKey) {
+-                decision = "state_key_mismatch";
+-            } else {
+-                if (mSolumV1.regionalEnabled) {
+-                    mSolumV1.regionalHistoryColorId = previous.color.handle.getId();
+-                    mSolumV1.regionalLifecycleState = "history_import_begin";
++            auto& framePrevious = view.getFrameHistory().getPrevious().solumV1;
++            FrameGraphTexture const* previousColor = &framePrevious.color;
++            FrameGraphTexture::Descriptor const* previousDesc = &framePrevious.desc;
++            uint64_t previousStateKey = framePrevious.stateKey;
++            bool previousOwned = bool(framePrevious.color.handle);
++            bool regionalHistoryRejectedStale = false;
++
++            if (mSolumV1.regionalEnabled) {
++                solumV1RegionalResourcesReady = ensureSolumRegionalHistory(colorBufferDesc);
++                solumV1RegionalGeneration = mSolumV1.regionalResourceGeneration;
++                if (!solumV1RegionalResourcesReady) {
++                    solumV1CanCache = false;
++                    decision = "regional_history_allocation_failed";
++                    mSolumV1.regionalLifecycleState = "REGIONAL_HISTORY_REJECT_STALE";
++                } else {
++                    auto& slot = mSolumV1.regionalHistory[mSolumV1.regionalReadSlot];
++                    bool const stale = mSolumV1.regionalHistoryValid &&
++                            (!slot.valid || !slot.color.handle ||
++                                    slot.generation != mSolumV1.regionalResourceGeneration);
++                    if (stale) {
++                        ++mSolumV1.regionalHistoryRejectStaleEvents;
++                        invalidateSolumRegionalHistory("generation_or_handle_mismatch");
++                        mSolumV1.regionalLifecycleState = "REGIONAL_HISTORY_REJECT_STALE";
++                        solumV1RegionalResourcesReady =
++                                ensureSolumRegionalHistory(colorBufferDesc);
++                        solumV1RegionalGeneration = mSolumV1.regionalResourceGeneration;
++                        if (!solumV1RegionalResourcesReady) {
++                            solumV1CanCache = false;
++                            decision = "regional_history_allocation_failed";
++                        } else {
++                            decision = "regional_history_stale";
++                        }
++                        previousOwned = false;
++                        regionalHistoryRejectedStale = true;
++                    } else {
++                        previousColor = &slot.color;
++                        previousDesc = &slot.desc;
++                        previousStateKey = slot.stateKey;
++                        previousOwned = mSolumV1.regionalHistoryValid && slot.valid &&
++                                bool(slot.color.handle) &&
++                                slot.generation == mSolumV1.regionalResourceGeneration;
++                    }
+                 }
+-                solumV1CachedColor = fg.import("SOLUM V1 cached shading", previous.desc,
++            }
++
++            if (solumV1CanCache) {
++                bool const descriptorMatches = previousDesc->width == colorBufferDesc.width &&
++                        previousDesc->height == colorBufferDesc.height &&
++                        previousDesc->depth == colorBufferDesc.depth &&
++                        previousDesc->levels == colorBufferDesc.levels &&
++                        previousDesc->samples == colorBufferDesc.samples &&
++                        previousDesc->type == colorBufferDesc.type &&
++                        previousDesc->format == colorBufferDesc.format;
++                if (!previousOwned) {
++                    if (!regionalHistoryRejectedStale) {
++                        decision = "history_missing";
++                    }
++                } else if (!descriptorMatches) {
++                    if (mSolumV1.regionalEnabled) {
++                        invalidateSolumRegionalHistory("descriptor_mismatch");
++                        solumV1RegionalResourcesReady =
++                                ensureSolumRegionalHistory(colorBufferDesc);
++                        solumV1RegionalGeneration = mSolumV1.regionalResourceGeneration;
++                        if (!solumV1RegionalResourcesReady) {
++                            solumV1CanCache = false;
++                            decision = "regional_history_allocation_failed";
++                        }
++                    }
++                    if (solumV1CanCache) {
++                        decision = "descriptor_mismatch";
++                    }
++                } else if (previousStateKey != mSolumV1.stateKey) {
++                    if (mSolumV1.regionalEnabled) {
++                        invalidateSolumRegionalHistory("state_key_mismatch");
++                        solumV1RegionalResourcesReady =
++                                ensureSolumRegionalHistory(colorBufferDesc);
++                        solumV1RegionalGeneration = mSolumV1.regionalResourceGeneration;
++                        if (!solumV1RegionalResourcesReady) {
++                            solumV1CanCache = false;
++                            decision = "regional_history_allocation_failed";
++                        }
++                    }
++                    if (solumV1CanCache) {
++                        decision = "state_key_mismatch";
++                    }
++                } else {
++                    if (mSolumV1.regionalEnabled) {
++                        ++mSolumV1.regionalHistoryImportEvents;
++                        mSolumV1.regionalHistoryColorId = previousColor->handle.getId();
++                        mSolumV1.regionalLifecycleState = "REGIONAL_HISTORY_IMPORT";
++                    }
++                    solumV1CachedColor = fg.import("SOLUM V1 cached shading", *previousDesc,
++                            FrameGraphTexture::Usage::COLOR_ATTACHMENT |
++                                    FrameGraphTexture::Usage::SAMPLEABLE,
++                            *previousColor);
++                    solumV1Reuse = true;
++                    if (mSolumV1.regionalEnabled) {
++                        constexpr uint32_t TILE_SIZE = 32u;
++                        float const normalizedLeft = std::clamp(
++                                mSolumV1.regionalDirtyRect.x, 0.0f, 1.0f);
++                        float const normalizedBottom = std::clamp(
++                                mSolumV1.regionalDirtyRect.y, 0.0f, 1.0f);
++                        float const normalizedRight = std::clamp(normalizedLeft +
++                                mSolumV1.regionalDirtyRect.z, normalizedLeft, 1.0f);
++                        float const normalizedTop = std::clamp(normalizedBottom +
++                                mSolumV1.regionalDirtyRect.w, normalizedBottom, 1.0f);
++                        uint32_t left = uint32_t(std::floor(
++                                normalizedLeft * float(colorBufferDesc.width)));
++                        uint32_t bottom = uint32_t(std::floor(
++                                normalizedBottom * float(colorBufferDesc.height)));
++                        uint32_t right = uint32_t(std::ceil(
++                                normalizedRight * float(colorBufferDesc.width)));
++                        uint32_t top = uint32_t(std::ceil(
++                                normalizedTop * float(colorBufferDesc.height)));
++                        left = left > TILE_SIZE ? left - TILE_SIZE : 0u;
++                        bottom = bottom > TILE_SIZE ? bottom - TILE_SIZE : 0u;
++                        right = std::min(colorBufferDesc.width, right + TILE_SIZE);
++                        top = std::min(colorBufferDesc.height, top + TILE_SIZE);
++                        left = left / TILE_SIZE * TILE_SIZE;
++                        bottom = bottom / TILE_SIZE * TILE_SIZE;
++                        right = std::min(colorBufferDesc.width,
++                                ((right + TILE_SIZE - 1u) / TILE_SIZE) * TILE_SIZE);
++                        top = std::min(colorBufferDesc.height,
++                                ((top + TILE_SIZE - 1u) / TILE_SIZE) * TILE_SIZE);
++                        uint64_t const dirtyPixels = uint64_t(right - left) * (top - bottom);
++                        uint64_t const totalPixels = uint64_t(colorBufferDesc.width) *
++                                colorBufferDesc.height;
++                        double const dirtyCoverage = totalPixels ?
++                                100.0 * double(dirtyPixels) / double(totalPixels) : 100.0;
++                        if (right > left && top > bottom && dirtyCoverage < 95.0) {
++                            solumV1RegionalReuse = true;
++                            solumV1RegionalScissor = {
++                                config.physicalViewport.left + int32_t(left),
++                                config.physicalViewport.bottom + int32_t(bottom),
++                                right - left, top - bottom
++                            };
++                            mSolumV1.regionalDirtyCoverage = dirtyCoverage;
++                            mSolumV1.regionalValidCoverage = 100.0 - dirtyCoverage;
++                            decision = "regional_reused";
++                        } else {
++                            solumV1Reuse = false;
++                            decision = "regional_rect_invalid_or_full";
++                        }
++                    } else {
++                        mSolumV1.regionalDirtyCoverage = 0.0;
++                        mSolumV1.regionalValidCoverage = 100.0;
++                        decision = "reused";
++                    }
++                }
++            }
++
++            // Import the persistent write slot only after all possible invalidations and rebuilds.
++            // This prevents a FrameGraph from retaining a slot that was released later in setup.
++            if (mSolumV1.regionalEnabled && solumV1RegionalResourcesReady) {
++                auto& current = mSolumV1.regionalHistory[mSolumV1.regionalWriteSlot];
++                current.valid = false;
++                current.stateKey = mSolumV1.stateKey;
++                current.generation = solumV1RegionalGeneration;
++                mSolumV1.regionalCurrentColorId = current.color.handle.getId();
++                solumV1RegionalCurrentColor = fg.import(
++                        "SOLUM Tessera Regional current HDR", current.desc,
+                         FrameGraphTexture::Usage::COLOR_ATTACHMENT |
+                                 FrameGraphTexture::Usage::SAMPLEABLE,
+-                        previous.color);
+-                if (mSolumV1.regionalEnabled) {
+-                    mSolumV1.regionalLifecycleState = "history_imported_read_only";
+-                }
+-                solumV1Reuse = true;
+-                if (mSolumV1.regionalEnabled) {
+-                    constexpr uint32_t TILE_SIZE = 32u;
+-                    float const normalizedLeft = std::clamp(
+-                            mSolumV1.regionalDirtyRect.x, 0.0f, 1.0f);
+-                    float const normalizedBottom = std::clamp(
+-                            mSolumV1.regionalDirtyRect.y, 0.0f, 1.0f);
+-                    float const normalizedRight = std::clamp(normalizedLeft +
+-                            mSolumV1.regionalDirtyRect.z, normalizedLeft, 1.0f);
+-                    float const normalizedTop = std::clamp(normalizedBottom +
+-                            mSolumV1.regionalDirtyRect.w, normalizedBottom, 1.0f);
+-                    uint32_t left = uint32_t(std::floor(
+-                            normalizedLeft * float(colorBufferDesc.width)));
+-                    uint32_t bottom = uint32_t(std::floor(
+-                            normalizedBottom * float(colorBufferDesc.height)));
+-                    uint32_t right = uint32_t(std::ceil(
+-                            normalizedRight * float(colorBufferDesc.width)));
+-                    uint32_t top = uint32_t(std::ceil(
+-                            normalizedTop * float(colorBufferDesc.height)));
+-                    left = left > TILE_SIZE ? left - TILE_SIZE : 0u;
+-                    bottom = bottom > TILE_SIZE ? bottom - TILE_SIZE : 0u;
+-                    right = std::min(colorBufferDesc.width, right + TILE_SIZE);
+-                    top = std::min(colorBufferDesc.height, top + TILE_SIZE);
+-                    left = left / TILE_SIZE * TILE_SIZE;
+-                    bottom = bottom / TILE_SIZE * TILE_SIZE;
+-                    right = std::min(colorBufferDesc.width,
+-                            ((right + TILE_SIZE - 1u) / TILE_SIZE) * TILE_SIZE);
+-                    top = std::min(colorBufferDesc.height,
+-                            ((top + TILE_SIZE - 1u) / TILE_SIZE) * TILE_SIZE);
+-                    uint64_t const dirtyPixels = uint64_t(right - left) * (top - bottom);
+-                    uint64_t const totalPixels = uint64_t(colorBufferDesc.width) *
+-                            colorBufferDesc.height;
+-                    double const dirtyCoverage = totalPixels ?
+-                            100.0 * double(dirtyPixels) / double(totalPixels) : 100.0;
+-                    if (right > left && top > bottom && dirtyCoverage < 95.0) {
+-                        solumV1RegionalReuse = true;
+-                        solumV1RegionalScissor = {
+-                            config.physicalViewport.left + int32_t(left),
+-                            config.physicalViewport.bottom + int32_t(bottom),
+-                            right - left, top - bottom
+-                        };
+-                        mSolumV1.regionalDirtyCoverage = dirtyCoverage;
+-                        mSolumV1.regionalValidCoverage = 100.0 - dirtyCoverage;
+-                        decision = "regional_reused";
+-                    } else {
+-                        solumV1Reuse = false;
+-                        decision = "regional_rect_invalid_or_full";
+-                    }
+-                } else {
+-                    mSolumV1.regionalDirtyCoverage = 0.0;
+-                    mSolumV1.regionalValidCoverage = 100.0;
+-                    decision = "reused";
+-                }
++                        current.color);
+             }
+         }
+         mSolumV1.lastDecision = decision;
+@@ -1850,16 +1940,12 @@
+     }
+     RendererUtils::ColorPassOutput colorPassOutput;
+     if (solumV1RegionalReuse) {
+-        // Previous-frame history is external to this FrameGraph and must remain immutable until
+-        // all current-frame driver work that samples it has been submitted.  Regional V0 used to
+-        // attach that imported history directly to two writable color passes.  A mode transition
+-        // could then recycle the history handle while an in-flight render target still referenced
+-        // it.  Seed a new current-frame color buffer instead; only this owned buffer is writable.
+-        mSolumV1.regionalLifecycleState = "prefill_allocation_begin";
+-        auto const regionalSeedColor = ppm.blit(fg, false, solumV1CachedColor,
++        // Previous and current HDR are distinct persistent FRenderer-owned ping-pong slots.
++        // Seed the current slot directly; normal Regional frames allocate no replacement texture.
++        auto const regionalSeedColor = ppm.blitInto(fg, false, solumV1CachedColor,
++                solumV1RegionalCurrentColor,
+                 filament::Viewport{ 0, 0, colorBufferDesc.width, colorBufferDesc.height },
+-                colorBufferDesc, SamplerMagFilter::NEAREST, SamplerMinFilter::NEAREST);
+-        mSolumV1.regionalLifecycleState = "prefill_allocated_current_owned";
++                SamplerMagFilter::NEAREST, SamplerMinFilter::NEAREST);
+         auto regionalDepthConfig = colorPassConfig;
+         regionalDepthConfig.clearFlags &= ~TargetBufferFlags::COLOR;
+         colorPassOutput = RendererUtils::colorPass(
+@@ -1884,7 +1970,9 @@
+                 colorGradingConfigForColor, std::move(regionalColorExecutor));
+     } else {
+         colorPassOutput = RendererUtils::colorPass(fg, "Color Pass", mEngine, view, {
+-                    .linearColor = solumV1CachedColor,
++                    .linearColor = mSolumV1.regionalEnabled &&
++                            solumV1RegionalResourcesReady ?
++                            solumV1RegionalCurrentColor : solumV1CachedColor,
+                     .shadows = blackboard.get<FrameGraphTexture>("shadows"),
+                     .ssao = blackboard.get<FrameGraphTexture>("ssao"),
+                     .ssr = ssrConfig.ssr,
+@@ -1920,29 +2008,48 @@
+             FrameGraphId<FrameGraphTexture> history;
+         };
+         uint64_t const stateKey = mSolumV1.stateKey;
++        uint64_t const regionalGeneration = solumV1RegionalGeneration;
++        uint8_t const regionalWriteSlot = mSolumV1.regionalWriteSlot;
++        bool const regionalOwner = mSolumV1.regionalEnabled &&
++                solumV1RegionalResourcesReady;
+         fg.addPass<ExportSolumV1HistoryData>("Export SOLUM V1 shading cache",
+                 [&](FrameGraph::Builder& builder, auto& data) {
+                     builder.sideEffect();
+                     data.history = builder.sample(colorPassOutput.linearColor);
+-                }, [this, &view, stateKey, solumV1Reuse, solumV1RegionalReuse](
++                }, [this, &view, stateKey, regionalGeneration, regionalWriteSlot,
++                        regionalOwner, solumV1Reuse](
+                         FrameGraphResources const& resources, auto const& data) {
+-                    auto& history = view.getFrameHistory();
+-                    if (solumV1Reuse && !solumV1RegionalReuse) {
+-                        // The imported handle is now transferred to the current entry. Prevent
+-                        // commitFrameHistory() from destroying it as the previous entry.
+-                        history.getPrevious().solumV1.color = {};
+-                    }
+-                    if (solumV1RegionalReuse) {
+-                        mSolumV1.regionalLifecycleState = "previous_release_deferred";
+-                        mSolumV1.regionalHistoryColorId =
+-                                history.getPrevious().solumV1.color.handle.getId();
+-                    }
+-                    auto& current = history.getCurrent().solumV1;
+-                    current.stateKey = stateKey;
+-                    resources.detach(data.history, &current.color, &current.desc);
+-                    if (solumV1RegionalReuse) {
+-                        mSolumV1.regionalCurrentColorId = current.color.handle.getId();
+-                        mSolumV1.regionalLifecycleState = "current_detached_history_owned";
++                    if (regionalOwner) {
++                        auto& current = mSolumV1.regionalHistory[regionalWriteSlot];
++                        bool const valid = bool(current.color.handle) &&
++                                current.generation == regionalGeneration &&
++                                regionalGeneration == mSolumV1.regionalResourceGeneration;
++                        if (valid) {
++                            current.valid = true;
++                            current.stateKey = stateKey;
++                            mSolumV1.regionalReadSlot = regionalWriteSlot;
++                            mSolumV1.regionalWriteSlot = uint8_t(regionalWriteSlot ^ 1u);
++                            mSolumV1.regionalHistoryValid = true;
++                            mSolumV1.regionalHistoryColorId = current.color.handle.getId();
++                            ++mSolumV1.regionalHistorySwapEvents;
++                            mSolumV1.regionalLifecycleState = "REGIONAL_HISTORY_SWAP";
++                        } else {
++                            current.valid = false;
++                            mSolumV1.regionalHistoryValid = false;
++                            ++mSolumV1.regionalHistoryRejectStaleEvents;
++                            mSolumV1.regionalLifecycleState =
++                                    "REGIONAL_HISTORY_REJECT_STALE";
++                        }
++                    } else {
++                        auto& history = view.getFrameHistory();
++                        if (solumV1Reuse) {
++                            // Whole-frame V1 transfers the imported history to current. Prevent
++                            // commitFrameHistory() from destroying it as the previous entry.
++                            history.getPrevious().solumV1.color = {};
++                        }
++                        auto& current = history.getCurrent().solumV1;
++                        current.stateKey = stateKey;
++                        resources.detach(data.history, &current.color, &current.desc);
+                     }
+                 });
+     }
+@@ -2210,8 +2317,97 @@
+     return mSolumGpuProfiler->stop();
+ }
+
++bool FRenderer::ensureSolumRegionalHistory(
++        FrameGraphTexture::Descriptor const& desc) noexcept {
++    auto const descriptorMatches = [&desc](
++            SolumV1State::RegionalHistorySlot const& slot) noexcept {
++        return slot.desc.width == desc.width && slot.desc.height == desc.height &&
++                slot.desc.depth == desc.depth && slot.desc.levels == desc.levels &&
++                slot.desc.samples == desc.samples && slot.desc.type == desc.type &&
++                slot.desc.format == desc.format;
++    };
++    bool const ready = mSolumV1.regionalHistory[0].color.handle &&
++            mSolumV1.regionalHistory[1].color.handle &&
++            descriptorMatches(mSolumV1.regionalHistory[0]) &&
++            descriptorMatches(mSolumV1.regionalHistory[1]) &&
++            mSolumV1.regionalHistory[0].generation ==
++                    mSolumV1.regionalResourceGeneration &&
++            mSolumV1.regionalHistory[1].generation ==
++                    mSolumV1.regionalResourceGeneration;
++    if (ready) {
++        return true;
++    }
++
++    if (mSolumV1.regionalHistory[0].color.handle ||
++            mSolumV1.regionalHistory[1].color.handle) {
++        invalidateSolumRegionalHistory("descriptor_or_generation_reallocation");
++    }
++
++    uint64_t const generation = ++mSolumV1.regionalResourceGeneration;
++    constexpr auto usage = FrameGraphTexture::Usage::COLOR_ATTACHMENT |
++            FrameGraphTexture::Usage::SAMPLEABLE;
++    auto& first = mSolumV1.regionalHistory[0];
++    auto& second = mSolumV1.regionalHistory[1];
++    first.desc = desc;
++    second.desc = desc;
++    first.generation = generation;
++    second.generation = generation;
++    first.color.create(*mResourceAllocator, "Tessera Regional HDR history A", desc, usage);
++    second.color.create(*mResourceAllocator, "Tessera Regional HDR history B", desc, usage);
++    if (!first.color.handle || !second.color.handle) {
++        ++mSolumV1.regionalHistoryRejectStaleEvents;
++        invalidateSolumRegionalHistory("history_allocation_failed");
++        mSolumV1.regionalLifecycleState = "REGIONAL_HISTORY_REJECT_STALE";
++        return false;
++    }
++    first.valid = false;
++    second.valid = false;
++    mSolumV1.regionalReadSlot = 0;
++    mSolumV1.regionalWriteSlot = 1;
++    mSolumV1.regionalHistoryValid = false;
++    mSolumV1.regionalHistoryColorId = uint32_t(-1);
++    mSolumV1.regionalCurrentColorId = second.color.handle.getId();
++    ++mSolumV1.regionalHistoryAllocEvents;
++    mSolumV1.regionalLifecycleState = "REGIONAL_HISTORY_ALLOC";
++    return true;
++}
++
++void FRenderer::releaseSolumRegionalHistorySlot(uint8_t const slotIndex) noexcept {
++    auto& slot = mSolumV1.regionalHistory[slotIndex];
++    bool const hadHandle = bool(slot.color.handle);
++    slot.color.destroy(*mResourceAllocator);
++    slot = {};
++    if (hadHandle) {
++        ++mSolumV1.regionalHistoryDeferredReleaseEvents;
++        // Return the texture to Filament's normal resource allocator/cache. It remains under the
++        // allocator's ordered GPU lifetime instead of being destroyed behind a FrameGraph import.
++        mSolumV1.regionalLifecycleState = "REGIONAL_HISTORY_DEFER_RELEASE";
++    }
++}
++
++void FRenderer::invalidateSolumRegionalHistory(char const* const reason) noexcept {
++    // Clear owner truth first: after this point an old integer id can never authorize an import.
++    mSolumV1.regionalHistoryValid = false;
++    mSolumV1.regionalHistoryColorId = uint32_t(-1);
++    mSolumV1.regionalCurrentColorId = uint32_t(-1);
++    ++mSolumV1.regionalResourceGeneration;
++    ++mSolumV1.regionalHistoryInvalidateEvents;
++    mSolumV1.regionalLastInvalidationReason = reason;
++    releaseSolumRegionalHistorySlot(0);
++    releaseSolumRegionalHistorySlot(1);
++    mSolumV1.regionalReadSlot = 0;
++    mSolumV1.regionalWriteSlot = 1;
++    mSolumV1.regionalLifecycleState = "REGIONAL_HISTORY_INVALIDATE";
++}
++
+ void FRenderer::setSolumV1ShadingReuse(FView const* const targetView, bool const enabled,
+         bool const safeToReuse, uint64_t const stateKey) noexcept {
++    if (!mSolumV1.regionalSetterActive &&
++            (mSolumV1.regionalHistory[0].color.handle ||
++                    mSolumV1.regionalHistory[1].color.handle ||
++                    mSolumV1.regionalHistoryValid)) {
++        invalidateSolumRegionalHistory("non_regional_configuration");
++    }
+     bool const newSession = enabled && (!mSolumV1.enabled || mSolumV1.targetView != targetView);
+     if (newSession) {
+         mSolumV1.consideredFrames = 0;
+@@ -2234,22 +2430,21 @@
+ void FRenderer::setSolumTesseraRegional(FView const* const targetView, bool const enabled,
+         bool const safeToReuse, uint64_t const stateKey, float const dirtyLeft,
+         float const dirtyBottom, float const dirtyWidth, float const dirtyHeight) noexcept {
+-    bool const wasRegionalEnabled = mSolumV1.regionalEnabled;
++    FView const* const previousTargetView = mSolumV1.targetView;
+     uint64_t const previousStateKey = mSolumV1.stateKey;
++    mSolumV1.regionalSetterActive = true;
+     setSolumV1ShadingReuse(targetView, enabled, safeToReuse, stateKey);
++    mSolumV1.regionalSetterActive = false;
+     bool const finiteRect = std::isfinite(dirtyLeft) && std::isfinite(dirtyBottom) &&
+             std::isfinite(dirtyWidth) && std::isfinite(dirtyHeight);
+     mSolumV1.regionalEnabled = enabled && safeToReuse && finiteRect &&
+             dirtyWidth > 0.0f && dirtyHeight > 0.0f;
+     mSolumV1.regionalDirtyRect = finiteRect ? math::float4{
+             dirtyLeft, dirtyBottom, dirtyWidth, dirtyHeight } : math::float4{};
+-    if (wasRegionalEnabled != mSolumV1.regionalEnabled ||
++    if (!enabled || previousTargetView != targetView ||
+             (mSolumV1.regionalEnabled && previousStateKey != stateKey)) {
+-        ++mSolumV1.regionalResourceGeneration;
+-        mSolumV1.regionalLifecycleState = mSolumV1.regionalEnabled ?
+-                "mode_transition_regional_on" : "mode_transition_regional_off";
+-        mSolumV1.regionalHistoryColorId = uint32_t(-1);
+-        mSolumV1.regionalCurrentColorId = uint32_t(-1);
++        invalidateSolumRegionalHistory(!enabled ?
++                "regional_disabled" : "mode_target_or_state_change");
+     }
+ }
+
+@@ -2268,8 +2463,24 @@
+         << ",\"regional_dirty_percent\":" << mSolumV1.regionalDirtyCoverage
+         << ",\"regional_valid_percent\":" << mSolumV1.regionalValidCoverage
+         << ",\"regional_resource_generation\":" << mSolumV1.regionalResourceGeneration
++        << ",\"regional_history_generation\":"
++        << mSolumV1.regionalHistory[mSolumV1.regionalReadSlot].generation
++        << ",\"regional_history_valid\":"
++        << (mSolumV1.regionalHistoryValid ? "true" : "false")
+         << ",\"regional_history_color_id\":" << mSolumV1.regionalHistoryColorId
+         << ",\"regional_current_color_id\":" << mSolumV1.regionalCurrentColorId
++        << ",\"regional_history_alloc_events\":" << mSolumV1.regionalHistoryAllocEvents
++        << ",\"regional_history_swap_events\":" << mSolumV1.regionalHistorySwapEvents
++        << ",\"regional_history_invalidate_events\":"
++        << mSolumV1.regionalHistoryInvalidateEvents
++        << ",\"regional_history_defer_release_events\":"
++        << mSolumV1.regionalHistoryDeferredReleaseEvents
++        << ",\"regional_history_import_events\":" << mSolumV1.regionalHistoryImportEvents
++        << ",\"regional_history_reject_stale_events\":"
++        << mSolumV1.regionalHistoryRejectStaleEvents
++        << ",\"regional_history_owner\":\"FRenderer_persistent_ping_pong\""
++        << ",\"regional_last_invalidation_reason\":\""
++        << mSolumV1.regionalLastInvalidationReason << "\""
+         << ",\"regional_lifecycle_state\":\"" << mSolumV1.regionalLifecycleState << "\""
+         << ",\"reuse_ratio\":" << ratio
+         << ",\"last_decision\":\"" << mSolumV1.lastDecision << "\"}";
+diff --git a/filament/src/details/Renderer.h b/filament/src/details/Renderer.h
+--- a/filament/src/details/Renderer.h
++++ b/filament/src/details/Renderer.h
+@@ -27,6 +27,8 @@
+
+ #include "details/SwapChain.h"
+
++#include "fg/FrameGraphTexture.h"
++
+ #include "backend/DriverApiForward.h"
+
+ #include <filament/Renderer.h>
+@@ -44,6 +46,7 @@
+ #include <tsl/robin_set.h>
+
+ #include <algorithm>
++#include <array>
+ #include <chrono>
+ #include <functional>
+ #include <memory>
+@@ -208,6 +211,9 @@
+
+     void renderInternal(backend::DriverApi& driver, FView const* view, bool flush);
+     void renderJob(backend::DriverApi& driver, RootArenaScope& rootArenaScope, FView& view);
++    bool ensureSolumRegionalHistory(FrameGraphTexture::Descriptor const& desc) noexcept;
++    void releaseSolumRegionalHistorySlot(uint8_t slotIndex) noexcept;
++    void invalidateSolumRegionalHistory(char const* reason) noexcept;
+
+     static std::pair<float, math::float2> prepareUpscaler(math::float2 scale,
+             TemporalAntiAliasingOptions const& taaOptions,
+@@ -229,9 +235,27 @@
+         uint64_t currentFrames = 0;
+         uint64_t reusedFrames = 0;
+         uint64_t regionalFrames = 0;
++        struct RegionalHistorySlot {
++            FrameGraphTexture color{};
++            FrameGraphTexture::Descriptor desc{};
++            uint64_t stateKey = 0;
++            uint64_t generation = 0;
++            bool valid = false;
++        };
++        std::array<RegionalHistorySlot, 2> regionalHistory{};
+         uint64_t regionalResourceGeneration = 0;
++        uint64_t regionalHistoryAllocEvents = 0;
++        uint64_t regionalHistorySwapEvents = 0;
++        uint64_t regionalHistoryInvalidateEvents = 0;
++        uint64_t regionalHistoryDeferredReleaseEvents = 0;
++        uint64_t regionalHistoryImportEvents = 0;
++        uint64_t regionalHistoryRejectStaleEvents = 0;
+         uint32_t regionalHistoryColorId = uint32_t(-1);
+         uint32_t regionalCurrentColorId = uint32_t(-1);
++        uint8_t regionalReadSlot = 0;
++        uint8_t regionalWriteSlot = 1;
++        bool regionalHistoryValid = false;
++        bool regionalSetterActive = false;
+         bool enabled = false;
+         bool safeToReuse = false;
+         bool regionalEnabled = false;
+@@ -239,6 +263,7 @@
+         double regionalDirtyCoverage = 100.0;
+         double regionalValidCoverage = 0.0;
+         char const* regionalLifecycleState = "disabled";
++        char const* regionalLastInvalidationReason = "none";
+         char const* lastDecision = "disabled";
+     } mSolumV1;
+     backend::TextureFormat mHdrTranslucent;

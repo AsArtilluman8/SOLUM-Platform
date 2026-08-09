@@ -84,7 +84,11 @@ jobs:
           git -C "$FILAMENT_DIR" apply --unidiff-zero "$GITHUB_WORKSPACE/$TESSERA_REGIONAL_V02_PATCH_FILE"
           git -C "$FILAMENT_DIR" diff --check
           git -C "$FILAMENT_DIR" diff --stat | tee filament-profiler-diff-stat.txt
-          test "$(git -C "$FILAMENT_DIR" diff --name-only | wc -l)" -eq 24
+          # git diff lists modified tracked files; the two new material sources remain untracked
+          # until Filament's build consumes them, so prove them separately below.
+          test "$(git -C "$FILAMENT_DIR" diff --name-only | wc -l)" -eq 22
+          test -f "$FILAMENT_DIR/filament/src/materials/tesseraRegionalReproject.mat"
+          test -f "$FILAMENT_DIR/filament/src/materials/tesseraRegionalStencil.mat"
           ! git -C "$FILAMENT_DIR" diff | grep -E 'flushAndWait|waitForGpu|fenceWait'
           git -C "$FILAMENT_DIR" diff | grep -F 'FrameGraph::ExecutionHooks'
           git -C "$FILAMENT_DIR" diff | grep -F 'getTimerQueryValue'

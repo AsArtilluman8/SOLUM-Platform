@@ -1,0 +1,486 @@
+diff --git a/android/filament-android/src/main/cpp/Renderer.cpp b/android/filament-android/src/main/cpp/Renderer.cpp
+index 28b86bf1..5546bf94 100644
+--- a/android/filament-android/src/main/cpp/Renderer.cpp
++++ b/android/filament-android/src/main/cpp/Renderer.cpp
+@@ -284,6 +284,19 @@ Java_com_google_android_filament_Renderer_nSetSolumV1ShadingReuse(JNIEnv *env, j
+     });
+ }
+ 
++extern "C" JNIEXPORT void JNICALL
++Java_com_google_android_filament_Renderer_nSetSolumTesseraRegional(JNIEnv *env, jclass,
++        jlong nativeRenderer, jlong nativeView, jboolean enabled, jboolean safeToReuse,
++        jlong stateKey, jfloat dirtyLeft, jfloat dirtyBottom, jfloat dirtyWidth,
++        jfloat dirtyHeight) {
++    Renderer* renderer = (Renderer*) nativeRenderer;
++    View* view = (View*) nativeView;
++    wrapJniBackend(env, [=]() {
++        renderer->setSolumTesseraRegional(view, enabled, safeToReuse, uint64_t(stateKey),
++                dirtyLeft, dirtyBottom, dirtyWidth, dirtyHeight);
++    });
++}
++
+ extern "C" JNIEXPORT jstring JNICALL
+ Java_com_google_android_filament_Renderer_nGetSolumV1ShadingReuseStats(JNIEnv *env, jclass,
+         jlong nativeRenderer) {
+diff --git a/android/filament-android/src/main/java/com/google/android/filament/Renderer.java b/android/filament-android/src/main/java/com/google/android/filament/Renderer.java
+index 15c69d6e..784aec48 100644
+--- a/android/filament-android/src/main/java/com/google/android/filament/Renderer.java
++++ b/android/filament-android/src/main/java/com/google/android/filament/Renderer.java
+@@ -774,6 +774,15 @@ public class Renderer {
+                 enabled, safeToReuse, stateKey);
+     }
+ 
++    /** Arms SOLUM Tessera Regional V0 with normalized bottom-left dirty bounds. */
++    public void setSolumTesseraRegional(@Nullable View targetView, boolean enabled,
++            boolean safeToReuse, long stateKey, float dirtyLeft, float dirtyBottom,
++            float dirtyWidth, float dirtyHeight) {
++        nSetSolumTesseraRegional(getNativeObject(),
++                targetView == null ? 0 : targetView.getNativeObject(), enabled,
++                safeToReuse, stateKey, dirtyLeft, dirtyBottom, dirtyWidth, dirtyHeight);
++    }
++
+     /** Returns V1 decision counters and last fail-closed reason as JSON. */
+     @NonNull
+     public String getSolumV1ShadingReuseStats() {
+@@ -829,5 +838,8 @@ public class Renderer {
+     private static native String nStopSolumGpuProfiler(long nativeObject);
+     private static native void nSetSolumV1ShadingReuse(long nativeObject, long nativeView,
+             boolean enabled, boolean safeToReuse, long stateKey);
++    private static native void nSetSolumTesseraRegional(long nativeObject, long nativeView,
++            boolean enabled, boolean safeToReuse, long stateKey, float dirtyLeft,
++            float dirtyBottom, float dirtyWidth, float dirtyHeight);
+     private static native String nGetSolumV1ShadingReuseStats(long nativeObject);
+ }
+diff --git a/filament/include/filament/Renderer.h b/filament/include/filament/Renderer.h
+index 515052dd..6d3d180a 100644
+--- a/filament/include/filament/Renderer.h
++++ b/filament/include/filament/Renderer.h
+@@ -142,6 +142,11 @@ public:
+     void setSolumV1ShadingReuse(View const* UTILS_NULLABLE targetView, bool enabled,
+             bool safeToReuse, uint64_t stateKey);
+ 
++    /** SOLUM Tessera Regional V0. Normalized dirty bounds use bottom-left coordinates. */
++    void setSolumTesseraRegional(View const* UTILS_NULLABLE targetView, bool enabled,
++            bool safeToReuse, uint64_t stateKey, float dirtyLeft, float dirtyBottom,
++            float dirtyWidth, float dirtyHeight);
++
+     /** Returns bounded V1 decision counters and the last fail-closed reason as JSON. */
+     utils::CString getSolumV1ShadingReuseStats() const;
+ 
+diff --git a/filament/src/RenderPass.cpp b/filament/src/RenderPass.cpp
+index 0b37bf5e..a34173bd 100644
+--- a/filament/src/RenderPass.cpp
++++ b/filament/src/RenderPass.cpp
+@@ -843,6 +843,12 @@ void RenderPass::Executor::overrideScissor(backend::Viewport const& scissor) noe
+     mScissor = scissor;
+ }
+ 
++void RenderPass::Executor::overrideSolumDrawScissor(
++        backend::Viewport const& scissor) noexcept {
++    mHasSolumDrawScissor = true;
++    mSolumDrawScissor = scissor;
++}
++
+ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver) const noexcept {
+     execute(engine, driver, mCommands.begin(), mCommands.end());
+ }
+@@ -892,6 +898,19 @@ backend::Viewport RenderPass::Executor::applyScissorViewport(
+     return { int32_t(s.l), int32_t(s.b), uint32_t(s.r - s.l), uint32_t(s.t - s.b) };
+ }
+ 
++static backend::Viewport intersectSolumScissors(
++        backend::Viewport const& lhs, backend::Viewport const& rhs) noexcept {
++    int64_t const left = std::max<int64_t>(lhs.left, rhs.left);
++    int64_t const bottom = std::max<int64_t>(lhs.bottom, rhs.bottom);
++    int64_t const right = std::min<int64_t>(
++            int64_t(lhs.left) + lhs.width, int64_t(rhs.left) + rhs.width);
++    int64_t const top = std::min<int64_t>(
++            int64_t(lhs.bottom) + lhs.height, int64_t(rhs.bottom) + rhs.height);
++    return { int32_t(left), int32_t(bottom),
++            uint32_t(std::max<int64_t>(0, right - left)),
++            uint32_t(std::max<int64_t>(0, top - bottom)) };
++}
++
+ UTILS_NOINLINE // no need to be inlined
+ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
+         Command const* first, Command const* last) const noexcept {
+@@ -915,12 +934,19 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
+         backend::Viewport currentScissor{ 0, 0, INT32_MAX, INT32_MAX };
+         bool const hasScissorOverride = mScissorOverride;
+         bool const hasScissorViewport = mHasScissorViewport;
++        bool const hasSolumDrawScissor = mHasSolumDrawScissor;
++        backend::Viewport const fullPassScissor = hasScissorViewport ? mScissor :
++                backend::Viewport{ 0, 0, INT32_MAX, INT32_MAX };
+         if (UTILS_UNLIKELY(hasScissorViewport || hasScissorOverride)) {
+             // we should never have both an override and scissor-viewport
+             assert_invariant(!hasScissorViewport || !hasScissorOverride);
+             currentScissor = mScissor;
+             driver.scissor(mScissor);
+         }
++        if (UTILS_UNLIKELY(hasSolumDrawScissor)) {
++            currentScissor = mSolumDrawScissor;
++            driver.scissor(currentScissor);
++        }
+ 
+         // If we have a mColorPassDescriptorSet, we need to use its idea of "VSM" to select
+         // the descriptor set layout. Materials always offer both.
+@@ -991,6 +1017,10 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
+                  */
+ 
+                 if (UTILS_UNLIKELY((first->key & CUSTOM_MASK) != uint64_t(CustomCommand::PASS))) {
++                    if (hasSolumDrawScissor && currentScissor != fullPassScissor) {
++                        currentScissor = fullPassScissor;
++                        driver.scissor(currentScissor);
++                    }
+                     mi = nullptr; // custom command could change the currently bound MaterialInstance
+                     uint32_t const index = (first->key & CUSTOM_INDEX_MASK) >> CUSTOM_INDEX_SHIFT;
+                     assert_invariant(index < mCustomCommands.size());
+@@ -1005,6 +1035,12 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
+                     continue;
+                 }
+ 
++                if (UTILS_UNLIKELY(hasSolumDrawScissor &&
++                        currentScissor != mSolumDrawScissor)) {
++                    currentScissor = mSolumDrawScissor;
++                    driver.scissor(currentScissor);
++                }
++
+                 // per-renderable uniform
+                 PrimitiveInfo const info = first->info;
+                 pipeline.rasterState = info.rasterState;
+@@ -1028,6 +1064,10 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
+                             // apply the scissor viewport if any
+                             scissor = applyScissorViewport(mScissor, scissor);
+                         }
++                        if (hasSolumDrawScissor) {
++                            scissor = intersectSolumScissors(
++                                    scissor, mSolumDrawScissor);
++                        }
+                         if (scissor != currentScissor) {
+                             currentScissor = scissor;
+                             driver.scissor(scissor);
+@@ -1138,7 +1178,8 @@ RenderPass::Executor::Executor(RenderPass const& pass, Command const* b, Command
+           mColorPassDescriptorSet(pass.mColorPassDescriptorSet),
+           mScissor(pass.mScissorViewport),
+           mPolygonOffsetOverride(false),
+-          mScissorOverride(false) {
++          mScissorOverride(false),
++          mHasSolumDrawScissor(false) {
+     mHasScissorViewport = mScissor != backend::Viewport{ 0, 0, INT32_MAX, INT32_MAX };
+     assert_invariant(b >= pass.begin());
+     assert_invariant(e <= pass.end());
+@@ -1148,7 +1189,8 @@ RenderPass::Executor::Executor(RenderPass const& pass, Command const* b, Command
+ RenderPass::Executor::Executor() noexcept
+         : mPolygonOffsetOverride(false),
+           mScissorOverride(false),
+-          mHasScissorViewport(false) {
++          mHasScissorViewport(false),
++          mHasSolumDrawScissor(false) {
+ }
+ 
+ RenderPass::Executor::Executor(Executor&& rhs) noexcept = default;
+diff --git a/filament/src/RenderPass.h b/filament/src/RenderPass.h
+index a33b22fd..b8cb5867 100644
+--- a/filament/src/RenderPass.h
++++ b/filament/src/RenderPass.h
+@@ -363,6 +363,7 @@ public:
+         ColorPassDescriptorSet const* mColorPassDescriptorSet = nullptr;
+         // this stores either the scissor-viewport or the scissor override
+         backend::Viewport mScissor{ 0, 0, INT32_MAX, INT32_MAX };
++        backend::Viewport mSolumDrawScissor{ 0, 0, INT32_MAX, INT32_MAX };
+ 
+         // value of the polygon offset override
+         backend::PolygonOffset mPolygonOffset{};
+@@ -372,6 +373,7 @@ public:
+         bool mScissorOverride : 1;
+         // whether the scissor-viewport is set
+         bool mHasScissorViewport : 1;
++        bool mHasSolumDrawScissor : 1;
+ 
+         Executor(RenderPass const& pass, Command const* b, Command const* e) noexcept;
+ 
+@@ -401,6 +403,10 @@ public:
+ 
+         void overrideScissor(backend::Viewport const& scissor) noexcept;
+ 
++        // SOLUM Tessera Regional: clips draw commands while allowing full-screen custom
++        // commands (fog / color grading subpasses) to retain the pass viewport.
++        void overrideSolumDrawScissor(backend::Viewport const& scissor) noexcept;
++
+         void execute(FEngine const& engine, backend::DriverApi& driver) const noexcept;
+     };
+ 
+diff --git a/filament/src/Renderer.cpp b/filament/src/Renderer.cpp
+index da801bc8..d1df5271 100644
+--- a/filament/src/Renderer.cpp
++++ b/filament/src/Renderer.cpp
+@@ -142,6 +142,14 @@ void Renderer::setSolumV1ShadingReuse(View const* targetView, bool const enabled
+             targetView ? downcast(targetView) : nullptr, enabled, safeToReuse, stateKey);
+ }
+ 
++void Renderer::setSolumTesseraRegional(View const* targetView, bool const enabled,
++        bool const safeToReuse, uint64_t const stateKey, float const dirtyLeft,
++        float const dirtyBottom, float const dirtyWidth, float const dirtyHeight) {
++    downcast(this)->setSolumTesseraRegional(
++            targetView ? downcast(targetView) : nullptr, enabled, safeToReuse, stateKey,
++            dirtyLeft, dirtyBottom, dirtyWidth, dirtyHeight);
++}
++
+ utils::CString Renderer::getSolumV1ShadingReuseStats() const {
+     return downcast(this)->getSolumV1ShadingReuseStats();
+ }
+diff --git a/filament/src/details/Renderer.cpp b/filament/src/details/Renderer.cpp
+index 958e7d18..22e553f5 100644
+--- a/filament/src/details/Renderer.cpp
++++ b/filament/src/details/Renderer.cpp
+@@ -74,6 +74,7 @@
+ #include <chrono>
+ #include <limits>
+ #include <memory>
++#include <optional>
+ #include <sstream>
+ #include <string>
+ #include <utility>
+@@ -1662,6 +1663,8 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+     FrameGraphId<FrameGraphTexture> solumV1CachedColor;
+     bool solumV1CanCache = false;
+     bool solumV1Reuse = false;
++    bool solumV1RegionalReuse = false;
++    backend::Viewport solumV1RegionalScissor{};
+     if (mSolumV1.enabled && mSolumV1.targetView == &view) {
+         ++mSolumV1.consideredFrames;
+         char const* decision = "current_unknown";
+@@ -1701,14 +1704,70 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+                                 FrameGraphTexture::Usage::SAMPLEABLE,
+                         previous.color);
+                 solumV1Reuse = true;
+-                decision = "reused";
++                if (mSolumV1.regionalEnabled) {
++                    constexpr uint32_t TILE_SIZE = 32u;
++                    float const normalizedLeft = std::clamp(
++                            mSolumV1.regionalDirtyRect.x, 0.0f, 1.0f);
++                    float const normalizedBottom = std::clamp(
++                            mSolumV1.regionalDirtyRect.y, 0.0f, 1.0f);
++                    float const normalizedRight = std::clamp(normalizedLeft +
++                            mSolumV1.regionalDirtyRect.z, normalizedLeft, 1.0f);
++                    float const normalizedTop = std::clamp(normalizedBottom +
++                            mSolumV1.regionalDirtyRect.w, normalizedBottom, 1.0f);
++                    uint32_t left = uint32_t(std::floor(
++                            normalizedLeft * float(colorBufferDesc.width)));
++                    uint32_t bottom = uint32_t(std::floor(
++                            normalizedBottom * float(colorBufferDesc.height)));
++                    uint32_t right = uint32_t(std::ceil(
++                            normalizedRight * float(colorBufferDesc.width)));
++                    uint32_t top = uint32_t(std::ceil(
++                            normalizedTop * float(colorBufferDesc.height)));
++                    left = left > TILE_SIZE ? left - TILE_SIZE : 0u;
++                    bottom = bottom > TILE_SIZE ? bottom - TILE_SIZE : 0u;
++                    right = std::min(colorBufferDesc.width, right + TILE_SIZE);
++                    top = std::min(colorBufferDesc.height, top + TILE_SIZE);
++                    left = left / TILE_SIZE * TILE_SIZE;
++                    bottom = bottom / TILE_SIZE * TILE_SIZE;
++                    right = std::min(colorBufferDesc.width,
++                            ((right + TILE_SIZE - 1u) / TILE_SIZE) * TILE_SIZE);
++                    top = std::min(colorBufferDesc.height,
++                            ((top + TILE_SIZE - 1u) / TILE_SIZE) * TILE_SIZE);
++                    uint64_t const dirtyPixels = uint64_t(right - left) * (top - bottom);
++                    uint64_t const totalPixels = uint64_t(colorBufferDesc.width) *
++                            colorBufferDesc.height;
++                    double const dirtyCoverage = totalPixels ?
++                            100.0 * double(dirtyPixels) / double(totalPixels) : 100.0;
++                    if (right > left && top > bottom && dirtyCoverage < 95.0) {
++                        solumV1RegionalReuse = true;
++                        solumV1RegionalScissor = {
++                            config.physicalViewport.left + int32_t(left),
++                            config.physicalViewport.bottom + int32_t(bottom),
++                            right - left, top - bottom
++                        };
++                        mSolumV1.regionalDirtyCoverage = dirtyCoverage;
++                        mSolumV1.regionalValidCoverage = 100.0 - dirtyCoverage;
++                        decision = "regional_reused";
++                    } else {
++                        solumV1Reuse = false;
++                        decision = "regional_rect_invalid_or_full";
++                    }
++                } else {
++                    mSolumV1.regionalDirtyCoverage = 0.0;
++                    mSolumV1.regionalValidCoverage = 100.0;
++                    decision = "reused";
++                }
+             }
+         }
+         mSolumV1.lastDecision = decision;
+         if (solumV1Reuse) {
+             ++mSolumV1.reusedFrames;
++            if (solumV1RegionalReuse) {
++                ++mSolumV1.regionalFrames;
++            }
+         } else {
+             ++mSolumV1.currentFrames;
++            mSolumV1.regionalDirtyCoverage = 100.0;
++            mSolumV1.regionalValidCoverage = 0.0;
+         }
+     } else if (mSolumV1.enabled) {
+         mSolumV1.lastDecision = "target_mismatch";
+@@ -1716,8 +1775,10 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+         mSolumV1.lastDecision = "disabled";
+     }
+ 
+-    passBuilder.variant(solumV1Reuse ? Variant(Variant::DEPTH_VARIANT) : variant)
+-            .commandTypeFlags(solumV1Reuse ? RenderPass::CommandTypeFlags::DEPTH :
++    passBuilder.variant(solumV1Reuse && !solumV1RegionalReuse ?
++            Variant(Variant::DEPTH_VARIANT) : variant)
++            .commandTypeFlags(solumV1Reuse && !solumV1RegionalReuse ?
++                    RenderPass::CommandTypeFlags::DEPTH :
+                     RenderPass::CommandTypeFlags::COLOR);
+ 
+ 
+@@ -1730,6 +1791,17 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+ 
+     // create the pass, which generates all its commands (this is a heavy operation)
+     RenderPass const pass{ passBuilder.build(engine, driver) };
++    std::optional<RenderPass> solumV1RegionalDepthPass;
++    if (solumV1RegionalReuse) {
++        solumV1RegionalDepthPass.emplace(
++                RenderPassBuilder(commandArena)
++                    .renderFlags(renderFlags)
++                    .camera(cameraInfo.getPosition(), cameraInfo.getForwardVector())
++                    .geometry(scene.getRenderableData(), view.getVisibleRenderables())
++                    .variant(Variant(Variant::DEPTH_VARIANT))
++                    .commandTypeFlags(RenderPass::CommandTypeFlags::DEPTH)
++                    .build(engine, driver));
++    }
+ 
+     // now that we have the commands we can figure out if we have refraction commands
+     auto* const firstRefractionCommand = [&view](RenderPass const& pass) {
+@@ -1758,20 +1830,50 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+     const_cast<RenderPass&>(pass).setScissorViewport(useIntermediateBuffer ? xvp : vp);
+ 
+     const_cast<RenderPass&>(pass).finalize(engine, driver);
++    if (solumV1RegionalDepthPass) {
++        solumV1RegionalDepthPass->setScissorViewport(
++                useIntermediateBuffer ? xvp : vp);
++        solumV1RegionalDepthPass->finalize(engine, driver);
++    }
+ 
+     // the color pass itself + color-grading as subpass if needed
+     auto colorPassConfig = config;
+     if (solumV1Reuse) {
+         colorPassConfig.clearFlags &= ~TargetBufferFlags::COLOR;
+     }
+-    auto colorPassOutput = RendererUtils::colorPass(fg, "Color Pass", mEngine, view, {
+-                .linearColor = solumV1CachedColor,
+-                .shadows = blackboard.get<FrameGraphTexture>("shadows"),
+-                .ssao = blackboard.get<FrameGraphTexture>("ssao"),
+-                .ssr = ssrConfig.ssr,
+-                .structure = structure
+-            },
+-            colorBufferDesc, colorPassConfig, colorGradingConfigForColor, pass.getExecutor());
++    RendererUtils::ColorPassOutput colorPassOutput;
++    if (solumV1RegionalReuse) {
++        auto regionalDepthConfig = colorPassConfig;
++        regionalDepthConfig.clearFlags &= ~TargetBufferFlags::COLOR;
++        colorPassOutput = RendererUtils::colorPass(
++                fg, "Tessera Regional current depth", mEngine, view, {
++                    .linearColor = solumV1CachedColor
++                }, colorBufferDesc, regionalDepthConfig, {},
++                solumV1RegionalDepthPass->getExecutor());
++        auto regionalColorConfig = colorPassConfig;
++        regionalColorConfig.clearFlags = TargetBufferFlags::NONE;
++        auto regionalColorExecutor = pass.getExecutor();
++        regionalColorExecutor.overrideSolumDrawScissor(solumV1RegionalScissor);
++        colorPassOutput = RendererUtils::colorPass(
++                fg, "Tessera Regional current color", mEngine, view, {
++                    .linearColor = colorPassOutput.linearColor,
++                    .depth = colorPassOutput.depth,
++                    .shadows = blackboard.get<FrameGraphTexture>("shadows"),
++                    .ssao = blackboard.get<FrameGraphTexture>("ssao"),
++                    .ssr = ssrConfig.ssr,
++                    .structure = structure
++                }, colorBufferDesc, regionalColorConfig,
++                colorGradingConfigForColor, std::move(regionalColorExecutor));
++    } else {
++        colorPassOutput = RendererUtils::colorPass(fg, "Color Pass", mEngine, view, {
++                    .linearColor = solumV1CachedColor,
++                    .shadows = blackboard.get<FrameGraphTexture>("shadows"),
++                    .ssao = blackboard.get<FrameGraphTexture>("ssao"),
++                    .ssr = ssrConfig.ssr,
++                    .structure = structure
++                }, colorBufferDesc, colorPassConfig,
++                colorGradingConfigForColor, pass.getExecutor());
++    }
+ 
+     if (UTILS_UNLIKELY(hasScreenSpaceRefraction)) {
+         // This cancels the colorPass() call above if refraction is active.
+@@ -2085,16 +2187,32 @@ void FRenderer::setSolumV1ShadingReuse(FView const* const targetView, bool const
+         mSolumV1.consideredFrames = 0;
+         mSolumV1.currentFrames = 0;
+         mSolumV1.reusedFrames = 0;
++        mSolumV1.regionalFrames = 0;
+     }
+     mSolumV1.targetView = targetView;
+     mSolumV1.enabled = enabled;
+     mSolumV1.safeToReuse = enabled && safeToReuse;
+     mSolumV1.stateKey = stateKey;
++    mSolumV1.regionalEnabled = false;
+     if (!enabled) {
++        mSolumV1.regionalDirtyCoverage = 100.0;
++        mSolumV1.regionalValidCoverage = 0.0;
+         mSolumV1.lastDecision = "disabled";
+     }
+ }
+ 
++void FRenderer::setSolumTesseraRegional(FView const* const targetView, bool const enabled,
++        bool const safeToReuse, uint64_t const stateKey, float const dirtyLeft,
++        float const dirtyBottom, float const dirtyWidth, float const dirtyHeight) noexcept {
++    setSolumV1ShadingReuse(targetView, enabled, safeToReuse, stateKey);
++    bool const finiteRect = std::isfinite(dirtyLeft) && std::isfinite(dirtyBottom) &&
++            std::isfinite(dirtyWidth) && std::isfinite(dirtyHeight);
++    mSolumV1.regionalEnabled = enabled && safeToReuse && finiteRect &&
++            dirtyWidth > 0.0f && dirtyHeight > 0.0f;
++    mSolumV1.regionalDirtyRect = finiteRect ? math::float4{
++            dirtyLeft, dirtyBottom, dirtyWidth, dirtyHeight } : math::float4{};
++}
++
+ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
+     uint64_t const decided = mSolumV1.currentFrames + mSolumV1.reusedFrames;
+     double const ratio = decided ?
+@@ -2105,6 +2223,10 @@ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
+         << ",\"considered_frames\":" << mSolumV1.consideredFrames
+         << ",\"current_frames\":" << mSolumV1.currentFrames
+         << ",\"reused_frames\":" << mSolumV1.reusedFrames
++        << ",\"regional_enabled\":" << (mSolumV1.regionalEnabled ? "true" : "false")
++        << ",\"regional_frames\":" << mSolumV1.regionalFrames
++        << ",\"regional_dirty_percent\":" << mSolumV1.regionalDirtyCoverage
++        << ",\"regional_valid_percent\":" << mSolumV1.regionalValidCoverage
+         << ",\"reuse_ratio\":" << ratio
+         << ",\"last_decision\":\"" << mSolumV1.lastDecision << "\"}";
+     return utils::CString(out.str().c_str());
+diff --git a/filament/src/details/Renderer.h b/filament/src/details/Renderer.h
+index 4346e5c7..86d8c223 100644
+--- a/filament/src/details/Renderer.h
++++ b/filament/src/details/Renderer.h
+@@ -170,6 +170,9 @@ public:
+     utils::CString stopSolumGpuProfiler();
+     void setSolumV1ShadingReuse(FView const* targetView, bool enabled,
+             bool safeToReuse, uint64_t stateKey) noexcept;
++    void setSolumTesseraRegional(FView const* targetView, bool enabled,
++            bool safeToReuse, uint64_t stateKey, float dirtyLeft, float dirtyBottom,
++            float dirtyWidth, float dirtyHeight) noexcept;
+     utils::CString getSolumV1ShadingReuseStats() const;
+ 
+ private:
+@@ -225,8 +228,13 @@ private:
+         uint64_t consideredFrames = 0;
+         uint64_t currentFrames = 0;
+         uint64_t reusedFrames = 0;
++        uint64_t regionalFrames = 0;
+         bool enabled = false;
+         bool safeToReuse = false;
++        bool regionalEnabled = false;
++        math::float4 regionalDirtyRect{};
++        double regionalDirtyCoverage = 100.0;
++        double regionalValidCoverage = 0.0;
+         char const* lastDecision = "disabled";
+     } mSolumV1;
+     backend::TextureFormat mHdrTranslucent;

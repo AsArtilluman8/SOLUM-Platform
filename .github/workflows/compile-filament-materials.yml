@@ -1,4 +1,4 @@
-name: Filament v1.71.4 SOLUM V1 conservative shading cache
+name: Filament v1.71.4 SOLUM Tessera Regional V0
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: filament-v1714-solum-v1-shading-cache-${{ github.ref }}
+  group: filament-v1714-solum-tessera-regional-v0-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -23,6 +23,7 @@ jobs:
       PREVIOUS_DEPTH_TAA_PATCH_FILE: third_party/filament-solum/patches/0003-solum-taa-previous-depth-history.patch
       STABLE_ACCUM_TAA_PATCH_FILE: third_party/filament-solum/patches/0004-solum-taa-prev-depth-stable-accum.patch
       V1_SHADING_CACHE_PATCH_FILE: third_party/filament-solum/patches/0005-solum-v1-conservative-shading-cache.patch
+      TESSERA_REGIONAL_PATCH_FILE: third_party/filament-solum/patches/0006-solum-tessera-regional-v0.patch
       LOG_DIR: filament-ci-logs
 
     steps:
@@ -48,9 +49,11 @@ jobs:
           test -f "$PREVIOUS_DEPTH_TAA_PATCH_FILE"
           test -f "$STABLE_ACCUM_TAA_PATCH_FILE"
           test -f "$V1_SHADING_CACHE_PATCH_FILE"
+          test -f "$TESSERA_REGIONAL_PATCH_FILE"
           sha256sum "$PROFILER_PATCH_FILE" "$ADAPTIVE_TAA_PATCH_FILE" \
             "$PREVIOUS_DEPTH_TAA_PATCH_FILE" "$STABLE_ACCUM_TAA_PATCH_FILE" \
             "$V1_SHADING_CACHE_PATCH_FILE" \
+            "$TESSERA_REGIONAL_PATCH_FILE" \
             | tee filament-solum-patches.sha256
           git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$PROFILER_PATCH_FILE"
           git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$PROFILER_PATCH_FILE"
@@ -62,9 +65,11 @@ jobs:
           git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$STABLE_ACCUM_TAA_PATCH_FILE"
           git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$V1_SHADING_CACHE_PATCH_FILE"
           git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$V1_SHADING_CACHE_PATCH_FILE"
+          git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$TESSERA_REGIONAL_PATCH_FILE"
+          git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$TESSERA_REGIONAL_PATCH_FILE"
           git -C "$FILAMENT_DIR" diff --check
           git -C "$FILAMENT_DIR" diff --stat | tee filament-profiler-diff-stat.txt
-          test "$(git -C "$FILAMENT_DIR" diff --name-only | wc -l)" -eq 16
+          test "$(git -C "$FILAMENT_DIR" diff --name-only | wc -l)" -eq 18
           ! git -C "$FILAMENT_DIR" diff | grep -E 'flushAndWait|waitForGpu|fenceWait'
           git -C "$FILAMENT_DIR" diff | grep -F 'FrameGraph::ExecutionHooks'
           git -C "$FILAMENT_DIR" diff | grep -F 'getTimerQueryValue'
@@ -84,6 +89,9 @@ jobs:
           git -C "$FILAMENT_DIR" diff | grep -F 'Export SOLUM V1 shading cache'
           git -C "$FILAMENT_DIR" diff | grep -F 'CommandTypeFlags::DEPTH'
           git -C "$FILAMENT_DIR" diff | grep -F 'Variant(Variant::DEPTH_VARIANT)'
+          git -C "$FILAMENT_DIR" diff | grep -F 'setSolumTesseraRegional'
+          git -C "$FILAMENT_DIR" diff | grep -F 'overrideSolumDrawScissor'
+          git -C "$FILAMENT_DIR" diff | grep -F 'Tessera Regional current color'
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -140,6 +148,8 @@ jobs:
           grep -F 'setSolumV1ShadingReuse(com.google.android.filament.View, boolean, boolean, long)' \
             "$LOG_DIR/renderer-api.txt"
           grep -F 'getSolumV1ShadingReuseStats()' "$LOG_DIR/renderer-api.txt"
+          grep -F 'setSolumTesseraRegional(com.google.android.filament.View, boolean, boolean, long, float, float, float, float)' \
+            "$LOG_DIR/renderer-api.txt"
           JNI_SO="$(find "$FILAMENT_DIR" -type f -name 'libfilament-jni.so' | head -n 1)"
           test -n "$JNI_SO"
           readelf -Ws "$JNI_SO" | tee "$LOG_DIR/filament-jni-symbols.txt"
@@ -147,6 +157,7 @@ jobs:
           grep -F 'Renderer_nStopSolumGpuProfiler' "$LOG_DIR/filament-jni-symbols.txt"
           grep -F 'Renderer_nSetSolumV1ShadingReuse' "$LOG_DIR/filament-jni-symbols.txt"
           grep -F 'Renderer_nGetSolumV1ShadingReuseStats' "$LOG_DIR/filament-jni-symbols.txt"
+          grep -F 'Renderer_nSetSolumTesseraRegional' "$LOG_DIR/filament-jni-symbols.txt"
           grep -F 'View_nGetSolumAdaptiveTaaAbiVersion' "$LOG_DIR/filament-jni-symbols.txt"
 
       - name: Collect checksummed artifacts
@@ -174,6 +185,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: filament-v1714-solum-v1-shading-cache-arm64
+          name: filament-v1714-solum-tessera-regional-v0-arm64
           path: filament-solum-adaptive-taa-artifacts/**
           if-no-files-found: error

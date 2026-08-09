@@ -133,6 +133,7 @@ jobs:
           git -C "$FILAMENT_DIR" diff | grep -F 'regional_early_depth_stencil_frames'
           git -C "$FILAMENT_DIR" diff | grep -F 'regional_current_scissor_frames'
           git -C "$FILAMENT_DIR" diff | grep -F 'pipeline.rasterState.depthWrite = false'
+          git -C "$FILAMENT_DIR" diff | grep -F 'regionalColorConfig.readOnlyDepthStencil = true'
 
       - name: Set up Java 17
         uses: actions/setup-java@v4

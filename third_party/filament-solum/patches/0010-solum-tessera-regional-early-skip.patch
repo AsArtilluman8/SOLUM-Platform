@@ -13,8 +13,24 @@ index 8791c0d..a597477 100644
 +                        pipeline.rasterState.depthWrite = false;
 +                        pipeline.rasterState.depthFunc = SamplerCompareFunc::E;
 +                    }
+diff --git a/filament/src/RendererUtils.cpp b/filament/src/RendererUtils.cpp
+index 6783fba..c3f3702 100644
+--- a/filament/src/RendererUtils.cpp
++++ b/filament/src/RendererUtils.cpp
+@@ -233 +233,3 @@ RendererUtils::ColorPassOutput RendererUtils::colorPass(
+-                data.depth = builder.write(data.depth, depthStencilUsage);
++                if (!config.readOnlyDepthStencil) {
++                    data.depth = builder.write(data.depth, depthStencilUsage);
++                }
+diff --git a/filament/src/RendererUtils.h b/filament/src/RendererUtils.h
+index 672a5df..8f27bcb 100644
+--- a/filament/src/RendererUtils.h
++++ b/filament/src/RendererUtils.h
+@@ -73,0 +74,2 @@ public:
++        // Attach existing depth/stencil read-only; the executor must not issue depth writes.
++        bool readOnlyDepthStencil = false;
 diff --git a/filament/src/details/Renderer.cpp b/filament/src/details/Renderer.cpp
-index 392baf4..0fc0b0e 100644
+index 392baf4..34493aa 100644
 --- a/filament/src/details/Renderer.cpp
 +++ b/filament/src/details/Renderer.cpp
 @@ -1685,0 +1686 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
@@ -32,7 +48,9 @@ index 392baf4..0fc0b0e 100644
 +                        // moving-object envelope.  A tiny epsilon tolerates harmless double
 +                        // roundoff while any real camera motion keeps the full stencil path.
 +                        solumV1RegionalCameraStatic = maximumProjectionDelta <= 1.0e-12;
-@@ -2049,0 +2063,17 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+@@ -2040,0 +2054 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++        regionalColorConfig.readOnlyDepthStencil = true;
+@@ -2049,0 +2064,17 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
 +        // With a static camera, all changes are already covered by the conservative current +
 +        // previous mover/shadow envelope.  Scissoring the current color executor is therefore a
 +        // safe upper bound on submitted fragment coverage.  Camera motion keeps the full viewport
@@ -50,14 +68,14 @@ index 392baf4..0fc0b0e 100644
 +        }
 +        mSolumV1.regionalCameraStatic = solumV1RegionalCameraStatic;
 +        ++mSolumV1.regionalEarlyDepthStencilFrames;
-@@ -2622,0 +2653,6 @@ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
+@@ -2622,0 +2654,6 @@ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
 +        << ",\"regional_camera_static\":"
 +        << (mSolumV1.regionalCameraStatic ? "true" : "false")
 +        << ",\"regional_current_coverage_upper_bound_percent\":"
 +        << mSolumV1.regionalCurrentCoverageUpperBound
 +        << ",\"regional_reuse_coverage_lower_bound_percent\":"
 +        << mSolumV1.regionalReuseCoverageLowerBound
-@@ -2634,0 +2671,4 @@ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
+@@ -2634,0 +2672,4 @@ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
 +        << ",\"regional_early_depth_stencil_frames\":"
 +        << mSolumV1.regionalEarlyDepthStencilFrames
 +        << ",\"regional_current_scissor_frames\":"

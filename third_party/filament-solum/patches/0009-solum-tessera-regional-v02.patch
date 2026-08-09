@@ -1,0 +1,743 @@
+diff --git a/filament/CMakeLists.txt b/filament/CMakeLists.txt
+index 659b7ce..f316c49 100644
+--- a/filament/CMakeLists.txt
++++ b/filament/CMakeLists.txt
+@@ -302,0 +303,2 @@ set(MATERIAL_SRCS
++        src/materials/tesseraRegionalReproject.mat
++        src/materials/tesseraRegionalStencil.mat
+diff --git a/filament/src/PostProcessManager.cpp b/filament/src/PostProcessManager.cpp
+index 7ff0188..8ae141d 100644
+--- a/filament/src/PostProcessManager.cpp
++++ b/filament/src/PostProcessManager.cpp
+@@ -315,0 +316,7 @@ static const PostProcessManager::StaticMaterialInfo sMaterialList[] = {
++        { "tesseraRegionalReprojectColor",
++                MATERIAL(MATERIALS, TESSERAREGIONALREPROJECT),
++                { {"validityOnly", false} } },
++        { "tesseraRegionalReprojectValidity",
++                MATERIAL(MATERIALS, TESSERAREGIONALREPROJECT),
++                { {"validityOnly", true} } },
++        { "tesseraRegionalStencil",     MATERIAL(MATERIALS, TESSERAREGIONALSTENCIL) },
+@@ -3741,0 +3749,140 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::blitInto(FrameGraph& fg,
++PostProcessManager::TesseraRegionalReprojectionOutput
++PostProcessManager::tesseraRegionalReproject(FrameGraph& fg,
++        FrameGraphId<FrameGraphTexture> const previousColor,
++        FrameGraphId<FrameGraphTexture> const previousDepth,
++        FrameGraphId<FrameGraphTexture> const currentDepth,
++        FrameGraphId<FrameGraphTexture> const currentColor,
++        mat4f const& reprojection) noexcept {
++    struct ReprojectData {
++        FrameGraphId<FrameGraphTexture> previousColor;
++        FrameGraphId<FrameGraphTexture> previousDepth;
++        FrameGraphId<FrameGraphTexture> currentDepth;
++        FrameGraphId<FrameGraphTexture> output;
++    };
++
++    auto addReprojectionPass = [&](char const* const passName,
++            bool const validityOnly) -> FrameGraphId<FrameGraphTexture> {
++        auto const& pass = fg.addPass<ReprojectData>(passName,
++                [&](FrameGraph::Builder& builder, ReprojectData& data) {
++                    data.previousColor = builder.sample(previousColor);
++                    data.previousDepth = builder.sample(previousDepth);
++                    data.currentDepth = builder.sample(currentDepth);
++                    if (validityOnly) {
++                        auto const& desc = builder.getDescriptor(currentColor);
++                        data.output = builder.createTexture(
++                                "Tessera Regional validity", {
++                                    .width = desc.width,
++                                    .height = desc.height,
++                                    .format = TextureFormat::R8,
++                                });
++                    } else {
++                        data.output = currentColor;
++                    }
++                    data.output = builder.write(data.output,
++                            FrameGraphTexture::Usage::COLOR_ATTACHMENT);
++                    builder.declareRenderPass(builder.getName(data.output), {
++                            .attachments = { .color = { data.output } },
++                            .clearFlags = TargetBufferFlags::COLOR,
++                    });
++                },
++                [=, this](FrameGraphResources const& resources,
++                        ReprojectData const& data, DriverApi& driver) {
++                    bindPostProcessDescriptorSet(driver);
++                    bindPerRenderableDescriptorSet(driver);
++                    auto const& material = getPostProcessMaterial(validityOnly
++                            ? "tesseraRegionalReprojectValidity"
++                            : "tesseraRegionalReprojectColor");
++                    FMaterial const* const ma = material.getMaterial(mEngine);
++                    FMaterialInstance* const mi = getMaterialInstance(driver, ma);
++                    mi->setParameter("history", resources.getTexture(data.previousColor),
++                            SamplerParams{
++                                .filterMag = SamplerMagFilter::LINEAR,
++                                .filterMin = SamplerMinFilter::LINEAR,
++                            });
++                    mi->setParameter("currentDepth", resources.getTexture(data.currentDepth),
++                            SamplerParams{});
++                    mi->setParameter("previousDepth", resources.getTexture(data.previousDepth),
++                            SamplerParams{});
++                    mi->setParameter("reprojection", reprojection);
++                    mi->commit(driver, getUboManager());
++                    mi->use(driver);
++                    auto const out = resources.getRenderPassInfo();
++                    renderFullScreenQuad(out, getPipelineState(mi), driver);
++                    unbindAllDescriptorSets(driver);
++                });
++        return pass->output;
++    };
++
++    auto const color = addReprojectionPass(
++            "Tessera Regional history reproject", false);
++    auto const validity = addReprojectionPass(
++            "Tessera Regional validity", true);
++    return { color, validity };
++}
++
++FrameGraphId<FrameGraphTexture> PostProcessManager::tesseraRegionalStencil(
++        FrameGraph& fg, FrameGraphId<FrameGraphTexture> const validity,
++        FrameGraphId<FrameGraphTexture> const currentDepth,
++        bool const hasDirtyScissor, backend::Viewport const dirtyScissor) noexcept {
++    struct StencilData {
++        FrameGraphId<FrameGraphTexture> validity;
++        FrameGraphId<FrameGraphTexture> depth;
++        FrameGraphId<FrameGraphTexture> stencil;
++    };
++    constexpr FrameGraphTexture::Usage DEPTH_STENCIL_USAGE =
++            FrameGraphTexture::Usage::DEPTH_ATTACHMENT |
++            FrameGraphTexture::Usage::STENCIL_ATTACHMENT;
++    auto const& pass = fg.addPass<StencilData>("Tessera Regional validity stencil",
++            [&](FrameGraph::Builder& builder, StencilData& data) {
++                data.validity = builder.sample(validity);
++                data.depth = builder.read(currentDepth, DEPTH_STENCIL_USAGE);
++                data.depth = builder.write(data.depth, DEPTH_STENCIL_USAGE);
++                data.stencil = data.depth;
++                builder.declareRenderPass("Tessera Regional validity stencil target", {
++                        .attachments = { .depth = data.depth, .stencil = data.stencil },
++                        .clearFlags = TargetBufferFlags::STENCIL,
++                });
++            },
++            [=, this](FrameGraphResources const& resources,
++                    StencilData const& data, DriverApi& driver) {
++                bindPostProcessDescriptorSet(driver);
++                bindPerRenderableDescriptorSet(driver);
++                auto const& material = getPostProcessMaterial("tesseraRegionalStencil");
++                FMaterial const* const ma = material.getMaterial(mEngine);
++                FMaterialInstance* const mi = getMaterialInstance(driver, ma);
++                mi->setParameter("validity", resources.getTexture(data.validity),
++                        SamplerParams{});
++                mi->setParameter("forceCurrent", 0.0f);
++                mi->commit(driver, getUboManager());
++                mi->use(driver);
++
++                auto validPipeline = getPipelineState(mi);
++                validPipeline.rasterState.colorWrite = false;
++                validPipeline.rasterState.depthWrite = false;
++                validPipeline.rasterState.depthFunc = SamplerCompareFunc::A;
++                validPipeline.stencilState.stencilWrite = true;
++                validPipeline.stencilState.front.stencilFunc = SamplerCompareFunc::A;
++                validPipeline.stencilState.front.stencilOpDepthStencilPass =
++                        StencilOperation::REPLACE;
++                validPipeline.stencilState.front.ref = 1u;
++                validPipeline.stencilState.back = validPipeline.stencilState.front;
++
++                auto const out = resources.getRenderPassInfo();
++                driver.beginRenderPass(out.target, out.params);
++                driver.draw(validPipeline, mFullScreenQuadRph, 0, 3, 1);
++                if (hasDirtyScissor) {
++                    mi->setParameter("forceCurrent", 1.0f);
++                    mi->commit(driver, getUboManager());
++                    mi->use(driver);
++                    auto dirtyPipeline = validPipeline;
++                    dirtyPipeline.stencilState.front.ref = 0u;
++                    dirtyPipeline.stencilState.back.ref = 0u;
++                    driver.scissor(dirtyScissor);
++                    driver.draw(dirtyPipeline, mFullScreenQuadRph, 0, 3, 1);
++                }
++                driver.endRenderPass();
++                unbindAllDescriptorSets(driver);
++            });
++    return pass->depth;
++}
++
+diff --git a/filament/src/PostProcessManager.h b/filament/src/PostProcessManager.h
+index b0dba21..78399fd 100644
+--- a/filament/src/PostProcessManager.h
++++ b/filament/src/PostProcessManager.h
+@@ -45,0 +46 @@
++#include <math/mat4.h>
+@@ -306,0 +308,17 @@ public:
++    struct TesseraRegionalReprojectionOutput {
++        FrameGraphId<FrameGraphTexture> color;
++        FrameGraphId<FrameGraphTexture> validity;
++    };
++
++    TesseraRegionalReprojectionOutput tesseraRegionalReproject(FrameGraph& fg,
++            FrameGraphId<FrameGraphTexture> previousColor,
++            FrameGraphId<FrameGraphTexture> previousDepth,
++            FrameGraphId<FrameGraphTexture> currentDepth,
++            FrameGraphId<FrameGraphTexture> currentColor,
++            math::mat4f const& reprojection) noexcept;
++
++    FrameGraphId<FrameGraphTexture> tesseraRegionalStencil(FrameGraph& fg,
++            FrameGraphId<FrameGraphTexture> validity,
++            FrameGraphId<FrameGraphTexture> currentDepth,
++            bool hasDirtyScissor, backend::Viewport dirtyScissor) noexcept;
++
+diff --git a/filament/src/RenderPass.cpp b/filament/src/RenderPass.cpp
+index a34173b..8791c0d 100644
+--- a/filament/src/RenderPass.cpp
++++ b/filament/src/RenderPass.cpp
+@@ -851,0 +852,6 @@ void RenderPass::Executor::overrideSolumDrawScissor(
++void RenderPass::Executor::overrideSolumStencil(
++        backend::StencilState const& stencilState) noexcept {
++    mHasSolumStencilOverride = true;
++    mSolumStencilState = stencilState;
++}
++
+@@ -937,0 +944 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
++        bool const hasSolumStencilOverride = mHasSolumStencilOverride;
+@@ -1130,0 +1138,4 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
++                if (UTILS_UNLIKELY(hasSolumStencilOverride)) {
++                    pipeline.stencilState = mSolumStencilState;
++                }
++
+@@ -1182 +1193,2 @@ RenderPass::Executor::Executor(RenderPass const& pass, Command const* b, Command
+-          mHasSolumDrawScissor(false) {
++          mHasSolumDrawScissor(false),
++          mHasSolumStencilOverride(false) {
+@@ -1193 +1205,2 @@ RenderPass::Executor::Executor() noexcept
+-          mHasSolumDrawScissor(false) {
++          mHasSolumDrawScissor(false),
++          mHasSolumStencilOverride(false) {
+diff --git a/filament/src/RenderPass.h b/filament/src/RenderPass.h
+index b8cb586..78b5068 100644
+--- a/filament/src/RenderPass.h
++++ b/filament/src/RenderPass.h
+@@ -366,0 +367 @@ public:
++        backend::StencilState mSolumStencilState{};
+@@ -376,0 +378 @@ public:
++        bool mHasSolumStencilOverride : 1;
+@@ -409,0 +412,4 @@ public:
++        // Tessera Regional: reject validated REUSE pixels in fixed-function stencil before
++        // material fragment/PBR work begins.
++        void overrideSolumStencil(backend::StencilState const& stencilState) noexcept;
++
+diff --git a/filament/src/RendererUtils.cpp b/filament/src/RendererUtils.cpp
+index 57fb25b..6783fba 100644
+--- a/filament/src/RendererUtils.cpp
++++ b/filament/src/RendererUtils.cpp
+@@ -56,0 +57,46 @@ using namespace math;
++FrameGraphId<FrameGraphTexture> RendererUtils::tesseraRegionalDepthPass(
++        FrameGraph& fg, FEngine& engine, FView const& view,
++        FrameGraphId<FrameGraphTexture> const depth,
++        FrameGraphTexture::Descriptor const& colorBufferDesc,
++        ColorPassConfig const& config,
++        RenderPass::Executor passExecutor) noexcept {
++    struct RegionalDepthPassData {
++        FrameGraphId<FrameGraphTexture> depth;
++        FrameGraphId<FrameGraphTexture> stencil;
++    };
++
++    auto const& pass = fg.addPass<RegionalDepthPassData>("Tessera Regional current depth",
++            [&](FrameGraph::Builder& builder, RegionalDepthPassData& data) {
++                FrameGraphTexture::Usage usage = FrameGraphTexture::Usage::DEPTH_ATTACHMENT;
++                if (config.enabledStencilBuffer) {
++                    usage |= FrameGraphTexture::Usage::STENCIL_ATTACHMENT;
++                }
++                data.depth = depth;
++                data.depth = builder.write(data.depth, usage);
++                if (config.enabledStencilBuffer) {
++                    data.stencil = data.depth;
++                }
++                builder.declareRenderPass("Tessera Regional Depth Target", {
++                        .attachments = { .depth = data.depth, .stencil = data.stencil },
++                        .samples = config.msaa,
++                        .layerCount = static_cast<uint8_t>(colorBufferDesc.depth),
++                        .clearFlags = TargetBufferFlags::DEPTH |
++                                (config.enabledStencilBuffer ? TargetBufferFlags::STENCIL :
++                                        TargetBufferFlags::NONE),
++                });
++            },
++            [passExecutor = std::move(passExecutor), &view, &engine](
++                    FrameGraphResources const& resources,
++                    RegionalDepthPassData const&, DriverApi& driver) {
++                view.commitDescriptorSet(driver);
++                auto const out = resources.getRenderPassInfo();
++                driver.beginRenderPass(out.target, out.params);
++                passExecutor.execute(engine, driver);
++                driver.endRenderPass();
++                DescriptorSet::unbind(driver, DescriptorSetBindingPoints::PER_VIEW);
++                DescriptorSet::unbind(driver, DescriptorSetBindingPoints::PER_RENDERABLE);
++                DescriptorSet::unbind(driver, DescriptorSetBindingPoints::PER_MATERIAL);
++            });
++    return pass->depth;
++}
++
+@@ -160,0 +207,4 @@ RendererUtils::ColorPassOutput RendererUtils::colorPass(
++                } else if (config.enabledStencilBuffer) {
++                    // Tessera Regional supplies a persistent current depth/stencil attachment.
++                    depthStencilUsage |= FrameGraphTexture::Usage::STENCIL_ATTACHMENT;
++                    data.stencil = data.depth;
+diff --git a/filament/src/RendererUtils.h b/filament/src/RendererUtils.h
+index 6cf8a3c..672a5df 100644
+--- a/filament/src/RendererUtils.h
++++ b/filament/src/RendererUtils.h
+@@ -96,0 +97,13 @@ public:
++    /**
++     * SOLUM Tessera Regional: render authoritative current depth without declaring the seeded
++     * persistent HDR attachment as a color output. Keeping depth and history prefill as distinct
++     * FrameGraph resources prevents a depth-only pass from making the seeded HDR undefined on
++     * tile-based backends.
++     */
++    static FrameGraphId<FrameGraphTexture> tesseraRegionalDepthPass(
++            FrameGraph& fg, FEngine& engine, FView const& view,
++            FrameGraphId<FrameGraphTexture> depth,
++            FrameGraphTexture::Descriptor const& colorBufferDesc,
++            ColorPassConfig const& config,
++            RenderPass::Executor passExecutor) noexcept;
++
+diff --git a/filament/src/details/Renderer.cpp b/filament/src/details/Renderer.cpp
+index 46f817c..392baf4 100644
+--- a/filament/src/details/Renderer.cpp
++++ b/filament/src/details/Renderer.cpp
+@@ -1565,0 +1566,10 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++    FrameGraphTexture::Descriptor const solumRegionalDepthDesc{
++        .width = colorBufferDesc.width,
++        .height = colorBufferDesc.height,
++        .depth = colorBufferDesc.depth,
++        .samples = config.isAutoDepthResolveSupported
++                ? colorBufferDesc.samples : uint8_t(config.msaa),
++        .type = colorBufferDesc.type,
++        .format = config.featureLevel == FeatureLevel::FEATURE_LEVEL_0
++                ? TextureFormat::DEPTH24_STENCIL8 : TextureFormat::DEPTH32F_STENCIL8,
++    };
+@@ -1665,0 +1676 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++    FrameGraphId<FrameGraphTexture> solumV1CachedDepth;
+@@ -1666,0 +1678 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++    FrameGraphId<FrameGraphTexture> solumV1RegionalCurrentDepth;
+@@ -1672,0 +1685,8 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++    bool solumV1RegionalHasDirtyScissor = false;
++    mSolumV1.regionalCameraReprojection = false;
++    mat4 const solumV1CurrentProjection =
++            cameraInfo.projection * cameraInfo.getUserViewMatrix();
++    float3 const solumV1CurrentCameraForward = cameraInfo.getForwardVector();
++    mat4 solumV1PreviousProjection = solumV1CurrentProjection;
++    float3 solumV1PreviousCameraForward = solumV1CurrentCameraForward;
++    bool solumV1PreviousCameraBasisValid = false;
+@@ -1694,0 +1715,2 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++            FrameGraphTexture const* previousDepth = nullptr;
++            FrameGraphTexture::Descriptor const* previousDepthDesc = nullptr;
+@@ -1700 +1722,2 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-                solumV1RegionalResourcesReady = ensureSolumRegionalHistory(colorBufferDesc);
++                solumV1RegionalResourcesReady = ensureSolumRegionalHistory(
++                        colorBufferDesc, solumRegionalDepthDesc);
+@@ -1709 +1732 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-                            (!slot.valid || !slot.color.handle ||
++                            (!slot.valid || !slot.color.handle || !slot.depth.handle ||
+@@ -1716 +1739,2 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-                                ensureSolumRegionalHistory(colorBufferDesc);
++                                ensureSolumRegionalHistory(
++                                        colorBufferDesc, solumRegionalDepthDesc);
+@@ -1728,0 +1753,5 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                        previousDepth = &slot.depth;
++                        previousDepthDesc = &slot.depthDesc;
++                        solumV1PreviousProjection = slot.projection;
++                        solumV1PreviousCameraForward = slot.cameraForward;
++                        solumV1PreviousCameraBasisValid = slot.cameraBasisValid;
+@@ -1731 +1760 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-                                bool(slot.color.handle) &&
++                                bool(slot.color.handle) && bool(slot.depth.handle) &&
+@@ -1744,0 +1774,8 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                bool const depthDescriptorMatches = !mSolumV1.regionalEnabled ||
++                        (previousDepthDesc &&
++                                previousDepthDesc->width == solumRegionalDepthDesc.width &&
++                                previousDepthDesc->height == solumRegionalDepthDesc.height &&
++                                previousDepthDesc->depth == solumRegionalDepthDesc.depth &&
++                                previousDepthDesc->samples == solumRegionalDepthDesc.samples &&
++                                previousDepthDesc->type == solumRegionalDepthDesc.type &&
++                                previousDepthDesc->format == solumRegionalDepthDesc.format);
+@@ -1749 +1786 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-                } else if (!descriptorMatches) {
++                } else if (!descriptorMatches || !depthDescriptorMatches) {
+@@ -1753 +1790,2 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-                                ensureSolumRegionalHistory(colorBufferDesc);
++                                ensureSolumRegionalHistory(
++                                        colorBufferDesc, solumRegionalDepthDesc);
+@@ -1767 +1805,2 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-                                ensureSolumRegionalHistory(colorBufferDesc);
++                                ensureSolumRegionalHistory(
++                                        colorBufferDesc, solumRegionalDepthDesc);
+@@ -1786,0 +1826,6 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                    if (mSolumV1.regionalEnabled) {
++                        solumV1CachedDepth = fg.import(
++                                "SOLUM Tessera Regional previous depth", *previousDepthDesc,
++                                FrameGraphTexture::Usage::SAMPLEABLE,
++                                *previousDepth);
++                    }
+@@ -1788,0 +1834,10 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                        constexpr float CAMERA_CUT_COSINE = 0.5f; // 60 degrees.
++                        bool const cameraCut = solumV1PreviousCameraBasisValid &&
++                                dot(solumV1PreviousCameraForward,
++                                        solumV1CurrentCameraForward) <
++                                        CAMERA_CUT_COSINE;
++                        if (cameraCut) {
++                            solumV1Reuse = false;
++                            ++mSolumV1.regionalCameraCutFrames;
++                            decision = "regional_camera_cut_current";
++                        }
+@@ -1789,0 +1845,2 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                        bool const hasDirtyRect = mSolumV1.regionalDirtyRect.z > 0.0f &&
++                                mSolumV1.regionalDirtyRect.w > 0.0f;
+@@ -1806,10 +1863,14 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-                        left = left > TILE_SIZE ? left - TILE_SIZE : 0u;
+-                        bottom = bottom > TILE_SIZE ? bottom - TILE_SIZE : 0u;
+-                        right = std::min(colorBufferDesc.width, right + TILE_SIZE);
+-                        top = std::min(colorBufferDesc.height, top + TILE_SIZE);
+-                        left = left / TILE_SIZE * TILE_SIZE;
+-                        bottom = bottom / TILE_SIZE * TILE_SIZE;
+-                        right = std::min(colorBufferDesc.width,
+-                                ((right + TILE_SIZE - 1u) / TILE_SIZE) * TILE_SIZE);
+-                        top = std::min(colorBufferDesc.height,
+-                                ((top + TILE_SIZE - 1u) / TILE_SIZE) * TILE_SIZE);
++                        if (hasDirtyRect) {
++                            left = left > TILE_SIZE ? left - TILE_SIZE : 0u;
++                            bottom = bottom > TILE_SIZE ? bottom - TILE_SIZE : 0u;
++                            right = std::min(colorBufferDesc.width, right + TILE_SIZE);
++                            top = std::min(colorBufferDesc.height, top + TILE_SIZE);
++                            left = left / TILE_SIZE * TILE_SIZE;
++                            bottom = bottom / TILE_SIZE * TILE_SIZE;
++                            right = std::min(colorBufferDesc.width,
++                                    ((right + TILE_SIZE - 1u) / TILE_SIZE) * TILE_SIZE);
++                            top = std::min(colorBufferDesc.height,
++                                    ((top + TILE_SIZE - 1u) / TILE_SIZE) * TILE_SIZE);
++                        } else {
++                            left = bottom = right = top = 0u;
++                        }
+@@ -1821 +1882 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-                        if (right > left && top > bottom && dirtyCoverage < 95.0) {
++                        if (solumV1Reuse && dirtyCoverage < 95.0) {
+@@ -1827,0 +1889 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                            solumV1RegionalHasDirtyScissor = hasDirtyRect;
+@@ -1830 +1892 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-                            decision = "regional_reused";
++                            decision = "regional_reprojected";
+@@ -1833 +1895,3 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-                            decision = "regional_rect_invalid_or_full";
++                            if (!cameraCut) {
++                                decision = "regional_rect_invalid_or_full";
++                            }
+@@ -1847,0 +1912 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                current.cameraBasisValid = false;
+@@ -1850,0 +1916 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                mSolumV1.regionalCurrentDepthId = current.depth.handle.getId();
+@@ -1855,0 +1922,6 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                solumV1RegionalCurrentDepth = fg.import(
++                        "SOLUM Tessera Regional current depth", current.depthDesc,
++                        FrameGraphTexture::Usage::DEPTH_ATTACHMENT |
++                                FrameGraphTexture::Usage::STENCIL_ATTACHMENT |
++                                FrameGraphTexture::Usage::SAMPLEABLE,
++                        current.depth);
+@@ -1899,0 +1972 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                    .colorPassDescriptorSet(&view.getColorPassDescriptorSet())
+@@ -1943,12 +2016,6 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-        // Previous and current HDR are distinct persistent FRenderer-owned ping-pong slots.
+-        // Seed the current slot directly; normal Regional frames allocate no replacement texture.
+-        auto const regionalSeedColor = ppm.blitInto(fg, false, solumV1CachedColor,
+-                solumV1RegionalCurrentColor,
+-                filament::Viewport{ 0, 0, colorBufferDesc.width, colorBufferDesc.height },
+-                SamplerMagFilter::NEAREST, SamplerMinFilter::NEAREST);
+-        auto regionalDepthConfig = colorPassConfig;
+-        regionalDepthConfig.clearFlags &= ~TargetBufferFlags::COLOR;
+-        colorPassOutput = RendererUtils::colorPass(
+-                fg, "Tessera Regional current depth", mEngine, view, {
+-                    .linearColor = regionalSeedColor
+-                }, colorBufferDesc, regionalDepthConfig, {},
++        // Depth is always current and authoritative. Regional HDR is then reprojected into the
++        // distinct persistent write slot, and fixed-function stencil rejects validated REUSE
++        // pixels before any expensive material fragment/PBR work begins.
++        auto const regionalDepth = RendererUtils::tesseraRegionalDepthPass(
++                fg, mEngine, view, solumV1RegionalCurrentDepth,
++                colorBufferDesc, colorPassConfig,
+@@ -1955,0 +2023,15 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++        constexpr mat4f normalizedToClip{mat4f::row_major_init{
++                2, 0, 0, -1,
++                0, 2, 0, -1,
++                0, 0, 1,  0,
++                0, 0, 0,  1
++        }};
++        mat4f const regionalReprojection =
++                mat4f{ solumV1PreviousProjection * inverse(solumV1CurrentProjection) } *
++                normalizedToClip;
++        auto const regional = ppm.tesseraRegionalReproject(fg,
++                solumV1CachedColor, solumV1CachedDepth, regionalDepth,
++                solumV1RegionalCurrentColor, regionalReprojection);
++        auto const regionalStencilDepth = ppm.tesseraRegionalStencil(fg,
++                regional.validity, regionalDepth,
++                solumV1RegionalHasDirtyScissor, solumV1RegionalScissor);
+@@ -1957,0 +2040 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++        regionalColorConfig.enabledStencilBuffer = true;
+@@ -1959 +2042,10 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-        regionalColorExecutor.overrideSolumDrawScissor(solumV1RegionalScissor);
++        StencilState currentOnlyStencil;
++        currentOnlyStencil.front.stencilFunc = SamplerCompareFunc::E;
++        currentOnlyStencil.front.ref = 0u;
++        currentOnlyStencil.front.readMask = 0xffu;
++        currentOnlyStencil.front.writeMask = 0u;
++        currentOnlyStencil.back = currentOnlyStencil.front;
++        currentOnlyStencil.stencilWrite = false;
++        regionalColorExecutor.overrideSolumStencil(currentOnlyStencil);
++        ++mSolumV1.regionalReprojectionFrames;
++        mSolumV1.regionalCameraReprojection = true;
+@@ -1963,2 +2055,2 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-                    .linearColor = colorPassOutput.linearColor,
+-                    .depth = colorPassOutput.depth,
++                    .linearColor = regional.color,
++                    .depth = regionalStencilDepth,
+@@ -1971,0 +2064,5 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++        auto baselineOrRegionalConfig = colorPassConfig;
++        if (mSolumV1.regionalEnabled && solumV1RegionalResourcesReady) {
++            baselineOrRegionalConfig.enabledStencilBuffer = true;
++            baselineOrRegionalConfig.clearFlags |= TargetBufferFlags::STENCIL;
++        }
+@@ -1975,0 +2073,4 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                    .depth = mSolumV1.regionalEnabled &&
++                            solumV1RegionalResourcesReady ?
++                            solumV1RegionalCurrentDepth :
++                            FrameGraphId<FrameGraphTexture>{},
+@@ -1980 +2081 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-                }, colorBufferDesc, colorPassConfig,
++                }, colorBufferDesc, baselineOrRegionalConfig,
+@@ -2020 +2121,2 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-                        regionalOwner, solumV1Reuse](
++                        regionalOwner, solumV1Reuse, solumV1CurrentProjection,
++                        solumV1CurrentCameraForward](
+@@ -2024,0 +2127 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                                bool(current.depth.handle) &&
+@@ -2029,0 +2133,3 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                            current.projection = solumV1CurrentProjection;
++                            current.cameraForward = solumV1CurrentCameraForward;
++                            current.cameraBasisValid = true;
+@@ -2033,0 +2140 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                            mSolumV1.regionalHistoryDepthId = current.depth.handle.getId();
+@@ -2321,2 +2428,3 @@ bool FRenderer::ensureSolumRegionalHistory(
+-        FrameGraphTexture::Descriptor const& desc) noexcept {
+-    auto const descriptorMatches = [&desc](
++        FrameGraphTexture::Descriptor const& colorDesc,
++        FrameGraphTexture::Descriptor const& depthDesc) noexcept {
++    auto const descriptorMatches = [&colorDesc, &depthDesc](
+@@ -2324,4 +2432,14 @@ bool FRenderer::ensureSolumRegionalHistory(
+-        return slot.desc.width == desc.width && slot.desc.height == desc.height &&
+-                slot.desc.depth == desc.depth && slot.desc.levels == desc.levels &&
+-                slot.desc.samples == desc.samples && slot.desc.type == desc.type &&
+-                slot.desc.format == desc.format;
++        return slot.desc.width == colorDesc.width &&
++                slot.desc.height == colorDesc.height &&
++                slot.desc.depth == colorDesc.depth &&
++                slot.desc.levels == colorDesc.levels &&
++                slot.desc.samples == colorDesc.samples &&
++                slot.desc.type == colorDesc.type &&
++                slot.desc.format == colorDesc.format &&
++                slot.depthDesc.width == depthDesc.width &&
++                slot.depthDesc.height == depthDesc.height &&
++                slot.depthDesc.depth == depthDesc.depth &&
++                slot.depthDesc.levels == depthDesc.levels &&
++                slot.depthDesc.samples == depthDesc.samples &&
++                slot.depthDesc.type == depthDesc.type &&
++                slot.depthDesc.format == depthDesc.format;
+@@ -2330,0 +2449,6 @@ bool FRenderer::ensureSolumRegionalHistory(
++            mSolumV1.regionalHistory[0].depth.handle &&
++            mSolumV1.regionalHistory[1].depth.handle &&
++            mSolumV1.regionalHistory[0].color.handle.getId() !=
++                    mSolumV1.regionalHistory[1].color.handle.getId() &&
++            mSolumV1.regionalHistory[0].depth.handle.getId() !=
++                    mSolumV1.regionalHistory[1].depth.handle.getId() &&
+@@ -2342 +2466,3 @@ bool FRenderer::ensureSolumRegionalHistory(
+-            mSolumV1.regionalHistory[1].color.handle) {
++            mSolumV1.regionalHistory[1].color.handle ||
++            mSolumV1.regionalHistory[0].depth.handle ||
++            mSolumV1.regionalHistory[1].depth.handle) {
+@@ -2347 +2473,4 @@ bool FRenderer::ensureSolumRegionalHistory(
+-    constexpr auto usage = FrameGraphTexture::Usage::COLOR_ATTACHMENT |
++    constexpr auto colorUsage = FrameGraphTexture::Usage::COLOR_ATTACHMENT |
++            FrameGraphTexture::Usage::SAMPLEABLE;
++    constexpr auto depthUsage = FrameGraphTexture::Usage::DEPTH_ATTACHMENT |
++            FrameGraphTexture::Usage::STENCIL_ATTACHMENT |
+@@ -2351,2 +2480,4 @@ bool FRenderer::ensureSolumRegionalHistory(
+-    first.desc = desc;
+-    second.desc = desc;
++    first.desc = colorDesc;
++    second.desc = colorDesc;
++    first.depthDesc = depthDesc;
++    second.depthDesc = depthDesc;
+@@ -2355,3 +2486,12 @@ bool FRenderer::ensureSolumRegionalHistory(
+-    first.color.create(*mResourceAllocator, "Tessera Regional HDR history A", desc, usage);
+-    second.color.create(*mResourceAllocator, "Tessera Regional HDR history B", desc, usage);
+-    if (!first.color.handle || !second.color.handle) {
++    first.color.create(*mResourceAllocator, "Tessera Regional HDR history A",
++            colorDesc, colorUsage);
++    second.color.create(*mResourceAllocator, "Tessera Regional HDR history B",
++            colorDesc, colorUsage);
++    first.depth.create(*mResourceAllocator, "Tessera Regional depth history A",
++            depthDesc, depthUsage);
++    second.depth.create(*mResourceAllocator, "Tessera Regional depth history B",
++            depthDesc, depthUsage);
++    if (!first.color.handle || !second.color.handle ||
++            !first.depth.handle || !second.depth.handle ||
++            first.color.handle.getId() == second.color.handle.getId() ||
++            first.depth.handle.getId() == second.depth.handle.getId()) {
+@@ -2364,0 +2505,2 @@ bool FRenderer::ensureSolumRegionalHistory(
++    first.cameraBasisValid = false;
++    second.cameraBasisValid = false;
+@@ -2368,0 +2511 @@ bool FRenderer::ensureSolumRegionalHistory(
++    mSolumV1.regionalHistoryDepthId = uint32_t(-1);
+@@ -2369,0 +2513 @@ bool FRenderer::ensureSolumRegionalHistory(
++    mSolumV1.regionalCurrentDepthId = second.depth.handle.getId();
+@@ -2377 +2521 @@ void FRenderer::releaseSolumRegionalHistorySlot(uint8_t const slotIndex) noexcep
+-    bool const hadHandle = bool(slot.color.handle);
++    bool const hadHandle = bool(slot.color.handle) || bool(slot.depth.handle);
+@@ -2378,0 +2523 @@ void FRenderer::releaseSolumRegionalHistorySlot(uint8_t const slotIndex) noexcep
++    slot.depth.destroy(*mResourceAllocator);
+@@ -2392,0 +2538,2 @@ void FRenderer::invalidateSolumRegionalHistory(char const* const reason) noexcep
++    mSolumV1.regionalHistoryDepthId = uint32_t(-1);
++    mSolumV1.regionalCurrentDepthId = uint32_t(-1);
+@@ -2441 +2588 @@ void FRenderer::setSolumTesseraRegional(FView const* const targetView, bool cons
+-            dirtyWidth > 0.0f && dirtyHeight > 0.0f;
++            dirtyWidth >= 0.0f && dirtyHeight >= 0.0f;
+@@ -2471,0 +2619,16 @@ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
++        << ",\"regional_history_depth_id\":" << mSolumV1.regionalHistoryDepthId
++        << ",\"regional_current_depth_id\":" << mSolumV1.regionalCurrentDepthId
++        << ",\"regional_camera_reprojection\":"
++        << (mSolumV1.regionalCameraReprojection ? "true" : "false")
++        << ",\"regional_candidate_reuse_percent\":"
++        << mSolumV1.regionalValidCoverage
++        << ",\"regional_candidate_current_percent\":"
++        << mSolumV1.regionalDirtyCoverage
++        // Exact GPU depth-reprojection coverage needs a later asynchronous reduction/readback.
++        // Keep it explicitly unavailable rather than reporting the CPU dirty envelope as truth.
++        << ",\"regional_reprojection_valid_percent\":-1"
++        << ",\"regional_reprojection_rejected_percent\":-1"
++        << ",\"regional_reprojection_frames\":"
++        << mSolumV1.regionalReprojectionFrames
++        << ",\"regional_camera_cut_frames\":"
++        << mSolumV1.regionalCameraCutFrames
+diff --git a/filament/src/details/Renderer.h b/filament/src/details/Renderer.h
+index e21aca2..f35667d 100644
+--- a/filament/src/details/Renderer.h
++++ b/filament/src/details/Renderer.h
+@@ -43,0 +44,2 @@
++#include <math/mat4.h>
++#include <math/vec3.h>
+@@ -214 +216,2 @@ private:
+-    bool ensureSolumRegionalHistory(FrameGraphTexture::Descriptor const& desc) noexcept;
++    bool ensureSolumRegionalHistory(FrameGraphTexture::Descriptor const& colorDesc,
++            FrameGraphTexture::Descriptor const& depthDesc) noexcept;
+@@ -240,0 +244,4 @@ private:
++            FrameGraphTexture depth{};
++            FrameGraphTexture::Descriptor depthDesc{};
++            math::mat4 projection{};
++            math::float3 cameraForward{};
+@@ -242,0 +250 @@ private:
++            bool cameraBasisValid = false;
+@@ -252,0 +261,2 @@ private:
++        uint64_t regionalReprojectionFrames = 0;
++        uint64_t regionalCameraCutFrames = 0;
+@@ -254,0 +265,2 @@ private:
++        uint32_t regionalHistoryDepthId = uint32_t(-1);
++        uint32_t regionalCurrentDepthId = uint32_t(-1);
+@@ -261,0 +274 @@ private:
++        bool regionalCameraReprojection = false;
+diff --git a/filament/src/materials/tesseraRegionalReproject.mat b/filament/src/materials/tesseraRegionalReproject.mat
+new file mode 100644
+index 0000000..1c86261
+--- /dev/null
++++ b/filament/src/materials/tesseraRegionalReproject.mat
+@@ -0,0 +1,55 @@
++material {
++    name : tesseraRegionalReproject,
++    parameters : [
++        { type : sampler2d, name : history },
++        { type : sampler2d, name : currentDepth, precision : high, filterable : false },
++        { type : sampler2d, name : previousDepth, precision : high, filterable : false },
++        { type : mat4, name : reprojection, precision : high }
++    ],
++    constants : [
++        { type : bool, name : validityOnly, default : false }
++    ],
++    variables : [ vertex ],
++    domain : postprocess,
++    depthWrite : false,
++    depthCulling : false
++}
++
++vertex {
++    void postProcessVertex(inout PostProcessVertexInputs postProcess) {
++        highp vec2 uv = uvToRenderTargetUV(postProcess.normalizedUV);
++        postProcess.vertex.xy = uv;
++        postProcess.vertex.zw = uv;
++    }
++}
++
++fragment {
++    void postProcess(inout PostProcessInputs postProcess) {
++        // Match Filament's proven TAA reprojection coordinate convention exactly: depth uses
++        // render-target UV, while the matrix consumes normalized screen UV before the result is
++        // converted back to the backend render-target convention.
++        highp vec4 uv = variable_vertex;
++        highp float depth = textureLod(materialParams_currentDepth, uv.xy, 0.0).r;
++        uv.zw = uvToRenderTargetUV(uv.zw);
++        highp vec4 q = materialParams.reprojection * vec4(uv.zw, depth, 1.0);
++        highp float invW = q.w > 0.0 ? 1.0 / q.w : 0.0;
++        highp float expectedPreviousDepth = q.z * invW;
++        highp vec2 previousUv = (q.xy * invW) * 0.5 + 0.5;
++        previousUv = uvToRenderTargetUV(previousUv);
++        bool inBounds = q.w > 0.0 && all(greaterThanEqual(previousUv, vec2(0.0))) &&
++                all(lessThanEqual(previousUv, vec2(1.0)));
++        highp float previousDepth = inBounds
++                ? textureLod(materialParams_previousDepth, previousUv, 0.0).r : 0.0;
++        highp float tolerance = max(2.0 * fwidth(expectedPreviousDepth),
++                2.0 / 16777216.0);
++        bool valid = inBounds &&
++                abs(previousDepth - expectedPreviousDepth) <= 2.0 * tolerance;
++        if (materialConstants_validityOnly) {
++            postProcess.color = vec4(valid ? 1.0 : 0.0);
++        } else {
++            postProcess.color = valid
++                    ? textureLod(materialParams_history, previousUv, 0.0)
++                    : vec4(0.0);
++        }
++    }
++}
+diff --git a/filament/src/materials/tesseraRegionalStencil.mat b/filament/src/materials/tesseraRegionalStencil.mat
+new file mode 100644
+index 0000000..c9a73a0
+--- /dev/null
++++ b/filament/src/materials/tesseraRegionalStencil.mat
+@@ -0,0 +1,29 @@
++material {
++    name : tesseraRegionalStencil,
++    parameters : [
++        { type : sampler2d, name : validity, precision : low, filterable : false },
++        { type : float, name : forceCurrent }
++    ],
++    variables : [ vertex ],
++    domain : postprocess,
++    depthWrite : false,
++    depthCulling : false,
++    culling : none
++}
++
++vertex {
++    void postProcessVertex(inout PostProcessVertexInputs postProcess) {
++        postProcess.vertex.xy = uvToRenderTargetUV(postProcess.normalizedUV);
++    }
++}
++
++fragment {
++    void postProcess(inout PostProcessInputs postProcess) {
++        if (materialParams.forceCurrent < 0.5 &&
++                textureLod(materialParams_validity,
++                        variable_vertex.xy, 0.0).r < 0.5) {
++            discard;
++        }
++        postProcess.color = vec4(0.0);
++    }
++}

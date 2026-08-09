@@ -1,4 +1,4 @@
-name: Filament v1.71.4 SOLUM Tessera Regional Persistent History
+name: Filament v1.71.4 SOLUM Tessera Regional V0.2
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: filament-v1714-solum-tessera-regional-persistent-history-${{ github.ref }}
+  group: filament-v1714-solum-tessera-regional-v02-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -26,6 +26,7 @@ jobs:
       TESSERA_REGIONAL_PATCH_FILE: third_party/filament-solum/patches/0006-solum-tessera-regional-v0.patch
       TESSERA_REGIONAL_LIFETIME_PATCH_FILE: third_party/filament-solum/patches/0007-solum-tessera-regional-color-lifetime.patch
       TESSERA_REGIONAL_HISTORY_PATCH_FILE: third_party/filament-solum/patches/0008-solum-tessera-regional-persistent-history.patch
+      TESSERA_REGIONAL_V02_PATCH_FILE: third_party/filament-solum/patches/0009-solum-tessera-regional-v02.patch
       LOG_DIR: filament-ci-logs
 
     steps:
@@ -54,12 +55,14 @@ jobs:
           test -f "$TESSERA_REGIONAL_PATCH_FILE"
           test -f "$TESSERA_REGIONAL_LIFETIME_PATCH_FILE"
           test -f "$TESSERA_REGIONAL_HISTORY_PATCH_FILE"
+          test -f "$TESSERA_REGIONAL_V02_PATCH_FILE"
           sha256sum "$PROFILER_PATCH_FILE" "$ADAPTIVE_TAA_PATCH_FILE" \
             "$PREVIOUS_DEPTH_TAA_PATCH_FILE" "$STABLE_ACCUM_TAA_PATCH_FILE" \
             "$V1_SHADING_CACHE_PATCH_FILE" \
             "$TESSERA_REGIONAL_PATCH_FILE" \
             "$TESSERA_REGIONAL_LIFETIME_PATCH_FILE" \
             "$TESSERA_REGIONAL_HISTORY_PATCH_FILE" \
+            "$TESSERA_REGIONAL_V02_PATCH_FILE" \
             | tee filament-solum-patches.sha256
           git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$PROFILER_PATCH_FILE"
           git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$PROFILER_PATCH_FILE"
@@ -77,9 +80,11 @@ jobs:
           git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$TESSERA_REGIONAL_LIFETIME_PATCH_FILE"
           git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$TESSERA_REGIONAL_HISTORY_PATCH_FILE"
           git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$TESSERA_REGIONAL_HISTORY_PATCH_FILE"
+          git -C "$FILAMENT_DIR" apply --unidiff-zero --check "$GITHUB_WORKSPACE/$TESSERA_REGIONAL_V02_PATCH_FILE"
+          git -C "$FILAMENT_DIR" apply --unidiff-zero "$GITHUB_WORKSPACE/$TESSERA_REGIONAL_V02_PATCH_FILE"
           git -C "$FILAMENT_DIR" diff --check
           git -C "$FILAMENT_DIR" diff --stat | tee filament-profiler-diff-stat.txt
-          test "$(git -C "$FILAMENT_DIR" diff --name-only | wc -l)" -eq 19
+          test "$(git -C "$FILAMENT_DIR" diff --name-only | wc -l)" -eq 24
           ! git -C "$FILAMENT_DIR" diff | grep -E 'flushAndWait|waitForGpu|fenceWait'
           git -C "$FILAMENT_DIR" diff | grep -F 'FrameGraph::ExecutionHooks'
           git -C "$FILAMENT_DIR" diff | grep -F 'getTimerQueryValue'
@@ -111,6 +116,11 @@ jobs:
           git -C "$FILAMENT_DIR" diff | grep -F 'FRenderer_persistent_ping_pong'
           git -C "$FILAMENT_DIR" diff | grep -F 'REGIONAL_HISTORY_REJECT_STALE'
           git -C "$FILAMENT_DIR" diff | grep -F 'invalidateSolumRegionalHistory'
+          git -C "$FILAMENT_DIR" diff | grep -F 'tesseraRegionalReproject'
+          git -C "$FILAMENT_DIR" diff | grep -F 'tesseraRegionalStencil'
+          git -C "$FILAMENT_DIR" diff | grep -F 'overrideSolumStencil'
+          git -C "$FILAMENT_DIR" diff | grep -F 'Tessera Regional current depth'
+          git -C "$FILAMENT_DIR" diff | grep -F 'regional_camera_reprojection'
 
       - name: Set up Java 17
         uses: actions/setup-java@v4

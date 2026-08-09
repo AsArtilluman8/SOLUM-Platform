@@ -1,4 +1,4 @@
-name: Filament v1.71.4 SOLUM Tessera Regional V0
+name: Filament v1.71.4 SOLUM Tessera Regional Color Lifetime
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: filament-v1714-solum-tessera-regional-v0-${{ github.ref }}
+  group: filament-v1714-solum-tessera-regional-color-lifetime-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -24,6 +24,7 @@ jobs:
       STABLE_ACCUM_TAA_PATCH_FILE: third_party/filament-solum/patches/0004-solum-taa-prev-depth-stable-accum.patch
       V1_SHADING_CACHE_PATCH_FILE: third_party/filament-solum/patches/0005-solum-v1-conservative-shading-cache.patch
       TESSERA_REGIONAL_PATCH_FILE: third_party/filament-solum/patches/0006-solum-tessera-regional-v0.patch
+      TESSERA_REGIONAL_LIFETIME_PATCH_FILE: third_party/filament-solum/patches/0007-solum-tessera-regional-color-lifetime.patch
       LOG_DIR: filament-ci-logs
 
     steps:
@@ -50,10 +51,12 @@ jobs:
           test -f "$STABLE_ACCUM_TAA_PATCH_FILE"
           test -f "$V1_SHADING_CACHE_PATCH_FILE"
           test -f "$TESSERA_REGIONAL_PATCH_FILE"
+          test -f "$TESSERA_REGIONAL_LIFETIME_PATCH_FILE"
           sha256sum "$PROFILER_PATCH_FILE" "$ADAPTIVE_TAA_PATCH_FILE" \
             "$PREVIOUS_DEPTH_TAA_PATCH_FILE" "$STABLE_ACCUM_TAA_PATCH_FILE" \
             "$V1_SHADING_CACHE_PATCH_FILE" \
             "$TESSERA_REGIONAL_PATCH_FILE" \
+            "$TESSERA_REGIONAL_LIFETIME_PATCH_FILE" \
             | tee filament-solum-patches.sha256
           git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$PROFILER_PATCH_FILE"
           git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$PROFILER_PATCH_FILE"
@@ -67,6 +70,8 @@ jobs:
           git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$V1_SHADING_CACHE_PATCH_FILE"
           git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$TESSERA_REGIONAL_PATCH_FILE"
           git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$TESSERA_REGIONAL_PATCH_FILE"
+          git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$TESSERA_REGIONAL_LIFETIME_PATCH_FILE"
+          git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$TESSERA_REGIONAL_LIFETIME_PATCH_FILE"
           git -C "$FILAMENT_DIR" diff --check
           git -C "$FILAMENT_DIR" diff --stat | tee filament-profiler-diff-stat.txt
           test "$(git -C "$FILAMENT_DIR" diff --name-only | wc -l)" -eq 18
@@ -92,6 +97,9 @@ jobs:
           git -C "$FILAMENT_DIR" diff | grep -F 'setSolumTesseraRegional'
           git -C "$FILAMENT_DIR" diff | grep -F 'overrideSolumDrawScissor'
           git -C "$FILAMENT_DIR" diff | grep -F 'Tessera Regional current color'
+          git -C "$FILAMENT_DIR" diff | grep -F 'prefill_allocated_current_owned'
+          git -C "$FILAMENT_DIR" diff | grep -F 'previous_release_deferred'
+          git -C "$FILAMENT_DIR" diff | grep -F 'regional_lifecycle_state'
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -185,6 +193,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: filament-v1714-solum-tessera-regional-v0-arm64
+          name: filament-v1714-solum-tessera-regional-color-lifetime-r13-arm64
           path: filament-solum-adaptive-taa-artifacts/**
           if-no-files-found: error

@@ -1,0 +1,147 @@
+diff --git a/filament/src/details/Renderer.cpp b/filament/src/details/Renderer.cpp
+index 22e553f..bc220fa 100644
+--- a/filament/src/details/Renderer.cpp
++++ b/filament/src/details/Renderer.cpp
+@@ -1699,10 +1699,17 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+             } else if (previous.stateKey != mSolumV1.stateKey) {
+                 decision = "state_key_mismatch";
+             } else {
++                if (mSolumV1.regionalEnabled) {
++                    mSolumV1.regionalHistoryColorId = previous.color.handle.getId();
++                    mSolumV1.regionalLifecycleState = "history_import_begin";
++                }
+                 solumV1CachedColor = fg.import("SOLUM V1 cached shading", previous.desc,
+                         FrameGraphTexture::Usage::COLOR_ATTACHMENT |
+                                 FrameGraphTexture::Usage::SAMPLEABLE,
+                         previous.color);
++                if (mSolumV1.regionalEnabled) {
++                    mSolumV1.regionalLifecycleState = "history_imported_read_only";
++                }
+                 solumV1Reuse = true;
+                 if (mSolumV1.regionalEnabled) {
+                     constexpr uint32_t TILE_SIZE = 32u;
+@@ -1843,17 +1850,28 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+     }
+     RendererUtils::ColorPassOutput colorPassOutput;
+     if (solumV1RegionalReuse) {
++        // Previous-frame history is external to this FrameGraph and must remain immutable until
++        // all current-frame driver work that samples it has been submitted.  Regional V0 used to
++        // attach that imported history directly to two writable color passes.  A mode transition
++        // could then recycle the history handle while an in-flight render target still referenced
++        // it.  Seed a new current-frame color buffer instead; only this owned buffer is writable.
++        mSolumV1.regionalLifecycleState = "prefill_allocation_begin";
++        auto const regionalSeedColor = ppm.blit(fg, false, solumV1CachedColor,
++                filament::Viewport{ 0, 0, colorBufferDesc.width, colorBufferDesc.height },
++                colorBufferDesc, SamplerMagFilter::NEAREST, SamplerMinFilter::NEAREST);
++        mSolumV1.regionalLifecycleState = "prefill_allocated_current_owned";
+         auto regionalDepthConfig = colorPassConfig;
+         regionalDepthConfig.clearFlags &= ~TargetBufferFlags::COLOR;
+         colorPassOutput = RendererUtils::colorPass(
+                 fg, "Tessera Regional current depth", mEngine, view, {
+-                    .linearColor = solumV1CachedColor
++                    .linearColor = regionalSeedColor
+                 }, colorBufferDesc, regionalDepthConfig, {},
+                 solumV1RegionalDepthPass->getExecutor());
+         auto regionalColorConfig = colorPassConfig;
+         regionalColorConfig.clearFlags = TargetBufferFlags::NONE;
+         auto regionalColorExecutor = pass.getExecutor();
+         regionalColorExecutor.overrideSolumDrawScissor(solumV1RegionalScissor);
++        mSolumV1.regionalLifecycleState = "framegraph_use_begin";
+         colorPassOutput = RendererUtils::colorPass(
+                 fg, "Tessera Regional current color", mEngine, view, {
+                     .linearColor = colorPassOutput.linearColor,
+@@ -1906,17 +1924,26 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+                 [&](FrameGraph::Builder& builder, auto& data) {
+                     builder.sideEffect();
+                     data.history = builder.sample(colorPassOutput.linearColor);
+-                }, [&view, stateKey, solumV1Reuse](
++                }, [this, &view, stateKey, solumV1Reuse, solumV1RegionalReuse](
+                         FrameGraphResources const& resources, auto const& data) {
+                     auto& history = view.getFrameHistory();
+-                    if (solumV1Reuse) {
++                    if (solumV1Reuse && !solumV1RegionalReuse) {
+                         // The imported handle is now transferred to the current entry. Prevent
+                         // commitFrameHistory() from destroying it as the previous entry.
+                         history.getPrevious().solumV1.color = {};
+                     }
++                    if (solumV1RegionalReuse) {
++                        mSolumV1.regionalLifecycleState = "previous_release_deferred";
++                        mSolumV1.regionalHistoryColorId =
++                                history.getPrevious().solumV1.color.handle.getId();
++                    }
+                     auto& current = history.getCurrent().solumV1;
+                     current.stateKey = stateKey;
+                     resources.detach(data.history, &current.color, &current.desc);
++                    if (solumV1RegionalReuse) {
++                        mSolumV1.regionalCurrentColorId = current.color.handle.getId();
++                        mSolumV1.regionalLifecycleState = "current_detached_history_owned";
++                    }
+                 });
+     }
+ 
+@@ -2167,6 +2194,9 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+ 
+     // save the current history entry and destroy the oldest entry
+     view.commitFrameHistory(engine);
++    if (solumV1RegionalReuse) {
++        mSolumV1.regionalLifecycleState = "framegraph_use_survived";
++    }
+ 
+     recordHighWatermark(commandArena.getListener().getHighWatermark());
+ }
+@@ -2204,6 +2234,8 @@ void FRenderer::setSolumV1ShadingReuse(FView const* const targetView, bool const
+ void FRenderer::setSolumTesseraRegional(FView const* const targetView, bool const enabled,
+         bool const safeToReuse, uint64_t const stateKey, float const dirtyLeft,
+         float const dirtyBottom, float const dirtyWidth, float const dirtyHeight) noexcept {
++    bool const wasRegionalEnabled = mSolumV1.regionalEnabled;
++    uint64_t const previousStateKey = mSolumV1.stateKey;
+     setSolumV1ShadingReuse(targetView, enabled, safeToReuse, stateKey);
+     bool const finiteRect = std::isfinite(dirtyLeft) && std::isfinite(dirtyBottom) &&
+             std::isfinite(dirtyWidth) && std::isfinite(dirtyHeight);
+@@ -2211,6 +2243,14 @@ void FRenderer::setSolumTesseraRegional(FView const* const targetView, bool cons
+             dirtyWidth > 0.0f && dirtyHeight > 0.0f;
+     mSolumV1.regionalDirtyRect = finiteRect ? math::float4{
+             dirtyLeft, dirtyBottom, dirtyWidth, dirtyHeight } : math::float4{};
++    if (wasRegionalEnabled != mSolumV1.regionalEnabled ||
++            (mSolumV1.regionalEnabled && previousStateKey != stateKey)) {
++        ++mSolumV1.regionalResourceGeneration;
++        mSolumV1.regionalLifecycleState = mSolumV1.regionalEnabled ?
++                "mode_transition_regional_on" : "mode_transition_regional_off";
++        mSolumV1.regionalHistoryColorId = uint32_t(-1);
++        mSolumV1.regionalCurrentColorId = uint32_t(-1);
++    }
+ }
+ 
+ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
+@@ -2227,6 +2267,10 @@ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
+         << ",\"regional_frames\":" << mSolumV1.regionalFrames
+         << ",\"regional_dirty_percent\":" << mSolumV1.regionalDirtyCoverage
+         << ",\"regional_valid_percent\":" << mSolumV1.regionalValidCoverage
++        << ",\"regional_resource_generation\":" << mSolumV1.regionalResourceGeneration
++        << ",\"regional_history_color_id\":" << mSolumV1.regionalHistoryColorId
++        << ",\"regional_current_color_id\":" << mSolumV1.regionalCurrentColorId
++        << ",\"regional_lifecycle_state\":\"" << mSolumV1.regionalLifecycleState << "\""
+         << ",\"reuse_ratio\":" << ratio
+         << ",\"last_decision\":\"" << mSolumV1.lastDecision << "\"}";
+     return utils::CString(out.str().c_str());
+diff --git a/filament/src/details/Renderer.h b/filament/src/details/Renderer.h
+index 86d8c22..192799d 100644
+--- a/filament/src/details/Renderer.h
++++ b/filament/src/details/Renderer.h
+@@ -229,12 +229,16 @@ private:
+         uint64_t currentFrames = 0;
+         uint64_t reusedFrames = 0;
+         uint64_t regionalFrames = 0;
++        uint64_t regionalResourceGeneration = 0;
++        uint32_t regionalHistoryColorId = uint32_t(-1);
++        uint32_t regionalCurrentColorId = uint32_t(-1);
+         bool enabled = false;
+         bool safeToReuse = false;
+         bool regionalEnabled = false;
+         math::float4 regionalDirtyRect{};
+         double regionalDirtyCoverage = 100.0;
+         double regionalValidCoverage = 0.0;
++        char const* regionalLifecycleState = "disabled";
+         char const* lastDecision = "disabled";
+     } mSolumV1;
+     backend::TextureFormat mHdrTranslucent;

@@ -1,0 +1,181 @@
+diff --git a/filament/src/RenderPass.cpp b/filament/src/RenderPass.cpp
+index a5974777..8791c0d1 100644
+--- a/filament/src/RenderPass.cpp
++++ b/filament/src/RenderPass.cpp
+@@ -1139,10 +1138,0 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
+-                    // Regional already rendered authoritative current depth with the exact
+-                    // depth variant.  Keeping depth writes enabled here makes masked materials
+-                    // defer depth/stencil until after their expensive fragment work.  Convert
+-                    // only originally depth-writing (opaque / masked) draws to an equal,
+-                    // read-only depth test so Vulkan can reject REUSE pixels before PBR.  The
+-                    // original depth state is preserved for transparent draws.
+-                    if (pipeline.rasterState.depthWrite) {
+-                        pipeline.rasterState.depthWrite = false;
+-                        pipeline.rasterState.depthFunc = SamplerCompareFunc::E;
+-                    }
+diff --git a/filament/src/RendererUtils.cpp b/filament/src/RendererUtils.cpp
+index c3f37023..6783fba8 100644
+--- a/filament/src/RendererUtils.cpp
++++ b/filament/src/RendererUtils.cpp
+@@ -233,3 +233 @@ RendererUtils::ColorPassOutput RendererUtils::colorPass(
+-                if (!config.readOnlyDepthStencil) {
+-                    data.depth = builder.write(data.depth, depthStencilUsage);
+-                }
++                data.depth = builder.write(data.depth, depthStencilUsage);
+diff --git a/filament/src/RendererUtils.h b/filament/src/RendererUtils.h
+index 8f27bcbf..672a5df1 100644
+--- a/filament/src/RendererUtils.h
++++ b/filament/src/RendererUtils.h
+@@ -74,2 +73,0 @@ public:
+-        // Attach existing depth/stencil read-only; the executor must not issue depth writes.
+-        bool readOnlyDepthStencil = false;
+diff --git a/filament/src/details/Renderer.cpp b/filament/src/details/Renderer.cpp
+index 92955eaf..7043d74a 100644
+--- a/filament/src/details/Renderer.cpp
++++ b/filament/src/details/Renderer.cpp
+@@ -1686 +1685,0 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-    bool solumV1RegionalCameraStatic = false;
+@@ -1688,3 +1687,10 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-    mSolumV1.regionalCameraStatic = false;
+-    mSolumV1.regionalCurrentCoverageUpperBound = 100.0;
+-    mSolumV1.regionalReuseCoverageLowerBound = 0.0;
++    mSolumV1.regionalFrameReadColorId = uint32_t(-1);
++    mSolumV1.regionalFrameReadDepthId = uint32_t(-1);
++    mSolumV1.regionalFrameWriteColorId = uint32_t(-1);
++    mSolumV1.regionalFrameWriteDepthId = uint32_t(-1);
++    mSolumV1.regionalPostSwapReadColorId = uint32_t(-1);
++    mSolumV1.regionalPostSwapReadDepthId = uint32_t(-1);
++    mSolumV1.regionalFrameReadSlot = -1;
++    mSolumV1.regionalFrameWriteSlot = -1;
++    mSolumV1.regionalPostSwapReadSlot = -1;
++    mSolumV1.regionalPostSwapWriteSlot = -1;
+@@ -1823,0 +1830,3 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                        mSolumV1.regionalFrameReadColorId = previousColor->handle.getId();
++                        mSolumV1.regionalFrameReadDepthId = previousDepth->handle.getId();
++                        mSolumV1.regionalFrameReadSlot = mSolumV1.regionalReadSlot;
+@@ -1838,12 +1846,0 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-                        double maximumProjectionDelta = 0.0;
+-                        for (size_t column = 0; column < 4; ++column) {
+-                            for (size_t row = 0; row < 4; ++row) {
+-                                maximumProjectionDelta = std::max(maximumProjectionDelta,
+-                                        std::abs(solumV1PreviousProjection[column][row] -
+-                                                solumV1CurrentProjection[column][row]));
+-                            }
+-                        }
+-                        // An exact static-camera path has no disocclusion outside the conservative
+-                        // moving-object envelope.  A tiny epsilon tolerates harmless double
+-                        // roundoff while any real camera motion keeps the full stencil path.
+-                        solumV1RegionalCameraStatic = maximumProjectionDelta <= 1.0e-12;
+@@ -1932,0 +1930,3 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                mSolumV1.regionalFrameWriteColorId = current.color.handle.getId();
++                mSolumV1.regionalFrameWriteDepthId = current.depth.handle.getId();
++                mSolumV1.regionalFrameWriteSlot = mSolumV1.regionalWriteSlot;
+@@ -2057 +2056,0 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-        regionalColorConfig.readOnlyDepthStencil = true;
+@@ -2067,17 +2066,5 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-        // With a static camera, all changes are already covered by the conservative current +
+-        // previous mover/shadow envelope.  Scissoring the current color executor is therefore a
+-        // safe upper bound on submitted fragment coverage.  Camera motion keeps the full viewport
+-        // and relies on current-depth reprojection + stencil for disocclusion correctness.
+-        if (solumV1RegionalHasDirtyScissor && solumV1RegionalCameraStatic) {
+-            regionalColorExecutor.overrideSolumDrawScissor(solumV1RegionalScissor);
+-            ++mSolumV1.regionalCurrentScissorFrames;
+-            mSolumV1.regionalCurrentCoverageUpperBound =
+-                    mSolumV1.regionalDirtyCoverage;
+-            mSolumV1.regionalReuseCoverageLowerBound =
+-                    100.0 - mSolumV1.regionalDirtyCoverage;
+-        } else {
+-            mSolumV1.regionalCurrentCoverageUpperBound = 100.0;
+-            mSolumV1.regionalReuseCoverageLowerBound = 0.0;
+-        }
+-        mSolumV1.regionalCameraStatic = solumV1RegionalCameraStatic;
+-        ++mSolumV1.regionalEarlyDepthStencilFrames;
++        // R17 deliberately restores the R15 correctness path. The stencil still identifies
++        // candidate REUSE pixels, but current opaque color/depth is not clipped or converted to
++        // an EQUAL/read-only shortcut until exact GPU coverage and visual equivalence exist.
++        ++mSolumV1.regionalCorrectnessFallbackFrames;
++        ++mSolumV1.regionalStencilCurrentColorFrames;
+@@ -2174,0 +2162,5 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
++                            mSolumV1.regionalPostSwapReadColorId = current.color.handle.getId();
++                            mSolumV1.regionalPostSwapReadDepthId = current.depth.handle.getId();
++                            mSolumV1.regionalPostSwapReadSlot = regionalWriteSlot;
++                            mSolumV1.regionalPostSwapWriteSlot =
++                                    int32_t(regionalWriteSlot ^ 1u);
+@@ -2657,6 +2648,0 @@ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
+-        << ",\"regional_camera_static\":"
+-        << (mSolumV1.regionalCameraStatic ? "true" : "false")
+-        << ",\"regional_current_coverage_upper_bound_percent\":"
+-        << mSolumV1.regionalCurrentCoverageUpperBound
+-        << ",\"regional_reuse_coverage_lower_bound_percent\":"
+-        << mSolumV1.regionalReuseCoverageLowerBound
+@@ -2675,4 +2661,41 @@ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
+-        << ",\"regional_early_depth_stencil_frames\":"
+-        << mSolumV1.regionalEarlyDepthStencilFrames
+-        << ",\"regional_current_scissor_frames\":"
+-        << mSolumV1.regionalCurrentScissorFrames
++        << ",\"regional_actual_coverage_available\":false"
++        << ",\"regional_optimization_status\":\""
++        << (mSolumV1.regionalEnabled ?
++                "CORRECTNESS_FALLBACK_GPU_COVERAGE_UNAVAILABLE" : "DISABLED") << "\""
++        << ",\"regional_correctness_fallback_frames\":"
++        << mSolumV1.regionalCorrectnessFallbackFrames
++        << ",\"regional_stencil_current_color_frames\":"
++        << mSolumV1.regionalStencilCurrentColorFrames
++        << ",\"regional_frame_read_slot\":" << mSolumV1.regionalFrameReadSlot
++        << ",\"regional_frame_write_slot\":" << mSolumV1.regionalFrameWriteSlot
++        << ",\"regional_frame_read_color_id\":" << mSolumV1.regionalFrameReadColorId
++        << ",\"regional_frame_read_depth_id\":" << mSolumV1.regionalFrameReadDepthId
++        << ",\"regional_frame_write_color_id\":" << mSolumV1.regionalFrameWriteColorId
++        << ",\"regional_frame_write_depth_id\":" << mSolumV1.regionalFrameWriteDepthId
++        << ",\"regional_post_swap_read_slot\":"
++        << mSolumV1.regionalPostSwapReadSlot
++        << ",\"regional_post_swap_write_slot\":"
++        << mSolumV1.regionalPostSwapWriteSlot
++        << ",\"regional_post_swap_read_color_id\":"
++        << mSolumV1.regionalPostSwapReadColorId
++        << ",\"regional_post_swap_read_depth_id\":"
++        << mSolumV1.regionalPostSwapReadDepthId
++        << ",\"regional_read_slot_generation\":"
++        << mSolumV1.regionalHistory[mSolumV1.regionalReadSlot].generation
++        << ",\"regional_write_slot_generation\":"
++        << mSolumV1.regionalHistory[mSolumV1.regionalWriteSlot].generation
++        << ",\"regional_read_slot_handle_valid\":"
++        << (mSolumV1.regionalHistory[mSolumV1.regionalReadSlot].color.handle &&
++                mSolumV1.regionalHistory[mSolumV1.regionalReadSlot].depth.handle ?
++                "true" : "false")
++        << ",\"regional_write_slot_handle_valid\":"
++        << (mSolumV1.regionalHistory[mSolumV1.regionalWriteSlot].color.handle &&
++                mSolumV1.regionalHistory[mSolumV1.regionalWriteSlot].depth.handle ?
++                "true" : "false")
++        << ",\"regional_read_slot_content_valid\":"
++        << (mSolumV1.regionalHistoryValid &&
++                mSolumV1.regionalHistory[mSolumV1.regionalReadSlot].valid ?
++                "true" : "false")
++        << ",\"regional_write_slot_content_valid\":"
++        << (mSolumV1.regionalHistory[mSolumV1.regionalWriteSlot].valid ?
++                "true" : "false")
+diff --git a/filament/src/details/Renderer.h b/filament/src/details/Renderer.h
+index 28598a11..3012ec5b 100644
+--- a/filament/src/details/Renderer.h
++++ b/filament/src/details/Renderer.h
+@@ -263,2 +263,2 @@ private:
+-        uint64_t regionalEarlyDepthStencilFrames = 0;
+-        uint64_t regionalCurrentScissorFrames = 0;
++        uint64_t regionalCorrectnessFallbackFrames = 0;
++        uint64_t regionalStencilCurrentColorFrames = 0;
+@@ -268,0 +269,10 @@ private:
++        uint32_t regionalFrameReadColorId = uint32_t(-1);
++        uint32_t regionalFrameReadDepthId = uint32_t(-1);
++        uint32_t regionalFrameWriteColorId = uint32_t(-1);
++        uint32_t regionalFrameWriteDepthId = uint32_t(-1);
++        uint32_t regionalPostSwapReadColorId = uint32_t(-1);
++        uint32_t regionalPostSwapReadDepthId = uint32_t(-1);
++        int32_t regionalFrameReadSlot = -1;
++        int32_t regionalFrameWriteSlot = -1;
++        int32_t regionalPostSwapReadSlot = -1;
++        int32_t regionalPostSwapWriteSlot = -1;
+@@ -277 +286,0 @@ private:
+-        bool regionalCameraStatic = false;
+@@ -281,2 +289,0 @@ private:
+-        double regionalCurrentCoverageUpperBound = 100.0;
+-        double regionalReuseCoverageLowerBound = 0.0;

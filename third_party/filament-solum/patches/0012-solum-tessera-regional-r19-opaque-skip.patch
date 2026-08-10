@@ -1,0 +1,574 @@
+--- a/android/filament-android/src/main/cpp/Renderer.cpp
++++ b/android/filament-android/src/main/cpp/Renderer.cpp
+@@ -297,6 +297,20 @@
+     });
+ }
+ 
++extern "C" JNIEXPORT void JNICALL
++Java_com_google_android_filament_Renderer_nSetSolumTesseraRegionalR19(JNIEnv *env, jclass,
++        jlong nativeRenderer, jlong nativeView, jboolean enabled, jboolean safeToReuse,
++        jlong stateKey, jfloat dirtyLeft, jfloat dirtyBottom, jfloat dirtyWidth,
++        jfloat dirtyHeight, jboolean opaqueEarlySkip, jboolean requestExactCoverage) {
++    Renderer* renderer = (Renderer*) nativeRenderer;
++    View* view = (View*) nativeView;
++    wrapJniBackend(env, [=]() {
++        renderer->setSolumTesseraRegionalR19(view, enabled, safeToReuse,
++                uint64_t(stateKey), dirtyLeft, dirtyBottom, dirtyWidth, dirtyHeight,
++                opaqueEarlySkip, requestExactCoverage);
++    });
++}
++
+ extern "C" JNIEXPORT jstring JNICALL
+ Java_com_google_android_filament_Renderer_nGetSolumV1ShadingReuseStats(JNIEnv *env, jclass,
+         jlong nativeRenderer) {
+--- a/android/filament-android/src/main/java/com/google/android/filament/Renderer.java
++++ b/android/filament-android/src/main/java/com/google/android/filament/Renderer.java
+@@ -783,6 +783,17 @@
+                 safeToReuse, stateKey, dirtyLeft, dirtyBottom, dirtyWidth, dirtyHeight);
+     }
+ 
++    /** R19 opaque-only early skip with optional sparse exact GPU-mask readback. */
++    public void setSolumTesseraRegionalR19(@Nullable View targetView, boolean enabled,
++            boolean safeToReuse, long stateKey, float dirtyLeft, float dirtyBottom,
++            float dirtyWidth, float dirtyHeight, boolean opaqueEarlySkip,
++            boolean requestExactCoverage) {
++        nSetSolumTesseraRegionalR19(getNativeObject(),
++                targetView == null ? 0 : targetView.getNativeObject(), enabled,
++                safeToReuse, stateKey, dirtyLeft, dirtyBottom, dirtyWidth, dirtyHeight,
++                opaqueEarlySkip, requestExactCoverage);
++    }
++
+     /** Returns V1 decision counters and last fail-closed reason as JSON. */
+     @NonNull
+     public String getSolumV1ShadingReuseStats() {
+@@ -841,5 +852,9 @@
+     private static native void nSetSolumTesseraRegional(long nativeObject, long nativeView,
+             boolean enabled, boolean safeToReuse, long stateKey, float dirtyLeft,
+             float dirtyBottom, float dirtyWidth, float dirtyHeight);
++    private static native void nSetSolumTesseraRegionalR19(long nativeObject, long nativeView,
++            boolean enabled, boolean safeToReuse, long stateKey, float dirtyLeft,
++            float dirtyBottom, float dirtyWidth, float dirtyHeight,
++            boolean opaqueEarlySkip, boolean requestExactCoverage);
+     private static native String nGetSolumV1ShadingReuseStats(long nativeObject);
+ }
+--- a/filament/include/filament/Renderer.h
++++ b/filament/include/filament/Renderer.h
+@@ -147,6 +147,15 @@
+             bool safeToReuse, uint64_t stateKey, float dirtyLeft, float dirtyBottom,
+             float dirtyWidth, float dirtyHeight);
+ 
++    /**
++     * SOLUM Tessera Regional R19. Early rejection is restricted to opaque materials and exact
++     * coverage is sampled asynchronously only when explicitly requested.
++     */
++    void setSolumTesseraRegionalR19(View const* UTILS_NULLABLE targetView, bool enabled,
++            bool safeToReuse, uint64_t stateKey, float dirtyLeft, float dirtyBottom,
++            float dirtyWidth, float dirtyHeight, bool opaqueEarlySkip,
++            bool requestExactCoverage);
++
+     /** Returns bounded V1 decision counters and the last fail-closed reason as JSON. */
+     utils::CString getSolumV1ShadingReuseStats() const;
+ 
+--- a/filament/src/PostProcessManager.cpp
++++ b/filament/src/PostProcessManager.cpp
+@@ -98,9 +98,11 @@
+ #include <cmath>
+ #include <functional>
+ #include <limits>
++#include <memory>
+ #include <string_view>
+ #include <type_traits>
+ #include <variant>
++#include <vector>
+ #include <utility>
+ 
+ #include <stddef.h>
+@@ -3752,7 +3754,9 @@
+         FrameGraphId<FrameGraphTexture> const previousDepth,
+         FrameGraphId<FrameGraphTexture> const currentDepth,
+         FrameGraphId<FrameGraphTexture> const currentColor,
+-        mat4f const& reprojection) noexcept {
++        mat4f const& reprojection,
++        bool const hasForceCurrentRect,
++        float4 const& forceCurrentRect) noexcept {
+     struct ReprojectData {
+         FrameGraphId<FrameGraphTexture> previousColor;
+         FrameGraphId<FrameGraphTexture> previousDepth;
+@@ -3804,6 +3808,9 @@
+                     mi->setParameter("previousDepth", resources.getTexture(data.previousDepth),
+                             SamplerParams{});
+                     mi->setParameter("reprojection", reprojection);
++                    mi->setParameter("forceCurrentRect", forceCurrentRect);
++                    mi->setParameter("hasForceCurrentRect",
++                            hasForceCurrentRect ? 1.0f : 0.0f);
+                     mi->commit(driver, getUboManager());
+                     mi->use(driver);
+                     auto const out = resources.getRenderPassInfo();
+@@ -3820,6 +3827,73 @@
+     return { color, validity };
+ }
+ 
++void PostProcessManager::tesseraRegionalCoverageReadback(FrameGraph& fg,
++        FrameGraphId<FrameGraphTexture> const validity,
++        TesseraRegionalCoverageCallback callback) noexcept {
++    struct ReadbackData {
++        FrameGraphId<FrameGraphTexture> validity;
++    };
++    fg.addPass<ReadbackData>("Tessera Regional exact coverage readback",
++            [&](FrameGraph::Builder& builder, ReadbackData& data) {
++                data.validity = builder.read(validity,
++                        FrameGraphTexture::Usage::SAMPLEABLE);
++                builder.sideEffect();
++            },
++            [callback = std::move(callback)](FrameGraphResources const& resources,
++                    ReadbackData const& data, DriverApi& driver) mutable {
++                auto const& desc = resources.getDescriptor(data.validity);
++                auto const texture = resources.getTexture(data.validity);
++                if (!texture || desc.width == 0u || desc.height == 0u) {
++                    if (callback) callback(false, 0u, 0u, desc.width, desc.height);
++                    return;
++                }
++                struct UserData {
++                    uint32_t width;
++                    uint32_t height;
++                    std::vector<uint8_t> pixels;
++                    TesseraRegionalCoverageCallback callback;
++                };
++                size_t const pixelCount = size_t(desc.width) * desc.height;
++                auto user = std::make_unique<UserData>(UserData{
++                        desc.width, desc.height,
++                        std::vector<uint8_t>(pixelCount * 4u),
++                        std::move(callback) });
++                void* const pixels = user->pixels.data();
++                size_t const bytes = user->pixels.size();
++                UserData* const rawUser = user.release();
++                PixelBufferDescriptor buffer(pixels, bytes,
++                        PixelDataFormat::RGBA, PixelDataType::UBYTE,
++                        1, 0, 0, 0, 0,
++                        [](void*, size_t size, void* opaque) {
++                            std::unique_ptr<UserData> completed{
++                                    static_cast<UserData*>(opaque) };
++                            size_t const expected = size_t(completed->width) *
++                                    completed->height * 4u;
++                            if (size < expected) {
++                                if (completed->callback) {
++                                    completed->callback(false, 0u, 0u,
++                                            completed->width, completed->height);
++                                }
++                                return;
++                            }
++                            uint64_t reusePixels = 0u;
++                            size_t const count = size_t(completed->width) *
++                                    completed->height;
++                            for (size_t index = 0; index < count; ++index) {
++                                reusePixels += completed->pixels[index * 4u] >= 128u;
++                            }
++                            if (completed->callback) {
++                                completed->callback(true, reusePixels,
++                                        uint64_t(count) - reusePixels,
++                                        completed->width, completed->height);
++                            }
++                        }, rawUser);
++                auto const subresource = resources.getSubResourceDescriptor(data.validity);
++                driver.readTexture(texture, subresource.level, subresource.layer,
++                        0, 0, desc.width, desc.height, std::move(buffer));
++            });
++}
++
+ FrameGraphId<FrameGraphTexture> PostProcessManager::tesseraRegionalStencil(
+         FrameGraph& fg, FrameGraphId<FrameGraphTexture> const validity,
+         FrameGraphId<FrameGraphTexture> const currentDepth,
+--- a/filament/src/PostProcessManager.h
++++ b/filament/src/PostProcessManager.h
+@@ -52,6 +52,7 @@
+ #include <tsl/robin_map.h>
+ 
+ #include <array>
++#include <functional>
+ #include <random>
+ #include <string_view>
+ #include <optional>
+@@ -315,7 +316,18 @@
+             FrameGraphId<FrameGraphTexture> previousDepth,
+             FrameGraphId<FrameGraphTexture> currentDepth,
+             FrameGraphId<FrameGraphTexture> currentColor,
+-            math::mat4f const& reprojection) noexcept;
++            math::mat4f const& reprojection,
++            bool hasForceCurrentRect,
++            math::float4 const& forceCurrentRect) noexcept;
++
++    using TesseraRegionalCoverageCallback =
++            std::function<void(bool, uint64_t, uint64_t, uint32_t, uint32_t)>;
++
++    // Sparse, asynchronous diagnostic readback of the exact R8 GPU validity mask. This pass is
++    // requested outside measured performance windows and never blocks or waits for the GPU.
++    void tesseraRegionalCoverageReadback(FrameGraph& fg,
++            FrameGraphId<FrameGraphTexture> validity,
++            TesseraRegionalCoverageCallback callback) noexcept;
+ 
+     FrameGraphId<FrameGraphTexture> tesseraRegionalStencil(FrameGraph& fg,
+             FrameGraphId<FrameGraphTexture> validity,
+--- a/filament/src/RenderPass.cpp
++++ b/filament/src/RenderPass.cpp
+@@ -852,6 +852,14 @@
+ void RenderPass::Executor::overrideSolumStencil(
+         backend::StencilState const& stencilState) noexcept {
+     mHasSolumStencilOverride = true;
++    mSolumStencilOpaqueOnly = false;
++    mSolumStencilState = stencilState;
++}
++
++void RenderPass::Executor::overrideSolumOpaqueStencil(
++        backend::StencilState const& stencilState) noexcept {
++    mHasSolumStencilOverride = true;
++    mSolumStencilOpaqueOnly = true;
+     mSolumStencilState = stencilState;
+ }
+ 
+@@ -942,6 +950,7 @@
+         bool const hasScissorViewport = mHasScissorViewport;
+         bool const hasSolumDrawScissor = mHasSolumDrawScissor;
+         bool const hasSolumStencilOverride = mHasSolumStencilOverride;
++        bool const solumStencilOpaqueOnly = mSolumStencilOpaqueOnly;
+         backend::Viewport const fullPassScissor = hasScissorViewport ? mScissor :
+                 backend::Viewport{ 0, 0, INT32_MAX, INT32_MAX };
+         if (UTILS_UNLIKELY(hasScissorViewport || hasScissorOverride)) {
+@@ -1135,7 +1144,14 @@
+                     mi->use(driver, info.materialVariant);
+                 }
+ 
+-                if (UTILS_UNLIKELY(hasSolumStencilOverride)) {
++                bool const solumEligibleOpaque =
++                        ma->getBlendingMode() == BlendingMode::OPAQUE &&
++                        ma->getMaterialDomain() == MaterialDomain::SURFACE &&
++                        ma->getRefractionMode() == RefractionMode::NONE &&
++                        ma->getShading() == Shading::LIT &&
++                        !ma->isDoubleSided();
++                if (UTILS_UNLIKELY(hasSolumStencilOverride &&
++                        (!solumStencilOpaqueOnly || solumEligibleOpaque))) {
+                     pipeline.stencilState = mSolumStencilState;
+                 }
+ 
+@@ -1191,7 +1207,8 @@
+           mPolygonOffsetOverride(false),
+           mScissorOverride(false),
+           mHasSolumDrawScissor(false),
+-          mHasSolumStencilOverride(false) {
++          mHasSolumStencilOverride(false),
++          mSolumStencilOpaqueOnly(false) {
+     mHasScissorViewport = mScissor != backend::Viewport{ 0, 0, INT32_MAX, INT32_MAX };
+     assert_invariant(b >= pass.begin());
+     assert_invariant(e <= pass.end());
+@@ -1203,7 +1220,8 @@
+           mScissorOverride(false),
+           mHasScissorViewport(false),
+           mHasSolumDrawScissor(false),
+-          mHasSolumStencilOverride(false) {
++          mHasSolumStencilOverride(false),
++          mSolumStencilOpaqueOnly(false) {
+ }
+ 
+ RenderPass::Executor::Executor(Executor&& rhs) noexcept = default;
+--- a/filament/src/RenderPass.h
++++ b/filament/src/RenderPass.h
+@@ -376,6 +376,7 @@
+         bool mHasScissorViewport : 1;
+         bool mHasSolumDrawScissor : 1;
+         bool mHasSolumStencilOverride : 1;
++        bool mSolumStencilOpaqueOnly : 1;
+ 
+         Executor(RenderPass const& pass, Command const* b, Command const* e) noexcept;
+ 
+@@ -413,6 +414,10 @@
+         // material fragment/PBR work begins.
+         void overrideSolumStencil(backend::StencilState const& stencilState) noexcept;
+ 
++        // R19 applies the CURRENT/REUSE stencil only to single-sided, lit, non-refractive opaque
++        // surfaces. Masked, transparent, double-sided/hair, water and VFX stay current.
++        void overrideSolumOpaqueStencil(backend::StencilState const& stencilState) noexcept;
++
+         void execute(FEngine const& engine, backend::DriverApi& driver) const noexcept;
+     };
+ 
+--- a/filament/src/Renderer.cpp
++++ b/filament/src/Renderer.cpp
+@@ -150,6 +150,16 @@
+             dirtyLeft, dirtyBottom, dirtyWidth, dirtyHeight);
+ }
+ 
++void Renderer::setSolumTesseraRegionalR19(View const* targetView, bool const enabled,
++        bool const safeToReuse, uint64_t const stateKey, float const dirtyLeft,
++        float const dirtyBottom, float const dirtyWidth, float const dirtyHeight,
++        bool const opaqueEarlySkip, bool const requestExactCoverage) {
++    downcast(this)->setSolumTesseraRegionalR19(
++            targetView ? downcast(targetView) : nullptr, enabled, safeToReuse, stateKey,
++            dirtyLeft, dirtyBottom, dirtyWidth, dirtyHeight,
++            opaqueEarlySkip, requestExactCoverage);
++}
++
+ utils::CString Renderer::getSolumV1ShadingReuseStats() const {
+     return downcast(this)->getSolumV1ShadingReuseStats();
+ }
+--- a/filament/src/details/Renderer.cpp
++++ b/filament/src/details/Renderer.cpp
+@@ -1683,6 +1683,7 @@
+     uint64_t solumV1RegionalGeneration = 0;
+     backend::Viewport solumV1RegionalScissor{};
+     bool solumV1RegionalHasDirtyScissor = false;
++    float4 solumV1RegionalExpandedDirtyRect{};
+     mSolumV1.regionalCameraReprojection = false;
+     mSolumV1.regionalFrameReadColorId = uint32_t(-1);
+     mSolumV1.regionalFrameReadDepthId = uint32_t(-1);
+@@ -1900,6 +1901,12 @@
+                                 right - left, top - bottom
+                             };
+                             solumV1RegionalHasDirtyScissor = hasDirtyRect;
++                            solumV1RegionalExpandedDirtyRect = hasDirtyRect
++                                    ? float4{ float(left) / float(colorBufferDesc.width),
++                                            float(bottom) / float(colorBufferDesc.height),
++                                            float(right - left) / float(colorBufferDesc.width),
++                                            float(top - bottom) / float(colorBufferDesc.height) }
++                                    : float4{};
+                             mSolumV1.regionalDirtyCoverage = dirtyCoverage;
+                             mSolumV1.regionalValidCoverage = 100.0 - dirtyCoverage;
+                             decision = "regional_reprojected";
+@@ -2047,7 +2054,38 @@
+                 normalizedToClip;
+         auto const regional = ppm.tesseraRegionalReproject(fg,
+                 solumV1CachedColor, solumV1CachedDepth, regionalDepth,
+-                solumV1RegionalCurrentColor, regionalReprojection);
++                solumV1RegionalCurrentColor, regionalReprojection,
++                solumV1RegionalHasDirtyScissor,
++                solumV1RegionalExpandedDirtyRect);
++        if (mSolumV1.regionalCoverageReadbackRequested) {
++            auto const coverageState = mSolumV1.regionalCoverageAsync;
++            bool expectedPending = false;
++            if (coverageState && coverageState->pending.compare_exchange_strong(
++                    expectedPending, true, std::memory_order_acq_rel)) {
++                mSolumV1.regionalCoverageReadbackRequested = false;
++                ++mSolumV1.regionalCoverageReadbackRequests;
++                uint64_t const coverageGeneration = solumV1RegionalGeneration;
++                ppm.tesseraRegionalCoverageReadback(fg, regional.validity,
++                        [coverageState, coverageGeneration](bool const success,
++                                uint64_t const reusePixels, uint64_t const currentPixels,
++                                uint32_t, uint32_t) {
++                            if (success && reusePixels + currentPixels > 0u) {
++                                coverageState->reusePixels.store(
++                                        reusePixels, std::memory_order_relaxed);
++                                coverageState->currentPixels.store(
++                                        currentPixels, std::memory_order_relaxed);
++                                coverageState->completedGeneration.store(
++                                        coverageGeneration, std::memory_order_release);
++                                coverageState->completedSamples.fetch_add(
++                                        1u, std::memory_order_relaxed);
++                            } else {
++                                coverageState->failedSamples.fetch_add(
++                                        1u, std::memory_order_relaxed);
++                            }
++                            coverageState->pending.store(false, std::memory_order_release);
++                        });
++            }
++        }
+         auto const regionalStencilDepth = ppm.tesseraRegionalStencil(fg,
+                 regional.validity, regionalDepth,
+                 solumV1RegionalHasDirtyScissor, solumV1RegionalScissor);
+@@ -2062,11 +2100,13 @@
+         currentOnlyStencil.front.writeMask = 0u;
+         currentOnlyStencil.back = currentOnlyStencil.front;
+         currentOnlyStencil.stencilWrite = false;
+-        regionalColorExecutor.overrideSolumStencil(currentOnlyStencil);
+-        // R17 deliberately restores the R15 correctness path. The stencil still identifies
+-        // candidate REUSE pixels, but current opaque color/depth is not clipped or converted to
+-        // an EQUAL/read-only shortcut until exact GPU coverage and visual equivalence exist.
+-        ++mSolumV1.regionalCorrectnessFallbackFrames;
++        if (mSolumV1.regionalOpaqueEarlySkipEnabled) {
++            regionalColorExecutor.overrideSolumOpaqueStencil(currentOnlyStencil);
++            ++mSolumV1.regionalOpaqueEarlySkipFrames;
++        } else {
++            // Coverage-probe fallback: preserve the exact R17 full-current color path.
++            ++mSolumV1.regionalCorrectnessFallbackFrames;
++        }
+         ++mSolumV1.regionalStencilCurrentColorFrames;
+         ++mSolumV1.regionalReprojectionFrames;
+         mSolumV1.regionalCameraReprojection = true;
+@@ -2593,6 +2633,8 @@
+     mSolumV1.safeToReuse = enabled && safeToReuse;
+     mSolumV1.stateKey = stateKey;
+     mSolumV1.regionalEnabled = false;
++    mSolumV1.regionalOpaqueEarlySkipEnabled = false;
++    mSolumV1.regionalCoverageReadbackRequested = false;
+     if (!enabled) {
+         mSolumV1.regionalDirtyCoverage = 100.0;
+         mSolumV1.regionalValidCoverage = 0.0;
+@@ -2612,6 +2654,8 @@
+             std::isfinite(dirtyWidth) && std::isfinite(dirtyHeight);
+     mSolumV1.regionalEnabled = enabled && safeToReuse && finiteRect &&
+             dirtyWidth >= 0.0f && dirtyHeight >= 0.0f;
++    mSolumV1.regionalOpaqueEarlySkipEnabled = false;
++    mSolumV1.regionalCoverageReadbackRequested = false;
+     mSolumV1.regionalDirtyRect = finiteRect ? math::float4{
+             dirtyLeft, dirtyBottom, dirtyWidth, dirtyHeight } : math::float4{};
+     if (!enabled || previousTargetView != targetView ||
+@@ -2621,10 +2665,38 @@
+     }
+ }
+ 
++void FRenderer::setSolumTesseraRegionalR19(FView const* const targetView,
++        bool const enabled, bool const safeToReuse, uint64_t const stateKey,
++        float const dirtyLeft, float const dirtyBottom, float const dirtyWidth,
++        float const dirtyHeight, bool const opaqueEarlySkip,
++        bool const requestExactCoverage) noexcept {
++    setSolumTesseraRegional(targetView, enabled, safeToReuse, stateKey,
++            dirtyLeft, dirtyBottom, dirtyWidth, dirtyHeight);
++    mSolumV1.regionalOpaqueEarlySkipEnabled =
++            mSolumV1.regionalEnabled && opaqueEarlySkip;
++    mSolumV1.regionalCoverageReadbackRequested =
++            mSolumV1.regionalEnabled && requestExactCoverage;
++}
++
+ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
+     uint64_t const decided = mSolumV1.currentFrames + mSolumV1.reusedFrames;
+     double const ratio = decided ?
+             double(mSolumV1.reusedFrames) / double(decided) : 0.0;
++    auto const coverage = mSolumV1.regionalCoverageAsync;
++    uint64_t const coverageGeneration = coverage
++            ? coverage->completedGeneration.load(std::memory_order_acquire) : 0u;
++    uint64_t const coverageReusePixels = coverage
++            ? coverage->reusePixels.load(std::memory_order_relaxed) : 0u;
++    uint64_t const coverageCurrentPixels = coverage
++            ? coverage->currentPixels.load(std::memory_order_relaxed) : 0u;
++    uint64_t const coverageTotalPixels =
++            coverageReusePixels + coverageCurrentPixels;
++    bool const exactCoverageAvailable = coverageTotalPixels > 0u &&
++            coverageGeneration == mSolumV1.regionalResourceGeneration;
++    double const exactReusePercent = exactCoverageAvailable
++            ? 100.0 * double(coverageReusePixels) / double(coverageTotalPixels) : -1.0;
++    double const exactCurrentPercent = exactCoverageAvailable
++            ? 100.0 * double(coverageCurrentPixels) / double(coverageTotalPixels) : -1.0;
+     std::ostringstream out;
+     out << "{\"enabled\":" << (mSolumV1.enabled ? "true" : "false")
+         << ",\"safe\":" << (mSolumV1.safeToReuse ? "true" : "false")
+@@ -2650,22 +2722,40 @@
+         << mSolumV1.regionalValidCoverage
+         << ",\"regional_candidate_current_percent\":"
+         << mSolumV1.regionalDirtyCoverage
+-        // Exact GPU depth-reprojection coverage needs a later asynchronous reduction/readback.
+-        // Keep it explicitly unavailable rather than reporting the CPU dirty envelope as truth.
+-        << ",\"regional_reprojection_valid_percent\":-1"
+-        << ",\"regional_reprojection_rejected_percent\":-1"
++        << ",\"regional_reprojection_valid_percent\":" << exactReusePercent
++        << ",\"regional_reprojection_rejected_percent\":" << exactCurrentPercent
+         << ",\"regional_reprojection_frames\":"
+         << mSolumV1.regionalReprojectionFrames
+         << ",\"regional_camera_cut_frames\":"
+         << mSolumV1.regionalCameraCutFrames
+-        << ",\"regional_actual_coverage_available\":false"
++        << ",\"regional_actual_coverage_available\":"
++        << (exactCoverageAvailable ? "true" : "false")
+         << ",\"regional_optimization_status\":\""
+-        << (mSolumV1.regionalEnabled ?
+-                "CORRECTNESS_FALLBACK_GPU_COVERAGE_UNAVAILABLE" : "DISABLED") << "\""
++        << (!mSolumV1.regionalEnabled ? "DISABLED" :
++                mSolumV1.regionalOpaqueEarlySkipEnabled ?
++                        (exactCoverageAvailable ?
++                                "OPAQUE_EARLY_SKIP_ACTIVE_EXACT_COVERAGE" :
++                                "OPAQUE_EARLY_SKIP_ACTIVE_COVERAGE_PENDING") :
++                        "CORRECTNESS_FALLBACK_COVERAGE_PROBE") << "\""
+         << ",\"regional_correctness_fallback_frames\":"
+         << mSolumV1.regionalCorrectnessFallbackFrames
+         << ",\"regional_stencil_current_color_frames\":"
+         << mSolumV1.regionalStencilCurrentColorFrames
++        << ",\"regional_opaque_early_skip_frames\":"
++        << mSolumV1.regionalOpaqueEarlySkipFrames
++        << ",\"regional_coverage_generation\":" << coverageGeneration
++        << ",\"regional_coverage_reuse_pixels\":" << coverageReusePixels
++        << ",\"regional_coverage_current_pixels\":" << coverageCurrentPixels
++        << ",\"regional_coverage_total_pixels\":" << coverageTotalPixels
++        << ",\"regional_coverage_readback_requests\":"
++        << mSolumV1.regionalCoverageReadbackRequests
++        << ",\"regional_coverage_completed_samples\":"
++        << (coverage ? coverage->completedSamples.load(std::memory_order_relaxed) : 0u)
++        << ",\"regional_coverage_failed_samples\":"
++        << (coverage ? coverage->failedSamples.load(std::memory_order_relaxed) : 0u)
++        << ",\"regional_coverage_readback_pending\":"
++        << (coverage && coverage->pending.load(std::memory_order_acquire) ?
++                "true" : "false")
+         << ",\"regional_frame_read_slot\":" << mSolumV1.regionalFrameReadSlot
+         << ",\"regional_frame_write_slot\":" << mSolumV1.regionalFrameWriteSlot
+         << ",\"regional_frame_read_color_id\":" << mSolumV1.regionalFrameReadColorId
+--- a/filament/src/details/Renderer.h
++++ b/filament/src/details/Renderer.h
+@@ -49,6 +49,7 @@
+ 
+ #include <algorithm>
+ #include <array>
++#include <atomic>
+ #include <chrono>
+ #include <functional>
+ #include <memory>
+@@ -178,6 +179,10 @@
+     void setSolumTesseraRegional(FView const* targetView, bool enabled,
+             bool safeToReuse, uint64_t stateKey, float dirtyLeft, float dirtyBottom,
+             float dirtyWidth, float dirtyHeight) noexcept;
++    void setSolumTesseraRegionalR19(FView const* targetView, bool enabled,
++            bool safeToReuse, uint64_t stateKey, float dirtyLeft, float dirtyBottom,
++            float dirtyWidth, float dirtyHeight, bool opaqueEarlySkip,
++            bool requestExactCoverage) noexcept;
+     utils::CString getSolumV1ShadingReuseStats() const;
+ 
+ private:
+@@ -262,6 +267,18 @@
+         uint64_t regionalCameraCutFrames = 0;
+         uint64_t regionalCorrectnessFallbackFrames = 0;
+         uint64_t regionalStencilCurrentColorFrames = 0;
++        uint64_t regionalOpaqueEarlySkipFrames = 0;
++        uint64_t regionalCoverageReadbackRequests = 0;
++        struct RegionalCoverageAsyncState {
++            std::atomic<uint64_t> completedGeneration{0};
++            std::atomic<uint64_t> reusePixels{0};
++            std::atomic<uint64_t> currentPixels{0};
++            std::atomic<uint64_t> completedSamples{0};
++            std::atomic<uint64_t> failedSamples{0};
++            std::atomic<bool> pending{false};
++        };
++        std::shared_ptr<RegionalCoverageAsyncState> regionalCoverageAsync =
++                std::make_shared<RegionalCoverageAsyncState>();
+         uint32_t regionalHistoryColorId = uint32_t(-1);
+         uint32_t regionalCurrentColorId = uint32_t(-1);
+         uint32_t regionalHistoryDepthId = uint32_t(-1);
+@@ -284,6 +301,8 @@
+         bool safeToReuse = false;
+         bool regionalEnabled = false;
+         bool regionalCameraReprojection = false;
++        bool regionalOpaqueEarlySkipEnabled = false;
++        bool regionalCoverageReadbackRequested = false;
+         math::float4 regionalDirtyRect{};
+         double regionalDirtyCoverage = 100.0;
+         double regionalValidCoverage = 0.0;
+--- a/filament/src/materials/tesseraRegionalReproject.mat
++++ b/filament/src/materials/tesseraRegionalReproject.mat
+@@ -4,7 +4,9 @@
+         { type : sampler2d, name : history },
+         { type : sampler2d, name : currentDepth, precision : high, filterable : false },
+         { type : sampler2d, name : previousDepth, precision : high, filterable : false },
+-        { type : mat4, name : reprojection, precision : high }
++        { type : mat4, name : reprojection, precision : high },
++        { type : float4, name : forceCurrentRect, precision : high },
++        { type : float, name : hasForceCurrentRect, precision : low }
+     ],
+     constants : [
+         { type : bool, name : validityOnly, default : false }
+@@ -44,6 +46,13 @@
+                 2.0 / 16777216.0);
+         bool valid = inBounds &&
+                 abs(previousDepth - expectedPreviousDepth) <= 2.0 * tolerance;
++        highp vec2 screenUv = uvToRenderTargetUV(variable_vertex.xy);
++        highp vec2 forceMin = materialParams.forceCurrentRect.xy;
++        highp vec2 forceMax = forceMin + materialParams.forceCurrentRect.zw;
++        bool forceCurrent = materialParams.hasForceCurrentRect > 0.5 &&
++                all(greaterThanEqual(screenUv, forceMin)) &&
++                all(lessThan(screenUv, forceMax));
++        valid = valid && !forceCurrent;
+         if (materialConstants_validityOnly) {
+             postProcess.color = vec4(valid ? 1.0 : 0.0);
+         } else {

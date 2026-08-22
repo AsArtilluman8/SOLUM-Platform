@@ -1,4 +1,4 @@
-name: Filament v1.71.4 SOLUM Tessera Regional Opaque Early Skip R19
+name: Filament v1.71.4 SOLUM PERF V3 T3 Mask-aware Coverage R20
 
 on:
   workflow_dispatch:
@@ -7,11 +7,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: filament-v1714-solum-tessera-regional-r19-${{ github.ref }}
+  group: filament-v1714-solum-perf-v3-t3-r20-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-filament-android-arm64:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 150
 
@@ -251,3 +252,6 @@ jobs:
           name: filament-v1714-solum-tessera-regional-r19-arm64
           path: filament-solum-adaptive-taa-artifacts/**
           if-no-files-found: error
+
+  build-perf-v3-t3-r20:
+    uses: ./.github/workflows/compile-filament-perf-v3-t3.yml

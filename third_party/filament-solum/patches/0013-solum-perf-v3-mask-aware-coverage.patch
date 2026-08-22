@@ -1,0 +1,470 @@
+--- a/android/filament-android/src/main/cpp/Renderer.cpp
++++ b/android/filament-android/src/main/cpp/Renderer.cpp
+@@ -311,6 +311,26 @@
+     });
+ }
+ 
++extern "C" JNIEXPORT void JNICALL
++Java_com_google_android_filament_Renderer_nSetSolumMaskAwareCoverage(JNIEnv *env, jclass,
++        jlong nativeRenderer, jlong nativeView, jboolean enabled) {
++    Renderer* renderer = (Renderer*) nativeRenderer;
++    View* view = (View*) nativeView;
++    wrapJniBackend(env, [=]() {
++        renderer->setSolumMaskAwareCoverage(view, enabled);
++    });
++}
++
++extern "C" JNIEXPORT jstring JNICALL
++Java_com_google_android_filament_Renderer_nGetSolumMaskAwareCoverageStats(JNIEnv *env, jclass,
++        jlong nativeRenderer) {
++    Renderer* renderer = (Renderer*) nativeRenderer;
++    return wrapJni<jstring>(env, [=]() {
++        utils::CString snapshot = renderer->getSolumMaskAwareCoverageStats();
++        return env->NewStringUTF(snapshot.c_str());
++    });
++}
++
+ extern "C" JNIEXPORT jstring JNICALL
+ Java_com_google_android_filament_Renderer_nGetSolumV1ShadingReuseStats(JNIEnv *env, jclass,
+         jlong nativeRenderer) {
+--- a/android/filament-android/src/main/java/com/google/android/filament/Renderer.java
++++ b/android/filament-android/src/main/java/com/google/android/filament/Renderer.java
+@@ -794,6 +794,18 @@
+                 opaqueEarlySkip, requestExactCoverage);
+     }
+ 
++    /** PERF V3 T3 mask-aware coverage. Disabled by default and target-View bound. */
++    public void setSolumMaskAwareCoverage(@Nullable View targetView, boolean enabled) {
++        nSetSolumMaskAwareCoverage(getNativeObject(),
++                targetView == null ? 0 : targetView.getNativeObject(), enabled);
++    }
++
++    /** Returns requested/actual T3 state and bounded native counters as JSON. */
++    @NonNull
++    public String getSolumMaskAwareCoverageStats() {
++        return nGetSolumMaskAwareCoverageStats(getNativeObject());
++    }
++
+     /** Returns V1 decision counters and last fail-closed reason as JSON. */
+     @NonNull
+     public String getSolumV1ShadingReuseStats() {
+@@ -856,5 +868,8 @@
+             boolean enabled, boolean safeToReuse, long stateKey, float dirtyLeft,
+             float dirtyBottom, float dirtyWidth, float dirtyHeight,
+             boolean opaqueEarlySkip, boolean requestExactCoverage);
++    private static native void nSetSolumMaskAwareCoverage(long nativeObject, long nativeView,
++            boolean enabled);
++    private static native String nGetSolumMaskAwareCoverageStats(long nativeObject);
+     private static native String nGetSolumV1ShadingReuseStats(long nativeObject);
+ }
+--- a/filament/include/filament/Renderer.h
++++ b/filament/include/filament/Renderer.h
+@@ -156,6 +156,15 @@
+             float dirtyWidth, float dirtyHeight, bool opaqueEarlySkip,
+             bool requestExactCoverage);
+ 
++    /**
++     * SOLUM PERF V3 T3. Evaluates eligible masked coverage once into current full-resolution
++     * depth, then allows the same color commands to use fixed-function EQUAL/read-only depth.
++     */
++    void setSolumMaskAwareCoverage(View const* UTILS_NULLABLE targetView, bool enabled);
++
++    /** Returns requested/actual T3 state and bounded counters as JSON. */
++    utils::CString getSolumMaskAwareCoverageStats() const;
++
+     /** Returns bounded V1 decision counters and the last fail-closed reason as JSON. */
+     utils::CString getSolumV1ShadingReuseStats() const;
+ 
+--- a/filament/src/RendererUtils.cpp
++++ b/filament/src/RendererUtils.cpp
+@@ -54,6 +54,66 @@
+ using namespace backend;
+ using namespace math;
+ 
++FrameGraphId<FrameGraphTexture> RendererUtils::solumMaskAwareCoveragePass(
++        FrameGraph& fg, FEngine& engine, FView const& view,
++        FrameGraphTexture::Descriptor const& colorBufferDesc,
++        ColorPassConfig const& config,
++        RenderPass::Executor passExecutor) noexcept {
++    struct MaskAwareCoverageData {
++        FrameGraphId<FrameGraphTexture> depth;
++        FrameGraphId<FrameGraphTexture> stencil;
++    };
++    auto const& pass = fg.addPass<MaskAwareCoverageData>(
++            "SOLUM Mask-aware coverage depth",
++            [&](FrameGraph::Builder& builder, MaskAwareCoverageData& data) {
++                bool const isES2 = config.featureLevel == FeatureLevel::FEATURE_LEVEL_0;
++                TextureFormat const stencilFormat = isES2 ?
++                        TextureFormat::DEPTH24_STENCIL8 : TextureFormat::DEPTH32F_STENCIL8;
++                TextureFormat const depthOnlyFormat = isES2 ?
++                        TextureFormat::DEPTH24 : TextureFormat::DEPTH32F;
++                TextureFormat const format = config.enabledStencilBuffer ?
++                        stencilFormat : depthOnlyFormat;
++                data.depth = builder.createTexture("SOLUM Mask-aware coverage depth", {
++                        .width = colorBufferDesc.width,
++                        .height = colorBufferDesc.height,
++                        .depth = colorBufferDesc.depth,
++                        .samples = config.isAutoDepthResolveSupported ?
++                                colorBufferDesc.samples : uint8_t(config.msaa),
++                        .type = colorBufferDesc.type,
++                        .format = format,
++                });
++                FrameGraphTexture::Usage usage = FrameGraphTexture::Usage::DEPTH_ATTACHMENT;
++                if (config.enabledStencilBuffer) {
++                    usage |= FrameGraphTexture::Usage::STENCIL_ATTACHMENT;
++                }
++                data.depth = builder.write(data.depth, usage);
++                if (config.enabledStencilBuffer) {
++                    data.stencil = data.depth;
++                }
++                builder.declareRenderPass("SOLUM Mask-aware coverage target", {
++                        .attachments = { .depth = data.depth, .stencil = data.stencil },
++                        .samples = config.msaa,
++                        .layerCount = static_cast<uint8_t>(colorBufferDesc.depth),
++                        .clearFlags = TargetBufferFlags::DEPTH |
++                                (config.enabledStencilBuffer ? TargetBufferFlags::STENCIL :
++                                        TargetBufferFlags::NONE),
++                });
++            },
++            [passExecutor = std::move(passExecutor), &view, &engine](
++                    FrameGraphResources const& resources,
++                    MaskAwareCoverageData const&, DriverApi& driver) {
++                view.commitDescriptorSet(driver);
++                auto const out = resources.getRenderPassInfo();
++                driver.beginRenderPass(out.target, out.params);
++                passExecutor.execute(engine, driver);
++                driver.endRenderPass();
++                DescriptorSet::unbind(driver, DescriptorSetBindingPoints::PER_VIEW);
++                DescriptorSet::unbind(driver, DescriptorSetBindingPoints::PER_RENDERABLE);
++                DescriptorSet::unbind(driver, DescriptorSetBindingPoints::PER_MATERIAL);
++            });
++    return pass->depth;
++}
++
+ FrameGraphId<FrameGraphTexture> RendererUtils::tesseraRegionalDepthPass(
+         FrameGraph& fg, FEngine& engine, FView const& view,
+         FrameGraphId<FrameGraphTexture> const depth,
+--- a/filament/src/RendererUtils.h
++++ b/filament/src/RendererUtils.h
+@@ -108,6 +108,16 @@
+             ColorPassConfig const& config,
+             RenderPass::Executor passExecutor) noexcept;
+ 
++    /**
++     * SOLUM PERF V3 T3: renders only eligible masked depth variants into a newly allocated
++     * current full-resolution attachment consumed by the ordinary color pass.
++     */
++    static FrameGraphId<FrameGraphTexture> solumMaskAwareCoveragePass(
++            FrameGraph& fg, FEngine& engine, FView const& view,
++            FrameGraphTexture::Descriptor const& colorBufferDesc,
++            ColorPassConfig const& config,
++            RenderPass::Executor passExecutor) noexcept;
++
+     static ColorPassOutput colorPass(
+             FrameGraph& fg, const char* name, FEngine& engine, FView const& view,
+             ColorPassInput const& colorPassInput,
+--- a/filament/src/RenderPass.cpp
++++ b/filament/src/RenderPass.cpp
+@@ -537,6 +537,9 @@
+     bool const filterTranslucentObjects =
+             bool(extraFlags & CommandTypeFlags::FILTER_TRANSLUCENT_OBJECTS);
+ 
++    bool const depthOnlyAlphaMaskedObjects =
++            bool(extraFlags & CommandTypeFlags::DEPTH_ONLY_ALPHA_MASKED_OBJECTS);
++
+     bool const hasShadowing =
+             renderFlags & HAS_SHADOWING;
+ 
+@@ -791,6 +794,11 @@
+                 const bool translucent = (blendingMode != BlendingMode::OPAQUE
+                         && blendingMode != BlendingMode::MASKED);
+                 const bool isPickingVariant = Variant::isPickingVariant(variant);
++                const bool solumMaskAwareEligible =
++                        blendingMode == BlendingMode::MASKED &&
++                        ma->getMaterialDomain() == MaterialDomain::SURFACE &&
++                        ma->getRefractionMode() == RefractionMode::NONE &&
++                        mi->isDepthWriteEnabled() && !rs.alphaToCoverage;
+ 
+                 cmd.key |= mi->getSortingKey(); // already all set-up for direct or'ing
+                 cmd.info.rasterState.culling = cullingMode;
+@@ -809,6 +817,9 @@
+                 curr->key |= select(cullingMode == CullingMode::FRONT_AND_BACK);
+                 // cancel command if asked to filter translucent objects
+                 curr->key |= select(filterTranslucentObjects & translucent);
++                // Unsupported masked modes and every non-masked surface stay on baseline.
++                curr->key |= select(depthOnlyAlphaMaskedObjects &
++                        !solumMaskAwareEligible);
+             }
+ 
+             ++curr;
+@@ -863,6 +874,10 @@
+     mSolumStencilState = stencilState;
+ }
+ 
++void RenderPass::Executor::overrideSolumMaskAwareDepthEqual() noexcept {
++    mSolumMaskAwareDepthEqual = true;
++}
++
+ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver) const noexcept {
+     execute(engine, driver, mCommands.begin(), mCommands.end());
+ }
+@@ -951,6 +966,7 @@
+         bool const hasSolumDrawScissor = mHasSolumDrawScissor;
+         bool const hasSolumStencilOverride = mHasSolumStencilOverride;
+         bool const solumStencilOpaqueOnly = mSolumStencilOpaqueOnly;
++        bool const solumMaskAwareDepthEqual = mSolumMaskAwareDepthEqual;
+         backend::Viewport const fullPassScissor = hasScissorViewport ? mScissor :
+                 backend::Viewport{ 0, 0, INT32_MAX, INT32_MAX };
+         if (UTILS_UNLIKELY(hasScissorViewport || hasScissorOverride)) {
+@@ -1150,10 +1166,20 @@
+                         ma->getRefractionMode() == RefractionMode::NONE &&
+                         ma->getShading() == Shading::LIT &&
+                         !ma->isDoubleSided();
++                bool const solumEligibleMaskedCoverage =
++                        ma->getBlendingMode() == BlendingMode::MASKED &&
++                        ma->getMaterialDomain() == MaterialDomain::SURFACE &&
++                        ma->getRefractionMode() == RefractionMode::NONE &&
++                        mi->isDepthWriteEnabled() && !info.rasterState.alphaToCoverage;
+                 if (UTILS_UNLIKELY(hasSolumStencilOverride &&
+                         (!solumStencilOpaqueOnly || solumEligibleOpaque))) {
+                     pipeline.stencilState = mSolumStencilState;
+                 }
++                if (UTILS_UNLIKELY(solumMaskAwareDepthEqual &&
++                        solumEligibleMaskedCoverage)) {
++                    pipeline.rasterState.depthWrite = false;
++                    pipeline.rasterState.depthFunc = SamplerCompareFunc::E;
++                }
+ 
+                 pipeline.program = mi->getProgram(info.materialVariant);
+ 
+@@ -1208,7 +1234,8 @@
+           mScissorOverride(false),
+           mHasSolumDrawScissor(false),
+           mHasSolumStencilOverride(false),
+-          mSolumStencilOpaqueOnly(false) {
++          mSolumStencilOpaqueOnly(false),
++          mSolumMaskAwareDepthEqual(false) {
+     mHasScissorViewport = mScissor != backend::Viewport{ 0, 0, INT32_MAX, INT32_MAX };
+     assert_invariant(b >= pass.begin());
+     assert_invariant(e <= pass.end());
+@@ -1221,7 +1248,8 @@
+           mHasScissorViewport(false),
+           mHasSolumDrawScissor(false),
+           mHasSolumStencilOverride(false),
+-          mSolumStencilOpaqueOnly(false) {
++          mSolumStencilOpaqueOnly(false),
++          mSolumMaskAwareDepthEqual(false) {
+ }
+ 
+ RenderPass::Executor::Executor(Executor&& rhs) noexcept = default;
+--- a/filament/src/RenderPass.h
++++ b/filament/src/RenderPass.h
+@@ -206,5 +206,8 @@
+         // alpha-blended objects are not rendered in the depth buffer
+         FILTER_TRANSLUCENT_OBJECTS = 0x10,
+ 
++        // SOLUM T3: only depth-writing masked SURFACE commands with exact depth variants.
++        DEPTH_ONLY_ALPHA_MASKED_OBJECTS = 0x20,
++
+         // generate commands for shadow map
+         SHADOW = DEPTH | DEPTH_CONTAINS_SHADOW_CASTERS,
+@@ -377,5 +381,6 @@
+         bool mHasSolumDrawScissor : 1;
+         bool mHasSolumStencilOverride : 1;
+         bool mSolumStencilOpaqueOnly : 1;
++        bool mSolumMaskAwareDepthEqual : 1;
+ 
+         Executor(RenderPass const& pass, Command const* b, Command const* e) noexcept;
+@@ -418,4 +423,7 @@
+         // surfaces. Masked, transparent, double-sided/hair, water and VFX stay current.
+         void overrideSolumOpaqueStencil(backend::StencilState const& stencilState) noexcept;
+ 
++        // T3 fixed-function early depth rejection for coverage-pass eligible masked surfaces.
++        void overrideSolumMaskAwareDepthEqual() noexcept;
++
+         void execute(FEngine const& engine, backend::DriverApi& driver) const noexcept;
+--- a/filament/src/Renderer.cpp
++++ b/filament/src/Renderer.cpp
+@@ -160,6 +160,15 @@
+             opaqueEarlySkip, requestExactCoverage);
+ }
+ 
++void Renderer::setSolumMaskAwareCoverage(View const* targetView, bool const enabled) {
++    downcast(this)->setSolumMaskAwareCoverage(
++            targetView ? downcast(targetView) : nullptr, enabled);
++}
++
++utils::CString Renderer::getSolumMaskAwareCoverageStats() const {
++    return downcast(this)->getSolumMaskAwareCoverageStats();
++}
++
+ utils::CString Renderer::getSolumV1ShadingReuseStats() const {
+     return downcast(this)->getSolumV1ShadingReuseStats();
+ }
+--- a/filament/src/details/Renderer.cpp
++++ b/filament/src/details/Renderer.cpp
+@@ -2007,4 +2007,52 @@
+ 
+     hasScreenSpaceRefraction = firstRefractionCommand != nullptr;
+ 
++    bool solumMaskAwareCoverageActive = false;
++    std::optional<RenderPass> solumMaskAwareCoveragePass;
++    bool const solumMaskAwareCoverageRequested =
++            mSolumMaskAwareCoverage.enabled &&
++            mSolumMaskAwareCoverage.targetView == &view;
++    if (solumMaskAwareCoverageRequested) {
++        ++mSolumMaskAwareCoverage.requestedFrames;
++        mSolumMaskAwareCoverage.actual = false;
++        if (mSolumV1.enabled) {
++            mSolumMaskAwareCoverage.lastReason = "conflicting_solum_v1_path";
++        } else if (customRenderTarget) {
++            mSolumMaskAwareCoverage.lastReason = "custom_render_target_unsupported";
++        } else if (hasScreenSpaceRefraction || ssReflectionsOptions.enabled) {
++            mSolumMaskAwareCoverage.lastReason = "ssr_or_refraction_unsupported";
++        } else if (isRenderingMultiview || isProtectedContent || blendModeTranslucent) {
++            mSolumMaskAwareCoverage.lastReason = "incompatible_target";
++        } else if (channelDepthClearMask.any()) {
++            mSolumMaskAwareCoverage.lastReason = "channel_depth_clear_unsupported";
++        } else {
++            solumMaskAwareCoveragePass.emplace(
++                    RenderPassBuilder(commandArena)
++                        .renderFlags(renderFlags)
++                        .camera(cameraInfo.getPosition(), cameraInfo.getForwardVector())
++                        .geometry(scene.getRenderableData(), view.getVisibleRenderables())
++                        .variant(Variant(Variant::DEPTH_VARIANT))
++                        .commandTypeFlags(RenderPass::CommandTypeFlags::DEPTH |
++                                RenderPass::CommandTypeFlags::DEPTH_ONLY_ALPHA_MASKED_OBJECTS)
++                        .colorPassDescriptorSet(&view.getColorPassDescriptorSet())
++                        .build(engine, driver));
++            if (solumMaskAwareCoveragePass->empty()) {
++                solumMaskAwareCoveragePass.reset();
++                mSolumMaskAwareCoverage.lastReason = "no_eligible_masked_commands";
++            } else {
++                solumMaskAwareCoverageActive = true;
++                mSolumMaskAwareCoverage.actual = true;
++                mSolumMaskAwareCoverage.lastReason =
++                        "active_current_full_resolution_depth";
++                ++mSolumMaskAwareCoverage.activeFrames;
++                mSolumMaskAwareCoverage.eligibleDrawCommands += uint64_t(
++                        solumMaskAwareCoveragePass->end() -
++                                solumMaskAwareCoveragePass->begin());
++            }
++        }
++        if (!solumMaskAwareCoverageActive) {
++            ++mSolumMaskAwareCoverage.failClosedFrames;
++        }
++    }
++
+     // this makes the viewport relative to xvp
+@@ -2028,5 +2075,10 @@
+                 useIntermediateBuffer ? xvp : vp);
+         solumV1RegionalDepthPass->finalize(engine, driver);
+     }
++    if (solumMaskAwareCoveragePass) {
++        solumMaskAwareCoveragePass->setScissorViewport(
++                useIntermediateBuffer ? xvp : vp);
++        solumMaskAwareCoveragePass->finalize(engine, driver);
++    }
+ 
+     // the color pass itself + color-grading as subpass if needed
+@@ -2123,4 +2175,15 @@
+                 colorGradingConfigForColor, std::move(regionalColorExecutor));
+     } else {
+         auto baselineOrRegionalConfig = colorPassConfig;
++        FrameGraphId<FrameGraphTexture> solumMaskAwareCoverageDepth;
++        auto baselineOrMaskAwareExecutor = pass.getExecutor();
++        if (solumMaskAwareCoverageActive) {
++            solumMaskAwareCoverageDepth = RendererUtils::solumMaskAwareCoveragePass(
++                    fg, mEngine, view, colorBufferDesc, baselineOrRegionalConfig,
++                    solumMaskAwareCoveragePass->getExecutor());
++            baselineOrRegionalConfig.clearFlags &=
++                    ~(TargetBufferFlags::DEPTH | TargetBufferFlags::STENCIL);
++            baselineOrMaskAwareExecutor.overrideSolumMaskAwareDepthEqual();
++            ++mSolumMaskAwareCoverage.coveragePassFrames;
++        }
+         if (mSolumV1.regionalEnabled && solumV1RegionalResourcesReady) {
+@@ -2134,11 +2197,11 @@
+                     .depth = mSolumV1.regionalEnabled &&
+                             solumV1RegionalResourcesReady ?
+                             solumV1RegionalCurrentDepth :
+-                            FrameGraphId<FrameGraphTexture>{},
++                            solumMaskAwareCoverageDepth,
+                    .shadows = blackboard.get<FrameGraphTexture>("shadows"),
+                    .ssao = blackboard.get<FrameGraphTexture>("ssao"),
+                    .ssr = ssrConfig.ssr,
+                    .structure = structure
+                 }, colorBufferDesc, baselineOrRegionalConfig,
+-                colorGradingConfigForColor, pass.getExecutor());
++                colorGradingConfigForColor, std::move(baselineOrMaskAwareExecutor));
+     }
+@@ -2678,4 +2741,46 @@
+             mSolumV1.regionalEnabled && requestExactCoverage;
+ }
+ 
++void FRenderer::setSolumMaskAwareCoverage(FView const* const targetView,
++        bool const enabled) noexcept {
++    bool const newSession = enabled && (!mSolumMaskAwareCoverage.enabled ||
++            mSolumMaskAwareCoverage.targetView != targetView);
++    if (newSession) {
++        mSolumMaskAwareCoverage.requestedFrames = 0;
++        mSolumMaskAwareCoverage.activeFrames = 0;
++        mSolumMaskAwareCoverage.coveragePassFrames = 0;
++        mSolumMaskAwareCoverage.eligibleDrawCommands = 0;
++        mSolumMaskAwareCoverage.failClosedFrames = 0;
++    }
++    mSolumMaskAwareCoverage.targetView = targetView;
++    mSolumMaskAwareCoverage.enabled = enabled && targetView;
++    mSolumMaskAwareCoverage.actual = false;
++    mSolumMaskAwareCoverage.lastReason = !enabled ? "disabled" :
++            targetView ? "armed_pending_target_frame" : "target_view_missing";
++}
++
++utils::CString FRenderer::getSolumMaskAwareCoverageStats() const {
++    std::ostringstream out;
++    out << "{\"abi\":1"
++        << ",\"requested\":"
++        << (mSolumMaskAwareCoverage.enabled ? "true" : "false")
++        << ",\"actual\":"
++        << (mSolumMaskAwareCoverage.actual ? "true" : "false")
++        << ",\"target_view_bound\":"
++        << (mSolumMaskAwareCoverage.targetView ? "true" : "false")
++        << ",\"requested_frames\":" << mSolumMaskAwareCoverage.requestedFrames
++        << ",\"active_frames\":" << mSolumMaskAwareCoverage.activeFrames
++        << ",\"coverage_pass_frames\":"
++        << mSolumMaskAwareCoverage.coveragePassFrames
++        << ",\"eligible_draw_commands\":"
++        << mSolumMaskAwareCoverage.eligibleDrawCommands
++        << ",\"fail_closed_frames\":" << mSolumMaskAwareCoverage.failClosedFrames
++        << ",\"current_visibility_required\":true"
++        << ",\"current_full_resolution_depth\":true"
++        << ",\"masked_color_depth_equal_read_only\":true"
++        << ",\"double_sided_preserved\":true"
++        << ",\"last_reason\":\"" << mSolumMaskAwareCoverage.lastReason << "\"}";
++    return utils::CString(out.str().c_str());
++}
++
+ utils::CString FRenderer::getSolumV1ShadingReuseStats() const {
+--- a/filament/src/details/Renderer.h
++++ b/filament/src/details/Renderer.h
+@@ -183,4 +183,6 @@
+             bool safeToReuse, uint64_t stateKey, float dirtyLeft, float dirtyBottom,
+             float dirtyWidth, float dirtyHeight, bool opaqueEarlySkip,
+             bool requestExactCoverage) noexcept;
++    void setSolumMaskAwareCoverage(FView const* targetView, bool enabled) noexcept;
++    utils::CString getSolumMaskAwareCoverageStats() const;
+     utils::CString getSolumV1ShadingReuseStats() const;
+@@ -310,3 +312,14 @@
+         char const* lastDecision = "disabled";
+     } mSolumV1;
++    struct SolumMaskAwareCoverageState {
++        FView const* targetView = nullptr;
++        uint64_t requestedFrames = 0;
++        uint64_t activeFrames = 0;
++        uint64_t coveragePassFrames = 0;
++        uint64_t eligibleDrawCommands = 0;
++        uint64_t failClosedFrames = 0;
++        bool enabled = false;
++        bool actual = false;
++        char const* lastReason = "disabled";
++    } mSolumMaskAwareCoverage;
+     backend::TextureFormat mHdrTranslucent;

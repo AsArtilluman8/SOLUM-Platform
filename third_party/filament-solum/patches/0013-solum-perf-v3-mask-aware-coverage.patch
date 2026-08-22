@@ -389,10 +389,10 @@
                              solumV1RegionalCurrentDepth :
 -                            FrameGraphId<FrameGraphTexture>{},
 +                            solumMaskAwareCoverageDepth,
-                    .shadows = blackboard.get<FrameGraphTexture>("shadows"),
-                    .ssao = blackboard.get<FrameGraphTexture>("ssao"),
-                    .ssr = ssrConfig.ssr,
-                    .structure = structure
+                     .shadows = blackboard.get<FrameGraphTexture>("shadows"),
+                     .ssao = blackboard.get<FrameGraphTexture>("ssao"),
+                     .ssr = ssrConfig.ssr,
+                     .structure = structure
                  }, colorBufferDesc, baselineOrRegionalConfig,
 -                colorGradingConfigForColor, pass.getExecutor());
 +                colorGradingConfigForColor, std::move(baselineOrMaskAwareExecutor));

@@ -253,5 +253,5 @@ jobs:
           path: filament-solum-adaptive-taa-artifacts/**
           if-no-files-found: error
 
-  build-perf-v3-t3-r20:
-    uses: ./.github/workflows/compile-filament-perf-v3-t3.yml
+  build-perf-v3-instance-buffer-r22:
+    uses: ./.github/workflows/compile-filament-perf-v3-instance-buffer-r22.yml

@@ -1,6 +1,7 @@
 name: Filament v1.71.4 SOLUM PERF V3 Native Instance Buffer R22
 
 on:
+  workflow_call:
   workflow_dispatch:
 
 permissions:

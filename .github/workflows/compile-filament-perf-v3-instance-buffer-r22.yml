@@ -1,0 +1,174 @@
+name: Filament v1.71.4 SOLUM PERF V3 Native Instance Buffer R22
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: filament-v1714-solum-perf-v3-instance-buffer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-filament-android-arm64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      FILAMENT_COMMIT: a0ecdbbeba5f1005bbad0a4c8b2fe6955788cdee
+      FILAMENT_DIR: filament-src
+      LOG_DIR: filament-ci-logs
+      R22_PATCH: third_party/filament-solum/patches/0015-solum-instance-buffer-android-bridge.patch
+
+    steps:
+      - name: Checkout wrapper repository
+        uses: actions/checkout@v4
+
+      - name: Checkout exact Filament runtime baseline
+        uses: actions/checkout@v4
+        with:
+          repository: google/filament
+          ref: ${{ env.FILAMENT_COMMIT }}
+          path: ${{ env.FILAMENT_DIR }}
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Apply complete SOLUM R22 stack
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$(git -C "$FILAMENT_DIR" rev-parse HEAD)" = "$FILAMENT_COMMIT"
+          PATCH_DIR="third_party/filament-solum/patches"
+          PATCHES=(
+            "$PATCH_DIR/0001-solum-async-framegraph-gpu-profiler.patch"
+            "$PATCH_DIR/0002-solum-adaptive-taa-history.patch"
+            "$PATCH_DIR/0003-solum-taa-previous-depth-history.patch"
+            "$PATCH_DIR/0004-solum-taa-prev-depth-stable-accum.patch"
+            "$PATCH_DIR/0005-solum-v1-conservative-shading-cache.patch"
+            "$PATCH_DIR/0006-solum-tessera-regional-v0.patch"
+            "$PATCH_DIR/0007-solum-tessera-regional-color-lifetime.patch"
+            "$PATCH_DIR/0008-solum-tessera-regional-persistent-history.patch"
+            "$PATCH_DIR/0009-solum-tessera-regional-v02.patch"
+            "$PATCH_DIR/0010-solum-tessera-regional-early-skip.patch"
+            "$PATCH_DIR/0011-solum-tessera-regional-correctness-r17.patch"
+            "$PATCH_DIR/0012-solum-tessera-regional-r19-opaque-skip.patch"
+            "$PATCH_DIR/0013-solum-perf-v3-mask-aware-coverage.patch"
+            "$PATCH_DIR/0014-solum-perf-v3-mask-aware-r21-correctness.patch"
+            "$R22_PATCH"
+          )
+          for patch in "${PATCHES[@]}"; do test -f "$patch"; done
+          sha256sum "${PATCHES[@]}" | tee filament-solum-patches.sha256
+          for index in 0 1 2 3 4 5 6 7; do
+            patch="${PATCHES[$index]}"
+            git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$patch"
+            git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$patch"
+          done
+          for index in 8 9 10; do
+            patch="${PATCHES[$index]}"
+            git -C "$FILAMENT_DIR" apply --unidiff-zero --check "$GITHUB_WORKSPACE/$patch"
+            git -C "$FILAMENT_DIR" apply --unidiff-zero "$GITHUB_WORKSPACE/$patch"
+          done
+          for index in 11 12 13; do
+            patch="${PATCHES[$index]}"
+            git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$patch"
+            git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$patch"
+          done
+          git -C "$FILAMENT_DIR" apply --recount --check "$GITHUB_WORKSPACE/$R22_PATCH"
+          git -C "$FILAMENT_DIR" apply --recount "$GITHUB_WORKSPACE/$R22_PATCH"
+          git -C "$FILAMENT_DIR" diff --check
+          git -C "$FILAMENT_DIR" diff --stat | tee filament-perf-v3-r22-diff-stat.txt
+          ! git -C "$FILAMENT_DIR" diff | grep -E 'flushAndWait|waitForGpu|fenceWait'
+          git -C "$FILAMENT_DIR" diff | grep -F 'InstanceBuffer_nSetLocalTransforms'
+          git -C "$FILAMENT_DIR" diff | grep -F 'nBuilderInstanceBuffer'
+          git -C "$FILAMENT_DIR" diff | grep -F 'destroyInstanceBuffer'
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install host dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y clang cmake git libc++-dev libc++abi-dev \
+            libglu1-mesa-dev ninja-build pkg-config unzip zip
+
+      - name: Install exact Filament Android NDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd "$FILAMENT_DIR"
+          NDK_VERSION="$(sed -n 's/^GITHUB_NDK_VERSION=//p' build/common/versions)"
+          test -n "$NDK_VERSION"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION"
+          echo "FILAMENT_NDK_VERSION=$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Build Android arm64-v8a release artifacts
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p "$LOG_DIR"
+          cd "$FILAMENT_DIR"
+          export CC=clang
+          export CXX=clang++
+          FILAMENT_NDK_VERSION="$FILAMENT_NDK_VERSION" \
+            ./build.sh -p android -q arm64-v8a -i release \
+            2>&1 | tee "../$LOG_DIR/build-android-arm64-release.log"
+
+      - name: Prove Java and JNI R22 API
+        shell: bash
+        run: |
+          set -euxo pipefail
+          FILAMENT_AAR="$(find "$FILAMENT_DIR" -type f -name 'filament-android*.aar' | head -n 1)"
+          test -n "$FILAMENT_AAR"
+          unzip -p "$FILAMENT_AAR" classes.jar > /tmp/filament-perf-v3-r22-classes.jar
+          javap -classpath /tmp/filament-perf-v3-r22-classes.jar \
+            com.google.android.filament.InstanceBuffer | tee "$LOG_DIR/instance-buffer-api.txt"
+          javap -classpath /tmp/filament-perf-v3-r22-classes.jar \
+            com.google.android.filament.RenderableManager\$Builder \
+            | tee "$LOG_DIR/renderable-builder-api.txt"
+          grep -F 'setLocalTransforms(java.nio.Buffer, int, int)' \
+            "$LOG_DIR/instance-buffer-api.txt"
+          grep -F 'instances(int, com.google.android.filament.InstanceBuffer)' \
+            "$LOG_DIR/renderable-builder-api.txt"
+          JNI_SO="$(find "$FILAMENT_DIR" -type f -name 'libfilament-jni.so' | head -n 1)"
+          test -n "$JNI_SO"
+          readelf -Ws "$JNI_SO" | tee "$LOG_DIR/filament-jni-symbols.txt"
+          grep -F 'InstanceBuffer_nSetLocalTransforms' "$LOG_DIR/filament-jni-symbols.txt"
+          grep -F 'RenderableManager_nBuilderInstanceBuffer' \
+            "$LOG_DIR/filament-jni-symbols.txt"
+
+      - name: Collect checksummed artifacts
+        if: always()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ARTIFACT_DIR="filament-solum-perf-v3-instance-buffer-r22-artifacts"
+          mkdir -p "$ARTIFACT_DIR/logs" "$ARTIFACT_DIR/aars" "$ARTIFACT_DIR/native"
+          cp -R "$LOG_DIR"/. "$ARTIFACT_DIR/logs/" || true
+          cp filament-solum-patches.sha256 filament-perf-v3-r22-diff-stat.txt \
+            "$ARTIFACT_DIR/" || true
+          find "$FILAMENT_DIR" -type f -path '*/build/outputs/aar/*.aar' \
+            -print -exec cp -v {} "$ARTIFACT_DIR/aars/" \; || true
+          find "$FILAMENT_DIR/out" -type f -name '*.aar' \
+            -print -exec cp -v {} "$ARTIFACT_DIR/aars/" \; || true
+          find "$FILAMENT_DIR" -type f -path '*/arm64-v8a/*.so' \
+            -print -exec cp -v {} "$ARTIFACT_DIR/native/" \; || true
+          printf '%s\n' "$FILAMENT_COMMIT" > "$ARTIFACT_DIR/filament-source-commit.txt"
+          find "$ARTIFACT_DIR" -type f ! -name SHA256SUMS.txt -print0 \
+            | sort -z | xargs -0 sha256sum > "$ARTIFACT_DIR/SHA256SUMS.txt"
+
+      - name: Upload R22 build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: filament-v1714-solum-perf-v3-instance-buffer-r22-arm64
+          path: filament-solum-perf-v3-instance-buffer-r22-artifacts/**
+          if-no-files-found: error

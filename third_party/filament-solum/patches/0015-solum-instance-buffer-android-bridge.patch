@@ -1,0 +1,310 @@
+diff --git a/android/filament-android/CMakeLists.txt b/android/filament-android/CMakeLists.txt
+--- a/android/filament-android/CMakeLists.txt
++++ b/android/filament-android/CMakeLists.txt
+@@ -97,6 +97,7 @@ add_library(filament-jni SHARED
+     src/main/cpp/Engine.cpp
+     src/main/cpp/EntityManager.cpp
+     src/main/cpp/Fence.cpp
++    src/main/cpp/InstanceBuffer.cpp
+     src/main/cpp/IndexBuffer.cpp
+     src/main/cpp/IndirectLight.cpp
+     src/main/cpp/LightManager.cpp
+diff --git a/android/filament-android/src/main/cpp/Engine.cpp b/android/filament-android/src/main/cpp/Engine.cpp
+--- a/android/filament-android/src/main/cpp/Engine.cpp
++++ b/android/filament-android/src/main/cpp/Engine.cpp
+@@ -18,6 +18,7 @@
+ #include <exception>
+ 
+ #include <filament/Camera.h>
+ #include <filament/Engine.h>
++#include <filament/InstanceBuffer.h>
+ #include <filament/MorphTargetBuffer.h>
+ 
+ #include <utils/Entity.h>
+@@ -221,6 +222,16 @@ Java_com_google_android_filament_Engine_nDestroyIndexBuffer(JNIEnv *env, jclass,
+     });
+ }
+ 
++extern "C" JNIEXPORT jboolean JNICALL
++Java_com_google_android_filament_Engine_nDestroyInstanceBuffer(JNIEnv *env, jclass,
++        jlong nativeEngine, jlong nativeInstanceBuffer) {
++    Engine* engine = (Engine*) nativeEngine;
++    InstanceBuffer* instanceBuffer = (InstanceBuffer*) nativeInstanceBuffer;
++    return wrapJni<jboolean>(env, [=]() {
++        return engine->destroy(instanceBuffer);
++    });
++}
++
+ extern "C" JNIEXPORT jboolean JNICALL
+ Java_com_google_android_filament_Engine_nDestroyVertexBuffer(JNIEnv *env, jclass,
+         jlong nativeEngine, jlong nativeVertexBuffer) {
+diff --git a/android/filament-android/src/main/cpp/InstanceBuffer.cpp b/android/filament-android/src/main/cpp/InstanceBuffer.cpp
+new file mode 100644
+--- /dev/null
++++ b/android/filament-android/src/main/cpp/InstanceBuffer.cpp
+@@ -0,0 +1,89 @@
++/*
++ * Copyright (C) 2026 SOLUM Platform
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++#include <jni.h>
++
++#include <filament/Engine.h>
++#include <filament/InstanceBuffer.h>
++
++#include <math/mat4.h>
++
++#include "common/NioUtils.h"
++#include <common/JniUtils.h>
++
++using namespace filament;
++using namespace filament::android;
++
++extern "C" JNIEXPORT jlong JNICALL
++Java_com_google_android_filament_InstanceBuffer_nCreateBuilder(JNIEnv* env, jclass,
++        jint instanceCount) {
++    return wrapJni<jlong>(env, [=]() {
++        return (jlong) new InstanceBuffer::Builder((size_t) instanceCount);
++    });
++}
++
++extern "C" JNIEXPORT void JNICALL
++Java_com_google_android_filament_InstanceBuffer_nDestroyBuilder(JNIEnv*, jclass,
++        jlong nativeBuilder) {
++    delete (InstanceBuffer::Builder*) nativeBuilder;
++}
++
++extern "C" JNIEXPORT jlong JNICALL
++Java_com_google_android_filament_InstanceBuffer_nBuilderBuild(JNIEnv* env, jclass,
++        jlong nativeBuilder, jlong nativeEngine) {
++    InstanceBuffer::Builder* builder = (InstanceBuffer::Builder*) nativeBuilder;
++    Engine* engine = (Engine*) nativeEngine;
++    return wrapJni<jlong>(env, [=]() {
++        return (jlong) builder->build(*engine);
++    });
++}
++
++extern "C" JNIEXPORT jint JNICALL
++Java_com_google_android_filament_InstanceBuffer_nSetLocalTransforms(JNIEnv* env, jclass,
++        jlong nativeInstanceBuffer, jobject matrices, jint remaining,
++        jint count, jint offset) {
++    InstanceBuffer* instanceBuffer = (InstanceBuffer*) nativeInstanceBuffer;
++    return wrapJni<jint>(env, [=]() {
++        if (count < 0 || offset < 0) return -2;
++        AutoBuffer nioBuffer(env, matrices, (size_t) count * 16u);
++        void* data = nioBuffer.getData();
++        size_t sizeInBytes = nioBuffer.getSize();
++        if (data == nullptr || sizeInBytes > ((size_t) remaining << nioBuffer.getShift())) {
++            return -1;
++        }
++        if ((size_t) offset + (size_t) count > instanceBuffer->getInstanceCount()) {
++            return -2;
++        }
++        instanceBuffer->setLocalTransforms(
++                static_cast<math::mat4f const*>(data), (size_t) count, (size_t) offset);
++        return 0;
++    });
++}
++
++extern "C" JNIEXPORT jint JNICALL
++Java_com_google_android_filament_InstanceBuffer_nGetInstanceCount(JNIEnv*, jclass,
++        jlong nativeInstanceBuffer) {
++    InstanceBuffer* instanceBuffer = (InstanceBuffer*) nativeInstanceBuffer;
++    return (jint) instanceBuffer->getInstanceCount();
++}
+diff --git a/android/filament-android/src/main/cpp/RenderableManager.cpp b/android/filament-android/src/main/cpp/RenderableManager.cpp
+--- a/android/filament-android/src/main/cpp/RenderableManager.cpp
++++ b/android/filament-android/src/main/cpp/RenderableManager.cpp
+@@ -16,6 +16,7 @@
+ 
+ #include <jni.h>
+ 
++#include <filament/InstanceBuffer.h>
+ #include <filament/RenderableManager.h>
+ #include <filament/MaterialInstance.h>
+ #include <common/JniUtils.h>
+@@ -277,6 +278,14 @@ Java_com_google_android_filament_RenderableManager_nBuilderInstances(JNIEnv*, jc
+     builder->instances(instanceCount);
+ }
+ 
++extern "C" JNIEXPORT void JNICALL
++Java_com_google_android_filament_RenderableManager_nBuilderInstanceBuffer(JNIEnv*, jclass,
++        jlong nativeBuilder, jint instanceCount, jlong nativeInstanceBuffer) {
++    RenderableManager::Builder* builder = (RenderableManager::Builder*) nativeBuilder;
++    InstanceBuffer* instanceBuffer = (InstanceBuffer*) nativeInstanceBuffer;
++    builder->instances((size_t) instanceCount, instanceBuffer);
++}
++
+ // ------------------------------------------------------------------------------------------------
+ 
+ extern "C" JNIEXPORT void JNICALL
+diff --git a/android/filament-android/src/main/java/com/google/android/filament/Engine.java b/android/filament-android/src/main/java/com/google/android/filament/Engine.java
+--- a/android/filament-android/src/main/java/com/google/android/filament/Engine.java
++++ b/android/filament-android/src/main/java/com/google/android/filament/Engine.java
+@@ -1233,6 +1233,16 @@ public class Engine {
+         indexBuffer.clearNativeObject();
+     }
+ 
++    /**
++     * Destroys an {@link InstanceBuffer} and frees all its associated resources.
++     * Every renderable that references the buffer must be destroyed first.
++     */
++    public void destroyInstanceBuffer(@NonNull InstanceBuffer instanceBuffer) {
++        assertDestroy(nDestroyInstanceBuffer(
++                getNativeObject(), instanceBuffer.getNativeObject()));
++        instanceBuffer.clearNativeObject();
++    }
++
+     /**
+      * Destroys a {@link VertexBuffer} and frees all its associated resources.
+      * @param vertexBuffer the {@link VertexBuffer} to destroy
+@@ -1548,6 +1558,7 @@ public class Engine {
+     private static native boolean nDestroyFence(long nativeEngine, long nativeFence);
+     private static native boolean nDestroyStream(long nativeEngine, long nativeStream);
+     private static native boolean nDestroyIndexBuffer(long nativeEngine, long nativeIndexBuffer);
++    private static native boolean nDestroyInstanceBuffer(long nativeEngine, long nativeInstanceBuffer);
+     private static native boolean nDestroyVertexBuffer(long nativeEngine, long nativeVertexBuffer);
+     private static native boolean nDestroySkinningBuffer(long nativeEngine, long nativeSkinningBuffer);
+     private static native boolean nDestroyMorphTargetBuffer(long nativeEngine, long nativeMorphTargetBuffer);
+diff --git a/android/filament-android/src/main/java/com/google/android/filament/InstanceBuffer.java b/android/filament-android/src/main/java/com/google/android/filament/InstanceBuffer.java
+new file mode 100644
+--- /dev/null
++++ b/android/filament-android/src/main/java/com/google/android/filament/InstanceBuffer.java
+@@ -0,0 +1,106 @@
++/*
++ * Copyright (C) 2026 SOLUM Platform
++ * SPDX-License-Identifier: Apache-2.0
++ */
++package com.google.android.filament;
++
++import androidx.annotation.IntRange;
++import androidx.annotation.NonNull;
++
++import java.nio.Buffer;
++import java.nio.BufferOverflowException;
++
++/** Android binding for Filament's exact GPU instance-transform buffer. */
++public class InstanceBuffer {
++    private long mNativeObject;
++
++    private InstanceBuffer(long nativeInstanceBuffer) {
++        mNativeObject = nativeInstanceBuffer;
++    }
++
++    public static class Builder {
++        @SuppressWarnings({"FieldCanBeLocal", "UnusedDeclaration"})
++        private final BuilderFinalizer mFinalizer;
++        private final long mNativeBuilder;
++
++        public Builder(@IntRange(from = 1, to = 32767) int instanceCount) {
++            if (instanceCount < 1 || instanceCount > 32767) {
++                throw new IllegalArgumentException("instanceCount must be in [1, 32767]");
++            }
++            mNativeBuilder = nCreateBuilder(instanceCount);
++            if (mNativeBuilder == 0) {
++                throw new IllegalStateException("Couldn't create InstanceBuffer.Builder");
++            }
++            mFinalizer = new BuilderFinalizer(mNativeBuilder);
++        }
++
++        @NonNull
++        public InstanceBuffer build(@NonNull Engine engine) {
++            long nativeBuffer = nBuilderBuild(mNativeBuilder, engine.getNativeObject());
++            if (nativeBuffer == 0) {
++                throw new IllegalStateException("Couldn't create InstanceBuffer");
++            }
++            return new InstanceBuffer(nativeBuffer);
++        }
++
++        private static class BuilderFinalizer {
++            private final long mNativeObject;
++
++            BuilderFinalizer(long nativeObject) {
++                mNativeObject = nativeObject;
++            }
++
++            @Override
++            public void finalize() {
++                try {
++                    super.finalize();
++                } catch (Throwable ignored) {
++                } finally {
++                    nDestroyBuilder(mNativeObject);
++                }
++            }
++        }
++    }
++
++    /**
++     * Uploads column-major 4x4 local transforms from the Buffer's current position.
++     * The source Buffer is copied by Filament and can be reused after this call.
++     */
++    public void setLocalTransforms(@NonNull Buffer matrices,
++            @IntRange(from = 0) int count, @IntRange(from = 0) int offset) {
++        int result = nSetLocalTransforms(
++                getNativeObject(), matrices, matrices.remaining(), count, offset);
++        if (result == -1) throw new BufferOverflowException();
++        if (result != 0) throw new IndexOutOfBoundsException(
++                "Instance transform range exceeds InstanceBuffer");
++    }
++
++    public int getInstanceCount() {
++        return nGetInstanceCount(getNativeObject());
++    }
++
++    public long getNativeObject() {
++        if (mNativeObject == 0) {
++            throw new IllegalStateException("Calling method on destroyed InstanceBuffer");
++        }
++        return mNativeObject;
++    }
++
++    void clearNativeObject() {
++        mNativeObject = 0;
++    }
++
++    private static native long nCreateBuilder(int instanceCount);
++    private static native void nDestroyBuilder(long nativeBuilder);
++    private static native long nBuilderBuild(long nativeBuilder, long nativeEngine);
++    private static native int nSetLocalTransforms(long nativeInstanceBuffer, Buffer matrices,
++            int remaining, int count, int offset);
++    private static native int nGetInstanceCount(long nativeInstanceBuffer);
++}
+diff --git a/android/filament-android/src/main/java/com/google/android/filament/RenderableManager.java b/android/filament-android/src/main/java/com/google/android/filament/RenderableManager.java
+--- a/android/filament-android/src/main/java/com/google/android/filament/RenderableManager.java
++++ b/android/filament-android/src/main/java/com/google/android/filament/RenderableManager.java
+@@ -397,6 +397,24 @@ public class RenderableManager {
+             return this;
+         }
+ 
++        /**
++         * Specifies exact local transforms for draw instances. The InstanceBuffer must remain
++         * alive until every renderable that references it has been destroyed.
++         *
++         * @param instanceCount number of transforms consumed from instanceBuffer
++         * @param instanceBuffer exact GPU instance-transform owner
++         */
++        @NonNull
++        public Builder instances(@IntRange(from = 1, to = 32767) int instanceCount,
++                @NonNull InstanceBuffer instanceBuffer) {
++            if (instanceCount > instanceBuffer.getInstanceCount()) {
++                throw new IllegalArgumentException(
++                        "instanceCount exceeds InstanceBuffer capacity");
++            }
++            nBuilderInstanceBuffer(
++                    mNativeBuilder, instanceCount, instanceBuffer.getNativeObject());
++            return this;
++        }
++
+         /**
+          * Controls if this renderable casts shadows, false by default.
+          *
+@@ -1028,6 +1046,8 @@ public class RenderableManager {
+     private static native void nBuilderFog(long nativeBuilder, boolean enabled);
+     private static native void nBuilderLightChannel(long nativeRenderableManager, int channel, boolean enable);
+     private static native void nBuilderInstances(long nativeRenderableManager, int instances);
++    private static native void nBuilderInstanceBuffer(long nativeRenderableManager,
++            int instances, long nativeInstanceBuffer);
+ 
+     private static native void nSetSkinningBuffer(long nativeObject, int i, long nativeSkinningBuffer, int count, int offset);

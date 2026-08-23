@@ -76,6 +76,9 @@ jobs:
           done
           git -C "$FILAMENT_DIR" apply --recount --check "$GITHUB_WORKSPACE/$R22_PATCH"
           git -C "$FILAMENT_DIR" apply --recount "$GITHUB_WORKSPACE/$R22_PATCH"
+          git -C "$FILAMENT_DIR" add -N \
+            android/filament-android/src/main/cpp/InstanceBuffer.cpp \
+            android/filament-android/src/main/java/com/google/android/filament/InstanceBuffer.java
           git -C "$FILAMENT_DIR" diff --check
           git -C "$FILAMENT_DIR" diff --stat | tee filament-perf-v3-r22-diff-stat.txt
           ! git -C "$FILAMENT_DIR" diff | grep -E 'flushAndWait|waitForGpu|fenceWait'

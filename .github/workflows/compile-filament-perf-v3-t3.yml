@@ -76,8 +76,8 @@ jobs:
             git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$patch"
           done
           patch="${PATCHES[13]}"
-          git -C "$FILAMENT_DIR" apply --unidiff-zero --check "$GITHUB_WORKSPACE/$patch"
-          git -C "$FILAMENT_DIR" apply --unidiff-zero "$GITHUB_WORKSPACE/$patch"
+          git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$patch"
+          git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$patch"
           git -C "$FILAMENT_DIR" diff --check
           git -C "$FILAMENT_DIR" diff --stat | tee filament-perf-v3-t3-diff-stat.txt
           ! git -C "$FILAMENT_DIR" diff | grep -E 'flushAndWait|waitForGpu|fenceWait'

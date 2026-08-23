@@ -2,48 +2,103 @@ diff --git a/filament/src/RenderPass.cpp b/filament/src/RenderPass.cpp
 index c23aced..92ffb41 100644
 --- a/filament/src/RenderPass.cpp
 +++ b/filament/src/RenderPass.cpp
-@@ -877,2 +877,2 @@ void RenderPass::Executor::overrideSolumOpaqueStencil(
+@@ -874,8 +874,8 @@ void RenderPass::Executor::overrideSolumOpaqueStencil(
+     mSolumStencilState = stencilState;
+ }
+ 
 -void RenderPass::Executor::overrideSolumMaskAwareDepthEqual() noexcept {
 -    mSolumMaskAwareDepthEqual = true;
 +void RenderPass::Executor::overrideSolumMaskAwareDepthReadOnly() noexcept {
 +    mSolumMaskAwareDepthReadOnly = true;
-@@ -969 +969 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
+ }
+ 
+ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver) const noexcept {
+@@ -966,7 +966,7 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
+         bool const hasSolumDrawScissor = mHasSolumDrawScissor;
+         bool const hasSolumStencilOverride = mHasSolumStencilOverride;
+         bool const solumStencilOpaqueOnly = mSolumStencilOpaqueOnly;
 -        bool const solumMaskAwareDepthEqual = mSolumMaskAwareDepthEqual;
 +        bool const solumMaskAwareDepthReadOnly = mSolumMaskAwareDepthReadOnly;
-@@ -1178 +1178 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
+         backend::Viewport const fullPassScissor = hasScissorViewport ? mScissor :
+                 backend::Viewport{ 0, 0, INT32_MAX, INT32_MAX };
+         if (UTILS_UNLIKELY(hasScissorViewport || hasScissorOverride)) {
+@@ -1175,10 +1175,13 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
+                         (!solumStencilOpaqueOnly || solumEligibleOpaque))) {
+                     pipeline.stencilState = mSolumStencilState;
+                 }
 -                if (UTILS_UNLIKELY(solumMaskAwareDepthEqual &&
 +                if (UTILS_UNLIKELY(solumMaskAwareDepthReadOnly &&
-@@ -1181 +1181,4 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
+                         solumEligibleMaskedCoverage)) {
+                     pipeline.rasterState.depthWrite = false;
 -                    pipeline.rasterState.depthFunc = SamplerCompareFunc::E;
 +                    // Filament uses reversed-Z. GE preserves the current masked prepass hit while
 +                    // allowing the color shader's derivative-filtered edge where the raw depth
 +                    // mask did not write. EQUAL produced missing edge samples.
 +                    pipeline.rasterState.depthFunc = SamplerCompareFunc::GE;
-@@ -1238 +1241 @@ RenderPass::Executor::Executor(RenderPass const& pass, Command const* b, Command
+                 }
+ 
+                 pipeline.program = mi->getProgram(info.materialVariant);
+@@ -1235,7 +1238,7 @@ RenderPass::Executor::Executor(RenderPass const& pass, Command const* b, Command
+           mHasSolumDrawScissor(false),
+           mHasSolumStencilOverride(false),
+           mSolumStencilOpaqueOnly(false),
 -          mSolumMaskAwareDepthEqual(false) {
 +          mSolumMaskAwareDepthReadOnly(false) {
-@@ -1252 +1255 @@ RenderPass::Executor::Executor() noexcept
+     mHasScissorViewport = mScissor != backend::Viewport{ 0, 0, INT32_MAX, INT32_MAX };
+     assert_invariant(b >= pass.begin());
+     assert_invariant(e <= pass.end());
+@@ -1249,7 +1252,7 @@ RenderPass::Executor::Executor() noexcept
+           mHasSolumDrawScissor(false),
+           mHasSolumStencilOverride(false),
+           mSolumStencilOpaqueOnly(false),
 -          mSolumMaskAwareDepthEqual(false) {
 +          mSolumMaskAwareDepthReadOnly(false) {
+ }
+ 
+ RenderPass::Executor::Executor(Executor&& rhs) noexcept = default;
 diff --git a/filament/src/RenderPass.h b/filament/src/RenderPass.h
 index 867349d..67be434 100644
 --- a/filament/src/RenderPass.h
 +++ b/filament/src/RenderPass.h
-@@ -384 +384 @@ public:
+@@ -381,7 +381,7 @@ public:
+         bool mHasSolumDrawScissor : 1;
+         bool mHasSolumStencilOverride : 1;
+         bool mSolumStencilOpaqueOnly : 1;
 -        bool mSolumMaskAwareDepthEqual : 1;
 +        bool mSolumMaskAwareDepthReadOnly : 1;
-@@ -427,2 +427,2 @@ public:
+ 
+         Executor(RenderPass const& pass, Command const* b, Command const* e) noexcept;
+ 
+@@ -424,8 +424,8 @@ public:
+         void overrideSolumOpaqueStencil(backend::StencilState const& stencilState) noexcept;
+ 
+         // PERF V3 T3: eligible masked SURFACE commands consume the current coverage depth
 -        // with fixed-function EQUAL/read-only state before expensive fragment/PBR work.
 -        void overrideSolumMaskAwareDepthEqual() noexcept;
 +        // with conservative reversed-Z GE/read-only state before expensive fragment/PBR work.
 +        void overrideSolumMaskAwareDepthReadOnly() noexcept;
+ 
+         void execute(FEngine const& engine, backend::DriverApi& driver) const noexcept;
+     };
 diff --git a/filament/src/details/Renderer.cpp b/filament/src/details/Renderer.cpp
 index a9df8ec..7479635 100644
 --- a/filament/src/details/Renderer.cpp
 +++ b/filament/src/details/Renderer.cpp
-@@ -2186 +2186 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+@@ -2183,7 +2183,7 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+                     solumMaskAwareCoveragePass->getExecutor());
+             baselineOrRegionalConfig.clearFlags &=
+                     ~(TargetBufferFlags::DEPTH | TargetBufferFlags::STENCIL);
 -            baselineOrMaskAwareExecutor.overrideSolumMaskAwareDepthEqual();
 +            baselineOrMaskAwareExecutor.overrideSolumMaskAwareDepthReadOnly();
-@@ -2782 +2782 @@ utils::CString FRenderer::getSolumMaskAwareCoverageStats() const {
+             ++mSolumMaskAwareCoverage.coveragePassFrames;
+         }
+         if (mSolumV1.regionalEnabled && solumV1RegionalResourcesReady) {
+@@ -2779,7 +2779,7 @@ utils::CString FRenderer::getSolumMaskAwareCoverageStats() const {
+         << mSolumMaskAwareCoverage.failClosedFrames
+         << ",\"current_visibility_required\":true"
+         << ",\"current_full_resolution_depth\":true"
 -        << ",\"masked_color_depth_equal_read_only\":true"
 +        << ",\"masked_color_depth_ge_read_only\":true"
+         << ",\"double_sided_preserved\":true"
+         << ",\"last_reason\":\"" << mSolumMaskAwareCoverage.lastReason << "\"}";
+     return utils::CString(out.str().c_str());

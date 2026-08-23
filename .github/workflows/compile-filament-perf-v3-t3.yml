@@ -1,4 +1,4 @@
-name: Filament v1.71.4 SOLUM PERF V3 T3 Mask-aware Coverage R20
+name: Filament v1.71.4 SOLUM PERF V3 T3 Mask-aware Coverage R21
 
 on:
   workflow_call:
@@ -21,6 +21,7 @@ jobs:
       FILAMENT_DIR: filament-src
       LOG_DIR: filament-ci-logs
       T3_PATCH: third_party/filament-solum/patches/0013-solum-perf-v3-mask-aware-coverage.patch
+      T3_R21_PATCH: third_party/filament-solum/patches/0014-solum-perf-v3-mask-aware-r21-correctness.patch
 
     steps:
       - name: Checkout wrapper repository
@@ -55,6 +56,7 @@ jobs:
             "$PATCH_DIR/0011-solum-tessera-regional-correctness-r17.patch"
             "$PATCH_DIR/0012-solum-tessera-regional-r19-opaque-skip.patch"
             "$T3_PATCH"
+            "$T3_R21_PATCH"
           )
           for patch in "${PATCHES[@]}"; do test -f "$patch"; done
           sha256sum "${PATCHES[@]}" | tee filament-solum-patches.sha256
@@ -68,7 +70,7 @@ jobs:
             git -C "$FILAMENT_DIR" apply --unidiff-zero --check "$GITHUB_WORKSPACE/$patch"
             git -C "$FILAMENT_DIR" apply --unidiff-zero "$GITHUB_WORKSPACE/$patch"
           done
-          for index in 11 12; do
+          for index in 11 12 13; do
             patch="${PATCHES[$index]}"
             git -C "$FILAMENT_DIR" apply --check "$GITHUB_WORKSPACE/$patch"
             git -C "$FILAMENT_DIR" apply "$GITHUB_WORKSPACE/$patch"
@@ -79,9 +81,10 @@ jobs:
           git -C "$FILAMENT_DIR" diff | grep -F 'setSolumMaskAwareCoverage'
           git -C "$FILAMENT_DIR" diff | grep -F 'SOLUM Mask-aware coverage depth'
           git -C "$FILAMENT_DIR" diff | grep -F 'DEPTH_ONLY_ALPHA_MASKED_OBJECTS'
-          git -C "$FILAMENT_DIR" diff | grep -F 'overrideSolumMaskAwareDepthEqual'
-          git -C "$FILAMENT_DIR" diff | grep -F 'SamplerCompareFunc::E'
+          git -C "$FILAMENT_DIR" diff | grep -F 'overrideSolumMaskAwareDepthReadOnly'
+          git -C "$FILAMENT_DIR" diff | grep -F 'SamplerCompareFunc::GE'
           git -C "$FILAMENT_DIR" diff | grep -F 'current_full_resolution_depth'
+          git -C "$FILAMENT_DIR" diff | grep -F 'masked_color_depth_ge_read_only'
           git -C "$FILAMENT_DIR" diff | grep -F 'double_sided_preserved'
 
       - name: Set up Java 17
@@ -149,7 +152,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          ARTIFACT_DIR="filament-solum-perf-v3-t3-artifacts"
+          ARTIFACT_DIR="filament-solum-perf-v3-t3-r21-artifacts"
           mkdir -p "$ARTIFACT_DIR/logs" "$ARTIFACT_DIR/aars" "$ARTIFACT_DIR/native"
           cp -R "$LOG_DIR"/. "$ARTIFACT_DIR/logs/" || true
           cp filament-solum-patches.sha256 filament-perf-v3-t3-diff-stat.txt \
@@ -164,10 +167,10 @@ jobs:
           find "$ARTIFACT_DIR" -type f ! -name SHA256SUMS.txt -print0 \
             | sort -z | xargs -0 sha256sum > "$ARTIFACT_DIR/SHA256SUMS.txt"
 
-      - name: Upload T3 R20 build evidence
+      - name: Upload T3 R21 build evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: filament-v1714-solum-perf-v3-t3-mask-aware-coverage-r20-arm64
-          path: filament-solum-perf-v3-t3-artifacts/**
+          name: filament-v1714-solum-perf-v3-t3-mask-aware-coverage-r21-arm64
+          path: filament-solum-perf-v3-t3-r21-artifacts/**
           if-no-files-found: error

@@ -1,0 +1,49 @@
+diff --git a/filament/src/RenderPass.cpp b/filament/src/RenderPass.cpp
+index c23aced..92ffb41 100644
+--- a/filament/src/RenderPass.cpp
++++ b/filament/src/RenderPass.cpp
+@@ -877,2 +877,2 @@ void RenderPass::Executor::overrideSolumOpaqueStencil(
+-void RenderPass::Executor::overrideSolumMaskAwareDepthEqual() noexcept {
+-    mSolumMaskAwareDepthEqual = true;
++void RenderPass::Executor::overrideSolumMaskAwareDepthReadOnly() noexcept {
++    mSolumMaskAwareDepthReadOnly = true;
+@@ -969 +969 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
+-        bool const solumMaskAwareDepthEqual = mSolumMaskAwareDepthEqual;
++        bool const solumMaskAwareDepthReadOnly = mSolumMaskAwareDepthReadOnly;
+@@ -1178 +1178 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
+-                if (UTILS_UNLIKELY(solumMaskAwareDepthEqual &&
++                if (UTILS_UNLIKELY(solumMaskAwareDepthReadOnly &&
+@@ -1181 +1181,4 @@ void RenderPass::Executor::execute(FEngine const& engine, DriverApi& driver,
+-                    pipeline.rasterState.depthFunc = SamplerCompareFunc::E;
++                    // Filament uses reversed-Z. GE preserves the current masked prepass hit while
++                    // allowing the color shader's derivative-filtered edge where the raw depth
++                    // mask did not write. EQUAL produced missing edge samples.
++                    pipeline.rasterState.depthFunc = SamplerCompareFunc::GE;
+@@ -1238 +1241 @@ RenderPass::Executor::Executor(RenderPass const& pass, Command const* b, Command
+-          mSolumMaskAwareDepthEqual(false) {
++          mSolumMaskAwareDepthReadOnly(false) {
+@@ -1252 +1255 @@ RenderPass::Executor::Executor() noexcept
+-          mSolumMaskAwareDepthEqual(false) {
++          mSolumMaskAwareDepthReadOnly(false) {
+diff --git a/filament/src/RenderPass.h b/filament/src/RenderPass.h
+index 867349d..67be434 100644
+--- a/filament/src/RenderPass.h
++++ b/filament/src/RenderPass.h
+@@ -384 +384 @@ public:
+-        bool mSolumMaskAwareDepthEqual : 1;
++        bool mSolumMaskAwareDepthReadOnly : 1;
+@@ -427,2 +427,2 @@ public:
+-        // with fixed-function EQUAL/read-only state before expensive fragment/PBR work.
+-        void overrideSolumMaskAwareDepthEqual() noexcept;
++        // with conservative reversed-Z GE/read-only state before expensive fragment/PBR work.
++        void overrideSolumMaskAwareDepthReadOnly() noexcept;
+diff --git a/filament/src/details/Renderer.cpp b/filament/src/details/Renderer.cpp
+index a9df8ec..7479635 100644
+--- a/filament/src/details/Renderer.cpp
++++ b/filament/src/details/Renderer.cpp
+@@ -2186 +2186 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+-            baselineOrMaskAwareExecutor.overrideSolumMaskAwareDepthEqual();
++            baselineOrMaskAwareExecutor.overrideSolumMaskAwareDepthReadOnly();
+@@ -2782 +2782 @@ utils::CString FRenderer::getSolumMaskAwareCoverageStats() const {
+-        << ",\"masked_color_depth_equal_read_only\":true"
++        << ",\"masked_color_depth_ge_read_only\":true"

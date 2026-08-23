@@ -1,5 +1,5 @@
 diff --git a/filament/src/RenderPass.cpp b/filament/src/RenderPass.cpp
-index c23aced..92ffb41 100644
+index 1531c36..c229f76 100644
 --- a/filament/src/RenderPass.cpp
 +++ b/filament/src/RenderPass.cpp
 @@ -874,8 +874,8 @@ void RenderPass::Executor::overrideSolumOpaqueStencil(
@@ -57,10 +57,10 @@ index c23aced..92ffb41 100644
  
  RenderPass::Executor::Executor(Executor&& rhs) noexcept = default;
 diff --git a/filament/src/RenderPass.h b/filament/src/RenderPass.h
-index 867349d..67be434 100644
+index ebcef2a..ecb7a13 100644
 --- a/filament/src/RenderPass.h
 +++ b/filament/src/RenderPass.h
-@@ -381,7 +381,7 @@ public:
+@@ -380,7 +380,7 @@ public:
          bool mHasSolumDrawScissor : 1;
          bool mHasSolumStencilOverride : 1;
          bool mSolumStencilOpaqueOnly : 1;
@@ -69,22 +69,22 @@ index 867349d..67be434 100644
  
          Executor(RenderPass const& pass, Command const* b, Command const* e) noexcept;
  
-@@ -424,8 +424,8 @@ public:
+@@ -422,8 +422,8 @@ public:
+         // surfaces. Masked, transparent, double-sided/hair, water and VFX stay current.
          void overrideSolumOpaqueStencil(backend::StencilState const& stencilState) noexcept;
  
-         // PERF V3 T3: eligible masked SURFACE commands consume the current coverage depth
--        // with fixed-function EQUAL/read-only state before expensive fragment/PBR work.
+-        // T3 fixed-function early depth rejection for coverage-pass eligible masked surfaces.
 -        void overrideSolumMaskAwareDepthEqual() noexcept;
-+        // with conservative reversed-Z GE/read-only state before expensive fragment/PBR work.
++        // T3 uses conservative reversed-Z GE/read-only depth for eligible masked surfaces.
 +        void overrideSolumMaskAwareDepthReadOnly() noexcept;
  
          void execute(FEngine const& engine, backend::DriverApi& driver) const noexcept;
      };
 diff --git a/filament/src/details/Renderer.cpp b/filament/src/details/Renderer.cpp
-index a9df8ec..7479635 100644
+index baf1267..bb2f637 100644
 --- a/filament/src/details/Renderer.cpp
 +++ b/filament/src/details/Renderer.cpp
-@@ -2183,7 +2183,7 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+@@ -2184,7 +2184,7 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
                      solumMaskAwareCoveragePass->getExecutor());
              baselineOrRegionalConfig.clearFlags &=
                      ~(TargetBufferFlags::DEPTH | TargetBufferFlags::STENCIL);
@@ -93,8 +93,8 @@ index a9df8ec..7479635 100644
              ++mSolumMaskAwareCoverage.coveragePassFrames;
          }
          if (mSolumV1.regionalEnabled && solumV1RegionalResourcesReady) {
-@@ -2779,7 +2779,7 @@ utils::CString FRenderer::getSolumMaskAwareCoverageStats() const {
-         << mSolumMaskAwareCoverage.failClosedFrames
+@@ -2778,7 +2778,7 @@ utils::CString FRenderer::getSolumMaskAwareCoverageStats() const {
+         << ",\"fail_closed_frames\":" << mSolumMaskAwareCoverage.failClosedFrames
          << ",\"current_visibility_required\":true"
          << ",\"current_full_resolution_depth\":true"
 -        << ",\"masked_color_depth_equal_read_only\":true"

@@ -1,0 +1,1743 @@
+diff --git a/android/filament-android/CMakeLists.txt b/android/filament-android/CMakeLists.txt
+index 3fd31b0ba5cc1f4f0778cf31ceaf0f298c260a96..f1ff56b72800846e3c00e7c572e5f005f7589e09 100644
+--- a/android/filament-android/CMakeLists.txt
++++ b/android/filament-android/CMakeLists.txt
+@@ -92,6 +92,7 @@ set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size
+ add_library(filament-jni SHARED
+     src/main/cpp/BufferObject.cpp
+     src/main/cpp/Camera.cpp
++    src/main/cpp/CardinalManager.cpp
+     src/main/cpp/Colors.cpp
+     src/main/cpp/ColorGrading.cpp
+     src/main/cpp/Engine.cpp
+diff --git a/android/filament-android/src/main/cpp/CardinalManager.cpp b/android/filament-android/src/main/cpp/CardinalManager.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..40118657045adcca8c48401935a8745d6a2a46a1
+--- /dev/null
++++ b/android/filament-android/src/main/cpp/CardinalManager.cpp
+@@ -0,0 +1,148 @@
++/*
++ * Copyright (C) 2026 SOLUM Platform
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++#include <jni.h>
++
++#include <filament/CardinalManager.h>
++
++#include <common/JniUtils.h>
++
++#include <cstring>
++#include <vector>
++
++using namespace filament;
++using namespace filament::android;
++
++namespace {
++
++constexpr size_t CARDINAL_WIRE_BYTES = 96;
++
++template<typename T>
++T readWire(uint8_t const* source, size_t offset) noexcept {
++    T value;
++    std::memcpy(&value, source + offset, sizeof(T));
++    return value;
++}
++
++CardinalManager::Decision decode(uint8_t const* source) noexcept {
++    CardinalManager::Decision out;
++    out.stableChunkId = readWire<uint32_t>(source, 0);
++    out.sourceEntity = readWire<uint32_t>(source, 4);
++    out.midHqEntity = readWire<uint32_t>(source, 8);
++    out.midEntity = readWire<uint32_t>(source, 12);
++    out.farEntity = readWire<uint32_t>(source, 16);
++    out.selectedEntity = readWire<uint32_t>(source, 20);
++    out.selectedRepresentation = readWire<uint32_t>(source, 24);
++    out.selectedMaterialVariant = readWire<uint32_t>(source, 28);
++    out.visibility = readWire<uint32_t>(source, 32);
++    out.flags = readWire<uint32_t>(source, 36);
++    out.validityRevision = readWire<uint64_t>(source, 40);
++    out.decisionRevision = readWire<uint64_t>(source, 48);
++    out.importance = readWire<float>(source, 56);
++    out.boundsCenter[0] = readWire<float>(source, 60);
++    out.boundsCenter[1] = readWire<float>(source, 64);
++    out.boundsCenter[2] = readWire<float>(source, 68);
++    out.boundsExtent[0] = readWire<float>(source, 72);
++    out.boundsExtent[1] = readWire<float>(source, 76);
++    out.boundsExtent[2] = readWire<float>(source, 80);
++    out.failClosedMetadata = readWire<uint32_t>(source, 84);
++    out.sourcePrimitiveCount = readWire<uint32_t>(source, 88);
++    out.selectedPrimitiveCount = readWire<uint32_t>(source, 92);
++    return out;
++}
++
++CardinalManager::Resident decodeResident(uint8_t const* source) noexcept {
++    return {
++        readWire<uint32_t>(source, 0),
++        readWire<uint32_t>(source, 4),
++        readWire<uint32_t>(source, 8),
++        readWire<uint32_t>(source, 12)
++    };
++}
++
++} // namespace
++
++extern "C" JNIEXPORT void JNICALL
++Java_com_google_android_filament_CardinalManager_nRequestMode(JNIEnv*, jclass,
++        jlong nativeManager, jint mode, jlong revision) {
++    auto* manager = reinterpret_cast<CardinalManager*>(nativeManager);
++    manager->requestMode(CardinalManager::Mode(mode), uint64_t(revision));
++}
++
++extern "C" JNIEXPORT jboolean JNICALL
++Java_com_google_android_filament_CardinalManager_nPublishDecisions(JNIEnv* env, jclass,
++        jlong nativeManager, jobject records, jint byteOffset, jint count,
++        jlong revision, jboolean replace) {
++    auto* manager = reinterpret_cast<CardinalManager*>(nativeManager);
++    if (!manager || !records || byteOffset < 0 || count < 0 || revision <= 0) return JNI_FALSE;
++    auto* base = static_cast<uint8_t*>(env->GetDirectBufferAddress(records));
++    jlong const capacity = env->GetDirectBufferCapacity(records);
++    size_t const bytes = size_t(count) * CARDINAL_WIRE_BYTES;
++    if (!base || capacity < 0 || size_t(byteOffset) + bytes > size_t(capacity)) return JNI_FALSE;
++    std::vector<CardinalManager::Decision> decoded;
++    decoded.reserve(size_t(count));
++    for (jint i = 0; i < count; ++i) {
++        decoded.push_back(decode(base + byteOffset + size_t(i) * CARDINAL_WIRE_BYTES));
++    }
++    return manager->publishDecisions(decoded.data(), decoded.size(),
++            uint64_t(revision), bool(replace)) ? JNI_TRUE : JNI_FALSE;
++}
++
++extern "C" JNIEXPORT jboolean JNICALL
++Java_com_google_android_filament_CardinalManager_nPublishResidents(JNIEnv* env, jclass,
++        jlong nativeManager, jobject residents, jint byteOffset, jint count, jboolean replace) {
++    auto* manager = reinterpret_cast<CardinalManager*>(nativeManager);
++    if (!manager || !residents || byteOffset < 0 || count < 0) return JNI_FALSE;
++    auto* base = static_cast<uint8_t*>(env->GetDirectBufferAddress(residents));
++    jlong const capacity = env->GetDirectBufferCapacity(residents);
++    size_t const bytes = size_t(count) * sizeof(CardinalManager::Resident);
++    if (!base || capacity < 0 || size_t(byteOffset) + bytes > size_t(capacity)) return JNI_FALSE;
++    std::vector<CardinalManager::Resident> decoded;
++    decoded.reserve(size_t(count));
++    for (jint i = 0; i < count; ++i) {
++        decoded.push_back(decodeResident(base + byteOffset +
++                size_t(i) * sizeof(CardinalManager::Resident)));
++    }
++    return manager->publishResidents(decoded.data(), decoded.size(), bool(replace))
++            ? JNI_TRUE : JNI_FALSE;
++}
++
++extern "C" JNIEXPORT void JNICALL
++Java_com_google_android_filament_CardinalManager_nClearDecisions(JNIEnv*, jclass,
++        jlong nativeManager, jlong revision) {
++    reinterpret_cast<CardinalManager*>(nativeManager)->clearDecisions(uint64_t(revision));
++}
++
++extern "C" JNIEXPORT void JNICALL
++Java_com_google_android_filament_CardinalManager_nRecordJavaSceneMutation(JNIEnv*, jclass,
++        jlong nativeManager, jint adds, jint removes) {
++    reinterpret_cast<CardinalManager*>(nativeManager)->recordJavaSceneMutation(
++            uint32_t(adds), uint32_t(removes));
++}
++
++extern "C" JNIEXPORT jlongArray JNICALL
++Java_com_google_android_filament_CardinalManager_nGetReadback(JNIEnv* env, jclass,
++        jlong nativeManager) {
++    auto const r = reinterpret_cast<CardinalManager*>(nativeManager)->getReadback();
++    jlong values[35] = {
++        jlong(r.requestedMode), jlong(r.actualMode), jlong(r.modeRevision),
++        jlong(r.decisionBufferRevision), jlong(r.presentedModeRevision),
++        jlong(r.presentedDecisionBufferRevision), jlong(r.fallbackReason),
++        jlong(r.decisionBufferBytes), jlong(r.residentSourceCount),
++        jlong(r.residentMidHqCount), jlong(r.residentMidCount), jlong(r.residentFarCount),
++        jlong(r.sourceClusters), jlong(r.midHqClusters), jlong(r.midClusters),
++        jlong(r.farClusters), jlong(r.skippedClusters), jlong(r.frustumSkippedClusters),
++        jlong(r.fallbackClusters), jlong(r.candidateCommands), jlong(r.emittedCommands),
++        jlong(r.commandsRemoved), jlong(r.candidatePrimitives), jlong(r.emittedPrimitives),
++        jlong(r.primitivesRemoved), jlong(r.structureCandidateCommands),
++        jlong(r.structureReusedCommands), jlong(r.structureEmittedCommands),
++        jlong(r.structureCandidatePrimitives), jlong(r.structureAvoidedPrimitives),
++        jlong(r.structureFallbackCount), jlong(r.structureFallbackReason),
++        jlong(r.javaSceneAdds), jlong(r.javaSceneRemoves), jlong(r.generationCount)
++    };
++    jlongArray result = env->NewLongArray(35);
++    if (result) env->SetLongArrayRegion(result, 0, 35, values);
++    return result;
++}
+diff --git a/android/filament-android/src/main/cpp/Engine.cpp b/android/filament-android/src/main/cpp/Engine.cpp
+index 8058b451517b4948e225393e564ff78d1252fd51..cddde009c7e42419b6acb4fa79f34983570aba14 100644
+--- a/android/filament-android/src/main/cpp/Engine.cpp
++++ b/android/filament-android/src/main/cpp/Engine.cpp
+@@ -19,6 +19,7 @@
+ #include <exception>
+ 
+ #include <filament/Camera.h>
++#include <filament/CardinalManager.h>
+ #include <filament/Engine.h>
+ #include <filament/InstanceBuffer.h>
+ #include <filament/MorphTargetBuffer.h>
+@@ -557,6 +558,12 @@ Java_com_google_android_filament_Engine_nGetRenderableManager(JNIEnv*, jclass, j
+     return (jlong) &engine->getRenderableManager();
+ }
+ 
++extern "C" JNIEXPORT jlong JNICALL
++Java_com_google_android_filament_Engine_nGetCardinalManager(JNIEnv*, jclass, jlong nativeEngine) {
++    Engine* engine = reinterpret_cast<Engine*>(nativeEngine);
++    return reinterpret_cast<jlong>(&engine->getCardinalManager());
++}
++
+ extern "C" JNIEXPORT jlong JNICALL
+ Java_com_google_android_filament_Engine_nGetJobSystem(JNIEnv*, jclass, jlong nativeEngine) {
+     Engine* engine = (Engine*) nativeEngine;
+diff --git a/android/filament-android/src/main/java/com/google/android/filament/CardinalManager.java b/android/filament-android/src/main/java/com/google/android/filament/CardinalManager.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..c8ce68334364d43c74992372d0355c2e3d8d3b25
+--- /dev/null
++++ b/android/filament-android/src/main/java/com/google/android/filament/CardinalManager.java
+@@ -0,0 +1,183 @@
++/*
++ * Copyright (C) 2026 SOLUM Platform
++ * SPDX-License-Identifier: Apache-2.0
++ */
++package com.google.android.filament;
++
++import androidx.annotation.IntRange;
++import androidx.annotation.NonNull;
++
++import java.nio.ByteBuffer;
++import java.nio.ByteOrder;
++
++/** Atomic Android bridge for Filament's SOLUM Cardinal execution backend. */
++public final class CardinalManager {
++    public static final int MODE_BASELINE_SOURCE = 0;
++    public static final int MODE_CARDINAL_NATIVE = 1;
++    public static final int MODE_CARDINAL_NATIVE_STRUCTURE_REUSE = 2;
++
++    public static final int REPRESENTATION_SOURCE = 0;
++    public static final int REPRESENTATION_MID_HQ = 1;
++    public static final int REPRESENTATION_MID = 2;
++    public static final int REPRESENTATION_FAR = 3;
++    public static final int REPRESENTATION_SKIP = 4;
++
++    public static final int MATERIAL_SOURCE = 0;
++    public static final int MATERIAL_MID = 1;
++    public static final int MATERIAL_FAR = 2;
++
++    public static final int VISIBILITY_RENDER = 0;
++    public static final int VISIBILITY_PROVEN_OUTSIDE_FRUSTUM = 1;
++    public static final int VISIBILITY_UNCERTAIN = 2;
++
++    public static final int FLAG_INTERACTION_SAFE = 0x1;
++    public static final int FLAG_IMPORTANT = 0x2;
++    public static final int FLAG_STRUCTURE_STATIC_SAFE = 0x4;
++
++    public static final int DECISION_RECORD_BYTES = 96;
++    public static final int RESIDENT_RECORD_BYTES = 16;
++
++    private final long mNativeObject;
++
++    CardinalManager(long nativeObject) {
++        if (nativeObject == 0) throw new IllegalStateException("CardinalManager unavailable");
++        mNativeObject = nativeObject;
++    }
++
++    public void requestMode(@IntRange(from = 0, to = 2) int mode, long modeRevision) {
++        if (mode < MODE_BASELINE_SOURCE || mode > MODE_CARDINAL_NATIVE_STRUCTURE_REUSE) {
++            throw new IllegalArgumentException("Unknown Cardinal mode " + mode);
++        }
++        nRequestMode(mNativeObject, mode, modeRevision);
++    }
++
++    /** Publishes fixed 96-byte little/native-endian records. The native side copies the payload. */
++    public boolean publishDecisions(@NonNull ByteBuffer records,
++            @IntRange(from = 0) int recordCount, long decisionRevision, boolean replace) {
++        if (!records.isDirect() || records.order() != ByteOrder.nativeOrder()) {
++            throw new IllegalArgumentException("Cardinal records require direct native-order buffer");
++        }
++        int byteCount = Math.multiplyExact(recordCount, DECISION_RECORD_BYTES);
++        if (recordCount < 0 || records.remaining() < byteCount || decisionRevision <= 0) {
++            throw new IllegalArgumentException("Cardinal decision range/revision invalid");
++        }
++        return nPublishDecisions(mNativeObject, records, records.position(),
++                recordCount, decisionRevision, replace);
++    }
++
++    /** Replaces or incrementally extends the persistent resident resource registry. */
++    public boolean publishResidents(@NonNull ByteBuffer residents,
++            @IntRange(from = 0) int residentCount, boolean replace) {
++        if (!residents.isDirect() || residents.order() != ByteOrder.nativeOrder()) {
++            throw new IllegalArgumentException("Cardinal residents require direct native-order buffer");
++        }
++        int byteCount = Math.multiplyExact(residentCount, RESIDENT_RECORD_BYTES);
++        if (residentCount < 0 || residents.remaining() < byteCount) {
++            throw new IllegalArgumentException("Cardinal resident range invalid");
++        }
++        return nPublishResidents(mNativeObject, residents, residents.position(),
++                residentCount, replace);
++    }
++
++    public void clearDecisions(long decisionRevision) {
++        if (decisionRevision <= 0) throw new IllegalArgumentException("revision must be positive");
++        nClearDecisions(mNativeObject, decisionRevision);
++    }
++
++    public void recordJavaSceneMutation(int adds, int removes) {
++        if (adds < 0 || removes < 0) throw new IllegalArgumentException("negative scene mutation");
++        nRecordJavaSceneMutation(mNativeObject, adds, removes);
++    }
++
++    @NonNull
++    public Readback getReadback() {
++        long[] values = nGetReadback(mNativeObject);
++        if (values == null || values.length != Readback.VALUE_COUNT) {
++            throw new IllegalStateException("Cardinal native readback ABI mismatch");
++        }
++        return new Readback(values);
++    }
++
++    /** Writes one record at the buffer's current position and advances it by 96 bytes. */
++    public static void putDecision(@NonNull ByteBuffer out,
++            int stableChunkId, int sourceEntity, int midHqEntity, int midEntity, int farEntity,
++            int selectedEntity, int selectedRepresentation, int selectedMaterialVariant,
++            int visibility, int flags, long validityRevision, long decisionRevision,
++            float importance, float centerX, float centerY, float centerZ,
++            float extentX, float extentY, float extentZ, int failClosedMetadata,
++            int sourcePrimitiveCount, int selectedPrimitiveCount) {
++        if (!out.isDirect() || out.order() != ByteOrder.nativeOrder() ||
++                out.remaining() < DECISION_RECORD_BYTES) {
++            throw new IllegalArgumentException("Cardinal decision buffer invalid");
++        }
++        int start = out.position();
++        out.putInt(stableChunkId).putInt(sourceEntity).putInt(midHqEntity).putInt(midEntity)
++            .putInt(farEntity).putInt(selectedEntity).putInt(selectedRepresentation)
++            .putInt(selectedMaterialVariant).putInt(visibility).putInt(flags)
++            .putLong(validityRevision).putLong(decisionRevision).putFloat(importance)
++            .putFloat(centerX).putFloat(centerY).putFloat(centerZ)
++            .putFloat(extentX).putFloat(extentY).putFloat(extentZ)
++            .putInt(failClosedMetadata).putInt(sourcePrimitiveCount)
++            .putInt(selectedPrimitiveCount);
++        if (out.position() - start != DECISION_RECORD_BYTES) {
++            throw new AssertionError("Cardinal decision ABI drift");
++        }
++    }
++
++    public static void putResident(@NonNull ByteBuffer out, int stableChunkId,
++            int entity, int representation, int flags) {
++        if (!out.isDirect() || out.order() != ByteOrder.nativeOrder() ||
++                out.remaining() < RESIDENT_RECORD_BYTES) {
++            throw new IllegalArgumentException("Cardinal resident buffer invalid");
++        }
++        out.putInt(stableChunkId).putInt(entity).putInt(representation).putInt(flags);
++    }
++
++    public static final class Readback {
++        static final int VALUE_COUNT = 35;
++        public final int requestedMode;
++        public final int actualMode;
++        public final long modeRevision;
++        public final long decisionBufferRevision;
++        public final long presentedModeRevision;
++        public final long presentedDecisionBufferRevision;
++        public final int fallbackReason;
++        public final long decisionBufferBytes;
++        public final long residentSourceCount, residentMidHqCount, residentMidCount, residentFarCount;
++        public final long sourceClusters, midHqClusters, midClusters, farClusters, skippedClusters;
++        public final long frustumSkippedClusters, fallbackClusters;
++        public final long candidateCommands, emittedCommands, commandsRemoved;
++        public final long candidatePrimitives, emittedPrimitives, primitivesRemoved;
++        public final long structureCandidateCommands, structureReusedCommands,
++            structureEmittedCommands, structureCandidatePrimitives, structureAvoidedPrimitives,
++            structureFallbackCount;
++        public final int structureFallbackReason;
++        public final long javaSceneAdds, javaSceneRemoves, generationCount;
++
++        Readback(long[] v) {
++            requestedMode = (int)v[0]; actualMode = (int)v[1]; modeRevision = v[2];
++            decisionBufferRevision = v[3]; presentedModeRevision = v[4];
++            presentedDecisionBufferRevision = v[5]; fallbackReason = (int)v[6];
++            decisionBufferBytes = v[7]; residentSourceCount = v[8]; residentMidHqCount = v[9];
++            residentMidCount = v[10]; residentFarCount = v[11]; sourceClusters = v[12];
++            midHqClusters = v[13]; midClusters = v[14]; farClusters = v[15];
++            skippedClusters = v[16]; frustumSkippedClusters = v[17]; fallbackClusters = v[18];
++            candidateCommands = v[19]; emittedCommands = v[20]; commandsRemoved = v[21];
++            candidatePrimitives = v[22]; emittedPrimitives = v[23]; primitivesRemoved = v[24];
++            structureCandidateCommands = v[25]; structureReusedCommands = v[26];
++            structureEmittedCommands = v[27]; structureCandidatePrimitives = v[28];
++            structureAvoidedPrimitives = v[29]; structureFallbackCount = v[30];
++            structureFallbackReason = (int)v[31]; javaSceneAdds = v[32]; javaSceneRemoves = v[33];
++            generationCount = v[34];
++        }
++    }
++
++    private static native void nRequestMode(long nativeManager, int mode, long revision);
++    private static native boolean nPublishDecisions(long nativeManager, ByteBuffer records,
++            int byteOffset, int count, long revision, boolean replace);
++    private static native boolean nPublishResidents(long nativeManager, ByteBuffer residents,
++            int byteOffset, int count, boolean replace);
++    private static native void nClearDecisions(long nativeManager, long revision);
++    private static native void nRecordJavaSceneMutation(long nativeManager, int adds, int removes);
++    private static native long[] nGetReadback(long nativeManager);
++}
+diff --git a/android/filament-android/src/main/java/com/google/android/filament/Engine.java b/android/filament-android/src/main/java/com/google/android/filament/Engine.java
+index 7738793e9ae2e5757ce6dd86c550ccdd01e218c7..6297407f3e0769decfc7b50064c1211aabfb77c4 100644
+--- a/android/filament-android/src/main/java/com/google/android/filament/Engine.java
++++ b/android/filament-android/src/main/java/com/google/android/filament/Engine.java
+@@ -116,6 +116,7 @@ public class Engine {
+     @NonNull private final TransformManager mTransformManager;
+     @NonNull private final LightManager mLightManager;
+     @NonNull private final RenderableManager mRenderableManager;
++    @NonNull private final CardinalManager mCardinalManager;
+     @NonNull private final EntityManager mEntityManager;
+ 
+     /**
+@@ -551,6 +552,7 @@ public class Engine {
+         mTransformManager = new TransformManager(nGetTransformManager(nativeEngine));
+         mLightManager = new LightManager(nGetLightManager(nativeEngine));
+         mRenderableManager = new RenderableManager(nGetRenderableManager(nativeEngine));
++        mCardinalManager = new CardinalManager(nGetCardinalManager(nativeEngine));
+         mEntityManager = new EntityManager(nGetEntityManager(nativeEngine));
+         mConfig = config;
+     }
+@@ -1380,6 +1382,12 @@ public class Engine {
+         return mRenderableManager;
+     }
+ 
++    /** Returns the single native SOLUM Cardinal execution owner. */
++    @NonNull
++    public CardinalManager getCardinalManager() {
++        return mCardinalManager;
++    }
++
+     /**
+      * @return the {@link EntityManager} used by this {@link Engine}
+      */
+@@ -1598,6 +1606,7 @@ public class Engine {
+     private static native long nGetTransformManager(long nativeEngine);
+     private static native long nGetLightManager(long nativeEngine);
+     private static native long nGetRenderableManager(long nativeEngine);
++    private static native long nGetCardinalManager(long nativeEngine);
+     private static native long nGetJobSystem(long nativeEngine);
+     private static native long nGetEntityManager(long nativeEngine);
+     private static native void nSetAutomaticInstancingEnabled(long nativeEngine, boolean enable);
+diff --git a/filament/CMakeLists.txt b/filament/CMakeLists.txt
+index f316c4950010e9108739c4f65ec779d883cbcb13..28d44ab77a240300f4ac442fe8b771dc66aa0568 100644
+--- a/filament/CMakeLists.txt
++++ b/filament/CMakeLists.txt
+@@ -15,6 +15,7 @@ set(PUBLIC_HDRS
+         include/filament/Box.h
+         include/filament/BufferObject.h
+         include/filament/Camera.h
++        include/filament/CardinalManager.h
+         include/filament/Color.h
+         include/filament/ColorGrading.h
+         include/filament/ColorSpace.h
+@@ -65,6 +66,7 @@ set(SRCS
+         src/AtlasAllocator.cpp
+         src/BufferObject.cpp
+         src/Camera.cpp
++        src/CardinalManager.cpp
+         src/Color.cpp
+         src/ColorSpaceUtils.cpp
+         src/Culler.cpp
+@@ -124,6 +126,7 @@ set(SRCS
+         src/details/BufferAllocator.cpp
+         src/details/BufferObject.cpp
+         src/details/Camera.cpp
++        src/details/CardinalManager.cpp
+         src/details/ColorGrading.cpp
+         src/details/DebugRegistry.cpp
+         src/details/Engine.cpp
+@@ -211,6 +214,7 @@ set(PRIVATE_HDRS
+         src/details/BufferAllocator.h
+         src/details/BufferObject.h
+         src/details/Camera.h
++        src/details/CardinalManager.h
+         src/details/ColorGrading.h
+         src/details/DebugRegistry.h
+         src/details/Engine.h
+diff --git a/filament/include/filament/CardinalManager.h b/filament/include/filament/CardinalManager.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..bc8d027c7be419a8336fbfde0716af4a58ab4780
+--- /dev/null
++++ b/filament/include/filament/CardinalManager.h
+@@ -0,0 +1,153 @@
++/*
++ * Copyright (C) 2026 SOLUM Platform
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++#ifndef TNT_FILAMENT_CARDINALMANAGER_H
++#define TNT_FILAMENT_CARDINALMANAGER_H
++
++#include <filament/FilamentAPI.h>
++
++#include <stddef.h>
++#include <stdint.h>
++
++namespace filament {
++
++/**
++ * Native execution boundary for decisions authored by SOLUM Sensus Conductor.
++ *
++ * CardinalManager does not select a representation. It atomically consumes immutable decision
++ * generations and removes non-selected resident renderables before Filament command generation.
++ */
++class UTILS_PUBLIC CardinalManager {
++public:
++    enum class Mode : uint8_t {
++        BASELINE_SOURCE = 0,
++        CARDINAL_NATIVE = 1,
++        CARDINAL_NATIVE_STRUCTURE_REUSE = 2
++    };
++
++    enum class Representation : uint8_t {
++        SOURCE = 0,
++        MID_HQ = 1,
++        MID = 2,
++        FAR = 3,
++        SKIP = 4
++    };
++
++    enum class MaterialVariant : uint8_t {
++        SOURCE = 0,
++        MID = 1,
++        FAR = 2
++    };
++
++    enum class Visibility : uint8_t {
++        RENDER = 0,
++        PROVEN_OUTSIDE_FRUSTUM = 1,
++        UNCERTAIN = 2
++    };
++
++    enum class FallbackReason : uint8_t {
++        NONE = 0,
++        MISSING_DECISION_BUFFER = 1,
++        INVALID_RECORD = 2,
++        DUPLICATE_ENTITY = 3,
++        MISSING_SELECTED_HANDLE = 4,
++        SELECTED_HANDLE_TIER_MISMATCH = 5,
++        MATERIAL_VARIANT_MISMATCH = 6,
++        STRUCTURE_HISTORY_MISSING = 7,
++        STRUCTURE_DESCRIPTOR_MISMATCH = 8,
++        STRUCTURE_CAMERA_MISMATCH = 9,
++        STRUCTURE_SCENE_MISMATCH = 10,
++        STRUCTURE_DYNAMIC_UNSAFE = 11,
++        STRUCTURE_PICKING_INCOMPATIBLE = 12
++    };
++
++    enum DecisionFlags : uint32_t {
++        INTERACTION_SAFE = 0x1u,
++        IMPORTANT = 0x2u,
++        STRUCTURE_STATIC_SAFE = 0x4u
++    };
++
++    /** Fixed 96-byte native record; Android wire format uses these exact field offsets. */
++    struct Decision {
++        uint32_t stableChunkId = 0;
++        uint32_t sourceEntity = 0;
++        uint32_t midHqEntity = 0;
++        uint32_t midEntity = 0;
++        uint32_t farEntity = 0;
++        uint32_t selectedEntity = 0;
++        uint32_t selectedRepresentation = 0;
++        uint32_t selectedMaterialVariant = 0;
++        uint32_t visibility = 0;
++        uint32_t flags = 0;
++        uint64_t validityRevision = 0;
++        uint64_t decisionRevision = 0;
++        float importance = 0.0f;
++        float boundsCenter[3] = {};
++        float boundsExtent[3] = {};
++        uint32_t failClosedMetadata = 0;
++        uint32_t sourcePrimitiveCount = 0;
++        uint32_t selectedPrimitiveCount = 0;
++    };
++    static_assert(sizeof(Decision) == 96, "Cardinal Decision wire ABI must remain 96 bytes");
++
++    /** Persistent resident resource identity. Multiple candidates may share one semantic tier. */
++    struct Resident {
++        uint32_t stableChunkId = 0;
++        uint32_t entity = 0;
++        uint32_t representation = 0;
++        uint32_t flags = 0;
++    };
++    static_assert(sizeof(Resident) == 16, "Cardinal Resident wire ABI must remain 16 bytes");
++
++    struct Readback {
++        Mode requestedMode = Mode::BASELINE_SOURCE;
++        Mode actualMode = Mode::BASELINE_SOURCE;
++        uint64_t modeRevision = 0;
++        uint64_t decisionBufferRevision = 0;
++        uint64_t presentedModeRevision = 0;
++        uint64_t presentedDecisionBufferRevision = 0;
++        FallbackReason fallbackReason = FallbackReason::NONE;
++        uint64_t decisionBufferBytes = 0;
++        uint64_t residentSourceCount = 0;
++        uint64_t residentMidHqCount = 0;
++        uint64_t residentMidCount = 0;
++        uint64_t residentFarCount = 0;
++        uint64_t sourceClusters = 0;
++        uint64_t midHqClusters = 0;
++        uint64_t midClusters = 0;
++        uint64_t farClusters = 0;
++        uint64_t skippedClusters = 0;
++        uint64_t frustumSkippedClusters = 0;
++        uint64_t fallbackClusters = 0;
++        uint64_t candidateCommands = 0;
++        uint64_t emittedCommands = 0;
++        uint64_t commandsRemoved = 0;
++        uint64_t candidatePrimitives = 0;
++        uint64_t emittedPrimitives = 0;
++        uint64_t primitivesRemoved = 0;
++        uint64_t structureCandidateCommands = 0;
++        uint64_t structureReusedCommands = 0;
++        uint64_t structureEmittedCommands = 0;
++        uint64_t structureCandidatePrimitives = 0;
++        uint64_t structureAvoidedPrimitives = 0;
++        uint64_t structureFallbackCount = 0;
++        FallbackReason structureFallbackReason = FallbackReason::NONE;
++        uint64_t javaSceneAdds = 0;
++        uint64_t javaSceneRemoves = 0;
++        uint64_t generationCount = 0;
++    };
++
++    void requestMode(Mode mode, uint64_t modeRevision) noexcept;
++    bool publishDecisions(Decision const* decisions, size_t count,
++            uint64_t decisionBufferRevision, bool replace) noexcept;
++    bool publishResidents(Resident const* residents, size_t count, bool replace) noexcept;
++    void clearDecisions(uint64_t decisionBufferRevision) noexcept;
++    void recordJavaSceneMutation(uint32_t adds, uint32_t removes) noexcept;
++    Readback getReadback() const noexcept;
++};
++
++} // namespace filament
++
++#endif // TNT_FILAMENT_CARDINALMANAGER_H
+diff --git a/filament/include/filament/Engine.h b/filament/include/filament/Engine.h
+index fcf92cdd0677d19bb5797670174d0d2e48f1b9b6..335c5d15804d9f4d1ea9a5ea9e01791ec77fb3aa 100644
+--- a/filament/include/filament/Engine.h
++++ b/filament/include/filament/Engine.h
+@@ -50,6 +50,7 @@ class Driver;
+ 
+ class BufferObject;
+ class Camera;
++class CardinalManager;
+ class ColorGrading;
+ class DebugRegistry;
+ class Fence;
+@@ -826,6 +827,9 @@ public:
+      */
+     RenderableManager& getRenderableManager() noexcept;
+ 
++    /** Returns the single native SOLUM Cardinal execution owner for this Engine. */
++    CardinalManager& getCardinalManager() noexcept;
++
+     /**
+      * @return LightManager reference
+      */
+diff --git a/filament/src/CardinalManager.cpp b/filament/src/CardinalManager.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..81a6ecadfb7399e1e2aaef34268d3ba57de8e435
+--- /dev/null
++++ b/filament/src/CardinalManager.cpp
+@@ -0,0 +1,38 @@
++/*
++ * Copyright (C) 2026 SOLUM Platform
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++#include "details/CardinalManager.h"
++
++#include "downcast.h"
++
++namespace filament {
++
++void CardinalManager::requestMode(Mode mode, uint64_t revision) noexcept {
++    downcast(this)->requestMode(mode, revision);
++}
++
++bool CardinalManager::publishDecisions(Decision const* decisions, size_t count,
++        uint64_t revision, bool replace) noexcept {
++    return downcast(this)->publishDecisions(decisions, count, revision, replace);
++}
++
++bool CardinalManager::publishResidents(Resident const* residents, size_t count,
++        bool replace) noexcept {
++    return downcast(this)->publishResidents(residents, count, replace);
++}
++
++void CardinalManager::clearDecisions(uint64_t revision) noexcept {
++    downcast(this)->clearDecisions(revision);
++}
++
++void CardinalManager::recordJavaSceneMutation(uint32_t adds, uint32_t removes) noexcept {
++    downcast(this)->recordJavaSceneMutation(adds, removes);
++}
++
++CardinalManager::Readback CardinalManager::getReadback() const noexcept {
++    return downcast(this)->getReadback();
++}
++
++} // namespace filament
+diff --git a/filament/src/Engine.cpp b/filament/src/Engine.cpp
+index c526fb383aba733e76f3f55c1caccf4f333beceb..89784a272b28d9bad4755375f9602a850551be38 100644
+--- a/filament/src/Engine.cpp
++++ b/filament/src/Engine.cpp
+@@ -20,6 +20,7 @@
+ 
+ #include "details/BufferObject.h"
+ #include "details/Camera.h"
++#include "details/CardinalManager.h"
+ #include "details/Fence.h"
+ #include "details/IndexBuffer.h"
+ #include "details/IndirectLight.h"
+@@ -103,6 +104,10 @@ Platform* Engine::getPlatform() const noexcept {
+     return downcast(this)->getPlatform();
+ }
+ 
++CardinalManager& Engine::getCardinalManager() noexcept {
++    return downcast(this)->getCardinalManager();
++}
++
+ Renderer* Engine::createRenderer() noexcept {
+     return downcast(this)->createRenderer();
+ }
+diff --git a/filament/src/FrameHistory.h b/filament/src/FrameHistory.h
+index aa151c0fee64c4e437638992d014f38a184c49f7..e0e3d0e312aee2996efa74f4cfb66a29508225f6 100644
+--- a/filament/src/FrameHistory.h
++++ b/filament/src/FrameHistory.h
+@@ -54,6 +54,15 @@ struct FrameHistoryEntry {
+         FrameGraphTexture::Descriptor desc;
+         uint64_t stateKey = 0;
+     } solumV1;
++    struct {
++        FrameGraphTexture depth;
++        FrameGraphTexture::Descriptor desc;
++        uint64_t cameraKey = 0;
++        uint64_t sceneKey = 0;
++        uint64_t commands = 0;
++        uint64_t primitives = 0;
++        bool valid = false;
++    } cardinalStructure;
+ };
+ 
+ /*
+diff --git a/filament/src/PostProcessManager.cpp b/filament/src/PostProcessManager.cpp
+index 1b1b30cac9d8e4a19a93360969c04f7da5adefd2..78a9b9653e2817fdb4530598a5577b77fe13aa4c 100644
+--- a/filament/src/PostProcessManager.cpp
++++ b/filament/src/PostProcessManager.cpp
+@@ -37,6 +37,7 @@
+ #include "materials/ssao/ssao.h"
+ 
+ #include "details/Engine.h"
++#include "details/CardinalManager.h"
+ 
+ #include "ds/DescriptorSet.h"
+ #include "ds/SsrPassDescriptorSet.h"
+@@ -558,7 +559,9 @@ void PostProcessManager::commitAndRenderFullScreenQuad(DriverApi& driver,
+ PostProcessManager::StructurePassOutput PostProcessManager::structure(FrameGraph& fg,
+         RenderPassBuilder const& passBuilder, uint8_t const structureRenderFlags,
+         uint32_t width, uint32_t height,
+-        StructurePassConfig const& config) noexcept {
++        StructurePassConfig const& config, FrameHistory& frameHistory,
++        uint64_t const cameraKey, uint64_t const sceneKey,
++        bool const structureStateSafe) noexcept {
+ 
+     const float scale = config.scale;
+ 
+@@ -579,56 +582,89 @@ PostProcessManager::StructurePassOutput PostProcessManager::structure(FrameGraph
+     const size_t levelCount = std::min(8, FTexture::maxLevelCount(width, height) - 5);
+     assert_invariant(levelCount >= 1);
+ 
+-    // generate depth pass at the requested resolution
+-    auto const& structurePass = fg.addPass<StructurePassData>("Structure Pass",
+-            [&](FrameGraph::Builder& builder, auto& data) {
+-                bool const isES2 = mFeatureLevel == FeatureLevel::FEATURE_LEVEL_0;
+-                data.depth = builder.createTexture("Structure Buffer", {
+-                        .width = width, .height = height,
+-                        .levels = uint8_t(levelCount),
+-                        .format = isES2 ? TextureFormat::DEPTH24 : TextureFormat::DEPTH32F });
+-
+-                data.depth = builder.write(data.depth,
+-                        FrameGraphTexture::Usage::DEPTH_ATTACHMENT);
+-
+-                if (config.picking) {
+-                    // FIXME: the DescriptorSetLayout must specify SAMPLER_FLOAT
+-                    data.picking = builder.createTexture("Picking Buffer", {
+-                            .width = width, .height = height,
+-                            .format = isES2 ? TextureFormat::RGBA8 : TextureFormat::RG32UI });
++    bool const isES2 = mFeatureLevel == FeatureLevel::FEATURE_LEVEL_0;
++    FrameGraphTexture::Descriptor const targetDesc{
++            .width = width, .height = height, .levels = uint8_t(levelCount),
++            .format = isES2 ? TextureFormat::DEPTH24 : TextureFormat::DEPTH32F };
++    FCardinalManager& cardinal = mEngine.getCardinalManager();
++    bool const reuseRequested = cardinal.structureReuseRequested();
++    auto const& previous = frameHistory.getPrevious().cardinalStructure;
++    bool const descriptorMatches = previous.desc.width == targetDesc.width &&
++            previous.desc.height == targetDesc.height &&
++            previous.desc.levels == targetDesc.levels &&
++            previous.desc.format == targetDesc.format;
++    bool reuse = false;
++    CardinalManager::FallbackReason fallback = CardinalManager::FallbackReason::NONE;
++    if (reuseRequested) {
++        if (config.picking) {
++            fallback = CardinalManager::FallbackReason::STRUCTURE_PICKING_INCOMPATIBLE;
++        } else if (!structureStateSafe || !cardinal.structureDecisionSafe()) {
++            fallback = CardinalManager::FallbackReason::STRUCTURE_DYNAMIC_UNSAFE;
++        } else if (!previous.valid || !previous.depth.handle) {
++            fallback = CardinalManager::FallbackReason::STRUCTURE_HISTORY_MISSING;
++        } else if (!descriptorMatches) {
++            fallback = CardinalManager::FallbackReason::STRUCTURE_DESCRIPTOR_MISMATCH;
++        } else if (previous.cameraKey != cameraKey) {
++            fallback = CardinalManager::FallbackReason::STRUCTURE_CAMERA_MISMATCH;
++        } else if (previous.sceneKey != sceneKey) {
++            fallback = CardinalManager::FallbackReason::STRUCTURE_SCENE_MISMATCH;
++        } else {
++            reuse = true;
++        }
++        if (reuse) {
++            cardinal.recordStructureReuse(previous.commands, previous.primitives);
++        } else {
++            cardinal.recordStructureFallback(fallback);
++        }
++    }
+ 
+-                    data.picking = builder.write(data.picking,
+-                            FrameGraphTexture::Usage::COLOR_ATTACHMENT);
+-                }
++    FrameGraphId<FrameGraphTexture> depth;
++    FrameGraphId<FrameGraphTexture> picking;
++    if (reuse) {
++        depth = fg.import("Cardinal Structure History", previous.desc,
++                FrameGraphTexture::Usage::SAMPLEABLE, previous.depth);
++    } else {
++        // Baseline path. It is also the strict fallback for every incompatible category/state.
++        auto const& structurePass = fg.addPass<StructurePassData>("Structure Pass",
++                [&](FrameGraph::Builder& builder, auto& data) {
++                    data.depth = builder.createTexture("Structure Buffer", targetDesc);
++                    data.depth = builder.write(data.depth,
++                            FrameGraphTexture::Usage::DEPTH_ATTACHMENT);
++
++                    if (config.picking) {
++                        // FIXME: the DescriptorSetLayout must specify SAMPLER_FLOAT
++                        data.picking = builder.createTexture("Picking Buffer", {
++                                .width = width, .height = height,
++                                .format = isES2 ? TextureFormat::RGBA8 : TextureFormat::RG32UI });
++                        data.picking = builder.write(data.picking,
++                                FrameGraphTexture::Usage::COLOR_ATTACHMENT);
++                    }
+ 
+-                builder.declareRenderPass("Structure Target", {
+-                        .attachments = { .color = { data.picking }, .depth = data.depth },
+-                        .clearFlags = TargetBufferFlags::COLOR0 | TargetBufferFlags::DEPTH
++                    builder.declareRenderPass("Structure Target", {
++                            .attachments = { .color = { data.picking }, .depth = data.depth },
++                            .clearFlags = TargetBufferFlags::COLOR0 | TargetBufferFlags::DEPTH
++                    });
++                },
++                [=, this, passBuilder = passBuilder](FrameGraphResources const& resources,
++                        auto const&, DriverApi& driver) mutable {
++                    Variant structureVariant(Variant::DEPTH_VARIANT);
++                    structureVariant.setPicking(config.picking);
++                    getStructureDescriptorSet().bind(driver);
++                    bindPerRenderableDescriptorSet(driver);
++                    passBuilder.renderFlags(structureRenderFlags);
++                    passBuilder.variant(structureVariant);
++                    passBuilder.commandTypeFlags(RenderPass::CommandTypeFlags::SSAO);
++                    RenderPass pass{ passBuilder.build(mEngine, driver) };
++                    pass.finalize(mEngine, driver);
++                    auto const out = resources.getRenderPassInfo();
++                    driver.beginRenderPass(out.target, out.params);
++                    pass.getExecutor().execute(mEngine, driver);
++                    driver.endRenderPass();
++                    unbindAllDescriptorSets(driver);
+                 });
+-            },
+-            [=, this, passBuilder = passBuilder](FrameGraphResources const& resources,
+-                    auto const&, DriverApi& driver) mutable {
+-                Variant structureVariant(Variant::DEPTH_VARIANT);
+-                structureVariant.setPicking(config.picking);
+-
+-                // bind the per-view descriptorSet that is used for the structure pass
+-                getStructureDescriptorSet().bind(driver);
+-                bindPerRenderableDescriptorSet(driver);
+-
+-                passBuilder.renderFlags(structureRenderFlags);
+-                passBuilder.variant(structureVariant);
+-                passBuilder.commandTypeFlags(RenderPass::CommandTypeFlags::SSAO);
+-
+-                RenderPass pass{ passBuilder.build(mEngine, driver) };
+-                pass.finalize(mEngine, driver);
+-                auto const out = resources.getRenderPassInfo();
+-                driver.beginRenderPass(out.target, out.params);
+-                pass.getExecutor().execute(mEngine, driver);
+-                driver.endRenderPass();
+-                unbindAllDescriptorSets(driver);
+-            });
+-
+-    auto const depth = structurePass->depth;
++        depth = structurePass->depth;
++        picking = structurePass->picking;
++    }
+ 
+     /*
+      * create depth mipmap chain
+@@ -638,7 +674,7 @@ PostProcessManager::StructurePassOutput PostProcessManager::structure(FrameGraph
+         FrameGraphId<FrameGraphTexture> depth;
+     };
+ 
+-    fg.addPass<StructureMipmapData>("StructureMipmap",
++    if (!reuse) fg.addPass<StructureMipmapData>("StructureMipmap",
+             [&](FrameGraph::Builder& builder, auto& data) {
+                 data.depth = builder.sample(depth);
+                 for (size_t i = 1; i < levelCount; i++) {
+@@ -679,7 +715,36 @@ PostProcessManager::StructurePassOutput PostProcessManager::structure(FrameGraph
+                 unbindAllDescriptorSets(driver);
+             });
+ 
+-    return { depth, structurePass->picking };
++    if (reuseRequested) {
++        uint64_t const reusedCommands = previous.commands;
++        uint64_t const reusedPrimitives = previous.primitives;
++        struct ExportCardinalStructureData {
++            FrameGraphId<FrameGraphTexture> depth;
++        };
++        fg.addPass<ExportCardinalStructureData>("Export Cardinal Structure History",
++                [&](FrameGraph::Builder& builder, auto& data) {
++                    builder.sideEffect();
++                    data.depth = builder.sample(depth);
++                }, [&, reuse, cameraKey, sceneKey, reusedCommands, reusedPrimitives](
++                        FrameGraphResources const& resources,
++                        auto const& data) {
++                    if (reuse) {
++                        frameHistory.getPrevious().cardinalStructure.depth = {};
++                    }
++                    auto& current = frameHistory.getCurrent().cardinalStructure;
++                    CardinalManager::Readback const readback = cardinal.getReadback();
++                    current.cameraKey = cameraKey;
++                    current.sceneKey = sceneKey;
++                    current.commands = reuse ? reusedCommands
++                            : readback.structureEmittedCommands;
++                    current.primitives = reuse ? reusedPrimitives
++                            : readback.structureCandidatePrimitives;
++                    current.valid = structureStateSafe;
++                    resources.detach(data.depth, &current.depth, &current.desc);
++                });
++    }
++
++    return { depth, picking };
+ }
+ 
+ FrameGraphId<FrameGraphTexture> PostProcessManager::transparentPicking(FrameGraph& fg,
+diff --git a/filament/src/PostProcessManager.h b/filament/src/PostProcessManager.h
+index 549c3ffdc53f2c62690d9b6f7fa6602cc179a70f..56a0cdb723de910433b3f4703b51691f3386ca6e 100644
+--- a/filament/src/PostProcessManager.h
++++ b/filament/src/PostProcessManager.h
+@@ -110,7 +110,9 @@ public:
+     };
+     StructurePassOutput structure(FrameGraph& fg,
+             RenderPassBuilder const& passBuilder, uint8_t structureRenderFlags,
+-            uint32_t width, uint32_t height, StructurePassConfig const& config) noexcept;
++            uint32_t width, uint32_t height, StructurePassConfig const& config,
++            FrameHistory& frameHistory, uint64_t cameraKey, uint64_t sceneKey,
++            bool structureStateSafe) noexcept;
+ 
+     FrameGraphId<FrameGraphTexture> transparentPicking(FrameGraph& fg,
+             RenderPassBuilder const& passBuilder, uint8_t structureRenderFlags,
+diff --git a/filament/src/RenderPass.cpp b/filament/src/RenderPass.cpp
+index c229f76d5467aa94bcf0a01274a4beae683782cf..233f5fbe23d1f9415871c1d56dc94c13fb06d1b6 100644
+--- a/filament/src/RenderPass.cpp
++++ b/filament/src/RenderPass.cpp
+@@ -22,6 +22,7 @@
+ 
+ #include "details/Material.h"
+ #include "details/MaterialInstance.h"
++#include "details/CardinalManager.h"
+ #include "details/View.h"
+ 
+ #include "components/RenderableManager.h"
+@@ -169,6 +170,28 @@ RenderPass::RenderPass(FEngine const& engine, backend::DriverApi& driver,
+                 instanceify(commandBegin, commandEnd, stereoscopicEyeCount));
+     }
+ 
++    uint64_t cardinalCommands = 0;
++    uint64_t cardinalTriangles = 0;
++    for (Command const* command = commandBegin; command != commandEnd; ++command) {
++        if ((command->key & CUSTOM_MASK) == uint64_t(CustomCommand::PASS) &&
++                command->info.rfu[0] != 0) {
++            cardinalCommands++;
++            cardinalTriangles += uint64_t(command->info.indexCount / 3u) *
++                    uint64_t(command->info.instanceCount);
++        }
++    }
++    FCardinalManager::PassKind cardinalPass = FCardinalManager::PassKind::OTHER;
++    if (builder.mCommandTypeFlags == CommandTypeFlags::SSAO) {
++        cardinalPass = FCardinalManager::PassKind::STRUCTURE;
++    } else if (builder.mCommandTypeFlags == CommandTypeFlags::SHADOW) {
++        cardinalPass = FCardinalManager::PassKind::SHADOW;
++    } else if (bool(builder.mCommandTypeFlags & CommandTypeFlags::COLOR) &&
++            !Variant::isSSRVariant(builder.mVariant)) {
++        cardinalPass = FCardinalManager::PassKind::MAIN;
++    }
++    const_cast<FCardinalManager&>(engine.getCardinalManager()).recordPassCommands(
++            cardinalPass, cardinalCommands, cardinalTriangles);
++
+     // these are `const` from this point on...
+     mCommandBegin = commandBegin;
+     mCommandEnd = commandEnd;
+@@ -563,6 +586,7 @@ RenderPass::Command* RenderPass::generateCommandsImpl(CommandTypeFlags extraFlag
+     auto const* const UTILS_RESTRICT soaVisibilityMask  = soa.data<FScene::VISIBLE_MASK>();
+     auto const* const UTILS_RESTRICT soaInstanceInfo    = soa.data<FScene::INSTANCES>();
+     auto const* const UTILS_RESTRICT soaDescriptorSet   = soa.data<FScene::DESCRIPTOR_SET_HANDLE>();
++    auto const* const UTILS_RESTRICT soaCardinalGroup   = soa.data<FScene::CARDINAL_GROUP_ID>();
+ 
+     Command cmd;
+ 
+@@ -662,6 +686,8 @@ RenderPass::Command* RenderPass::generateCommandsImpl(CommandTypeFlags extraFlag
+         // soaDescriptorSet[i] is either populated with a common descriptor-set or truly with
+         // a per-renderable one, depending on for e.g. skinning/morphing/instancing.
+         cmd.info.dsh = soaDescriptorSet[i];
++        cmd.info.rfu[0] = soaCardinalGroup[i];
++        cmd.info.rfu[1] = 0;
+ 
+         // always set the skinningOffset, even when skinning is off, this doesn't cost anything.
+         cmd.info.skinningOffset = soaSkinning[i].offset * sizeof(PerRenderableBoneUib::BoneData);
+diff --git a/filament/src/details/CardinalManager.cpp b/filament/src/details/CardinalManager.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e01e3ba71504a1267cbb15fba8addaf1472b47c
+--- /dev/null
++++ b/filament/src/details/CardinalManager.cpp
+@@ -0,0 +1,341 @@
++/*
++ * Copyright (C) 2026 SOLUM Platform
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++#include "details/CardinalManager.h"
++
++#include <algorithm>
++#include <cmath>
++#include <utility>
++
++namespace filament {
++
++FCardinalManager::FCardinalManager() noexcept {
++    auto empty = std::make_shared<Generation>();
++    empty->valid = false;
++    empty->invalidReason = FallbackReason::MISSING_DECISION_BUFFER;
++    mPending = empty;
++    mActive = empty;
++}
++
++FCardinalManager::~FCardinalManager() noexcept = default;
++
++bool FCardinalManager::validRepresentation(uint32_t const value) noexcept {
++    return value <= uint32_t(Representation::SKIP);
++}
++
++bool FCardinalManager::validMaterialVariant(uint32_t const value) noexcept {
++    return value <= uint32_t(MaterialVariant::FAR);
++}
++
++bool FCardinalManager::validVisibility(uint32_t const value) noexcept {
++    return value <= uint32_t(Visibility::UNCERTAIN);
++}
++
++std::shared_ptr<FCardinalManager::Generation> FCardinalManager::buildGeneration(
++        std::unordered_map<uint32_t, Decision>&& records,
++        std::unordered_map<uint32_t, EntityEntry> const& residents,
++        uint64_t const revision) noexcept {
++    auto generation = std::make_shared<Generation>();
++    generation->revision = revision;
++    generation->records = std::move(records);
++    generation->bytes = generation->records.size() * sizeof(Decision);
++    generation->valid = !generation->records.empty();
++    generation->invalidReason = generation->valid
++            ? FallbackReason::NONE : FallbackReason::MISSING_DECISION_BUFFER;
++
++    generation->entities = residents;
++    for (auto& [unused, entry] : generation->entities) {
++        (void) unused;
++        entry.selected = false;
++        generation->residentSourceCount += entry.tier == Representation::SOURCE;
++        generation->residentMidHqCount += entry.tier == Representation::MID_HQ;
++        generation->residentMidCount += entry.tier == Representation::MID;
++        generation->residentFarCount += entry.tier == Representation::FAR;
++    }
++
++    for (auto const& [chunkId, decision] : generation->records) {
++        if (!chunkId || chunkId != decision.stableChunkId || !decision.sourceEntity ||
++                !validRepresentation(decision.selectedRepresentation) ||
++                !validMaterialVariant(decision.selectedMaterialVariant) ||
++                !validVisibility(decision.visibility) ||
++                !std::isfinite(decision.importance)) {
++            generation->valid = false;
++            generation->invalidReason = FallbackReason::INVALID_RECORD;
++            break;
++        }
++        Representation const selected = Representation(decision.selectedRepresentation);
++        MaterialVariant const material = MaterialVariant(decision.selectedMaterialVariant);
++        MaterialVariant const expectedMaterial = selected == Representation::FAR
++                ? MaterialVariant::FAR
++                : selected == Representation::MID ? MaterialVariant::MID
++                                                   : MaterialVariant::SOURCE;
++        if (selected != Representation::SKIP && material != expectedMaterial) {
++            generation->valid = false;
++            generation->invalidReason = FallbackReason::MATERIAL_VARIANT_MISMATCH;
++            break;
++        }
++        uint32_t tierEntity = decision.sourceEntity;
++        switch (selected) {
++            case Representation::SOURCE: tierEntity = decision.sourceEntity; break;
++            case Representation::MID_HQ: tierEntity = decision.midHqEntity; break;
++            case Representation::MID: tierEntity = decision.midEntity; break;
++            case Representation::FAR: tierEntity = decision.farEntity; break;
++            case Representation::SKIP: tierEntity = 0; break;
++        }
++        if (selected != Representation::SKIP &&
++                (tierEntity == 0 || decision.selectedEntity != tierEntity)) {
++            generation->valid = false;
++            generation->invalidReason = tierEntity == 0
++                    ? FallbackReason::MISSING_SELECTED_HANDLE
++                    : FallbackReason::SELECTED_HANDLE_TIER_MISMATCH;
++            break;
++        }
++        auto const sourcePos = generation->entities.find(decision.sourceEntity);
++        auto const selectedPos = selected == Representation::SKIP
++                ? generation->entities.end() : generation->entities.find(decision.selectedEntity);
++        if (sourcePos == generation->entities.end() || !sourcePos->second.source ||
++                sourcePos->second.stableChunkId != decision.stableChunkId ||
++                (selected != Representation::SKIP &&
++                    (selectedPos == generation->entities.end() ||
++                     selectedPos->second.stableChunkId != decision.stableChunkId ||
++                     selectedPos->second.tier != selected))) {
++            generation->valid = false;
++            generation->invalidReason = FallbackReason::SELECTED_HANDLE_TIER_MISMATCH;
++            break;
++        }
++        if (selectedPos != generation->entities.end()) selectedPos->second.selected = true;
++    }
++
++    if (!generation->valid) {
++        generation->entities.clear();
++    }
++    return generation;
++}
++
++void FCardinalManager::requestMode(Mode const mode, uint64_t const revision) noexcept {
++    std::lock_guard<std::mutex> lock(mMutex);
++    mRequestedMode = mode;
++    mModeRevision = std::max(mModeRevision + 1u, revision);
++}
++
++bool FCardinalManager::publishDecisions(Decision const* decisions, size_t const count,
++        uint64_t const revision, bool const replace) noexcept {
++    if ((count && decisions == nullptr) || revision == 0) return false;
++    std::lock_guard<std::mutex> lock(mMutex);
++    std::unordered_map<uint32_t, Decision> records;
++    if (!replace && mPending) records = mPending->records;
++    for (size_t i = 0; i < count; ++i) {
++        Decision const& decision = decisions[i];
++        if (!decision.stableChunkId) return false;
++        records[decision.stableChunkId] = decision;
++    }
++    mPending = buildGeneration(std::move(records), mResidents, revision);
++    mCounters.generationCount++;
++    return mPending->valid;
++}
++
++bool FCardinalManager::publishResidents(Resident const* residents, size_t const count,
++        bool const replace) noexcept {
++    if (count && residents == nullptr) return false;
++    std::lock_guard<std::mutex> lock(mMutex);
++    auto next = replace ? std::unordered_map<uint32_t, EntityEntry>{} : mResidents;
++    for (size_t i = 0; i < count; ++i) {
++        Resident const& resident = residents[i];
++        if (!resident.stableChunkId || !resident.entity ||
++                resident.representation > uint32_t(Representation::FAR)) return false;
++        EntityEntry const entry{ resident.stableChunkId,
++                Representation(resident.representation), false,
++                Representation(resident.representation) == Representation::SOURCE };
++        auto const pos = next.find(resident.entity);
++        if (pos != next.end() && (pos->second.stableChunkId != entry.stableChunkId ||
++                pos->second.tier != entry.tier)) return false;
++        next[resident.entity] = entry;
++    }
++    mResidents = std::move(next);
++    auto records = mPending ? mPending->records : std::unordered_map<uint32_t, Decision>{};
++    uint64_t const revision = mPending ? mPending->revision : 0;
++    mPending = buildGeneration(std::move(records), mResidents, revision);
++    return !mResidents.empty();
++}
++
++void FCardinalManager::clearDecisions(uint64_t const revision) noexcept {
++    std::lock_guard<std::mutex> lock(mMutex);
++    mPending = buildGeneration({}, mResidents, revision);
++    mCounters.generationCount++;
++}
++
++void FCardinalManager::recordJavaSceneMutation(
++        uint32_t const adds, uint32_t const removes) noexcept {
++    std::lock_guard<std::mutex> lock(mMutex);
++    mCounters.javaSceneAdds += adds;
++    mCounters.javaSceneRemoves += removes;
++}
++
++void FCardinalManager::beginFrame(uint64_t const frameId) noexcept {
++    std::lock_guard<std::mutex> lock(mMutex);
++    mFrameId = frameId;
++    mActive = mPending;
++    mActiveModeRevision = mModeRevision;
++    mFallbackReason = FallbackReason::NONE;
++    mActualMode = mRequestedMode;
++    if (mRequestedMode != Mode::BASELINE_SOURCE && (!mActive || !mActive->valid)) {
++        mActualMode = Mode::BASELINE_SOURCE;
++        mFallbackReason = mActive ? mActive->invalidReason
++                                  : FallbackReason::MISSING_DECISION_BUFFER;
++    }
++
++    uint64_t const generations = mCounters.generationCount;
++    uint64_t const adds = mCounters.javaSceneAdds;
++    uint64_t const removes = mCounters.javaSceneRemoves;
++    mCounters = {};
++    mCounters.generationCount = generations;
++    mCounters.javaSceneAdds = adds;
++    mCounters.javaSceneRemoves = removes;
++    mCounters.requestedMode = mRequestedMode;
++    mCounters.actualMode = mActualMode;
++    mCounters.modeRevision = mActiveModeRevision;
++    mCounters.decisionBufferRevision = mActive ? mActive->revision : 0;
++    mCounters.presentedModeRevision = mPresentedModeRevision;
++    mCounters.presentedDecisionBufferRevision = mPresentedDecisionRevision;
++    mCounters.fallbackReason = mFallbackReason;
++    if (mActive) {
++        mCounters.decisionBufferBytes = mActive->bytes;
++        mCounters.residentSourceCount = mActive->residentSourceCount;
++        mCounters.residentMidHqCount = mActive->residentMidHqCount;
++        mCounters.residentMidCount = mActive->residentMidCount;
++        mCounters.residentFarCount = mActive->residentFarCount;
++        for (auto const& [unused, decision] : mActive->records) {
++            (void) unused;
++            if (mActualMode == Mode::BASELINE_SOURCE) {
++                mCounters.sourceClusters++;
++                continue;
++            }
++            if (Visibility(decision.visibility) == Visibility::PROVEN_OUTSIDE_FRUSTUM ||
++                    Representation(decision.selectedRepresentation) == Representation::SKIP) {
++                mCounters.skippedClusters++;
++                continue;
++            }
++            switch (Representation(decision.selectedRepresentation)) {
++                case Representation::SOURCE: mCounters.sourceClusters++; break;
++                case Representation::MID_HQ: mCounters.midHqClusters++; break;
++                case Representation::MID: mCounters.midClusters++; break;
++                case Representation::FAR: mCounters.farClusters++; break;
++                case Representation::SKIP: break;
++            }
++        }
++    }
++}
++
++void FCardinalManager::markPresented() noexcept {
++    std::lock_guard<std::mutex> lock(mMutex);
++    mPresentedModeRevision = mActiveModeRevision;
++    mPresentedDecisionRevision = mActive ? mActive->revision : 0;
++    mCounters.presentedModeRevision = mPresentedModeRevision;
++    mCounters.presentedDecisionBufferRevision = mPresentedDecisionRevision;
++}
++
++FCardinalManager::EntityResolution FCardinalManager::resolveEntity(
++        uint32_t const entityId) const noexcept {
++    std::lock_guard<std::mutex> lock(mMutex);
++    auto const& entities = mActive && mActive->valid ? mActive->entities : mResidents;
++    auto const pos = entities.find(entityId);
++    if (pos == entities.end()) return {};
++    EntityEntry const& entry = pos->second;
++    bool emit = entry.source;
++    if (mActualMode != Mode::BASELINE_SOURCE) {
++        auto const decisionPos = mActive->records.find(entry.stableChunkId);
++        if (decisionPos == mActive->records.end()) {
++            emit = entry.source;
++        } else {
++            Decision const& decision = decisionPos->second;
++            bool const skipped = Visibility(decision.visibility) ==
++                    Visibility::PROVEN_OUTSIDE_FRUSTUM ||
++                    Representation(decision.selectedRepresentation) == Representation::SKIP;
++            emit = !skipped && entityId == decision.selectedEntity;
++        }
++    }
++    return { entry.stableChunkId, true, emit, entry.source };
++}
++
++void FCardinalManager::observeResident(uint32_t const entityId,
++        uint32_t const renderPrimitiveCount, uint64_t const triangleCount) noexcept {
++    std::lock_guard<std::mutex> lock(mMutex);
++    auto const pos = mResidents.find(entityId);
++    if (pos == mResidents.end() || !pos->second.source) return;
++    mCounters.candidateCommands += renderPrimitiveCount;
++    mCounters.candidatePrimitives += triangleCount;
++}
++
++void FCardinalManager::recordFrustum(
++        uint32_t const stableChunkId, bool const visible) noexcept {
++    if (!stableChunkId || visible) return;
++    std::lock_guard<std::mutex> lock(mMutex);
++    mCounters.frustumSkippedClusters++;
++}
++
++void FCardinalManager::recordPassCommands(PassKind const kind,
++        uint64_t const commands, uint64_t const triangles) noexcept {
++    std::lock_guard<std::mutex> lock(mMutex);
++    if (kind == PassKind::MAIN) {
++        mCounters.emittedCommands += commands;
++        mCounters.emittedPrimitives += triangles;
++        mCounters.commandsRemoved = mCounters.candidateCommands > mCounters.emittedCommands
++                ? mCounters.candidateCommands - mCounters.emittedCommands : 0;
++        mCounters.primitivesRemoved = mCounters.candidatePrimitives > mCounters.emittedPrimitives
++                ? mCounters.candidatePrimitives - mCounters.emittedPrimitives : 0;
++    } else if (kind == PassKind::STRUCTURE) {
++        mCounters.structureCandidateCommands = mCounters.candidateCommands;
++        mCounters.structureCandidatePrimitives = mCounters.candidatePrimitives;
++        mCounters.structureEmittedCommands += commands;
++    }
++}
++
++bool FCardinalManager::structureReuseRequested() const noexcept {
++    std::lock_guard<std::mutex> lock(mMutex);
++    return mActualMode == Mode::CARDINAL_NATIVE_STRUCTURE_REUSE;
++}
++
++bool FCardinalManager::structureDecisionSafe() const noexcept {
++    std::lock_guard<std::mutex> lock(mMutex);
++    if (mActualMode != Mode::CARDINAL_NATIVE_STRUCTURE_REUSE ||
++            !mActive || !mActive->valid) return false;
++    for (auto const& [unused, decision] : mActive->records) {
++        (void) unused;
++        bool const skipped = Visibility(decision.visibility) ==
++                Visibility::PROVEN_OUTSIDE_FRUSTUM ||
++                Representation(decision.selectedRepresentation) == Representation::SKIP;
++        if (!skipped && !(decision.flags & STRUCTURE_STATIC_SAFE)) return false;
++    }
++    return true;
++}
++
++void FCardinalManager::recordStructureReuse(
++        uint64_t const commands, uint64_t const triangles) noexcept {
++    std::lock_guard<std::mutex> lock(mMutex);
++    mCounters.structureReusedCommands += commands;
++    mCounters.structureAvoidedPrimitives += triangles;
++    mCounters.structureFallbackReason = FallbackReason::NONE;
++}
++
++void FCardinalManager::recordStructureFallback(FallbackReason const reason) noexcept {
++    std::lock_guard<std::mutex> lock(mMutex);
++    mCounters.structureFallbackCount++;
++    mCounters.structureFallbackReason = reason;
++}
++
++CardinalManager::Readback FCardinalManager::getReadback() const noexcept {
++    std::lock_guard<std::mutex> lock(mMutex);
++    Readback out = mCounters;
++    out.requestedMode = mRequestedMode;
++    out.actualMode = mActualMode;
++    out.modeRevision = mActiveModeRevision;
++    out.decisionBufferRevision = mActive ? mActive->revision : 0;
++    out.presentedModeRevision = mPresentedModeRevision;
++    out.presentedDecisionBufferRevision = mPresentedDecisionRevision;
++    out.fallbackReason = mFallbackReason;
++    return out;
++}
++
++} // namespace filament
+diff --git a/filament/src/details/CardinalManager.h b/filament/src/details/CardinalManager.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..e6116bb513ca2976e647c753ab59186628734984
+--- /dev/null
++++ b/filament/src/details/CardinalManager.h
+@@ -0,0 +1,102 @@
++/*
++ * Copyright (C) 2026 SOLUM Platform
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++#ifndef TNT_FILAMENT_DETAILS_CARDINALMANAGER_H
++#define TNT_FILAMENT_DETAILS_CARDINALMANAGER_H
++
++#include "downcast.h"
++
++#include <filament/CardinalManager.h>
++
++#include <memory>
++#include <mutex>
++#include <unordered_map>
++#include <vector>
++
++namespace filament {
++
++class FCardinalManager : public CardinalManager {
++public:
++    struct EntityResolution {
++        uint32_t stableChunkId = 0;
++        bool managed = false;
++        bool emit = true;
++        bool source = false;
++    };
++
++    enum class PassKind : uint8_t { MAIN, STRUCTURE, SHADOW, OTHER };
++
++    FCardinalManager() noexcept;
++    ~FCardinalManager() noexcept;
++
++    void requestMode(Mode mode, uint64_t modeRevision) noexcept;
++    bool publishDecisions(Decision const* decisions, size_t count,
++            uint64_t decisionBufferRevision, bool replace) noexcept;
++    bool publishResidents(Resident const* residents, size_t count, bool replace) noexcept;
++    void clearDecisions(uint64_t decisionBufferRevision) noexcept;
++    void recordJavaSceneMutation(uint32_t adds, uint32_t removes) noexcept;
++    Readback getReadback() const noexcept;
++
++    void beginFrame(uint64_t frameId) noexcept;
++    void markPresented() noexcept;
++    EntityResolution resolveEntity(uint32_t entityId) const noexcept;
++    void observeResident(uint32_t entityId, uint32_t renderPrimitiveCount,
++            uint64_t triangleCount) noexcept;
++    void recordFrustum(uint32_t stableChunkId, bool visible) noexcept;
++    void recordPassCommands(PassKind kind, uint64_t commands, uint64_t triangles) noexcept;
++    bool structureReuseRequested() const noexcept;
++    bool structureDecisionSafe() const noexcept;
++    void recordStructureReuse(uint64_t commands, uint64_t triangles) noexcept;
++    void recordStructureFallback(FallbackReason reason) noexcept;
++
++private:
++    struct EntityEntry {
++        uint32_t stableChunkId = 0;
++        Representation tier = Representation::SOURCE;
++        bool selected = false;
++        bool source = false;
++    };
++
++    struct Generation {
++        uint64_t revision = 0;
++        bool valid = false;
++        FallbackReason invalidReason = FallbackReason::NONE;
++        std::unordered_map<uint32_t, Decision> records;
++        std::unordered_map<uint32_t, EntityEntry> entities;
++        uint64_t bytes = 0;
++        uint64_t residentSourceCount = 0;
++        uint64_t residentMidHqCount = 0;
++        uint64_t residentMidCount = 0;
++        uint64_t residentFarCount = 0;
++    };
++
++    static std::shared_ptr<Generation> buildGeneration(
++            std::unordered_map<uint32_t, Decision>&& records,
++            std::unordered_map<uint32_t, EntityEntry> const& residents,
++            uint64_t revision) noexcept;
++    static bool validRepresentation(uint32_t value) noexcept;
++    static bool validMaterialVariant(uint32_t value) noexcept;
++    static bool validVisibility(uint32_t value) noexcept;
++
++    mutable std::mutex mMutex;
++    std::shared_ptr<const Generation> mPending;
++    std::shared_ptr<const Generation> mActive;
++    std::unordered_map<uint32_t, EntityEntry> mResidents;
++    Mode mRequestedMode = Mode::BASELINE_SOURCE;
++    Mode mActualMode = Mode::BASELINE_SOURCE;
++    uint64_t mModeRevision = 0;
++    uint64_t mActiveModeRevision = 0;
++    uint64_t mPresentedModeRevision = 0;
++    uint64_t mPresentedDecisionRevision = 0;
++    uint64_t mFrameId = 0;
++    FallbackReason mFallbackReason = FallbackReason::NONE;
++    Readback mCounters;
++};
++
++FILAMENT_DOWNCAST(CardinalManager)
++
++} // namespace filament
++
++#endif // TNT_FILAMENT_DETAILS_CARDINALMANAGER_H
+diff --git a/filament/src/details/Engine.h b/filament/src/details/Engine.h
+index 234add9482f50cda8e0675a3d15b554c832d4ced..61d1d8fccb44ceeb9a0364e29e507278408f3244 100644
+--- a/filament/src/details/Engine.h
++++ b/filament/src/details/Engine.h
+@@ -37,6 +37,7 @@
+ 
+ #include "details/BufferObject.h"
+ #include "details/Camera.h"
++#include "details/CardinalManager.h"
+ #include "details/ColorGrading.h"
+ #include "details/DebugRegistry.h"
+ #include "details/Fence.h"
+@@ -253,6 +254,14 @@ public:
+         return mRenderableManager;
+     }
+ 
++    FCardinalManager& getCardinalManager() noexcept {
++        return mCardinalManager;
++    }
++
++    FCardinalManager const& getCardinalManager() const noexcept {
++        return mCardinalManager;
++    }
++
+     FLightManager& getLightManager() noexcept {
+         return mLightManager;
+     }
+@@ -649,6 +658,7 @@ private:
+ 
+     utils::EntityManager& mEntityManager;
+     FRenderableManager mRenderableManager;
++    FCardinalManager mCardinalManager;
+     FTransformManager mTransformManager;
+     FLightManager mLightManager;
+     FCameraManager mCameraManager;
+diff --git a/filament/src/details/Renderer.cpp b/filament/src/details/Renderer.cpp
+index bb2f6377275ee42e5d7066b411c3adb4fd645175..18302548eb9cba398776433c6b3afdfe4a1961ab 100644
+--- a/filament/src/details/Renderer.cpp
++++ b/filament/src/details/Renderer.cpp
+@@ -25,6 +25,7 @@
+ #include "TextureCache.h"
+ 
+ #include "details/Engine.h"
++#include "details/CardinalManager.h"
+ #include "details/Fence.h"
+ #include "details/Material.h"
+ #include "details/MaterialInstance.h"
+@@ -840,6 +841,9 @@ bool FRenderer::beginFrame(FSwapChain* swapChain, uint64_t vsyncSteadyClockTimeN
+         }, mFrameId, appVsync);
+         mSolumGpuProfiler->beginFrame(driver, mFrameId);
+ 
++        // One immutable native decision generation is consumed by every View in this frame.
++        engine.getCardinalManager().beginFrame(mFrameId);
++
+         // ask the engine to do what it needs to (e.g. updates light buffer, materials...)
+         engine.prepare(driver);
+     };
+@@ -900,6 +904,8 @@ void FRenderer::endFrame() {
+ 
+     engine.submitFrame();
+ 
++    engine.getCardinalManager().markPresented();
++
+     driver.endFrame(mFrameId);
+ 
+     // gives the backend a chance to execute periodic tasks
+@@ -1016,6 +1022,7 @@ void FRenderer::renderStandaloneView(FView const* view) {
+         FEngine& engine = mEngine;
+         FEngine::DriverApi& driver = engine.getDriverApi();
+ 
++        engine.getCardinalManager().beginFrame(0);
+         engine.prepare(driver);
+ 
+         driver.beginFrame(
+@@ -1030,6 +1037,8 @@ void FRenderer::renderStandaloneView(FView const* view) {
+ 
+         engine.submitFrame();
+ 
++        engine.getCardinalManager().markPresented();
++
+         driver.endFrame(0);
+ 
+         // engine.flush() has already been called by renderInternal(), but we need an extra one
+@@ -1483,11 +1492,57 @@ void FRenderer::renderJob(DriverApi& driver, RootArenaScope& rootArenaScope, FVi
+     // Also, picking is handled here if transparent picking is disabled.
+ 
+     // TODO: the scaling should depends on all passes that need the structure pass
++    uint64_t cardinalCameraKey = 1469598103934665603ull;
++    uint64_t cardinalSceneKey = 1469598103934665603ull;
++    auto hashBytes = [](uint64_t& hash, void const* bytes, size_t count) {
++        auto const* p = static_cast<uint8_t const*>(bytes);
++        for (size_t i = 0; i < count; ++i) {
++            hash = (hash ^ p[i]) * 1099511628211ull;
++        }
++    };
++    mat4 const cardinalViewMatrix = cameraInfo.getUserViewMatrix();
++    hashBytes(cardinalCameraKey, &cameraInfo.projection, sizeof(cameraInfo.projection));
++    hashBytes(cardinalCameraKey, &cardinalViewMatrix, sizeof(cardinalViewMatrix));
++    hashBytes(cardinalCameraKey, &svp, sizeof(svp));
++    hashBytes(cardinalCameraKey, &aoOptions.resolution, sizeof(aoOptions.resolution));
++
++    CardinalManager::Readback const cardinalReadback =
++            engine.getCardinalManager().getReadback();
++    hashBytes(cardinalSceneKey, &cardinalReadback.actualMode,
++            sizeof(cardinalReadback.actualMode));
++    hashBytes(cardinalSceneKey, &cardinalReadback.decisionBufferRevision,
++            sizeof(cardinalReadback.decisionBufferRevision));
++    auto const materialGlobals = view.getMaterialGlobals();
++    hashBytes(cardinalSceneKey, materialGlobals.data(),
++            materialGlobals.size() * sizeof(materialGlobals[0]));
++    auto const& cardinalSoa = scene.getRenderableData();
++    auto const cardinalRange = view.getVisibleRenderables();
++    auto const* cardinalEntities = cardinalSoa.data<FScene::ENTITY_ID>();
++    auto const* cardinalGroups = cardinalSoa.data<FScene::CARDINAL_GROUP_ID>();
++    auto const* cardinalTransforms = cardinalSoa.data<FScene::WORLD_TRANSFORM>();
++    auto const* cardinalVisibility = cardinalSoa.data<FScene::VISIBILITY_STATE>();
++    auto const* cardinalSkinning = cardinalSoa.data<FScene::SKINNING_STATE>();
++    auto const* cardinalInstances = cardinalSoa.data<FScene::INSTANCES>();
++    bool cardinalStructureStateSafe = true;
++    for (uint32_t i = cardinalRange.first; i < cardinalRange.last; ++i) {
++        hashBytes(cardinalSceneKey, &cardinalEntities[i], sizeof(cardinalEntities[i]));
++        hashBytes(cardinalSceneKey, &cardinalGroups[i], sizeof(cardinalGroups[i]));
++        hashBytes(cardinalSceneKey, &cardinalTransforms[i], sizeof(cardinalTransforms[i]));
++        hashBytes(cardinalSceneKey, &cardinalVisibility[i], sizeof(cardinalVisibility[i]));
++        hashBytes(cardinalSceneKey, &cardinalInstances[i].count,
++                sizeof(cardinalInstances[i].count));
++        if (cardinalSkinning[i].skinning ||
++                cardinalSkinning[i].morphType != FRenderableManager::MorphType::NONE) {
++            cardinalStructureStateSafe = false;
++        }
++    }
++
+     const auto [structure, picking_] = ppm.structure(fg,
+             passBuilder, renderFlags, svp.width, svp.height, {
+             .scale = aoOptions.resolution,
+             .picking = view.hasPicking() && !view.isTransparentPickingEnabled()
+-    });
++    }, view.getFrameHistory(), cardinalCameraKey, cardinalSceneKey,
++            cardinalStructureStateSafe);
+     auto picking = picking_;
+ 
+     // --------------------------------------------------------------------------------------------
+diff --git a/filament/src/details/Scene.cpp b/filament/src/details/Scene.cpp
+index c1ff8314fde11e6245bd4697a70decd165a2e440..e91d6a97e7bdf60899fcccb15a59aa033bdf372b 100644
+--- a/filament/src/details/Scene.cpp
++++ b/filament/src/details/Scene.cpp
+@@ -17,12 +17,14 @@
+ #include "details/Scene.h"
+ 
+ #include "Allocators.h"
++#include "RenderPrimitive.h"
+ 
+ #include "components/LightManager.h"
+ #include "components/RenderableManager.h"
+ #include "components/TransformManager.h"
+ 
+ #include "details/Engine.h"
++#include "details/CardinalManager.h"
+ #include "details/Skybox.h"
+ 
+ #include <backend/Handle.h>
+@@ -100,7 +102,12 @@ void FScene::prepare(JobSystem& js,
+     auto& lightData = mLightData;
+     auto const& entities = mEntities;
+ 
+-    using RenderableContainerData = std::pair<RenderableManager::Instance, TransformManager::Instance>;
++    struct RenderableContainerData {
++        RenderableManager::Instance ri;
++        TransformManager::Instance ti;
++        uint32_t entityId;
++        uint32_t cardinalGroupId;
++    };
+     using RenderableInstanceContainer = FixedCapacityVector<RenderableContainerData,
+             STLAllocator< RenderableContainerData, LinearAllocatorArena >, false>;
+ 
+@@ -143,7 +150,21 @@ void FScene::prepare(JobSystem& js,
+                 }
+             }
+             if (ri) {
+-                renderableInstances.emplace_back(ri, ti);
++                auto const cardinal = engine.getCardinalManager().resolveEntity(e.getId());
++                if (cardinal.managed && cardinal.source) {
++                    uint64_t triangles = 0;
++                    auto const primitives = rcm.getRenderPrimitives(ri, 0);
++                    uint64_t const instances = rcm.getInstancesInfo(ri).count;
++                    for (auto const& primitive : primitives) {
++                        triangles += uint64_t(primitive.getIndexCount() / 3u) * instances;
++                    }
++                    engine.getCardinalManager().observeResident(
++                            e.getId(), uint32_t(primitives.size()), triangles);
++                }
++                if (!cardinal.managed || cardinal.emit) {
++                    renderableInstances.emplace_back(RenderableContainerData{
++                            ri, ti, e.getId(), cardinal.stableChunkId });
++                }
+             }
+         }
+     }
+@@ -199,7 +220,7 @@ void FScene::prepare(JobSystem& js,
+         FILAMENT_TRACING_NAME(FILAMENT_TRACING_CATEGORY_FILAMENT, "renderableWork");
+ 
+         for (size_t i = 0; i < c; i++) {
+-            auto [ri, ti] = p[i];
++            auto const [ri, ti, entityId, cardinalGroupId] = p[i];
+ 
+             // this is where we go from double to float for our transforms
+             const mat4f shaderWorldTransform{
+@@ -225,6 +246,8 @@ void FScene::prepare(JobSystem& js,
+             assert_invariant(index < sceneData.size());
+ 
+             sceneData.elementAt<RENDERABLE_INSTANCE>(index) = ri;
++            sceneData.elementAt<ENTITY_ID>(index)           = entityId;
++            sceneData.elementAt<CARDINAL_GROUP_ID>(index)   = cardinalGroupId;
+             sceneData.elementAt<WORLD_TRANSFORM>(index)     = shaderWorldTransform;
+             sceneData.elementAt<VISIBILITY_STATE>(index)    = visibility;
+             sceneData.elementAt<SKINNING_BUFFER>(index)     = rcm.getSkinningBufferInfo(ri);
+diff --git a/filament/src/details/Scene.h b/filament/src/details/Scene.h
+index d82395e4450d45dcf94c4578b2d32d290dae0c2a..233c9d0ae527dbca757c56d1018649f31d46d8f3 100644
+--- a/filament/src/details/Scene.h
++++ b/filament/src/details/Scene.h
+@@ -80,6 +80,8 @@ public:
+ 
+     enum {
+         RENDERABLE_INSTANCE,    //   4 | instance of the Renderable component
++        ENTITY_ID,              //   4 | exact resident Entity identity
++        CARDINAL_GROUP_ID,      //   4 | zero for unmanaged renderables
+         WORLD_TRANSFORM,        //  16 | instance of the Transform component
+         VISIBILITY_STATE,       //   2 | visibility data of the component
+         SKINNING_STATE,         //   1 | skinning data of the component
+@@ -106,6 +108,8 @@ public:
+ 
+     using RenderableSoa = utils::StructureOfArrays<
+             utils::EntityInstance<RenderableManager>,   // RENDERABLE_INSTANCE
++            uint32_t,                                   // ENTITY_ID
++            uint32_t,                                   // CARDINAL_GROUP_ID
+             math::mat4f,                                // WORLD_TRANSFORM
+             FRenderableManager::Visibility,             // VISIBILITY_STATE
+             FRenderableManager::Skinning,               // SKINNING_STATE
+diff --git a/filament/src/details/View.cpp b/filament/src/details/View.cpp
+index e3c049eb35026d1194cc68ead96583eca6de3f05..9572e3fd942b009a0781a02952108e10a9a4a967 100644
+--- a/filament/src/details/View.cpp
++++ b/filament/src/details/View.cpp
+@@ -31,6 +31,7 @@
+ #include "components/TransformManager.h"
+ 
+ #include "details/Engine.h"
++#include "details/CardinalManager.h"
+ #include "details/IndirectLight.h"
+ #include "details/InstanceBuffer.h"
+ #include "details/MorphTargetBuffer.h"
+@@ -757,6 +758,16 @@ void FView::prepare(FEngine& engine, DriverApi& driver, RootArenaScope& rootAren
+ 
+         prepareVisibleRenderables(js, cullingFrustum, renderableData);
+ 
++        // Stable Cardinal tiers remain resident in Scene. Only the selected entity reached this
++        // SoA; record the independent current-frustum result before shadow / command generation.
++        auto const* cardinalGroups = renderableData.data<FScene::CARDINAL_GROUP_ID>();
++        for (size_t i = 0, count = renderableData.size(); i < count; ++i) {
++            if (cardinalGroups[i]) {
++                engine.getCardinalManager().recordFrustum(cardinalGroups[i],
++                        bool(cullingMask[i] & VISIBLE_RENDERABLE));
++            }
++        }
++
+ 
+         /*
+          * Shadowing: compute the shadow camera and cull shadow casters
+@@ -1471,6 +1482,7 @@ void FView::commitFrameHistory(FEngine& engine) noexcept {
+     disposer.destroy(std::move(last.taa.depth.handle));
+     disposer.destroy(std::move(last.ssr.color.handle));
+     disposer.destroy(std::move(last.solumV1.color.handle));
++    disposer.destroy(std::move(last.cardinalStructure.depth.handle));
+ 
+     // and then push the new history entry to the history stack
+     frameHistory.commit();
+@@ -1486,6 +1498,7 @@ void FView::clearFrameHistory(FEngine& engine) noexcept {
+         disposer.destroy(std::move(last.taa.depth.handle));
+         disposer.destroy(std::move(last.ssr.color.handle));
+         disposer.destroy(std::move(last.solumV1.color.handle));
++        disposer.destroy(std::move(last.cardinalStructure.depth.handle));
+     }
+ }
+ 

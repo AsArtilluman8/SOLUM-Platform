@@ -1,6 +1,7 @@
 name: Filament v1.71.4 SOLUM Cardinal R23 V1
 
 on:
+  workflow_call:
   workflow_dispatch:
 
 permissions:
